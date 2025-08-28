@@ -1,0 +1,4 @@
+// Copyright (c) 2025 Diego Vargas. Todos los derechos reservados.
+// Parte de: PMS Hotel (Property Management System)
+// Uso, copia, modificación o distribución prohibidos sin autorización previa y por escrito.
+// Archivo: <rellenar>
