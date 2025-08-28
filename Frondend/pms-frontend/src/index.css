@@ -1,0 +1,57 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Ajustes visuales minimalistas para FullCalendar timeline */
+.fc .fc-scrollgrid,
+.fc .fc-timeline-header-row,
+.fc-theme-standard td,
+.fc-theme-standard th { border-color: rgba(0,0,0,.06) !important; }
+
+
+.fc .fc-toolbar-title { font-weight: 600; }
+.fc .fc-button { border-radius: 12px; box-shadow: none; }
+
+
+.fc .fc-datagrid-cell-cushion { padding: 6px 8px; }
+.fc .fc-datagrid-cell-main { font-weight: 600; }
+
+
+/* Oculta horas en labels (dejamos día/mes por config de slotLabelFormat) */
+.fc-timeline-slot:not(.fc-timeline-slot-lane) .fc-timeline-slot-cushion time { display: none; }
+
+
+/* Píldoras: altura mínima estable */
+.fc .fc-timeline-events .fc-event { min-height: 28px; }
+
+
+/* Usaremos render custom; elimina borde nativo */
+.fc .fc-event { background: transparent; border: none; }
+
+/* ==== Timeline: fila fija (no crecer con "+N more") ==== */
+.fc .fc-timeline-lane-frame{
+    height:32px !important;
+    min-height:32px !important;
+    max-height:32px !important;
+    overflow:hidden !important; /* recorta cualquier 2º carril */
+  }
+  .fc .fc-datagrid-cell-frame{
+    height:32px !important;
+    min-height:32px !important;
+    max-height:32px !important;
+    display:flex; align-items:center; /* centra el número de habitación */
+  }
+  
+  /* Oculta el bloque “+N more” que empuja la altura */
+  .fc-timeline-more-link,
+  .fc-more-link{
+    display:none !important;
+  }
+  
+  /* Centra verticalmente la píldora en el carril */
+  .fc .fc-timeline-events{
+    height:100% !important;
+    display:flex; align-items:center;
+  }
+  

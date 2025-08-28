@@ -1,0 +1,23 @@
+@import "@fullcalendar/daygrid/main.css";
+@import "@fullcalendar/timegrid/main.css";
+
+.fc {
+  background-color: #111827; /* Fondo oscuro */
+  color: #f3f4f6; /* Texto claro */
+}
+
+.fc-toolbar-title {
+  font-size: 1.25rem;
+  font-weight: bold;
+}
+
+.fc-daygrid-day,
+.fc-timegrid-slot {
+  border-color: #374151; /* Bordes suaves */
+}
+
+.fc-event {
+  font-size: 0.85rem;
+  padding: 2px;
+  border-radius: 4px;
+}
