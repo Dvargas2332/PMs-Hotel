@@ -1,18 +1,30 @@
+
 {
   "name": "pms-backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts"
   },
-  "keywords": [],
-  "author": "Diego Vargas Almengor",
-  "license": "ISC",
-  "description": "Proyecto de backend para PMS",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.1",
-    "express": "^5.1.0",
-    "pg": "^8.16.3"
+    "@prisma/client": "^5.16.1",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^9.3.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "prisma": "^5.16.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2"
   }
 }

@@ -19,7 +19,7 @@ export default function Launcher() {
       { name: "Front Desk", path: "/frontdesk", icon: Hotel, description: "Check-in/out, planning y reservas.", tag: "Operación" },
       { name: "Management", path: "/management", icon: Settings, description: "Tarifas, usuarios, permisos.", tag: "Admin" },
       { name: "Accounting", path: "/accounting", icon: Banknote, description: "Facturación y reportes.", tag: "Finanzas" },
-      { name: "Restaurant", path: "/restaurant", icon: UtensilsCrossed, description: "Órdenes y mesas.", tag: "F&B" },
+      { name: "Restaurant", path: "/restaurant", icon: UtensilsCrossed, description: "Órdenes y mesas.", tag: "F&D" },
     ],
     []
   );
@@ -72,7 +72,7 @@ export default function Launcher() {
 
         <footer className="mx-auto my-8 w-full max-w-6xl px-6 text-[11px] text-gray-600">
           <div className="flex items-center justify-between">
-            <span>© {new Date().getFullYear()} PMS hotel prueba </span>
+            <span>© {new Date().getFullYear()} Kazenohana PMS </span>
             <span className="hidden sm:inline-flex items-center gap-1"> </span>
           </div>
         </footer>
@@ -113,9 +113,7 @@ function ModuleCard({ mod, onOpen, focused }) {
           </Card>
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="rounded-lg text-xs bg-white border border-gray-300 text-gray-700 shadow">
-        Abrir {mod.name}
-      </TooltipContent>
+    
     </Tooltip>
   );
 }

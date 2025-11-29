@@ -1,6 +1,6 @@
 // Copyright (c) 2025 Diego Vargas. Todos los derechos reservados.
 // Uso, copia, modificación o distribución prohibidos sin autorización por escrito.
-
+// src/app.jsx
 
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from "react-router-dom";
@@ -8,6 +8,9 @@ import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet } from "react-r
 import Planning from "./components/Planning";
 import ReservationsPage from "./pages/FrontDeskPages/ReservationsPage";
 import ManagementPage from "./pages/Management/ManagementPage";
+
+// ⬇️ Importa el provider de settings (asegúrate de tener src/context/SettingsContext.jsx)
+import { SettingsProvider } from "./context/SettingsContext";
 
 function Layout() {
   return (
@@ -43,15 +46,18 @@ function NavItem({ to, children }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<Navigate to="/planning" replace />} />
-          <Route path="/planning" element={<Planning />} />
-          <Route path="/reservas" element={<ReservationsPage />} />
-          <Route path="/management" element={<ManagementPage />} />
-          <Route path="*" element={<Navigate to="/planning" replace />} />
-        </Route>
-      </Routes>
+      {/* ⬇️ Coloca el SettingsProvider DENTRO del BrowserRouter y por ENCIMA de Routes */}
+      <SettingsProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<Navigate to="/planning" replace />} />
+            <Route path="/planning" element={<Planning />} />
+            <Route path="/reservas" element={<ReservationsPage />} />
+            <Route path="/management" element={<ManagementPage />} />
+            <Route path="*" element={<Navigate to="/planning" replace />} />
+          </Route>
+        </Routes>
+      </SettingsProvider>
     </BrowserRouter>
   );
 }

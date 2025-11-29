@@ -15,14 +15,17 @@
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
     "@tippyjs/react": "^4.2.6",
+    "audit": "^0.0.6",
+    "axios": "^1.12.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fix": "^0.0.6",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.541.0",
     "middleware": "^1.0.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.8.0",
+    "react-router-dom": "^7.9.1",
     "react-scripts": "^5.0.1",
     "recharts": "^3.1.2",
     "tailwind-merge": "^3.3.1",
@@ -59,4 +62,5 @@
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6"
   }
+  
 }
