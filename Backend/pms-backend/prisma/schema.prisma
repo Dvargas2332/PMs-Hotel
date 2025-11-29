@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== Enums =====
+enum Role {
+  ADMIN
+  MANAGER
+  RECEPTION
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  CLEANING
+  BLOCKED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  CANCELED
+  REFUNDED
+}
+
+// ===== Models =====
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  name         String?
+  password     String
+  role         Role          @default(RECEPTION)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  reservations Reservation[]
+}
+
+model Guest {
+  id           String        @id @default(cuid())
+  firstName    String
+  lastName     String
+  email        String?       @unique
+  phone        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  reservations Reservation[]
+  invoices     Invoice[]
+}
+
+model Room {
+  id           String        @id @default(cuid())
+  number       String        @unique
+  type         String
+  status       RoomStatus    @default(AVAILABLE)
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  reservations Reservation[]
+}
+
+model Reservation {
+  id         String            @id @default(cuid())
+  code       String            @unique
+  roomId     String
+  guestId    String
+  userId     String?
+  checkIn    DateTime
+  checkOut   DateTime
+  adults     Int               @default(2)
+  children   Int               @default(0)
+  status     ReservationStatus @default(CONFIRMED)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  auditTrail Json?
+
+  room  Room  @relation(fields: [roomId], references: [id])
+  guest Guest @relation(fields: [guestId], references: [id])
+  user  User? @relation(fields: [userId], references: [id])
+
+  // lado opuesto 1–1 con Invoice
+  invoice Invoice?
+
+  @@index([roomId])
+  @@index([guestId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  reason    String?
+  payload   Json?
+  createdAt DateTime @default(now())
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  number        String        @unique
+  reservationId String        @unique
+  guestId       String
+  total         Decimal       @default(0) @db.Decimal(12, 2)
+  currency      String        @default("CRC")
+  status        InvoiceStatus @default(DRAFT)
+  eInvoice      Json?
+  auditTrail    Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // relación 1–1 con Reservation (con unique en reservationId)
+  reservation Reservation   @relation(fields: [reservationId], references: [id])
+  guest       Guest         @relation(fields: [guestId], references: [id])
+  items       InvoiceItem[]
+  payments    Payment[]
+
+  @@index([guestId])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Decimal  @default(0) @db.Decimal(12, 2)
+  total       Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  method    String
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+}

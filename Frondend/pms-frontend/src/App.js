@@ -1,8 +1,11 @@
 // src/App.js
 import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-// Componentes y páginas existentes
+// ⬇️ Provider de settings
+import { SettingsProvider } from "./context/SettingsContext";
+
+// Páginas / componentes
 import Planning from "./components/Planning";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/FrontDeskPages/Dashboard";
@@ -12,24 +15,21 @@ import ReservationsPage from "./pages/FrontDeskPages/ReservationsPage";
 import FacturacionPage from "./pages/FrontDeskPages/FacturacionPage";
 import HabitacionesBoard from "./pages/FrontDeskPages/HabitacionesBoard";
 
-// Nuevo: launcher y módulos
 import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
 import RestaurantPage from "./modulos/restaurant/RestaurantPage";
-
-// Management (index.jsx)
-import ManagementModule from "./modulos/management";
+import Managementpage from "./pages/Management/ManagementPage";
 
 export default function App() {
   return (
-    <Router>
+    // ⬇️ Envuelve todas las rutas con SettingsProvider
+    <SettingsProvider>
       <Routes>
-        {/* Pantalla inicial */}
+        {/* Inicio */}
         <Route path="/" element={<Launcher />} />
 
-        {/* FrontDesk con Layout y subrutas */}
+        {/* FrontDesk con Layout + Outlet */}
         <Route path="/frontdesk" element={<Layout />}>
-          {/* Index muestra Dashboard (sin redirección) */}
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="planning" element={<Planning />} />
@@ -38,25 +38,23 @@ export default function App() {
           <Route path="configuracion" element={<ConfiguracionPage />} />
           <Route path="facturacion" element={<FacturacionPage />} />
           <Route path="habitaciones" element={<HabitacionesBoard />} />
-          {/* Stub para Reportes (evita 404 desde el sidebar) */}
           <Route
             path="reportes"
             element={<div className="p-4">Reportes — próximamente</div>}
           />
-          {/* Fallback interno del módulo */}
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
 
-        {/* Management con subrutas definidas en modulos/management/index.jsx */}
-        <Route path="/management/*" element={<ManagementModule />} />
+        {/* Management (subrutas dentro del módulo) */}
+        <Route path="/management/*" element={<Managementpage />} />
 
-        {/* Otros módulos */}
+        {/* Otros módulos sueltos */}
         <Route path="/accounting" element={<AccountingPage />} />
         <Route path="/restaurant" element={<RestaurantPage />} />
 
         {/* Fallback global */}
         <Route path="*" element={<div className="p-4">Página no encontrada</div>} />
       </Routes>
-    </Router>
+    </SettingsProvider>
   );
 }
