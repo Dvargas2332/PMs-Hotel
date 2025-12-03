@@ -4,7 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { verify } from "../lib/jwt.js";
 
 
-export interface AuthUser { sub: string; role: "ADMIN"|"MANAGER"|"RECEPTION" }
+export interface AuthUser { sub: string; role: "ADMIN"|"MANAGER"|"RECEPTION"; hotelId?: string }
 
 
 export function auth(req: Request, res: Response, next: NextFunction) {

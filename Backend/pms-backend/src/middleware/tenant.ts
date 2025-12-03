@@ -3,7 +3,9 @@
 import type { Request, Response, NextFunction } from "express";
 
 export function tenantCtx(req: Request, _res: Response, next: NextFunction) {
-  // ejemplo simple: header opcional, si no, "default"
-  (req as any).tenantId = (req.headers["x-tenant-id"] as string) ?? "default";
+  // Preferimos el hotelId del usuario autenticado; fallback al header opcional
+  const hotelIdFromUser = (req as any)?.user?.hotelId as string | undefined;
+  const headerHotel = req.headers["x-tenant-id"] as string | undefined;
+  (req as any).tenantId = hotelIdFromUser ?? headerHotel ?? "default";
   next();
 }

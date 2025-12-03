@@ -4,12 +4,17 @@ import { mockApi } from "./mock";
 
 // ===== Entorno CRA (.env) =====
 // REACT_APP_API_URL, REACT_APP_MOCK (1/true para activar mock)
-const USE_MOCK =
-  process.env.REACT_APP_MOCK === "0" ||
-  String(process.env.REACT_APP_MOCK || "").toLowerCase() === "true";
+const USE_MOCK = ["1", "true", "yes"].includes(
+  String(process.env.REACT_APP_MOCK || "").toLowerCase()
+);
 
-const BASE = String(process.env.REACT_APP_API_URL || "http://localhost:4000/api")
-  .replace(/\/+$/, "");
+const BASE = String(process.env.REACT_APP_API_URL || "http://localhost:4000/api").replace(
+  /\/+$/,
+  ""
+);
+
+// Prefijos que existen en el backend real (si alguno no esta, caera al mock)
+const BACKEND_PREFIXES = ["/auth", "/reservations", "/rooms", "/guests", "/hotel", "/health", "/roles", "/permissions", "/restaurant"];
 
 // ===== Token helpers =====
 export function getToken() {
@@ -23,104 +28,106 @@ export function clearToken() {
 }
 
 // ===== Cliente HTTP (axios) =====
-let http = null;
+const http = !USE_MOCK
+  ? (() => {
+      const instance = axios.create({
+        baseURL: BASE,
+        headers: { "Content-Type": "application/json" },
+        timeout: 15000,
+      });
 
-if (!USE_MOCK) {
-  http = axios.create({
-    baseURL: BASE,
-    headers: { "Content-Type": "application/json" },
-    timeout: 15000,
-  });
+      // Authorization: Bearer <token>
+      instance.interceptors.request.use((cfg) => {
+        const token = getToken();
+        if (token) cfg.headers.Authorization = `Bearer ${token}`;
+        return cfg;
+      });
+      return instance;
+    })()
+  : null;
 
-  // Authorization: Bearer <token>
-  http.interceptors.request.use((cfg) => {
-    const token = getToken();
-    if (token) cfg.headers.Authorization = `Bearer ${token}`;
-    return cfg;
-  });
-}
+// Normaliza rutas: quita prefijos /api extra y fuerza slash inicial
+const normalizePath = (url = "") => {
+  const withoutOrigin = url.replace(/^https?:\/\/[^/]+/i, "");
+  let clean = withoutOrigin.startsWith("/api")
+    ? withoutOrigin.replace(/^\/api\/?/, "/")
+    : withoutOrigin;
+  clean = clean.replace(/^\/+/, "/");
+  if (!clean.startsWith("/")) clean = `/${clean}`;
+  return clean;
+};
+
+const shouldUseBackend = (path) => BACKEND_PREFIXES.some((p) => path.startsWith(p));
+
+const get = async (url, config) => {
+  const path = normalizePath(url);
+  if (!USE_MOCK && http && shouldUseBackend(path)) {
+    try {
+      return await http.get(path, config);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 501) throw err;
+    }
+  }
+  return mockApi.get(path, config);
+};
+
+const post = async (url, data, config) => {
+  const path = normalizePath(url);
+  if (!USE_MOCK && http && shouldUseBackend(path)) {
+    try {
+      return await http.post(path, data, config);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 501) throw err;
+    }
+  }
+  return mockApi.post(path, data, config);
+};
+
+const put = async (url, data, config) => {
+  const path = normalizePath(url);
+  if (!USE_MOCK && http && shouldUseBackend(path)) {
+    try {
+      return await http.put(path, data, config);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 501) throw err;
+    }
+  }
+  return mockApi.put(path, data, config);
+};
+
+const del = async (url, config) => {
+  const path = normalizePath(url);
+  if (!USE_MOCK && http && shouldUseBackend(path)) {
+    try {
+      return await http.delete(path, config);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 501) throw err;
+    }
+  }
+  return mockApi.delete(path, config);
+};
 
 // ===== API =====
-// Si USE_MOCK es true, delega en mockApi (debe exponer firmas equivalentes).
-// Si no, usa axios (http) para llamar al backend real.
-export const api = USE_MOCK
-  ? mockApi
-  : {
-      // --- auth ---
-      async login(email, password) {
-        const { data } = await http.post("/auth/login", { email, password });
-        return data;
-      },
-      async register(name, email, password) {
-        const { data } = await http.post("/auth/register", { name, email, password });
-        return data;
-      },
+// Hybrid: usa backend para los prefijos conocidos y mock para el resto o si 404.
+export const api = {
+  get,
+  post,
+  put,
+  delete: del,
+  // --- auth ---
+  async login(email, password) {
+    const { data } = await post("/auth/login", { email, password });
+    return data;
+  },
+  async register(name, email, password) {
+    const { data } = await post("/auth/register", { name, email, password });
+    return data;
+  },
+};
 
-      // --- rooms ---
-      async listRooms() {
-        const { data } = await http.get("/rooms");
-        return data;
-      },
-      async createRoom(room) {
-        const { data } = await http.post("/rooms", room);
-        return data;
-      },
-
-      async listRoomTypes() {
-        const { data } = await http.get("/room-types");
-        return data;
-      },
-
-      async createRoomType(payload) {
-        const { data } = await http.post("/room-types", payload);
-         return data;
-      },
-
-      async listRooms() {
-        const { data } = await http.get("/rooms"); 
-        return data; 
-      },
-
-
-      // --- guests ---
-      async listGuests(q) {
-        const path = q ? `/guests?q=${encodeURIComponent(q)}` : "/guests";
-        const { data } = await http.get(path);
-        return data;
-      },
-      async createGuest(g) {
-        const { data } = await http.post("/guests", g);
-        return data;
-      },
-
-      // --- reservations ---
-      async listReservations() {
-        const { data } = await http.get("/reservations");
-        return data;
-      },
-      async createReservation(r) {
-        const { data } = await http.post("/reservations", r);
-        return data;
-      },
-      async checkIn(id) {
-        const { data } = await http.post(`/reservations/${id}/checkin`);
-        return data;
-      },
-      async checkOut(id) {
-        const { data } = await http.post(`/reservations/${id}/checkout`);
-        return data;
-      },
-
-      // --- settings (Management) ---
-      async getSettings() {
-        const { data } = await http.get("/settings");
-        return data;
-      },
-      async updateSettings(patch) {
-        const { data } = await http.put("/settings", patch);
-        return data;
-      },
-    };
-
-// (Opcional) exporta http por si quieres usarlo en servicios específicos
+// (Opcional) exporta http por si quieres usarlo en servicios especificos
 export { http, BASE, USE_MOCK };

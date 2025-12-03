@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { CircleUser, LogOut, Bell } from "lucide-react";
+import useConfigStore from "../store/configStore";
+import { api } from "../lib/api";
 
 const TYPE_STYLES = {
   checkin:      "bg-emerald-100 text-emerald-900",
@@ -11,12 +15,18 @@ const TYPE_STYLES = {
 
 export default function Layout() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { config, setFx } = useConfigStore();
+  const fx = config?.accounting?.fx || {};
+  const fmtFx = (v) => (v || v === 0 ? Number(v).toFixed(2) : "—");
 
   // Panel de alertas y listado
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alerts, setAlerts] = useState([]); // [{id?, type, title, desc, at?}]
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const panelRef = useRef(null);
+  const menusRef = useRef(null);
 
   useEffect(() => {
     // Toggle abierto/cerrado
@@ -57,9 +67,12 @@ export default function Layout() {
 
     // Cerrar al hacer click fuera
     const onDocClick = (e) => {
-      if (!alertsOpen) return;
-      if (panelRef.current && !panelRef.current.contains(e.target)) {
+      if (!alertsOpen && !userMenuOpen) return;
+      const clickAlerts = panelRef.current && panelRef.current.contains(e.target);
+      const clickMenus = menusRef.current && menusRef.current.contains(e.target);
+      if (!clickAlerts && !clickMenus) {
         setAlertsOpen(false);
+        setUserMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", onDocClick);
@@ -74,7 +87,30 @@ export default function Layout() {
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("mousedown", onDocClick);
     };
-  }, [alertsOpen]);
+  }, [alertsOpen, userMenuOpen]);
+
+  useEffect(() => {
+    // Traer el fx del backend por hotel
+    const loadFx = async () => {
+      try {
+        const { data } = await api.get("/hotel/currency");
+        if (data) {
+          const next = {
+            ...fx,
+            base: data.base || fx.base || "CRC",
+            buy: Number(data.buy || 0),
+            sell: Number(data.sell || 0),
+            rates: { ...(fx.rates || {}), USD: Number(data.sell || data.buy || 0) },
+          };
+          setFx(next);
+        }
+      } catch (err) {
+        console.error("No se pudo cargar tipo de cambio", err);
+      }
+    };
+    loadFx();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const menu = [
     { to: ".", label: "Dashboard", end: true }, // index de /frontdesk
@@ -87,10 +123,17 @@ export default function Layout() {
   ];
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-white to-sky-50">
       {/* Sidebar */}
-      <aside className="w-64 bg-green-950 text-white flex flex-col">
-        <div className="p-4 text-2xl font-bold border-b border-green-900">Hotel Name</div>
+      <aside className="w-64 bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-xl">
+        <div className="px-4 py-5 border-b border-emerald-500/50 flex items-center justify-center">
+          <img
+            src="/kazehanalogo.png"
+            alt="Logo del hotel"
+            className="object-contain"
+            style={{ width: 120, height: 120 }}
+          />
+        </div>
         <nav className="flex-1 p-4 space-y-2">
           {menu.map((m) => (
             <NavLink
@@ -105,18 +148,79 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <div className="px-4 py-5 border-t border-emerald-500/50 flex items-center gap-4">
+          <img src="/kazehanalogo.png" alt="Logo" className="h-36 w-36 object-contain" />
+          <div className="leading-tight">
+            <div className="font-semibold text-white">Front Desk</div>
+            <div className="text-xs text-emerald-100/80">Kazehana PMS</div>
+          </div>
+        </div>
       </aside>
 
       {/* Main */}
       <div className="flex-1 flex flex-col">
         {/* Header */}
-        <header className="bg-white shadow p-4 flex justify-between items-center">
-          <h1 className="text-xl font-bold">Hotel Proyect</h1>
-          <div className="flex items-center gap-4">
-            <span>{new Date().toLocaleDateString()}</span>
-            <button className="bg-red-700 text-white px-3 py-1 rounded" onClick={() => navigate("/")}>
-              Salir
+        <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center">
+          <h1 className="text-xl font-bold text-emerald-900">Hotel Proyect</h1>
+          <div className="flex items-center gap-4 relative" ref={menusRef}>
+            <div className="hidden md:flex items-center">
+              <div className="rounded-lg px-4 py-2 text-sm text-white bg-gradient-to-r from-emerald-600 via-emerald-700 to-sky-700 shadow">
+                <span className="font-semibold">USD</span>
+                <span className="ml-3">Compra ₡{fmtFx(fx.buy || fx.rates?.USD)}</span>
+                <span className="ml-2">Venta ₡{fmtFx(fx.sell || fx.rates?.USD)}</span>
+              </div>
+            </div>
+            <button
+              className="relative p-2 rounded-lg border border-emerald-100 bg-white hover:bg-emerald-50/60"
+              onClick={() => {
+                setAlertsOpen((s) => !s);
+                setUserMenuOpen(false);
+              }}
+              aria-label="Alertas"
+            >
+              <Bell className="w-4 h-4" />
+              {alerts.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] leading-3 px-1.5 py-0.5 rounded-full">
+                  {alerts.length}
+                </span>
+              )}
             </button>
+            <div className="relative">
+              <button
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-white hover:bg-emerald-50/60 text-sm"
+                onClick={() => {
+                  setUserMenuOpen((v) => !v);
+                  setAlertsOpen(false);
+                }}
+                aria-expanded={userMenuOpen}
+                aria-haspopup="menu"
+              >
+                <CircleUser className="w-5 h-5 text-gray-600" />
+                <div className="text-left text-sm leading-tight">
+                  <div className="font-medium text-gray-800">{user?.name || user?.email || "Usuario"}</div>
+                  <div className="text-xs text-gray-500">{user?.role || "Hotel"}</div>
+                </div>
+              </button>
+              {userMenuOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white border shadow-xl rounded-xl overflow-hidden z-30">
+                  <div className="px-3 py-2 text-sm border-b">
+                    <div className="font-semibold text-gray-800">{user?.name || "Usuario"}</div>
+                    <div className="text-xs text-gray-500">{user?.email || user?.role || ""}</div>
+                  </div>
+                  <button
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 text-left"
+                    onClick={() => {
+                      setUserMenuOpen(false);
+                      navigate("/launcher");
+                    }}
+                  >
+                    <LogOut className="w-4 h-4 text-emerald-700" />
+                    <span>Salir</span>
+                  </button>
+                </div>
+              )}
+            </div>
+            <span className="text-sm text-gray-600">{new Date().toLocaleDateString()}</span>
           </div>
         </header>
 

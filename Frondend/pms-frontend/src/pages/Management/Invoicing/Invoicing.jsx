@@ -1,6 +1,6 @@
 //src/pages/Management/Invoicing/Invoicing.jsx
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -10,11 +10,11 @@ import { api } from "../../../lib/api";
 export default function Invoicing() {
   const [cfg, setCfg] = useState({ einvoiceEnabled:true, profile:"GENERAL", sequencePrefix:"FD-", environment:"test" });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const { data } = await api.get("/api/invoicing");
     setCfg(data || cfg);
-  };
-  useEffect(()=>{ load(); },[]);
+  }, [cfg]);
+  useEffect(() => { load(); }, [load]);
 
   const save = async () => { await api.put("/api/invoicing", cfg); };
 

@@ -14,9 +14,12 @@ const defaultConfig = {
       provider: "manual",          // manual | bccr | ecb | custom
       base: "CRC",
       display: "CRC",
-      supported: ["CRC", "USD", "EUR"],
-      rates: {},                   // { USD: n, EUR: n } relativos a base
+      secondary: "USD",
+      supported: ["CRC", "USD"],
+      rates: { USD: 0 },           // { USD: n, EUR: n } relativos a base
       rounding: 2,
+      buy: 0,                      // compra moneda secundaria
+      sell: 0,                     // venta moneda secundaria
       lastUpdated: null,
       custom: { endpoint: "", apiKey: "", headers: "" },
       bccr: { use: "venta" },      // compra | venta | promedio
@@ -204,7 +207,7 @@ const useConfigStore = create(
     }),
     {
       name: "pms-config",
-      version: 2, // ⬅️ subimos versión para migrar fx/deduplicar
+      version: 3, // bump para buy/sell FX y dedupe rooms
       partialize: (state) => ({
         config: {
           hotel: state.config.hotel,
@@ -216,18 +219,12 @@ const useConfigStore = create(
         },
       }),
       migrate: (state, fromVersion) => {
-        // estado puede ser undefined la primera vez
         const s = state || { config: defaultConfig };
 
         if (fromVersion < 2) {
-          // Asegurar fx dentro de accounting y deduplicar rooms por número
           const prev = s.config || defaultConfig;
-
-          // dedupe rooms por número
           const dedupMap = new Map();
-          for (const r of prev.rooms || []) {
-            dedupMap.set(String(r.number).trim(), r);
-          }
+          for (const r of prev.rooms || []) dedupMap.set(String(r.number).trim(), r);
 
           const withFx = {
             ...prev,
@@ -241,6 +238,27 @@ const useConfigStore = create(
 
           return { ...s, config: withFx };
         }
+
+        if (fromVersion < 3) {
+          const prev = s.config || defaultConfig;
+          const fxPrev = prev.accounting?.fx || {};
+          return {
+            ...s,
+            config: {
+              ...prev,
+              accounting: {
+                ...prev.accounting,
+                fx: {
+                  ...defaultConfig.accounting.fx,
+                  ...fxPrev,
+                  buy: fxPrev.buy ?? 0,
+                  sell: fxPrev.sell ?? 0,
+                },
+              },
+            },
+          };
+        }
+
         return s;
       },
       onRehydrateStorage: () => (state) => {

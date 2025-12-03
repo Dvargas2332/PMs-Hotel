@@ -1,6 +1,6 @@
 //src/pages/Management/Hotel/HotelInfo.jsx
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -14,7 +14,7 @@ export default function HotelInfo() {
   });
 
   const load = async () => {
-    const { data } = await api.get("/api/hotelInfo");
+    const { data } = await api.get("/hotel");
     if (data) {
       setInfo({
         ...data,
@@ -25,14 +25,20 @@ export default function HotelInfo() {
   };
   useEffect(()=>{ load(); },[]);
 
-  const save = async () => {
+  const save = useCallback(async () => {
     const payload = {
       ...info,
       languages: info.languages.split(",").map(s=>s.trim()),
       nationalities: info.nationalities.split(",").map(s=>s.trim())
     };
-    await api.post("/api/hotelInfo", payload);
-  };
+    await api.put("/hotel", payload);
+  }, [info]);
+
+  useEffect(() => {
+    const onSave = () => { save(); };
+    window.addEventListener("pms:save-hotel-info", onSave);
+    return () => window.removeEventListener("pms:save-hotel-info", onSave);
+  }, [save]);
 
   return (
     

@@ -38,18 +38,16 @@ const todayLocal = () => {
 };
 
 // Filtros de estado válidos
+const isCanceled = (status) => {
+  const s = (status || "").toUpperCase();
+  return s === "CANCELADA" || s === "CANCELED" || s === "NO SHOW" || s === "NO_SHOW";
+};
 const isActiveReservationToday = (r, day) =>
-  r &&
-  r.checkInDate <= day &&
-  day < r.checkOutDate &&
-  r.status !== "Cancelada" &&
-  r.status !== "No show";
+  r && r.checkInDate <= day && day < r.checkOutDate && !isCanceled(r.status || r.rawStatus);
 
-const isArrivalToday = (r, day) =>
-  r.checkInDate === day && r.status !== "Cancelada" && r.status !== "No show";
+const isArrivalToday = (r, day) => r.checkInDate === day && !isCanceled(r.status || r.rawStatus);
 
-const isDepartureToday = (r, day) =>
-  r.checkOutDate === day && r.status !== "Cancelada" && r.status !== "No show";
+const isDepartureToday = (r, day) => r.checkOutDate === day && !isCanceled(r.status || r.rawStatus);
 
 /** Hook reutilizable para Dashboard (métricas rápidas) */
 export function useHabitacionesMetrics() {
@@ -77,12 +75,12 @@ export function useHabitacionesMetrics() {
 
   const arrivalsToday = useMemo(
     () => (reservations || []).filter((r) => isArrivalToday(r, today)).length,
-    [reservations]
+    [reservations, today]
   );
 
   const departuresToday = useMemo(
     () => (reservations || []).filter((r) => isDepartureToday(r, today)).length,
-    [reservations]
+    [reservations, today]
   );
 
   const counts = useMemo(() => {

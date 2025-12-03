@@ -22,6 +22,7 @@ export function startDailyChargesJob() {
             guestId: r.guestId,
             number: `INV-${today.toISOString().slice(0,10)}-${r.id.slice(0,6)}`,
             status: "DRAFT",
+            hotelId: r.hotelId,
             ...(r.room?.currency ? { currency: r.room.currency } : {}),
           },
           select: { id: true },
@@ -38,7 +39,7 @@ export function startDailyChargesJob() {
         if (!exists) {
           const rate = r.room?.baseRate ?? 0;
           await prisma.invoiceItem.create({
-            data: { invoiceId, description: concept, unitPrice: rate, total: rate, quantity: 1 },
+            data: { invoiceId, description: concept, unitPrice: rate, total: rate, quantity: 1, hotelId: r.hotelId },
           });
         }
       }
