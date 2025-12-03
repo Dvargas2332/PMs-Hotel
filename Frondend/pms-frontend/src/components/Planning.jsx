@@ -1,154 +1,239 @@
-import React, { useMemo, useCallback, useState } from "react";
-import FullCalendar from "@fullcalendar/react";
-import resourceTimelinePlugin from "@fullcalendar/resource-timeline";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
+import Timeline from "react-calendar-timeline";
+import moment from "moment";
 import { useHotelData } from "../context/HotelDataContext";
+import "react-calendar-timeline/style.css";
+import "./Planning.css";
+import { api } from "../lib/api";
 
-// --- Util: YYYY-MM-DD local (sin timezone UTC shift)
+// Util: YYYY-MM-DD local (sin timezone UTC shift)
 function ymdLocal(d) {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+const toYMD = (v) => {
+  if (!v) return "";
+  if (typeof v === "string") return v.slice(0, 10);
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+};
+
+const mapRemoteReservation = (r) => ({
+  id: String(r.id),
+  roomId: String(r.roomId),
+  guestName: [r.guest?.firstName, r.guest?.lastName].filter(Boolean).join(" ").trim() || r.guestId,
+  checkInDate: toYMD(r.checkInDate || r.checkIn),
+  checkOutDate: toYMD(r.checkOutDate || r.checkOut),
+  payments: Array.isArray(r.payments) ? r.payments : [],
+  channel: r.channel || r.source || "",
+});
+const mapRemoteRoom = (r) => ({ id: String(r.id), title: r.title ?? r.number ?? String(r.id) });
 
 export default function Planning() {
   const { settings, rooms, reservations } = useHotelData();
-  const { checkIn, checkOut, timeZone } = settings;
+  const { checkIn, checkOut } = settings;
+  const [remoteRooms, setRemoteRooms] = useState(null);
+  const [remoteReservations, setRemoteReservations] = useState(null);
+  const [viewStart, setViewStart] = useState(() => moment().startOf("day"));
+  const [viewEnd, setViewEnd] = useState(() => moment().startOf("day").add(15, "day"));
 
-  const resources = useMemo(
-    () => (rooms || []).map((r) => ({ id: String(r.id), title: r.title ?? String(r.id) })),
-    [rooms]
-  );
-
-  const events = useMemo(
-    () =>
-      (reservations || []).map((r) => ({
-        id: String(r.id),
-        resourceId: String(r.roomId),
-        title: r.guestName,
-        start: `${r.checkInDate}T${checkIn}`,
-        end: `${r.checkOutDate}T${checkOut}`, // end exclusivo → turnover OK
-        extendedProps: {
-          roomId: String(r.roomId),
-          checkInDate: r.checkInDate,
-          checkOutDate: r.checkOutDate,
-          guestName: r.guestName,
-        },
-      })),
-    [reservations, checkIn, checkOut]
-  );
-
-  // Colores “orejas”
-  const CI = "#10b981"; // verde check-in
-  const MID = "#3f3f46"; // gris oscuro cuerpo
-  const CO = "#f59e0b"; // naranja check-out
-
-  const eventContent = useCallback((arg) => {
-    const el = document.createElement("div");
-    el.className =
-      "px-3 py-1 rounded-full text-xs font-medium text-white border border-white/10 shadow-sm";
-    el.style.whiteSpace = "nowrap";
-    el.style.overflow = "hidden";
-    el.style.textOverflow = "ellipsis";
-    // Orejas de color (12px a cada lado)
-    el.style.background = `linear-gradient(to right, ${CI} 0 12px, ${MID} 12px calc(100% - 12px), ${CO} calc(100% - 12px))`;
-    el.textContent = arg.event.title || "";
-    return { domNodes: [el] };
+  // Cargar datos desde backend/mock para reflejar configuraciones del Management
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [resv, rms] = await Promise.all([api.get("/reservations"), api.get("/rooms")]);
+        if (Array.isArray(resv?.data)) setRemoteReservations(resv.data.map(mapRemoteReservation));
+        if (Array.isArray(rms?.data)) setRemoteRooms(rms.data.map(mapRemoteRoom));
+      } catch {
+        // si falla, seguimos con los datos del contexto
+      }
+    };
+    load();
   }, []);
 
-  // ---- Modales simples ----
-  const [active, setActive] = useState(null);
-  // active = { type: 'checkin'|'checkout', data: {...} }
+  const roomsData = remoteRooms ?? rooms;
+  const reservationsData = remoteReservations ?? reservations;
+  const windowDays = useMemo(() => Math.max(1, viewEnd.diff(viewStart, "days")), [viewStart, viewEnd]);
 
+  // Grupos (habitaciones)
+  const groups = useMemo(
+    () => (roomsData || []).map((r) => ({ id: String(r.id), title: r.title ?? String(r.id) })),
+    [roomsData]
+  );
+
+  // Items (reservas)
+  const items = useMemo(
+    () =>
+      (reservationsData || []).map((r) => {
+        const start = moment(`${r.checkInDate}T${checkIn}`);
+        let end = moment(`${r.checkOutDate}T${checkOut}`);
+        if (!end.isAfter(start)) {
+          end = start.clone().add(1, "hour");
+        }
+        const hasPayments = Array.isArray(r.payments) && r.payments.length > 0;
+        const isOta = typeof r.channel === "string" && /ota|booking|expedia|airbnb/i.test(r.channel || "");
+        // Paleta moderna sin tonos rojos: degradado esmeralda → azul petróleo
+        const background = "linear-gradient(90deg, #10b981 0%, #0f172a 50%, #0ea5e9 100%)";
+        return {
+          id: String(r.id),
+          group: String(r.roomId),
+          title: r.guestName,
+          start_time: start,
+          end_time: end,
+          itemProps: {
+            style: {
+              background,
+              color: "white",
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.2)",
+              boxShadow: "0 8px 16px rgba(15, 23, 42, 0.15)",
+            },
+          },
+          data: {
+            roomId: String(r.roomId),
+            checkInDate: r.checkInDate,
+            checkOutDate: r.checkOutDate,
+            guestName: r.guestName,
+            hasPayments,
+            isOta,
+          },
+        };
+      }),
+    [reservationsData, checkIn, checkOut]
+  );
+
+  // Modales
+  const [active, setActive] = useState(null); // { type, data }
   const closeModal = () => setActive(null);
 
-  // Determina fase de la reserva respecto a HOY
-  const getPhase = (evt) => {
-    const todayStr = ymdLocal(new Date());
-    const startStr = ymdLocal(new Date(evt.start));
-    const endStr = ymdLocal(new Date(evt.end));
-    // Si hoy es exactamente el día de check-in
-    if (todayStr === startStr) return "checkin";
-    // Si hoy es exactamente el día de check-out (independiente de la hora)
-    if (todayStr === endStr) return "checkout";
-    // In-house si hoy está entre start (incl.) y end (excl.) por fecha
-    if (todayStr > startStr && todayStr < endStr) return "inhouse";
-    // Futuras o pasadas
-    return todayStr < startStr ? "upcoming" : "past";
-  };
+  const onItemSelect = useCallback(
+    (id) => {
+      const found = items.find((it) => String(it.id) === String(id));
+      if (!found) return;
+      const todayStr = ymdLocal(new Date());
+      const { checkInDate, checkOutDate } = found.data;
+      let type = null;
+      if (todayStr === checkInDate) type = "checkin";
+      else if (todayStr === checkOutDate) type = "checkout";
+      else if (todayStr > checkInDate && todayStr < checkOutDate) type = "checkout";
 
-  const onEventClick = useCallback((clickInfo) => {
-    const phase = getPhase(clickInfo.event);
-    const { guestName, roomId, checkInDate, checkOutDate } = clickInfo.event.extendedProps;
+      if (type) setActive({ type, data: { id, ...found.data } });
+    },
+    [items]
+  );
 
-    if (phase === "checkin") {
-      setActive({
-        type: "checkin",
-        data: { id: clickInfo.event.id, guestName, roomId, checkInDate, checkOutDate },
+  // Navegación de fechas controlada
+  const shiftWindow = useCallback(
+    (days) => {
+      setViewStart((s) => {
+        const nextStart = s.clone().add(days, "day");
+        setViewEnd(nextStart.clone().add(windowDays, "day"));
+        return nextStart;
       });
-    } else if (phase === "inhouse" || phase === "checkout") {
-      setActive({
-        type: "checkout",
-        data: { id: clickInfo.event.id, guestName, roomId, checkInDate, checkOutDate },
-      });
-    } else {
-      // No hacer nada para futuras/pasadas (o podrías abrir detalle)
-    }
-  }, []);
+    },
+    [windowDays]
+  );
+
+  const handleToday = useCallback(() => {
+    const start = moment().startOf("day");
+    setViewStart(start);
+    setViewEnd(start.clone().add(windowDays, "day"));
+  }, [windowDays]);
+
+  const onTimeChange = useCallback(
+    (start, end) => {
+      const s = moment(start);
+      const len = Math.max(1, moment(end).diff(moment(start), "days"));
+      setViewStart(s);
+      setViewEnd(s.clone().add(len, "day"));
+    },
+    []
+  );
 
   return (
-    <div className="p-4">
-      <FullCalendar
-        plugins={[resourceTimelinePlugin]}
-        timeZone={timeZone}
-        initialView="resourceTimeline15d"
-        headerToolbar={{
-          left: "prev,next today",
-          center: "title",
-          right: "resourceTimeline7d,resourceTimeline15d,resourceTimeline30d",
-        }}
-        views={{
-          resourceTimeline7d: { type: "resourceTimeline", duration: { days: 7 }, buttonText: "7 días" },
-          resourceTimeline15d: { type: "resourceTimeline", duration: { days: 15 }, buttonText: "15 días" },
-          resourceTimeline30d: { type: "resourceTimeline", duration: { days: 30 }, buttonText: "30 días" },
-        }}
-        // 1 columna por día (sin horas)
-        slotDuration={{ days: 1 }}
-        slotLabelInterval={{ days: 1 }}
-        slotLabelFormat={{ day: "2-digit", month: "short" }}
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 p-4 md:p-6">
+      <div className="mx-auto max-w-[1400px] space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">Planner</h1>
+            <p className="text-sm text-slate-600">Vista de ocupación por habitación, sin licencias.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <LegendDot color="#10b981" label="Check-in" />
+            <LegendDot color="#3f3f46" label="Estadía" />
+            <LegendDot color="#f59e0b" label="Check-out" />
+          </div>
+        </div>
 
-        resourceAreaHeaderContent="Hab."
-        resourceAreaWidth="120px"
-        stickyHeaderDates
-        expandRows
-        height="auto"
+        <div className="rounded-2xl border bg-white shadow-sm p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm text-slate-600">
+              Rango: {viewStart.format("YYYY-MM-DD")} -> {viewEnd.format("YYYY-MM-DD")}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                className="h-9 rounded-lg border px-3 text-sm"
+                value={viewStart.format("YYYY-MM-DD")}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  const start = moment(val, "YYYY-MM-DD");
+                  setViewStart(start);
+                  setViewEnd(start.clone().add(windowDays, "day"));
+                }}
+              />
+              <button
+                className="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-sm"
+                onClick={() => shiftWindow(-7)}
+              >
+                ← 7d
+              </button>
+              <button
+                className="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-sm"
+                onClick={handleToday}
+              >
+                Hoy
+              </button>
+              <button
+                className="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-sm"
+                onClick={() => shiftWindow(7)}
+              >
+                7d →
+              </button>
+            </div>
+          </div>
+          <Timeline
+            groups={groups}
+            items={items}
+            defaultTimeStart={viewStart}
+            defaultTimeEnd={viewEnd}
+            lineHeight={48}
+            itemHeightRatio={0.8}
+            canMove={false}
+            canResize={false}
+            stackItems
+            onItemSelect={onItemSelect}
+            itemTouchSendsClick
+            sidebarWidth={150}
+            visibleTimeStart={viewStart.valueOf()}
+            visibleTimeEnd={viewEnd.valueOf()}
+            onTimeChange={onTimeChange}
+          />
+        </div>
+      </div>
 
-        resources={resources}
-        events={events}
-
-        // 👉 Un solo carril por recurso (misma línea siempre)
-        eventMaxStack={1}
-        // importante: NO apiles múltiples filas
-        // (mientras no se solapen en tiempo, quedarán en la misma línea)
-
-        editable={false}
-        eventContent={eventContent}
-        moreLinkContent={() => ""}
-
-        // 👇 Click en evento → abrir Check-in/Checkout
-        eventClick={onEventClick}
-      />
-
-      {/* ---------- MODALES ---------- */}
+      {/* Modales */}
       {active?.type === "checkin" && (
         <Modal onClose={closeModal} title="Realizar Check-in">
           <div className="space-y-3">
             <Row label="Huésped" value={active.data.guestName} />
             <Row label="Habitación" value={active.data.roomId} />
-            <Row label="Estadía" value={`${active.data.checkInDate} → ${active.data.checkOutDate}`} />
-            <div className="text-sm text-gray-500">
-              Confirma documentos, firma y método de pago de garantía.
-            </div>
+            <Row label="Estadía" value={`${active.data.checkInDate} -> ${active.data.checkOutDate}`} />
+            <div className="text-sm text-gray-500">Confirma documentos, firma y método de pago de garantía.</div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-2 rounded bg-gray-100" onClick={closeModal}>
                 Cancelar
@@ -156,9 +241,7 @@ export default function Planning() {
               <button
                 className="px-3 py-2 rounded bg-emerald-600 text-white"
                 onClick={() => {
-                  // TODO: aquí disparas tu acción real de check-in (API/Context)
-                  // e.g. checkInReservation(active.data.id)
-                  alert("Check-in realizado ✔");
+                  alert("Check-in realizado");
                   closeModal();
                 }}
               >
@@ -176,15 +259,14 @@ export default function Planning() {
             <Row label="Habitación" value={active.data.roomId} />
             <Row label="Salida" value={active.data.checkOutDate} />
             <div className="rounded-lg border p-3 bg-white">
-              {/* Aquí integrarías cargos reales. Por ahora, placeholder. */}
               <div className="text-sm text-gray-600">Resumen de cargos</div>
               <ul className="mt-2 text-sm text-gray-700 list-disc ml-5">
-                <li>Estadía (noches): —</li>
-                <li>Impuestos / fees: —</li>
-                <li>Consumos: —</li>
-                <li>Pagos / Depósitos: —</li>
+                <li>Estadía (noches): ...</li>
+                <li>Impuestos / fees: ...</li>
+                <li>Consumos: ...</li>
+                <li>Pagos / Depósitos: ...</li>
               </ul>
-              <div className="mt-2 font-semibold">Total a pagar: —</div>
+              <div className="mt-2 font-semibold">Total a pagar: ...</div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-2 rounded bg-gray-100" onClick={closeModal}>
@@ -193,9 +275,7 @@ export default function Planning() {
               <button
                 className="px-3 py-2 rounded bg-indigo-600 text-white"
                 onClick={() => {
-                  // TODO: aquí disparas tu acción real de checkout / facturación
-                  // e.g. openInvoice(active.data.id) o crear factura en backend
-                  alert("Factura generada y Checkout realizado ✔");
+                  alert("Factura generada y Checkout realizado");
                   closeModal();
                 }}
               >
@@ -209,7 +289,7 @@ export default function Planning() {
   );
 }
 
-/* ------- helpers UI locales ------- */
+// Helpers UI
 function Modal({ title, onClose, children }) {
   return (
     <div className="fixed inset-0 z-50">
@@ -219,7 +299,7 @@ function Modal({ title, onClose, children }) {
           <div className="flex items-center justify-between px-6 py-4 border-b">
             <h3 className="text-lg font-semibold">{title}</h3>
             <button onClick={onClose} className="px-3 py-1 rounded hover:bg-gray-100">
-              ✕
+              ×
             </button>
           </div>
           <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>
@@ -233,7 +313,16 @@ function Row({ label, value }) {
   return (
     <div className="text-sm">
       <span className="text-gray-500">{label}: </span>
-      <span className="text-gray-900 font-medium">{value || "—"}</span>
+      <span className="text-gray-900 font-medium">{value || "-"}</span>
     </div>
+  );
+}
+
+function LegendDot({ color, label }) {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-1 border border-slate-200 text-[11px] text-slate-700">
+      <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
   );
 }

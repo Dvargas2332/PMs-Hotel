@@ -1,287 +1,186 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { useHotelData } from "../../context/HotelDataContext";
 
-// Datos de ejemplo
-const initialClientes = [
-  {
-    id: 1,
-    nombre: "Juan Pérez",
-    tipoId: "Fisica",
-    numeroId: "1-234-56789",
-    email: "juan@mail.com",
-    telefono: "8888-8888",
-    direccion: "Calle 123, San José",
-    provincia: "San José",
-    canton: "Central",
-    distrito: "Carmen",
-    codPostal: "10101",
-  },
-  {
-    id: 2,
-    nombre: "Empresa XYZ",
-    tipoId: "Juridica",
-    numeroId: "3-456-78901",
-    email: "contacto@xyz.com",
-    telefono: "8555-5555",
-    direccion: "Avenida 45, Heredia",
-    provincia: "Heredia",
-    canton: "Central",
-    distrito: "Mercedes",
-    codPostal: "40101",
-  },
-];
+const emptyForm = { firstName: "", lastName: "", email: "", phone: "" };
 
-const ClientesPage = () => {
-  const [clientes, setClientes] = useState(initialClientes);
-  const [formData, setFormData] = useState({
-    nombre: "",
-    tipoId: "",
-    numeroId: "",
-    email: "",
-    telefono: "",
-    direccion: "",
-    provincia: "",
-    canton: "",
-    distrito: "",
-    codPostal: "",
-  });
-  const [editId, setEditId] = useState(null);
+export default function ClientesPage() {
+  const { guests, loading, refreshGuests, createGuest, updateGuest } = useHotelData();
+  const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
-  const [filterTipoId, setFilterTipoId] = useState("");
+  const [editId, setEditId] = useState(null);
 
-  // Crear o actualizar cliente
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  useEffect(() => {
+    refreshGuests();
+  }, [refreshGuests]);
 
-    // Validación básica
-    if (!formData.nombre || !formData.tipoId || !formData.numeroId || !formData.email || !formData.telefono) {
-      alert("Por favor completa los campos obligatorios.");
-      return;
-    }
-
-    // Validar duplicados (tipo + número)
-    const duplicate = clientes.find(
-      (c) => c.tipoId === formData.tipoId && c.numeroId === formData.numeroId && c.id !== editId
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return guests;
+    return guests.filter(
+      (g) =>
+        (g.name || "").toLowerCase().includes(term) ||
+        (g.email || "").toLowerCase().includes(term) ||
+        (g.phone || "").toLowerCase().includes(term)
     );
-    if (duplicate) {
-      alert("Ya existe un cliente con este tipo y número de identificación.");
+  }, [guests, search]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.firstName || !form.lastName) {
+      alert("Nombre y apellidos son obligatorios");
       return;
     }
-
-    if (editId) {
-      // Actualizar cliente
-      setClientes(clientes.map((c) => (c.id === editId ? { id: editId, ...formData } : c)));
+    try {
+      if (editId) {
+        await updateGuest(editId, form);
+      } else {
+        await createGuest(form);
+      }
+      setForm(emptyForm);
       setEditId(null);
-    } else {
-      // Crear nuevo cliente
-      const newCliente = { id: Date.now(), ...formData };
-      setClientes([...clientes, newCliente]);
+      setSearch("");
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "No se pudo guardar el huésped";
+      alert(msg);
     }
+  };
 
-    setFormData({
-      nombre: "",
-      tipoId: "",
-      numeroId: "",
-      email: "",
-      telefono: "",
-      direccion: "",
-      provincia: "",
-      canton: "",
-      distrito: "",
-      codPostal: "",
+  const onEdit = (g) => {
+    setEditId(g.id);
+    setForm({
+      firstName: g.firstName || "",
+      lastName: g.lastName || "",
+      email: g.email || "",
+      phone: g.phone || "",
     });
   };
 
-  const handleEdit = (cliente) => {
-    setFormData({ ...cliente });
-    setEditId(cliente.id);
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm("¿Seguro que quieres eliminar este cliente?")) {
-      setClientes(clientes.filter((c) => c.id !== id));
-    }
-  };
-
-  // Filtrar clientes según búsqueda y tipo de ID
-  const filteredClientes = clientes.filter((c) => {
-    const matchesSearch =
-      c.nombre.toLowerCase().includes(search.toLowerCase()) ||
-      c.numeroId.toLowerCase().includes(search.toLowerCase());
-    const matchesTipo = filterTipoId ? c.tipoId === filterTipoId : true;
-    return matchesSearch && matchesTipo;
-  });
-
   return (
-    <div className="p-6">
-      <h1 className="text-3xl font-bold mb-6">Clientes</h1>
-
-      {/* Búsqueda y filtros */}
-      <div className="mb-4 flex flex-col md:flex-row gap-3 max-w-3xl">
-        <input
-          type="text"
-          placeholder="Buscar por nombre o ID"
-          className="border p-2 rounded flex-1"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <select
-          className="border p-2 rounded w-60"
-          value={filterTipoId}
-          onChange={(e) => setFilterTipoId(e.target.value)}
+    <div className="p-6 bg-gray-50 min-h-screen space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Huéspedes</h1>
+          <p className="text-sm text-slate-600">Listado conectado al backend /guests.</p>
+        </div>
+        <button
+          className="px-3 py-2 rounded border bg-white text-sm hover:bg-gray-100"
+          onClick={refreshGuests}
+          disabled={loading.guests}
         >
-          <option value="">Filtrar por tipo de ID</option>
-          <option value="Fisica">Física</option>
-          <option value="Juridica">Jurídica</option>
-          <option value="DIMEX">DIMEX</option>
-          <option value="Pasaporte">Pasaporte</option>
-        </select>
+          Recargar
+        </button>
       </div>
 
-      {/* Formulario Crear/Editar */}
-      <form onSubmit={handleSubmit} className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl">
-        <input
-          type="text"
-          placeholder="Nombre / Razón social"
-          className="border p-2 rounded"
-          value={formData.nombre}
-          onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-        />
+      <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
+        <h2 className="text-lg font-semibold">{editId ? "Editar huésped" : "Crear huésped"}</h2>
+        <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Nombre</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={form.firstName}
+              onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Apellidos</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={form.lastName}
+              onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Email</label>
+            <input
+              type="email"
+              className="w-full border rounded px-3 py-2"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Teléfono</label>
+            <input
+              className="w-full border rounded px-3 py-2"
+              value={form.phone}
+              onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            />
+          </div>
+          <div className="md:col-span-2 flex justify-end gap-2">
+            <button
+              type="button"
+              className="px-3 py-2 rounded border bg-gray-100 text-sm"
+              onClick={() => {
+                setEditId(null);
+                setForm(emptyForm);
+              }}
+            >
+              Limpiar
+            </button>
+            <button
+              type="submit"
+              disabled={loading.action}
+              className="px-4 py-2 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-500"
+            >
+              {editId ? "Actualizar" : "Crear"}
+            </button>
+          </div>
+        </form>
+      </div>
 
-        {/* Tipo y número de identificación */}
-        <div className="flex gap-2">
-          <select
-            className="border p-2 rounded w-1/2"
-            value={formData.tipoId}
-            onChange={(e) => setFormData({ ...formData, tipoId: e.target.value })}
-          >
-            <option value="">Tipo de ID</option>
-            <option value="Fisica">Física</option>
-            <option value="Juridica">Jurídica</option>
-            <option value="DIMEX">DIMEX</option>
-            <option value="Pasaporte">Pasaporte</option>
-          </select>
+      <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h2 className="text-lg font-semibold">Lista</h2>
           <input
-            type="text"
-            placeholder="Número de identificación"
-            className="border p-2 rounded w-1/2"
-            value={formData.numeroId}
-            onChange={(e) => setFormData({ ...formData, numeroId: e.target.value })}
+            className="border rounded px-3 py-2 text-sm w-full md:w-64"
+            placeholder="Buscar por nombre, email o teléfono"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        <input
-          type="email"
-          placeholder="Email"
-          className="border p-2 rounded"
-          value={formData.email}
-          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Teléfono"
-          className="border p-2 rounded"
-          value={formData.telefono}
-          onChange={(e) => setFormData({ ...formData, telefono: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Dirección"
-          className="border p-2 rounded"
-          value={formData.direccion}
-          onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Provincia"
-          className="border p-2 rounded"
-          value={formData.provincia}
-          onChange={(e) => setFormData({ ...formData, provincia: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Cantón"
-          className="border p-2 rounded"
-          value={formData.canton}
-          onChange={(e) => setFormData({ ...formData, canton: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Distrito"
-          className="border p-2 rounded"
-          value={formData.distrito}
-          onChange={(e) => setFormData({ ...formData, distrito: e.target.value })}
-        />
-        <input
-          type="text"
-          placeholder="Código Postal (opcional)"
-          className="border p-2 rounded"
-          value={formData.codPostal}
-          onChange={(e) => setFormData({ ...formData, codPostal: e.target.value })}
-        />
-
-        <button
-          type="submit"
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 col-span-2"
-        >
-          {editId ? "Actualizar Cliente" : "Agregar Cliente"}
-        </button>
-      </form>
-
-      {/* Lista de Clientes */}
-      <table className="w-full border-collapse border text-sm">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border p-2">Nombre</th>
-            <th className="border p-2">ID</th>
-            <th className="border p-2">Email</th>
-            <th className="border p-2">Teléfono</th>
-            <th className="border p-2">Dirección</th>
-            <th className="border p-2">Provincia</th>
-            <th className="border p-2">Cantón</th>
-            <th className="border p-2">Distrito</th>
-            <th className="border p-2">Cod. Postal</th>
-            <th className="border p-2">Acciones</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredClientes.map((cliente) => (
-            <tr key={cliente.id} className="hover:bg-gray-50">
-              <td className="border p-2">{cliente.nombre}</td>
-              <td className="border p-2">{cliente.tipoId} - {cliente.numeroId}</td>
-              <td className="border p-2">{cliente.email}</td>
-              <td className="border p-2">{cliente.telefono}</td>
-              <td className="border p-2">{cliente.direccion}</td>
-              <td className="border p-2">{cliente.provincia}</td>
-              <td className="border p-2">{cliente.canton}</td>
-              <td className="border p-2">{cliente.distrito}</td>
-              <td className="border p-2">{cliente.codPostal}</td>
-              <td className="border p-2 flex gap-2">
-                <button
-                  onClick={() => handleEdit(cliente)}
-                  className="bg-yellow-400 text-white px-2 py-1 rounded hover:bg-yellow-500"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => handleDelete(cliente.id)}
-                  className="bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
-                >
-                  Eliminar
-                </button>
-              </td>
-            </tr>
-          ))}
-          {filteredClientes.length === 0 && (
-            <tr>
-              <td colSpan="10" className="text-center p-4">
-                No hay clientes que coincidan con la búsqueda
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase text-slate-500">
+                <th className="p-2">Nombre</th>
+                <th className="p-2">Email</th>
+                <th className="p-2">Teléfono</th>
+                <th className="p-2 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((g) => (
+                <tr key={g.id} className="border-t">
+                  <td className="p-2">
+                    <div className="font-medium">{g.name || `${g.firstName} ${g.lastName}`.trim()}</div>
+                  </td>
+                  <td className="p-2">{g.email || <span className="text-slate-400">Sin email</span>}</td>
+                  <td className="p-2">{g.phone || <span className="text-slate-400">Sin teléfono</span>}</td>
+                  <td className="p-2 text-right">
+                    <button
+                      className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
+                      onClick={() => onEdit(g)}
+                    >
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td className="p-3 text-center text-slate-500" colSpan={4}>
+                    No hay huéspedes que coincidan con la búsqueda.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
-};
-
-export default ClientesPage;
+}

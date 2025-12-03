@@ -4,9 +4,21 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { randomUUID } from "crypto";
 import { ReservationStatus } from "@prisma/client";
+import type { AuthUser } from "../middleware/auth";
 
 export async function createReservation(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const { roomId, guestId, checkIn, checkOut, adults, children } = req.body;
+
+  // Validar que la habitacion pertenece al hotel
+  const room = await prisma.room.findFirst({ where: { id: roomId, hotelId: user.hotelId } });
+  if (!room) return res.status(404).json({ message: "Habitacion no encontrada en este hotel" });
+  // Validar que el huésped pertenece al mismo hotel
+  const guest = await prisma.guest.findFirst({ where: { id: guestId, hotelId: user.hotelId } });
+  if (!guest) return res.status(404).json({ message: "Huesped no encontrado en este hotel" });
+
   const reservation = await prisma.reservation.create({
     data: {
       code: `RSV-${randomUUID().slice(0, 8).toUpperCase()}`,
@@ -16,14 +28,19 @@ export async function createReservation(req: Request, res: Response) {
       checkOut: new Date(checkOut),
       adults,
       children,
+      hotelId: user.hotelId,
       auditTrail: { createdBy: "api", reason: "create" } as any,
     },
   });
   res.status(201).json(reservation);
 }
 
-export async function listReservations(_req: Request, res: Response) {
+export async function listReservations(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const data = await prisma.reservation.findMany({
+    where: { hotelId: user.hotelId },
     orderBy: { createdAt: "desc" },
     include: { room: true, guest: true },
   });
@@ -32,6 +49,11 @@ export async function listReservations(_req: Request, res: Response) {
 
 export async function checkIn(req: Request, res: Response) {
   const { id } = req.params;
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId: user.hotelId } });
+  if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
   const r = await prisma.reservation.update({
     where: { id },
     data: { status: ReservationStatus.CHECKED_IN },
@@ -43,6 +65,11 @@ export async function checkIn(req: Request, res: Response) {
 
 export async function checkOut(req: Request, res: Response) {
   const { id } = req.params;
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId: user.hotelId } });
+  if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
   const r = await prisma.reservation.update({
     where: { id },
     data: { status: ReservationStatus.CHECKED_OUT },
@@ -53,8 +80,12 @@ export async function checkOut(req: Request, res: Response) {
 
 export async function cancelReservation(req: Request, res: Response) {
   const { id } = req.params;
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId: user.hotelId }, include: { room: true } });
+  if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
   const r = await prisma.reservation.update({ where: { id }, data: { status: ReservationStatus.CANCELED } });
-  const resv = await prisma.reservation.findUnique({ where: { id }, include: { room: true } });
-  if (resv) await prisma.room.update({ where: { id: resv.roomId }, data: { status: "AVAILABLE" } });
+  if (existing.roomId) await prisma.room.update({ where: { id: existing.roomId }, data: { status: "AVAILABLE" } });
   res.json(r);
 }

@@ -19,17 +19,37 @@ import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
 import RestaurantPage from "./modulos/restaurant/RestaurantPage";
 import Managementpage from "./pages/Management/ManagementPage";
+import Login from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoutes";
 
 export default function App() {
   return (
     // ⬇️ Envuelve todas las rutas con SettingsProvider
     <SettingsProvider>
       <Routes>
+        {/* Login */}
+        <Route path="/login" element={<Login />} />
+
         {/* Inicio */}
-        <Route path="/" element={<Launcher />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route
+          path="/launcher"
+          element={
+            <ProtectedRoute>
+              <Launcher />
+            </ProtectedRoute>
+          }
+        />
 
         {/* FrontDesk con Layout + Outlet */}
-        <Route path="/frontdesk" element={<Layout />}>
+        <Route
+          path="/frontdesk"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="planning" element={<Planning />} />
@@ -46,11 +66,32 @@ export default function App() {
         </Route>
 
         {/* Management (subrutas dentro del módulo) */}
-        <Route path="/management/*" element={<Managementpage />} />
+        <Route
+          path="/management/*"
+          element={
+            <ProtectedRoute>
+              <Managementpage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Otros módulos sueltos */}
-        <Route path="/accounting" element={<AccountingPage />} />
-        <Route path="/restaurant" element={<RestaurantPage />} />
+        <Route
+          path="/accounting"
+          element={
+            <ProtectedRoute>
+              <AccountingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant"
+          element={
+            <ProtectedRoute>
+              <RestaurantPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Fallback global */}
         <Route path="*" element={<div className="p-4">Página no encontrada</div>} />

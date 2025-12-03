@@ -1,15 +1,12 @@
-// src/routes/guests.route.ts
+// src/routes/rooms.route.ts
 import { Router } from "express";
-import { validate } from "../middleware/validate.js";
 import { auth } from "../middleware/auth.js";
-import { createGuest, listGuests, updateGuest } from "../controllers/guests.controller.js";
-import { createGuestSchema, updateGuestSchema } from "../schemas/guests.schema.js";
+import { listRooms, upsertRoom } from "../controllers/rooms.controller.js";
 
 const router = Router();
 
-// OJO: rutas relativas; el prefijo /api/guests lo pondrá app.ts
-router.get("/", auth, listGuests);                             // GET    /api/guests
-router.post("/", auth, validate(createGuestSchema), createGuest); // POST   /api/guests
-router.put("/:id", auth, validate(updateGuestSchema), updateGuest); // PUT /api/guests/:id
+// Prefijo /api/rooms lo monta app.ts; auth viene antes en la cadena.
+router.get("/", auth, listRooms); // GET /api/rooms
+router.post("/", auth, upsertRoom); // POST /api/rooms
 
 export default router;

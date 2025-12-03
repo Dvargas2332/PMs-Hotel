@@ -1,0 +1,6 @@
+.rct-cursor-line {
+  background: #0ea5e9 !important; /* azul suave en lugar de rojo */
+}
+.rct-header-root {
+  background: linear-gradient(90deg, #0ea5e9, #22d3ee) !important;
+}

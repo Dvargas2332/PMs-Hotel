@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
-import { Bell, Search, ChevronRight, CircleUser, LogOut } from "lucide-react";
+import { Search, CircleUser } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useHotelData } from "../../context/HotelDataContext";
 
@@ -76,10 +76,13 @@ const fxToUSD = (p, defaultFx = 530) => {
   return amt / rate;
 };
 
-const isActiveOnDay = (res, ymd) =>
-  res.checkInDate <= ymd && ymd < res.checkOutDate && res.status !== "Cancelada" && res.status !== "No show";
-const isArrival = (res, ymd) => res.checkInDate === ymd && res.status !== "Cancelada" && res.status !== "No show";
-const isDeparture = (res, ymd) => res.checkOutDate === ymd && res.status !== "Cancelada" && res.status !== "No show";
+const isCanceled = (status) => {
+  const s = (status || "").toUpperCase();
+  return s === "CANCELADA" || s === "CANCELED" || s === "NO SHOW" || s === "NO_SHOW";
+};
+const isActiveOnDay = (res, ymd) => res.checkInDate <= ymd && ymd < res.checkOutDate && !isCanceled(res.status);
+const isArrival = (res, ymd) => res.checkInDate === ymd && !isCanceled(res.status);
+const isDeparture = (res, ymd) => res.checkOutDate === ymd && !isCanceled(res.status);
 
 /*** Modales ***/
 function Modal({ open, onClose, title, children, size = "md" }) {
@@ -155,19 +158,21 @@ export default function Dashboard() {
   const searchRef = useRef(null);
 
   // Fuente única de verdad
-  const { rooms, reservations, settings, doCheckIn, doCheckOut } = useHotelData();
-  const totalRooms = rooms.length;
+  const { rooms, reservations, doCheckIn, doCheckOut } = useHotelData();
   const today = fmtDay(new Date());
-
-  // ===== Usuario actual (mock si no hay auth) =====
-  const [userMenu, setUserMenu] = useState(false);
-  const currentUser = useMemo(() => ({ name: "Operador Demo", role: "Recepción" }), []);
-  const signOut = () => navigate("/login");
 
   // ===== Derivados operativos =====
   const inHouseToday = useMemo(() => reservations.filter((r) => isActiveOnDay(r, today)), [reservations, today]);
   const arrivalsToday = useMemo(() => reservations.filter((r) => isArrival(r, today)), [reservations, today]);
   const departuresToday = useMemo(() => reservations.filter((r) => isDeparture(r, today)), [reservations, today]);
+  const paxInHouse = useMemo(
+    () =>
+      inHouseToday.reduce(
+        (acc, r) => acc + Number(r.adults || 0) + Number(r.children || 0),
+        0
+      ),
+    [inHouseToday]
+  );
 
   // Índice rápido de habitaciones
   const roomsIndex = useMemo(() => new Map(rooms.map((r) => [String(r.id), r])), [rooms]);
@@ -203,7 +208,7 @@ export default function Dashboard() {
     const push = (ym, v) => map.set(ym, (map.get(ym) || 0) + v);
     reservations.forEach((r) => {
       (r.payments || []).forEach((p) => {
-        if (!p.date) return;
+        if (!p.date || typeof p.amount === "undefined") return;
         const d = fromYMD(p.date);
         const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
         push(ym, fxToUSD(p, r.fxRateCRC || 530));
@@ -219,6 +224,21 @@ export default function Dashboard() {
       arr.push({ m: d.toLocaleString(undefined, { month: "short" }), v: Math.round((map.get(ym) || 0) * 100) / 100 });
     }
     return arr;
+  }, [reservations]);
+
+  const revenue30d = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setDate(now.getDate() - 30);
+    let total = 0;
+    reservations.forEach((r) => {
+      (r.payments || []).forEach((p) => {
+        if (!p.date || typeof p.amount === "undefined") return;
+        const d = fromYMD(p.date);
+        if (d >= cutoff && d <= now) total += fxToUSD(p, r.fxRateCRC || 530);
+      });
+    });
+    return Math.round(total * 100) / 100;
   }, [reservations]);
 
   const occupancyLine = useMemo(() => {
@@ -250,38 +270,6 @@ export default function Dashboard() {
     departuresToday.forEach((r) => list.push({ name: r.guestName, subtitle: "Departure today" }));
     return list.slice(0, 10);
   }, [inHouseToday, arrivalsToday, departuresToday]);
-
-  // ===== Alertas =====
-  const alerts = useMemo(() => {
-    const list = [];
-    const byRoom = new Map();
-    reservations
-      .filter((r) => r.status !== "Cancelada" && r.status !== "No show")
-      .forEach((r) => {
-        const k = String(r.roomId);
-        byRoom.set(k, [...(byRoom.get(k) || []), r]);
-      });
-    byRoom.forEach((arr, roomId) => {
-      arr.sort((a, b) => a.checkInDate.localeCompare(b.checkInDate));
-      for (let i = 0; i < arr.length - 1; i++) {
-        const A = arr[i], B = arr[i + 1];
-        if (A.checkOutDate > B.checkInDate) {
-          list.push({ type: "overlap", msg: `Solape en hab. ${roomId}: ${A.guestName} ↔ ${B.guestName}` });
-        }
-      }
-    });
-    arrivalsToday.forEach((r) => {
-      const room = rooms.find((x) => String(x.id) === String(r.roomId));
-      if (!room) list.push({ type: "noroom", msg: `Reserva sin habitación asignada: ${r.guestName}` });
-      else if (["dirty", "blocked", "maintenance"].includes(room.status)) {
-        list.push({ type: "housekeeping", msg: `Llegada hoy a ${room.title} pero está ${room.status}` });
-      }
-    });
-    if (departuresToday.length > 0) list.push({ type: "departures", msg: `Salidas hoy: ${departuresToday.length}` });
-    return list;
-  }, [reservations, rooms, arrivalsToday, departuresToday]);
-
-  const [showAlerts, setShowAlerts] = useState(false);
 
   // Buscar reservas
   const handleSearchKey = (e) => {
@@ -336,64 +324,8 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* Botón Alertas */}
-            <button className="p-2 rounded-lg border bg-white relative" onClick={() => setShowAlerts((s) => !s)}>
-              <Bell className="w-4 h-4" />
-              {alerts.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] leading-3 px-1.5 py-0.5 rounded-full">
-                  {alerts.length}
-                </span>
-              )}
-            </button>
-
-            {/* Usuario activo */}
-            <div className="relative">
-              <button
-                className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center"
-                onClick={() => setUserMenu((s) => !s)}
-                aria-label="Usuario"
-              >
-                <CircleUser className="w-5 h-5 text-gray-600" />
-              </button>
-              {userMenu && (
-                <div className="absolute right-0 mt-2 w-56 rounded-xl border bg-white shadow-lg p-3 z-10">
-                  <div className="font-medium">{currentUser.name}</div>
-                  <div className="text-xs text-gray-500 mb-2">{currentUser.role}</div>
-                  <button
-                    onClick={signOut}
-                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50 text-sm"
-                  >
-                    <LogOut className="w-4 h-4" /> Cerrar sesión
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </div>
-
-        {/* Panel de alertas */}
-        {showAlerts && (
-          <Card className="mb-4 p-4">
-            <div className="font-semibold mb-2">Alertas</div>
-            {alerts.length === 0 ? (
-              <div className="text-sm text-gray-500">Sin alertas.</div>
-            ) : (
-              <ul className="space-y-1 text-sm">
-                {alerts.map((a, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className={
-                      "w-2.5 h-2.5 rounded-full " +
-                      (a.type === "overlap" ? "bg-red-500"
-                        : a.type === "housekeeping" ? "bg-amber-500"
-                        : "bg-indigo-500")
-                    } />
-                    <span>{a.msg}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-        )}
 
         {/* Grid principal */}
         <div className="grid grid-cols-12 gap-4">
@@ -401,13 +333,13 @@ export default function Dashboard() {
           <div className="col-span-12">
             <Card className="p-4">
               <div className="font-semibold mb-3">KPI</div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <KPI label="Occupancy (hoy)" value={`${Math.round((inHouseToday.length / Math.max(1, rooms.length)) * 100)}%`} />
-                {/* NUEVO: abrir modal de llegadas del día */}
-                <KPI label="Entradas hoy" value={arrivalsToday.length} onClick={() => setOpenCI(true)} sub="Toca para gestionar check‑ins" />
-                {/* NUEVO: abrir modal de salidas del día */}
-                <KPI label="Salidas hoy" value={departuresToday.length} onClick={() => setOpenCO(true)} sub="Toca para gestionar check‑outs" />
+                <KPI label="Entradas hoy" value={arrivalsToday.length} onClick={() => setOpenCI(true)} sub="Toca para gestionar check-ins" />
+                <KPI label="Salidas hoy" value={departuresToday.length} onClick={() => setOpenCO(true)} sub="Toca para gestionar check-outs" />
                 <KPI label="Rooms" value={rooms.length} />
+                <KPI label="Pax in-house" value={paxInHouse} sub="Adultos + niños hoy" />
+                <KPI label="Ingresos 30d (USD)" value={`$${revenue30d.toFixed(2)}`} sub="Pagos reportados últimos 30d" />
               </div>
             </Card>
           </div>
@@ -545,3 +477,6 @@ export default function Dashboard() {
     </div>
   );
 }
+
+
+
