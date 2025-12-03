@@ -1,10 +1,13 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ===== Enums =====
@@ -36,6 +39,24 @@ enum InvoiceStatus {
   REFUNDED
 }
 
+enum BookingSource {
+  DIRECT
+  OTA
+  MANUAL
+}
+
+// ⬇️ NUEVO
+model Hotel {
+  id        String   @id @default(cuid())
+  name      String
+  currency  String   @default("CRC")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms        Room[]
+  reservations Reservation[]
+}
+
 // ===== Models =====
 model User {
   id           String        @id @default(cuid())
@@ -61,14 +82,23 @@ model Guest {
 }
 
 model Room {
-  id           String        @id @default(cuid())
-  number       String        @unique
-  type         String
-  status       RoomStatus    @default(AVAILABLE)
-  notes        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id        String     @id @default(cuid())
+  number    String     @unique
+  type      String
+  status    RoomStatus @default(AVAILABLE)
+  notes     String?
+  baseRate  Decimal    @default(0) @db.Decimal(10, 2)
+  currency  String     @default("CRC")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  hotelId String?
+  hotel   Hotel?  @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+
   reservations Reservation[]
+  days         RoomDay[]
+
+  @@index([hotelId])
 }
 
 model Reservation {
@@ -82,6 +112,7 @@ model Reservation {
   adults     Int               @default(2)
   children   Int               @default(0)
   status     ReservationStatus @default(CONFIRMED)
+  source     BookingSource?
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
   auditTrail Json?
@@ -90,11 +121,37 @@ model Reservation {
   guest Guest @relation(fields: [guestId], references: [id])
   user  User? @relation(fields: [userId], references: [id])
 
-  // lado opuesto 1–1 con Invoice
-  invoice Invoice?
+  /// Relación 1–1 con Invoice (lado SIN FK)
+  invoice Invoice? @relation("ReservationInvoice")
+
+  days RoomDay[]
+
+  hotelId String?
+  hotel   Hotel?  @relation(fields: [hotelId], references: [id], onDelete: SetNull)
 
   @@index([roomId])
   @@index([guestId])
+  @@index([hotelId])
+}
+
+model RoomDay {
+  id            String   @id @default(cuid())
+  date          DateTime
+  roomId        String
+  reservationId String?
+
+  status RoomStatus @default(AVAILABLE)
+  rate   Decimal    @default(0) @db.Decimal(12, 2)
+  notes  String?
+
+  room        Room         @relation(fields: [roomId], references: [id])
+  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roomId, date])
+  @@index([reservationId])
 }
 
 model AuditLog {
@@ -121,8 +178,8 @@ model Invoice {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  // relación 1–1 con Reservation (con unique en reservationId)
-  reservation Reservation   @relation(fields: [reservationId], references: [id])
+  /// Lado CON FK (1–1). Todo en una línea para evitar parseos raros:
+  reservation Reservation   @relation("ReservationInvoice", fields: [reservationId], references: [id], onDelete: Cascade)
   guest       Guest         @relation(fields: [guestId], references: [id])
   items       InvoiceItem[]
   payments    Payment[]

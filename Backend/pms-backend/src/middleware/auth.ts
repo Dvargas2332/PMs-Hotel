@@ -1,4 +1,6 @@
-import { Request, Response, NextFunction } from "express";
+// src/middleware/auth.ts
+
+import type { Request, Response, NextFunction } from "express";
 import { verify } from "../lib/jwt.js";
 
 
