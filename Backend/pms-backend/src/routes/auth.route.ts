@@ -1,10 +1,13 @@
+// src/routes/auth.route.ts
 import { Router } from "express";
 import { validate } from "../middleware/validate.js";
 import { login, register } from "../controllers/auth.controller.js";
 import { loginSchema, registerSchema } from "../schemas/auth.schema.js";
 
+const router = Router();
 
-const r = Router();
-r.post("/auth/register", validate(registerSchema), register);
-r.post("/auth/login", validate(loginSchema), login);
-export default r;
+// 🔹 Rutas relativas (no incluyas /auth aquí)
+router.post("/register", validate(registerSchema), register);
+router.post("/login", validate(loginSchema), login);
+
+export default router;

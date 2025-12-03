@@ -1,3 +1,5 @@
+// src/schemas/guests.schema.ts
+
 import { z } from "zod";
 export const createGuestSchema = z.object({ body: z.object({
 firstName: z.string().min(1), lastName: z.string().min(1),
