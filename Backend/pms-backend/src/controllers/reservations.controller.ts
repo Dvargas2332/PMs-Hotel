@@ -3,14 +3,14 @@
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { randomUUID } from "crypto";
-import { ReservationStatus } from "@prisma/client";
+import { Prisma, ReservationStatus } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth";
 
 export async function createReservation(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const { roomId, guestId, checkIn, checkOut, adults, children } = req.body;
+  const { roomId, guestId, checkIn, checkOut, adults, children, code, rooming, otaCode } = req.body;
 
   // Validar que la habitacion pertenece al hotel
   const room = await prisma.room.findFirst({ where: { id: roomId, hotelId: user.hotelId } });
@@ -19,20 +19,49 @@ export async function createReservation(req: Request, res: Response) {
   const guest = await prisma.guest.findFirst({ where: { id: guestId, hotelId: user.hotelId } });
   if (!guest) return res.status(404).json({ message: "Huesped no encontrado en este hotel" });
 
-  const reservation = await prisma.reservation.create({
-    data: {
-      code: `RSV-${randomUUID().slice(0, 8).toUpperCase()}`,
-      roomId,
-      guestId,
-      checkIn: new Date(checkIn),
-      checkOut: new Date(checkOut),
-      adults,
-      children,
-      hotelId: user.hotelId,
-      auditTrail: { createdBy: "api", reason: "create" } as any,
-    },
+  const buildData = (finalCode: string, includeExtras = true) => ({
+    code: finalCode,
+    rooming: includeExtras ? rooming || null : undefined,
+    otaCode: includeExtras ? otaCode || null : undefined,
+    roomId,
+    guestId,
+    checkIn: new Date(checkIn),
+    checkOut: new Date(checkOut),
+    adults: adults ?? 2,
+    children: children ?? 0,
+    hotelId: user.hotelId,
+    auditTrail: { createdBy: "api", reason: "create" } as any,
   });
-  res.status(201).json(reservation);
+
+  let finalCode = code || `RSV-${randomUUID().slice(0, 8).toUpperCase()}`;
+  try {
+    const reservation = await prisma.reservation.create({ data: buildData(finalCode) });
+    return res.status(201).json(reservation);
+  } catch (err) {
+    // Código duplicado
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      try {
+        finalCode = `RSV-${Date.now().toString(16).toUpperCase()}`;
+        const reservation = await prisma.reservation.create({ data: buildData(finalCode) });
+        return res.status(201).json(reservation);
+      } catch (dupErr) {
+        console.error("createReservation duplicate fallback error", dupErr);
+        return res.status(500).json({ message: "No se pudo crear la reserva (codigo duplicado)" });
+      }
+    }
+    // Columnas faltantes (si migracion no corrio) => intentar sin rooming/otaCode
+    if (err instanceof Prisma.PrismaClientKnownRequestError && (err.code === "P2022" || err.code === "P2023")) {
+      try {
+        const reservation = await prisma.reservation.create({ data: buildData(finalCode, false) });
+        return res.status(201).json(reservation);
+      } catch (schemaErr) {
+        console.error("createReservation column fallback error", schemaErr);
+        return res.status(500).json({ message: "No se pudo crear la reserva (estructura de BD)" });
+      }
+    }
+    console.error("createReservation error", err);
+    return res.status(500).json({ message: err instanceof Error ? err.message : "No se pudo crear la reserva" });
+  }
 }
 
 export async function listReservations(req: Request, res: Response) {

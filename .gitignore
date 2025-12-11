@@ -11,6 +11,10 @@ node_modules
 
 # production
 /build
+dist
+**/dist
+local_pgdata
+*.rar
 
 # misc
 .DS_Store

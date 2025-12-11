@@ -91,7 +91,7 @@ let DB = {
   restaurantSections: [
     {
       id: "sec-salon",
-      name: "Salón Principal",
+      name: "Salon Principal",
       tables: [
         { id: "S01", name: "Salon 1", seats: 4 },
         { id: "S02", name: "Salon 2", seats: 2 },
@@ -173,6 +173,10 @@ let DB = {
   restaurantItems: [],
   restaurantRecipes: [],
   restaurantInventory: [],
+  restaurantOrders: [],
+  restaurantSales: [],
+  restaurantCloses: [],
+  restaurantLastCloseAt: null,
 };
 
 const UNIT_MAP = {
@@ -200,6 +204,41 @@ const normalize = (url = "") => {
   return withoutApi.startsWith("/") ? withoutApi : `/${withoutApi}`;
 };
 
+const asNumber = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+const calcOrderTotals = (items = []) => {
+  const subtotal = (items || []).reduce((acc, i) => acc + asNumber(i.price) * asNumber(i.qty || 1), 0);
+  const serviceRate = asNumber(DB.restaurantTaxes?.servicio, 0) / 100;
+  const taxRate = asNumber(DB.restaurantTaxes?.iva, 0) / 100;
+  const service = subtotal * serviceRate;
+  const tax = subtotal * taxRate;
+  return { subtotal, service, tax, total: subtotal + service + tax };
+};
+
+const restaurantStats = () => {
+  const lastClose = DB.restaurantLastCloseAt ? new Date(DB.restaurantLastCloseAt) : null;
+  const salesSince = DB.restaurantSales.filter((s) => !lastClose || new Date(s.closedAt) > lastClose);
+  const systemTotal = salesSince.reduce((acc, s) => acc + asNumber(s.totals?.total), 0);
+  const byMethod = {};
+  salesSince.forEach((s) => {
+    Object.entries(s.payments || {}).forEach(([k, v]) => {
+      byMethod[k] = asNumber(byMethod[k]) + asNumber(v);
+    });
+  });
+  const openOrderValue = DB.restaurantOrders.reduce((acc, o) => acc + calcOrderTotals(o.items).total, 0);
+  return {
+    systemTotal,
+    byMethod,
+    salesCount: salesSince.length,
+    openOrders: DB.restaurantOrders.length,
+    openOrderValue,
+    lastCloseAt: DB.restaurantLastCloseAt,
+  };
+};
+
 export const mockApi = {
   get: async (url) => {
     await sleep();
@@ -219,6 +258,9 @@ export const mockApi = {
     if (path === "/restaurant/items") return makeResp(DB.restaurantItems);
     if (path === "/restaurant/recipes") return makeResp(DB.restaurantRecipes);
     if (path === "/restaurant/inventory") return makeResp(DB.restaurantInventory);
+    if (path === "/restaurant/orders") return makeResp(DB.restaurantOrders);
+    if (path === "/restaurant/stats") return makeResp(restaurantStats());
+    if (path === "/restaurant/close") return makeResp(DB.restaurantCloses);
     if (path === "/restaurant/menu") {
       let sectionId = null;
       if (query) {
@@ -311,6 +353,67 @@ export const mockApi = {
       };
       DB.audit.unshift(item);
       return makeResp(item);
+    }
+    if (path === "/restaurant/order") {
+      const now = new Date().toISOString();
+      const order = {
+        id: payload.id || payload.tableId || Math.random().toString(36).slice(2, 8),
+        tableId: payload.tableId,
+        sectionId: payload.sectionId,
+        items: payload.items || [],
+        note: payload.note || "",
+        covers: payload.covers || 2,
+        status: payload.status || "ENVIADO",
+        serviceType: payload.serviceType || "DINE_IN",
+        roomId: payload.roomId || "",
+        updatedAt: now,
+      };
+      const idx = DB.restaurantOrders.findIndex((o) => o.tableId === order.tableId);
+      if (idx >= 0) DB.restaurantOrders[idx] = { ...DB.restaurantOrders[idx], ...order };
+      else DB.restaurantOrders.push(order);
+      return makeResp(order);
+    }
+    if (path === "/restaurant/order/close") {
+      const now = new Date().toISOString();
+      const totals = payload?.totals && typeof payload.totals === "object" ? payload.totals : calcOrderTotals(payload.items || []);
+      const sale = {
+        id: payload.id || Math.random().toString(36).slice(2, 8),
+        tableId: payload.tableId,
+        sectionId: payload.sectionId,
+        items: payload.items || [],
+        totals,
+        payments: payload.payments || {},
+        note: payload.note || "",
+        covers: payload.covers || 0,
+        serviceType: payload.serviceType || "DINE_IN",
+        roomId: payload.roomId || "",
+        closedAt: now,
+      };
+      DB.restaurantSales.push(sale);
+      DB.restaurantOrders = DB.restaurantOrders.filter((o) => o.tableId !== payload.tableId);
+      return makeResp(sale);
+    }
+    if (path === "/restaurant/close") {
+      const now = new Date().toISOString();
+      const stats = restaurantStats();
+      const reported = asNumber(payload?.totals?.reported ?? payload?.reported);
+      const system = stats.systemTotal;
+      const close = {
+        id: payload.id || Math.random().toString(36).slice(2, 8),
+        createdAt: now,
+        turno: payload.turno || payload.note || `Turno ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        totals: {
+          system,
+          reported,
+          diff: asNumber(payload?.totals?.diff ?? reported - system),
+        },
+        payments: payload.payments || {},
+        breakdown: payload.breakdown || {},
+        note: payload.note || "",
+      };
+      DB.restaurantCloses.unshift(close);
+      DB.restaurantLastCloseAt = now;
+      return makeResp(close);
     }
     if (DB[key]) {
       const id = payload.id || Math.random().toString(36).slice(2, 8);

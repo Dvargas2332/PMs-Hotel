@@ -40,9 +40,7 @@ export async function deleteSection(req: Request, res: Response) {
   const exists = await prisma.restaurantSection.findFirst({ where: { id: sectionId, hotelId: user.hotelId } });
   if (!exists) return res.status(404).json({ message: "Seccion no encontrada" });
 
-  await prisma.restaurantSection.delete({
-    where: { id: sectionId },
-  });
+  await prisma.restaurantSection.deleteMany({ where: { id: sectionId, hotelId: user.hotelId } });
   res.json({ ok: true });
 }
 
@@ -62,7 +60,10 @@ export async function addTableToSection(req: Request, res: Response) {
     data: { id, name, seats: Number(seats || 0) || 2, sectionId: section.id },
   });
 
-  const tables = await prisma.restaurantTable.findMany({ where: { sectionId }, orderBy: { name: "asc" } });
+  const tables = await prisma.restaurantTable.findMany({
+    where: { sectionId, section: { hotelId: user.hotelId } },
+    orderBy: { name: "asc" },
+  });
   res.json(tables);
 }
 
@@ -77,7 +78,12 @@ export async function deleteTableFromSection(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({ where: { id: sectionId, hotelId: user.hotelId } });
   if (!section) return res.status(404).json({ message: "Seccion no encontrada" });
 
-  await prisma.restaurantTable.delete({ where: { id: tableId } });
+  const table = await prisma.restaurantTable.findFirst({
+    where: { id: tableId, sectionId: section.id, section: { hotelId: user.hotelId } },
+  });
+  if (!table) return res.status(404).json({ message: "Mesa no encontrada" });
+
+  await prisma.restaurantTable.delete({ where: { id: table.id } });
   res.json({ ok: true });
 }
 
@@ -131,7 +137,7 @@ export async function deleteMenuItem(req: Request, res: Response) {
   const item = await prisma.restaurantMenuItem.findFirst({ where: { id: itemId, hotelId: user.hotelId } });
   if (!item) return res.status(404).json({ message: "Item no encontrado" });
 
-  await prisma.restaurantMenuItem.delete({ where: { id: itemId } });
+  await prisma.restaurantMenuItem.deleteMany({ where: { id: itemId, hotelId: user.hotelId } });
   res.json({ ok: true });
 }
 

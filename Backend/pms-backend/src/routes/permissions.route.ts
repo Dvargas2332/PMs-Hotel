@@ -1,11 +1,15 @@
 import { Router } from "express";
-import { auth } from "../middleware/auth.js";
-import { listPermissions, getRolePermissions, setRolePermissions } from "../controllers/permissions.controller.js";
+import { auth, requirePermission, requireRole } from "../middleware/auth.js";
+import { listPermissions, listPermissionModules, getRolePermissions, setRolePermissions } from "../controllers/permissions.controller.js";
 
 const router = Router();
 
-router.get("/", auth, listPermissions);
-router.get("/role/:roleId", auth, getRolePermissions);
-router.put("/role/:roleId", auth, setRolePermissions);
+// Solo administradores/manager con permiso de management
+router.use(auth, requirePermission("management.settings.write"), requireRole("ADMIN", "MANAGER"));
+
+router.get("/", listPermissions);
+router.get("/modules", listPermissionModules);
+router.get("/role/:roleId", getRolePermissions);
+router.put("/role/:roleId", setRolePermissions);
 
 export default router;

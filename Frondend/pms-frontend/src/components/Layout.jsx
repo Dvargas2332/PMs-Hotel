@@ -125,16 +125,16 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-white to-sky-50">
       {/* Sidebar */}
-      <aside className="w-64 bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-xl">
-        <div className="px-4 py-5 border-b border-emerald-500/50 flex items-center justify-center">
+      <aside className="w-48 flex-shrink-0 overflow-hidden bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-lg">
+        <div className="px-2 py-4 border-b border-emerald-500/50 flex items-center justify-center">
           <img
             src="/kazehanalogo.png"
             alt="Logo del hotel"
-            className="object-contain"
-            style={{ width: 120, height: 120 }}
+            className="object-contain max-w-full"
+            style={{ width: 130, height: 130 }}
           />
         </div>
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-2.5 space-y-2">
           {menu.map((m) => (
             <NavLink
               key={m.label}
@@ -148,8 +148,8 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="px-4 py-5 border-t border-emerald-500/50 flex items-center gap-4">
-          <img src="/kazehanalogo.png" alt="Logo" className="h-36 w-36 object-contain" />
+        <div className="px-3 py-5 border-t border-emerald-500/50 flex items-center gap-3">
+          <img src="/kazehanalogo.png" alt="Logo" className="h-14 w-14 object-contain" />
           <div className="leading-tight">
             <div className="font-semibold text-white">Front Desk</div>
             <div className="text-xs text-emerald-100/80">Kazehana PMS</div>
@@ -158,7 +158,7 @@ export default function Layout() {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
         {/* Header */}
         <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center">
           <h1 className="text-xl font-bold text-emerald-900">Hotel Proyect</h1>

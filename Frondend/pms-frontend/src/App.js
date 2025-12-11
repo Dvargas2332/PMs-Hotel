@@ -2,7 +2,7 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-// ⬇️ Provider de settings
+// Provider de settings
 import { SettingsProvider } from "./context/SettingsContext";
 
 // Páginas / componentes
@@ -14,6 +14,7 @@ import ConfiguracionPage from "./pages/FrontDeskPages/ConfiguracionPage";
 import ReservationsPage from "./pages/FrontDeskPages/ReservationsPage";
 import FacturacionPage from "./pages/FrontDeskPages/FacturacionPage";
 import HabitacionesBoard from "./pages/FrontDeskPages/HabitacionesBoard";
+import ReportesPage from "./pages/FrontDeskPages/ReportesPage";
 
 import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
@@ -24,7 +25,6 @@ import ProtectedRoute from "./components/ProtectedRoutes";
 
 export default function App() {
   return (
-    // ⬇️ Envuelve todas las rutas con SettingsProvider
     <SettingsProvider>
       <Routes>
         {/* Login */}
@@ -58,10 +58,7 @@ export default function App() {
           <Route path="configuracion" element={<ConfiguracionPage />} />
           <Route path="facturacion" element={<FacturacionPage />} />
           <Route path="habitaciones" element={<HabitacionesBoard />} />
-          <Route
-            path="reportes"
-            element={<div className="p-4">Reportes — próximamente</div>}
-          />
+          <Route path="reportes" element={<ReportesPage />} />
           <Route path="*" element={<Navigate to="." replace />} />
         </Route>
 

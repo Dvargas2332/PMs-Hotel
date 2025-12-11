@@ -29,7 +29,7 @@ function Modal({ open, onClose, title, children, size }) {
         >
           <div className="px-3 py-2 border-b flex items-center justify-between sticky top-0 bg-white z-10">
             <h3 className="font-semibold">{title}</h3>
-            <button className="text-gray-500 hover:text-gray-700" onClick={onClose}>✕</button>
+            <button className="text-gray-500 hover:text-gray-700" onClick={onClose}></button>
           </div>
           {/* Contenido con altura limitada y scroll */}
           <div className="p-3 overflow-y-auto max-h-[80vh]">{children}</div>
@@ -50,7 +50,7 @@ function fmtCurrency(n, { symbol = "$", decimals = 2 } = {}) {
   return `${symbol}${v.toFixed(decimals)}`;
 }
 
-/** --- Modal: Autorización para eliminar ítem --- **/
+/** --- Modal: Autorizacion para eliminar item --- **/
 function RemovalAuthModal({ open, onClose, onConfirm, item }) {
   const [user, setUser] = useState("");
   const [pin, setPin] = useState("");
@@ -71,10 +71,10 @@ function RemovalAuthModal({ open, onClose, onConfirm, item }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Autorización requerida" size="max-w-md">
+    <Modal open={open} onClose={onClose} title="Autorizacion requerida" size="max-w-md">
       <div className="space-y-2">
         <div className="text-xs text-gray-600">
-          Para eliminar el ítem <strong>{item?.description || "(sin descripción)"}</strong> se requiere autorización y un motivo.
+          Para eliminar el item <strong>{item?.description || "(sin descripcion)"}</strong> se requiere autorizacion y un motivo.
         </div>
         <div className="grid grid-cols-1 gap-2">
           <div>
@@ -83,11 +83,17 @@ function RemovalAuthModal({ open, onClose, onConfirm, item }) {
           </div>
           <div>
             <label className="text-xs text-gray-500">PIN/clave</label>
-            <input className="w-full border rounded px-2 py-1" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="••••" />
+            <input className="w-full border rounded px-2 py-1" type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder="" />
           </div>
           <div>
             <label className="text-xs text-gray-500">Motivo</label>
-            <textarea className="w-full border rounded px-2 py-1" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Explique por qué se elimina el ítem…" />
+            <textarea
+              className="w-full border rounded px-2 py-1"
+              rows={3}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Explique por que se elimina el item"
+            />
           </div>
         </div>
 
@@ -123,7 +129,7 @@ function CustomerProfileModal({ open, onClose, profiles = [], onSelect }) {
   return (
     <Modal open={open} onClose={onClose} title="Seleccionar perfil del cliente" size="max-w-2xl">
       <div className="mb-2 flex items-center gap-2">
-        <input className="border rounded px-2 py-1 w-full" placeholder="Buscar por nombre, identificación o email…" value={q} onChange={(e)=>setQ(e.target.value)} />
+        <input className="border rounded px-2 py-1 w-full" placeholder="Buscar por nombre, identificacin o emailO" value={q} onChange={(e)=>setQ(e.target.value)} />
         <button className="px-2 py-1 rounded border" onClick={()=>setQ("")}>Limpiar</button>
       </div>
       <div className="space-y-2 max-h-[60vh] overflow-auto">
@@ -132,7 +138,7 @@ function CustomerProfileModal({ open, onClose, profiles = [], onSelect }) {
             <div>
               <div className="font-medium text-sm">{p.name}</div>
               <div className="text-xs text-gray-500">
-                {p.idType}{p.idNumber ? `: ${p.idNumber}` : ""} {p.email ? `· ${p.email}` : ""}
+                {p.idType}{p.idNumber ? `: ${p.idNumber}` : ""} {p.email ? ` ${p.email}` : ""}
               </div>
             </div>
             <button className="px-2 py-1 rounded border text-xs" onClick={()=>{ onSelect(p); onClose(); }}>
@@ -159,14 +165,14 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
   // FE: estado + perfil seleccionado
   const [eInvoice, setEInvoice] = useState({ enabled: false, profile: null });
   const [showProfilePicker, setShowProfilePicker] = useState(false);
-  // Perfiles (mock; conéctalo a tu backend)
+  // Perfiles (mock; conctalo a tu backend)
   const customerProfiles = [
     { id: "pf-cf",  name: "Consumidor final", idType: "CF", idNumber: "", email: "" },
-    { id: "pf-jr1", name: "Empresa XYZ S.A.", idType: "Cédula Jurídica", idNumber: "3-101-123456", email: "facturacion@xyz.com" },
-    { id: "pf-ph1", name: "Juan Pérez", idType: "Cédula Física", idNumber: "1-2345-6789", email: "juan.perez@mail.com" },
+    { id: "pf-jr1", name: "Empresa XYZ S.A.", idType: "Cdula Jurdica", idNumber: "3-101-123456", email: "facturacion@xyz.com" },
+    { id: "pf-ph1", name: "Juan Prez", idType: "Cdula Fsica", idNumber: "1-2345-6789", email: "juan.perez@mail.com" },
   ];
 
-  // Auditoría de eliminaciones
+  // Auditora de eliminaciones
   const [auditTrail, setAuditTrail] = useState([]);
   const [showAuth, setShowAuth] = useState(false);
   const [pendingRemovalIndex, setPendingRemovalIndex] = useState(null);
@@ -188,7 +194,7 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
 
   const addItem = () => setItems((x) => [...x, { description: "", qty: 1, price: 0 }]);
 
-  // Eliminar ítem con autorización
+  // Eliminar tem con autorizacin
   const requestRemoveItem = (idx) => {
     const it = items[idx];
     setPendingRemovalIndex(idx);
@@ -241,13 +247,13 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
       if (p.method === "Tarjeta" && Number(p.amount) > 0) {
         const last4 = String(p.cardLast4 || "").trim();
         if (!/^\d{4}$/.test(last4)) {
-          alert("Para pagos con tarjeta ingrese los últimos 4 dígitos de la tarjeta.");
+          alert("Para pagos con tarjeta ingrese los ltimos 4 dgitos de la tarjeta.");
           return;
         }
       }
     }
     if (eInvoice.enabled && !eInvoice.profile) {
-      alert("Para emitir factura electrónica, seleccione un perfil del cliente.");
+      alert("Para emitir factura electrnica, seleccione un perfil del cliente.");
       return;
     }
     const payload = {
@@ -262,7 +268,7 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
       source: preset?.source || "manual",
       auditTrail,
       eInvoice,
-      currency, // útil para backend/impresión
+      currency, // til para backend/impresin
     };
     onSave(payload);
     onClose();
@@ -278,19 +284,19 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
             <div className="grid grid-cols-2 gap-2 mb-3">
               <div>
                 <label className="text-xs text-gray-500">
-                  Huésped {isCheckout && <Badge color="gray">Bloqueado (check-out)</Badge>}
+                  Huesped {isCheckout && <Badge color="gray">Bloqueado (check-out)</Badge>}
                 </label>
                 <input
                   className={`w-full border rounded px-2 py-1 ${isCheckout ? "bg-gray-100 cursor-not-allowed" : ""}`}
                   value={guest}
                   onChange={(e) => setGuest(e.target.value)}
-                  placeholder="Nombre del huésped"
+                  placeholder="Nombre del huesped"
                   disabled={isCheckout}
                 />
               </div>
               <div>
                 <label className="text-xs text-gray-500">
-                  Habitación {isCheckout && <Badge color="gray">Bloqueado (check-out)</Badge>}
+                  Habitacion {isCheckout && <Badge color="gray">Bloqueado (check-out)</Badge>}
                 </label>
                 <input
                   className={`w-full border rounded px-2 py-1 ${isCheckout ? "bg-gray-100 cursor-not-allowed" : ""}`}
@@ -302,10 +308,10 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
               </div>
             </div>
 
-            {/* Factura Electrónica - Perfil del cliente */}
+            {/* Factura Electrnica - Perfil del cliente */}
             <div className="mb-3 border rounded p-2">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium">Factura electrónica</div>
+                <div className="text-xs font-medium">Factura electrnica</div>
                 <label className="flex items-center gap-2 text-xs">
                   <span>{eInvoice.enabled ? "Activada" : "Desactivada"}</span>
                   <input
@@ -325,7 +331,7 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
                     {eInvoice.profile ? (
                       <div className="text-gray-500">
                         {eInvoice.profile.idType}{eInvoice.profile.idNumber ? `: ${eInvoice.profile.idNumber}` : ""}
-                        {eInvoice.profile.email ? ` · ${eInvoice.profile.email}` : ""}
+                        {eInvoice.profile.email ? `  ${eInvoice.profile.email}` : ""}
                       </div>
                     ) : (
                       <div className="text-gray-500">Seleccione un perfil para emitir la FE.</div>
@@ -346,9 +352,9 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
             </div>
 
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="font-semibold">Ítems</h4>
+              <h4 className="font-semibold">tems</h4>
               <button className="text-xs px-2 py-1 border rounded hover:bg-gray-50" onClick={addItem}>
-                + Agregar ítem
+                + Agregar item
               </button>
             </div>
 
@@ -356,7 +362,7 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
               <table className="min-w-full text-xs">
                 <thead>
                   <tr className="text-left border-b">
-                    <th className="py-1 pr-2">Descripción</th>
+                    <th className="py-1 pr-2">Descripcion</th>
                     <th className="py-1 pr-2 w-20">Cant.</th>
                     <th className="py-1 pr-2 w-28">Precio</th>
                     <th className="py-1 pr-2 w-28">Importe</th>
@@ -394,9 +400,9 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
                           <button
                             className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
                             onClick={() => requestRemoveItem(idx)}
-                            title="Eliminar ítem (requiere autorización)"
+                            title="Eliminar tem (requiere autorizacin)"
                           >
-                            🗑
+                            
                           </button>
                         </td>
                       </tr>
@@ -472,11 +478,11 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
                         value={p.amount}
                         onChange={(e) => updatePayment(idx, (x) => ({ ...x, amount: e.target.value }))}
                       />
-                      {/* Campos según método */}
+                      {/* Campos segn mtodo */}
                       {p.method === "Tarjeta" && (
                         <input
                           className="border rounded px-2 py-1 text-xs w-28"
-                          placeholder="Últimos 4"
+                          placeholder="ltimos 4"
                           value={p.cardLast4 || ""}
                           onChange={(e) =>
                             updatePayment(idx, (x) => ({ ...x, cardLast4: e.target.value.replace(/\D/g, "").slice(0, 4) }))
@@ -489,14 +495,14 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
                         className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
                         onClick={() => removePayment(idx)}
                       >
-                        🗑
+                        
                       </button>
                     </div>
 
                     {/* Info auxiliar de moneda */}
                     {p.method === "Efectivo" && (
                       <div className="text-[11px] text-gray-500">
-                        Moneda: <strong>{currency.code}</strong> · Decimales: <strong>{currency.decimals}</strong> · Paso: <strong>{stepFromDecimals(currency.decimals)}</strong>
+                        Moneda: <strong>{currency.code}</strong>  Decimales: <strong>{currency.decimals}</strong>  Paso: <strong>{stepFromDecimals(currency.decimals)}</strong>
                       </div>
                     )}
                   </div>
@@ -541,7 +547,7 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
   );
 }
 
-/** --- Modal: Listado de huéspedes para Check-out --- **/
+/** --- Modal: Listado de huespedes para Check-out --- **/
 function CheckoutGuestsModal({ open, onClose, guests = [], onGenerate }) {
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
@@ -556,11 +562,11 @@ function CheckoutGuestsModal({ open, onClose, guests = [], onGenerate }) {
   }, [q, guests]);
 
   return (
-    <Modal open={open} onClose={onClose} title="Huéspedes para check-out" size="max-w-3xl">
+    <Modal open={open} onClose={onClose} title="Huespedes para check-out" size="max-w-3xl">
       <div className="mb-2 flex items-center gap-2">
         <input
           className="border rounded px-2 py-1 w-full"
-          placeholder="Buscar por huésped, habitación o folio…"
+          placeholder="Buscar por huesped, habitacion o folio"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -571,9 +577,9 @@ function CheckoutGuestsModal({ open, onClose, guests = [], onGenerate }) {
         {filtered.map((g) => (
           <div key={g.folio} className="border rounded p-2 flex items-center justify-between">
             <div>
-              <div className="font-medium text-sm">{g.guest} — Hab. {g.room}</div>
+              <div className="font-medium text-sm">{g.guest}  Hab. {g.room}</div>
               <div className="text-xs text-gray-500">
-                Folio: {g.folio} · Noches: {g.nights} · Saldo:{" "}
+                Folio: {g.folio}  Noches: {g.nights}  Saldo:{" "}
                 <strong className={g.balance > 0 ? "text-amber-700" : "text-green-700"}>
                   {fmtCurrency(g.balance, { symbol: "$", decimals: 2 })}
                 </strong>
@@ -602,43 +608,43 @@ function CheckoutGuestsModal({ open, onClose, guests = [], onGenerate }) {
   );
 }
 
-/** --- Página de Facturación --- **/
+/** --- Pgina de Facturacin --- **/
 export default function FacturacionPage() {
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [preset, setPreset] = useState(null);
   const [showCheckout, setShowCheckout] = useState(false);
 
-  // ====== CONFIGURACIÓN DESDE MANAGEMENT (mock; conéctalo a tu backend) ======
+  // ====== CONFIGURACIN DESDE MANAGEMENT (mock; conctalo a tu backend) ======
   const management = {
     taxRate: 13, // % fijo definido en Management
     currency: {
       code: "CRC",   // Ej: "CRC" o "USD"
-      symbol: "₡",   // Símbolo para UI
-      decimals: 0,   // Colones usualmente sin decimales en caja (ajústalo a tu política)
+      symbol: "",   // Smbolo para UI
+      decimals: 0,   // Colones usualmente sin decimales en caja (ajstalo a tu poltica)
     },
   };
   // ===========================================================================
 
-  // Métodos de pago desde Configuración (mock; luego traer del backend/config)
-  const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia", "Sinpe", "Depósito"];
+  // Mtodos de pago desde Configuracin (mock; luego traer del backend/config)
+  const paymentMethods = ["Efectivo", "Tarjeta", "Transferencia", "Sinpe", "Depsito"];
 
-  // Mock de “habitaciones en casa” (ocupadas)
+  // Mock de habitaciones en casa (ocupadas)
   const inHouseRooms = useMemo(
     () => [
-      { room: "101", guest: "Ana Pérez", balance: 120.0, folio: "FOL-101-A", nights: 2 },
-      { room: "203", guest: "Luis Gómez", balance: 0.0, folio: "FOL-203-L", nights: 5 },
-      { room: "305", guest: "María Ruiz", balance: 87.5, folio: "FOL-305-M", nights: 1 },
+      { room: "101", guest: "Ana Prez", balance: 120.0, folio: "FOL-101-A", nights: 2 },
+      { room: "203", guest: "Luis Gmez", balance: 0.0, folio: "FOL-203-L", nights: 5 },
+      { room: "305", guest: "Mara Ruiz", balance: 87.5, folio: "FOL-305-M", nights: 1 },
     ],
     []
   );
 
-  // Mock de huéspedes listos para check-out
+  // Mock de huespedes listos para check-out
   const checkoutGuests = useMemo(
     () => [
-      { room: "101", guest: "Ana Pérez", balance: 120.0, folio: "FOL-101-A", nights: 2 },
-      { room: "204", guest: "Carlos Jiménez", balance: 45.0, folio: "FOL-204-C", nights: 3 },
-      { room: "305", guest: "María Ruiz", balance: 87.5, folio: "FOL-305-M", nights: 1 },
+      { room: "101", guest: "Ana Prez", balance: 120.0, folio: "FOL-101-A", nights: 2 },
+      { room: "204", guest: "Carlos Jimnez", balance: 45.0, folio: "FOL-204-C", nights: 3 },
+      { room: "305", guest: "Mara Ruiz", balance: 87.5, folio: "FOL-305-M", nights: 1 },
     ],
     []
   );
@@ -664,6 +670,7 @@ export default function FacturacionPage() {
       { label: "Vencidas", value: overdue },
     ];
   }, [invoices]);
+  const kpiMap = useMemo(() => Object.fromEntries(kpis.map((k) => [k.label, k.value])), [kpis]);
 
   const filtered = useMemo(() => {
     if (!q.trim()) return invoices;
@@ -685,7 +692,7 @@ export default function FacturacionPage() {
     const nextNum = String(123 + invoices.length + 1).padStart(6, "0");
     const number = "F-" + nextNum;
 
-    // TODO: guardar factura + auditoría + eInvoice en backend
+    // TODO: guardar factura + auditora + eInvoice en backend
     // await api.post("/facturas", {...payload, number})
     // await api.post("/reportes/auditoria", payload.auditTrail)
 
@@ -700,13 +707,162 @@ export default function FacturacionPage() {
   };
 
   const goToCashClose = () => alert("Abrir flujo de Cierre de Caja (por implementar).");
-  const goToCreditNote = () => alert("Crear Nota de Crédito (por implementar).");
+  const goToCreditNote = () => alert("Crear Nota de Credito (por implementar).");
+  const goToDeposits = () => alert("Depositos de adelantos (por implementar).");
+  const goToHistory = () => alert("Historico de facturas (por implementar).");
+  const [showBillingOverlay, setShowBillingOverlay] = useState(false);
+
+  const billingContent = (
+    <div className="space-y-3">
+      <div className="bg-white border rounded-lg p-3 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            className="border rounded px-2 py-1 w-full"
+            placeholder="Buscar por # de factura, huesped o habitacion"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button className="px-2 py-1 rounded border" onClick={() => setQ("")}>
+            Limpiar
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-xs">
+            <thead>
+              <tr className="text-left border-b">
+                <th className="py-2 pr-3">Factura</th>
+                <th className="py-2 pr-3">Huesped</th>
+                <th className="py-2 pr-3">Hab.</th>
+                <th className="py-2 pr-3">Fecha</th>
+                <th className="py-2 pr-3">Total</th>
+                <th className="py-2 pr-3">Estado</th>
+                <th className="py-2 pr-3">Origen</th>
+                <th className="py-2 pr-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((i) => (
+                <tr key={i.number || Math.random()} className="border-b hover:bg-gray-50">
+                  <td className="py-2 pr-3 font-medium">{i.number ?? <Badge>nuevo</Badge>}</td>
+                  <td className="py-2 pr-3">{i.guest}</td>
+                  <td className="py-2 pr-3">{i.room || "-"}</td>
+                  <td className="py-2 pr-3">{i.date}</td>
+                  <td className="py-2 pr-3">{fmtCurrency(Number(i.total ?? 0), management.currency)}</td>
+                  <td className="py-2 pr-3">
+                    <Badge
+                      color={
+                        i.status === "Pagada"
+                          ? "green"
+                          : i.status === "Vencida"
+                          ? "red"
+                          : i.status === "Parcial"
+                          ? "yellow"
+                          : "gray"
+                      }
+                    >
+                      {i.status}
+                    </Badge>
+                  </td>
+                  <td className="py-2 pr-3">
+                    <Badge color={i.source === "checkout" ? "blue" : "gray"}>{i.source}</Badge>
+                  </td>
+                  <td className="py-2 pr-2">
+                    <button
+                      className="px-2 py-1 rounded border"
+                      onClick={() =>
+                        openNewInvoice({
+                          guest: i.guest,
+                          room: i.room,
+                          items: [{ description: "Ajuste", qty: 1, price: 0 }],
+                          source: i.source,
+                        })
+                      }
+                    >
+                      Editar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!filtered.length && (
+                <tr>
+                  <td className="py-6 text-center text-gray-500" colSpan={8}>
+                    Sin resultados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white border rounded-lg p-3 shadow-sm">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="font-semibold">Habitaciones en casa</h3>
+          <span className="text-xs text-gray-500">{inHouseRooms.length} ocupadas</span>
+        </div>
+        <div className="space-y-2">
+          {inHouseRooms.map((r) => (
+            <div key={r.folio} className="border rounded p-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm">Hab. {r.room} {r.guest}</div>
+                  <div className="text-xs text-gray-500">Noches: {r.nights} Folio: {r.folio}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm">
+                    Saldo:{" "}
+                    <strong className={r.balance > 0 ? "text-amber-700" : "text-green-700"}>
+                      {fmtCurrency(r.balance, management.currency)}
+                    </strong>
+                  </div>
+                  <div className="mt-1 flex gap-1">
+                    <button
+                      className="px-2 py-1 rounded border text-xs"
+                      onClick={() =>
+                        openNewInvoice({
+                          guest: r.guest,
+                          room: r.room,
+                          items: [{ description: "Consumo / Estancia", qty: 1, price: r.balance }],
+                          source: "checkout",
+                        })
+                      }
+                    >
+                      Facturar
+                    </button>
+                    <button
+                      className="px-2 py-1 rounded border text-xs"
+                      onClick={() => quickChargeFromRoom(r)}
+                      title="Cobro rapido con saldo sugerido"
+                    >
+                      Cobro rapido
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {!inHouseRooms.length && <div className="text-xs text-gray-500">No hay habitaciones ocupadas.</div>}
+        </div>
+        <div className="mt-3">
+          <div className="text-xs text-gray-500 mb-1">Metodos de pago configurados</div>
+          <div className="flex flex-wrap gap-1">
+            {paymentMethods.map((m) => (
+              <Badge key={m} color="gray">
+                {m}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="p-4 bg-gray-50 min-h-screen text-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-bold">Facturación</h1>
+        <h1 className="text-xl font-bold">Facturacion</h1>
         <div className="flex gap-2">
           <button
             className="px-3 py-1.5 rounded bg-blue-600 text-white"
@@ -718,12 +874,12 @@ export default function FacturacionPage() {
           <button
             className="px-3 py-1.5 rounded border"
             onClick={openCheckoutList}
-            title="Ver huéspedes para check-out y generar sus facturas"
+            title="Ver huespedes para check-out y generar sus facturas"
           >
             Facturas de check-out
           </button>
           <button className="px-3 py-1.5 rounded bg-purple-700 text-white" onClick={goToCreditNote}>
-            Nota de crédito
+            Nota de credito
           </button>
           <button className="px-3 py-1.5 rounded bg-amber-600 text-white" onClick={goToCashClose}>
             Cierre de caja
@@ -741,146 +897,72 @@ export default function FacturacionPage() {
         ))}
       </div>
 
-      {/* Layout principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* Panel de facturas */}
-        <div className="lg:col-span-2 bg-white border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-3">
-            <input
-              className="border rounded px-2 py-1 w-full"
-              placeholder="Buscar por # de factura, huésped o habitación…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-            <button className="px-2 py-1 rounded border" onClick={() => setQ("")}>
-              Limpiar
+            {/* Contenedor principal de facturacion y accesos laterales */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        <div className="lg:col-span-3 space-y-3">
+          <div className="bg-white border rounded-lg p-6 shadow-sm flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-lg text-emerald-900">Panel de facturacion</h3>
+              <p className="text-sm text-gray-600">
+                Abre la ventana de facturacion para ver facturas, habitaciones en casa y acciones detalladas.
+              </p>
+            </div>
+            <button
+              className="px-4 py-2 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
+              onClick={() => setShowBillingOverlay(true)}
+            >
+              Ir a facturacion
             </button>
           </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-xs">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-3">Factura</th>
-                  <th className="py-2 pr-3">Huésped</th>
-                  <th className="py-2 pr-3">Hab.</th>
-                  <th className="py-2 pr-3">Fecha</th>
-                  <th className="py-2 pr-3">Total</th>
-                  <th className="py-2 pr-3">Estado</th>
-                  <th className="py-2 pr-3">Origen</th>
-                  <th className="py-2 pr-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((i) => (
-                  <tr key={i.number || Math.random()} className="border-b hover:bg-gray-50">
-                    <td className="py-2 pr-3 font-medium">{i.number ?? <Badge>nuevo</Badge>}</td>
-                    <td className="py-2 pr-3">{i.guest}</td>
-                    <td className="py-2 pr-3">{i.room || "-"}</td>
-                    <td className="py-2 pr-3">{i.date}</td>
-                    <td className="py-2 pr-3">{fmtCurrency(Number(i.total ?? 0), management.currency)}</td>
-                    <td className="py-2 pr-3">
-                      <Badge color={
-                        i.status === "Pagada" ? "green" :
-                        i.status === "Vencida" ? "red" :
-                        i.status === "Parcial" ? "yellow" : "gray"
-                      }>
-                        {i.status}
-                      </Badge>
-                    </td>
-                    <td className="py-2 pr-3">
-                      <Badge color={i.source === "checkout" ? "blue" : "gray"}>
-                        {i.source}
-                      </Badge>
-                    </td>
-                    <td className="py-2 pr-2">
-                      <button
-                        className="px-2 py-1 rounded border"
-                        onClick={() =>
-                          openNewInvoice({
-                            guest: i.guest,
-                            room: i.room,
-                            items: [{ description: "Ajuste", qty: 1, price: 0 }],
-                            source: i.source,
-                          })
-                        }
-                      >
-                        Editar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {!filtered.length && (
-                  <tr>
-                    <td className="py-6 text-center text-gray-500" colSpan={8}>
-                      Sin resultados.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
 
-        {/* Panel de habitaciones en casa */}
-        <div className="bg-white border rounded-lg p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-semibold">Habitaciones en casa</h3>
-            <span className="text-xs text-gray-500">{inHouseRooms.length} ocupadas</span>
-          </div>
-          <div className="space-y-2">
-            {inHouseRooms.map((r) => (
-              <div key={r.folio} className="border rounded p-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-sm">Hab. {r.room} — {r.guest}</div>
-                    <div className="text-xs text-gray-500">Noches: {r.nights} · Folio: {r.folio}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm">
-                      Saldo:{" "}
-                      <strong className={r.balance > 0 ? "text-amber-700" : "text-green-700"}>
-                        {fmtCurrency(r.balance, management.currency)}
-                      </strong>
-                    </div>
-                    <div className="mt-1 flex gap-1">
-                      <button
-                        className="px-2 py-1 rounded border text-xs"
-                        onClick={() =>
-                          openNewInvoice({
-                            guest: r.guest,
-                            room: r.room,
-                            items: [{ description: "Consumo / Estancia", qty: 1, price: r.balance }],
-                            source: "checkout",
-                          })
-                        }
-                      >
-                        Facturar
-                      </button>
-                      <button
-                        className="px-2 py-1 rounded border text-xs"
-                        onClick={() => quickChargeFromRoom(r)}
-                        title="Cobro rápido con saldo sugerido"
-                      >
-                        Cobro rápido
-                      </button>
-                    </div>
-                  </div>
-                </div>
+        {/* Recuadros laterales */}
+        <div className="grid grid-cols-1 gap-3">
+          {[
+            {
+              title: "Resumen diario",
+              desc: `Facturas hoy: ${kpiMap["Facturas hoy"] || 0}  Pagadas: ${kpiMap["Pagadas"] || 0}  Pendientes: ${kpiMap["Pendientes"] || 0}  Vencidas: ${kpiMap["Vencidas"] || 0}  Habitaciones en casa: ${inHouseRooms.length}`,
+              action: () => {},
+              cta: "Nueva factura",
+              cta2: "Facturas de check-out",
+            },
+            { title: "Facturar", desc: "Crear factura inmediata", action: () => setShowBillingOverlay(true), cta: "Ir a facturacion" },
+            { title: "Depositos de adelantos", desc: "Registrar anticipos y aplicarlos a facturas", action: goToDeposits, cta: "Ir a depositos" },
+            { title: "Notas de credito", desc: "Emitir y consultar notas de credito", action: goToCreditNote, cta: "Crear nota" },
+            { title: "Historico de facturas", desc: "Consultar facturas emitidas", action: goToHistory, cta: "Ver historico" },
+          ].map((card) => (
+            <div key={card.title} className="border rounded-lg bg-white p-4 flex flex-col gap-2 shadow-sm">
+              <div className="text-sm font-semibold text-emerald-800">{card.title}</div>
+              <div className="text-xs text-slate-600 flex-1">{card.desc}</div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  className="px-3 py-1.5 text-xs rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100"
+                  onClick={card.action}
+                >
+                  {card.cta}
+                </button>
+                {card.cta2 && (
+                  <button
+                    className="px-3 py-1.5 text-xs rounded-full bg-blue-50 text-blue-800 border border-blue-100 hover:bg-blue-100"
+                    onClick={openCheckoutList}
+                  >
+                    {card.cta2}
+                  </button>
+                )}
               </div>
-            ))}
-            {!inHouseRooms.length && <div className="text-xs text-gray-500">No hay habitaciones ocupadas.</div>}
-          </div>
-          <div className="mt-3">
-            <div className="text-xs text-gray-500 mb-1">Métodos de pago configurados</div>
-            <div className="flex flex-wrap gap-1">
-              {paymentMethods.map((m) => (
-                <Badge key={m} color="gray">{m}</Badge>
-              ))}
             </div>
-          </div>
+          ))}
         </div>
       </div>
+
+      <Modal
+        open={showBillingOverlay}
+        onClose={() => setShowBillingOverlay(false)}
+        title="Facturacion"
+        size="max-w-5xl"
+      >
+        {billingContent}
+      </Modal>
 
       {/* Modales */}
       <NewInvoiceModal
@@ -904,3 +986,14 @@ export default function FacturacionPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+

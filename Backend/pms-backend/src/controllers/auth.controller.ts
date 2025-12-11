@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import { sign } from "../lib/jwt.js";
+import { ALL_PERMISSIONS } from "../config/permissions.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 
@@ -19,6 +20,19 @@ export async function register(req: Request, res: Response) {
     const hotel = await prisma.hotel.create({
       data: { name: hotelName || "Hotel Demo", currency: "CRC" },
       select: { id: true, name: true },
+    });
+
+    // Crear permisos base y rol ADMIN para el hotel recién creado
+    await prisma.permission.createMany({ data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })), skipDuplicates: true });
+    await prisma.appRole.upsert({
+      where: { hotelId_id: { hotelId: hotel.id, id: "ADMIN" } },
+      update: { name: "ADMIN", description: "Administrador" },
+      create: { id: "ADMIN", name: "ADMIN", description: "Administrador", hotelId: hotel.id },
+    });
+    await prisma.rolePermission.deleteMany({ where: { hotelId: hotel.id, roleId: "ADMIN" } });
+    await prisma.rolePermission.createMany({
+      data: ALL_PERMISSIONS.map((p) => ({ roleId: "ADMIN", permissionId: p, hotelId: hotel.id })),
+      skipDuplicates: true,
     });
 
     const hash = await bcrypt.hash(password, ROUNDS);
