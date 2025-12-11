@@ -1,10 +1,21 @@
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
+import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import type { AuthUser } from "../middleware/auth.js";
 
 export async function listPermissions(_req: Request, res: Response) {
+  // Aseguramos que todos los permisos del catálogo existan en la tabla
+  await prisma.permission.createMany({
+    data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })),
+    skipDuplicates: true,
+  });
   const perms = await prisma.permission.findMany({ orderBy: { id: "asc" } });
   res.json(perms);
+}
+
+export async function listPermissionModules(_req: Request, res: Response) {
+  // Devuelve la estructura agrupada por módulos para el management
+  res.json(PERMISSION_MODULES);
 }
 
 export async function getRolePermissions(req: Request, res: Response) {
@@ -32,10 +43,13 @@ export async function setRolePermissions(req: Request, res: Response) {
   const role = await prisma.appRole.findUnique({ where: { hotelId_id: { hotelId, id: roleId } } });
   if (!role) return res.status(404).json({ message: "Rol no encontrado" });
 
+  const validSet = new Set(ALL_PERMISSIONS);
+  const filtered = Array.from(new Set(permissions.filter((p) => validSet.has(p))));
+
   await prisma.rolePermission.deleteMany({ where: { hotelId, roleId } });
-  if (permissions.length > 0) {
+  if (filtered.length > 0) {
     await prisma.rolePermission.createMany({
-      data: permissions.map((p) => ({ roleId, permissionId: p, hotelId })),
+      data: filtered.map((p) => ({ roleId, permissionId: p, hotelId })),
       skipDuplicates: true,
     });
   }

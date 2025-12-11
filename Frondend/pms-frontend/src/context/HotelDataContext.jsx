@@ -30,12 +30,18 @@ const mapRoom = (room) => ({
   type: room.type,
   status: mapRoomStatus(room.status),
   rawStatus: room.status,
+  baseRate: room.baseRate,
+  currency: room.currency,
+  notes: room.notes,
 });
 const mapReservation = (r) => {
   const guestName = [r.guest?.firstName, r.guest?.lastName].filter(Boolean).join(" ").trim();
   return {
     id: String(r.id),
     code: r.code,
+    rooming: r.rooming,
+    otaCode: r.otaCode,
+    mealPlanId: r.mealPlanId,
     roomId: String(r.roomId),
     roomNumber: r.room?.number ?? r.roomId,
     guestId: r.guestId,
@@ -197,15 +203,24 @@ export function HotelDataProvider({ children }) {
       checkOutDate,
       adults = 2,
       children = 0,
+      infants = 0,
+      quantity = 1,
       code,
+      rooming,
+      otaCode,
       status = "CONFIRMED",
       source = "FRONTDESK",
       channel = "DIRECT",
       ratePlanId,
       price,
+      priceRoom,
+      priceRegimen,
+      priceTax,
+      discount,
       currency,
       paymentMethod,
       depositAmount,
+      mealPlanId,
       hotelId,
     }) => {
       setLoadingKey("action", true);
@@ -217,15 +232,24 @@ export function HotelDataProvider({ children }) {
           checkOut: checkOutDate,
           adults: Number(adults) || 0,
           children: Number(children) || 0,
+          infants: Number(infants) || 0,
+          quantity: Number(quantity) || 1,
           code: code || `RES-${Date.now()}`,
+          rooming,
+          otaCode,
           status,
           source,
           channel,
           ratePlanId: ratePlanId ? Number(ratePlanId) || ratePlanId : undefined,
           price: price === 0 || price ? Number(price) : undefined,
+          priceRoom: priceRoom === 0 || priceRoom ? Number(priceRoom) : undefined,
+          priceRegimen: priceRegimen === 0 || priceRegimen ? Number(priceRegimen) : undefined,
+          priceTax: priceTax === 0 || priceTax ? Number(priceTax) : undefined,
+          discount: discount === 0 || discount ? Number(discount) : undefined,
           currency,
           paymentMethod,
           depositAmount: depositAmount === 0 || depositAmount ? Number(depositAmount) : undefined,
+          mealPlanId: mealPlanId ? Number(mealPlanId) || mealPlanId : undefined,
           hotelId,
         };
         const payload = Object.fromEntries(Object.entries(payloadRaw).filter(([, v]) => v !== undefined && v !== ""));
@@ -273,10 +297,11 @@ export function HotelDataProvider({ children }) {
   );
 
   const cancelReservation = useCallback(
-    async (id) => {
+    async (id, meta) => {
       setLoadingKey("action", true);
       try {
-        const { data } = await api.post(`/reservations/${id}/cancel`);
+        const payload = meta?.reason ? { reason: meta.reason } : {};
+        const { data } = await api.post(`/reservations/${id}/cancel`, payload);
         const mapped = mapReservation(data);
         setReservations((list) => list.map((r) => (r.id === String(id) ? mapped : r)));
         await refreshRooms();

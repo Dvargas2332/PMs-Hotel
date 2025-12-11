@@ -16,6 +16,7 @@ import hotelRoutes from "./routes/hotel.route.js";
 import rolesRoutes from "./routes/roles.route.js";
 import permissionsRoutes from "./routes/permissions.route.js";
 import restaurantRoutes from "./routes/restaurant.route.js";
+import reportRoutes from "./routes/report.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -54,6 +55,7 @@ api.use("/hotel", hotelRoutes);
 api.use("/roles", rolesRoutes);
 api.use("/permissions", permissionsRoutes);
 api.use("/restaurant", restaurantRoutes);
+api.use("/reports", reportRoutes);
 
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

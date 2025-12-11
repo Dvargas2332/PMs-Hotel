@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Bell, Hotel, Settings, Banknote, UtensilsCrossed, LogOut, User2 } from "lucide-react";
+import { ChevronRight, Bell, Hotel, Settings, Banknote, UtensilsCrossed, LogOut } from "lucide-react";
 
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
@@ -10,8 +10,8 @@ import { useAuth } from "../context/AuthContext";
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
   management: { from: "from-indigo-500/90", to: "to-blue-500/80", text: "text-white" },
-  accounting: { from: "from-amber-500/90", to: "to-orange-500/80", text: "text-white" },
-  restaurant: { from: "from-rose-500/90", to: "to-purple-500/80", text: "text-white" },
+  accounting: { from: "from-rose-500/90", to: "to-slate-800/90", text: "text-white" },
+  restaurant: { from: "from-amber-500/90", to: "to-orange-500/80", text: "text-white" },
 };
 
 export default function Launcher() {

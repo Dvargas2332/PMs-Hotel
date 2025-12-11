@@ -8,6 +8,16 @@ const STATUS_META = {
   "Check-in": { bg: "bg-blue-100 text-blue-800 border-blue-200" },
   "Check-out": { bg: "bg-slate-100 text-slate-800 border-slate-200" },
   Cancelada: { bg: "bg-rose-100 text-rose-800 border-rose-200" },
+  CONFIRMED: { bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  PENDING: { bg: "bg-amber-100 text-amber-800 border-amber-200" },
+  CHECKED_IN: { bg: "bg-blue-100 text-blue-800 border-blue-200" },
+  CHECKED_OUT: { bg: "bg-slate-100 text-slate-800 border-slate-200" },
+  CANCELED: { bg: "bg-rose-100 text-rose-800 border-rose-200" },
+};
+
+const StatusBadge = ({ status }) => {
+  const meta = STATUS_META[status] || { bg: "bg-gray-100 text-gray-700 border-gray-200" };
+  return <span className={`px-2 py-1 rounded border text-xs font-medium ${meta.bg}`}>{status || "N/D"}</span>;
 };
 
 const emptyForm = {
@@ -21,6 +31,8 @@ const emptyForm = {
   checkOutDate: "",
   adults: 2,
   children: 0,
+  infants: 0,
+  quantity: 1,
   ratePlanId: "",
   price: "",
   currency: "CRC",
@@ -29,13 +41,16 @@ const emptyForm = {
   status: "CONFIRMED",
   paymentMethod: "",
   depositAmount: "",
+  otaCode: "",
   code: "",
+  rooming: "",
+  mealPlanId: "",
   hotelId: "",
-};
-
-const Badge = ({ status }) => {
-  const meta = STATUS_META[status] || { bg: "bg-gray-100 text-gray-700 border-gray-200" };
-  return <span className={`px-2 py-1 rounded border text-xs font-medium ${meta.bg}`}>{status || "N/D"}</span>;
+  discount: "",
+  priceRoom: "",
+  priceNet: "",
+  priceRegimen: "",
+  priceTax: "",
 };
 
 function ActionButton({ onClick, children, disabled, tone = "gray" }) {
@@ -70,14 +85,132 @@ export default function ReservationsPage() {
     doCheckOut,
     cancelReservation,
     createGuest,
+    setReservations,
   } = useHotelData();
 
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [ratePlans, setRatePlans] = useState([]);
+  const [mealPlans, setMealPlans] = useState([]);
+  const [selectedRow, setSelectedRow] = useState(null);
+  const [showRowEditor, setShowRowEditor] = useState(false);
+  const [rowSaved, setRowSaved] = useState(false);
+  const [rowConfirmed, setRowConfirmed] = useState(false);
+  const [draftRows, setDraftRows] = useState([]);
+
+  const currentPlan = useMemo(
+    () => ratePlans.find((r) => String(r.id) === String(form.ratePlanId)),
+    [ratePlans, form.ratePlanId]
+  );
+  const isAgencyPlan = useMemo(() => {
+    const txt = (currentPlan?.channel || currentPlan?.type || currentPlan?.name || "").toUpperCase();
+    return txt.includes("AGENC");
+  }, [currentPlan]);
+
+  const handleDateFrom = (v) => {
+    setForm((f) => {
+      const next = { ...f, checkInDate: v };
+      if (v) {
+        const d = new Date(v);
+        d.setDate(d.getDate() + 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        next.checkOutDate = `${y}-${m}-${day}`;
+      }
+      return next;
+    });
+  };
+
+  // Ajustar precio segun tarifario / habitacion
+  useEffect(() => {
+    if (!form.roomId && !form.ratePlanId) return;
+    const room = rooms.find((r) => String(r.id) === String(form.roomId));
+    const plan = ratePlans.find((r) => String(r.id) === String(form.ratePlanId));
+    const baseRoom =
+      (typeof plan?.priceWithoutTax === "number" && plan.priceWithoutTax) ||
+      (typeof plan?.amount === "number" && plan.amount) ||
+      (typeof room?.baseRate === "number" && room.baseRate) ||
+      (typeof plan?.price === "number" && plan.price) ||
+      0;
+    const regimenAmount =
+      (typeof plan?.mealplants === "number" && plan.mealplants) ||
+      (typeof plan?.mealsplant === "number" && plan.mealsplant) ||
+      (typeof plan?.mealsPlan === "number" && plan.mealsPlan) ||
+      (typeof plan?.regimenPrice === "number" && plan.regimenPrice) ||
+      (typeof plan?.regimenAmount === "number" && plan.regimenAmount) ||
+      0;
+    const taxAmount =
+      (typeof plan?.taxes === "number" && plan.taxes) ||
+      (typeof plan?.taxAmount === "number" && plan.taxAmount) ||
+      (typeof plan?.iva === "number" && plan.iva) ||
+      0;
+    setForm((f) => ({
+      ...f,
+      priceRoom: baseRoom,
+      priceRegimen: regimenAmount,
+      priceTax: taxAmount,
+    }));
+  }, [form.roomId, form.ratePlanId, rooms, ratePlans]);
+
+  // Codigo (todas las reservas) y rooming (solo agencias) consecutivos
+  useEffect(() => {
+    setForm((f) => {
+      const next = { ...f };
+      if (!f.code) {
+        next.code = `RES-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(6, "0")}`;
+      }
+      if (isAgencyPlan && !f.rooming) {
+        next.rooming = `AG-RM-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(4, "0")}`;
+      }
+      return next;
+    });
+  }, [isAgencyPlan, reservations?.length, draftRows?.length]);
+
+  // Ajustar total con desglose (sin iva ni regimen en priceRoom, regimen en priceRegimen, impuesto en priceTax, descuento en discount)
+  useEffect(() => {
+    setForm((f) => {
+      const room = Number(f.priceRoom) || 0;
+      const reg = Number(f.priceRegimen) || 0;
+      const disc = Number(f.discount) || 0;
+      let tax = Number(f.priceTax) || 0;
+      if (!tax && f.price) {
+        const remainder = Number(f.price) - room - reg + disc;
+        if (!Number.isNaN(remainder) && remainder >= 0) tax = remainder;
+      }
+      const total = room + reg + tax - disc;
+      if (total === Number(f.price) && tax === Number(f.priceTax)) return f;
+      return { ...f, price: total, priceTax: tax };
+    });
+  }, [form.priceRoom, form.priceRegimen, form.priceTax, form.discount, form.price]);
+
+  const handleDateTo = (v) => {
+    setForm((f) => {
+      if (f.checkInDate) {
+        const min = new Date(f.checkInDate);
+        min.setDate(min.getDate() + 1);
+        const minStr = min.toISOString().slice(0, 10);
+        if (v <= f.checkInDate) {
+          alert("La fecha Hasta debe ser mayor que Desde (al menos +1 dia).");
+          return { ...f, checkOutDate: minStr };
+        }
+      }
+      return { ...f, checkOutDate: v };
+    });
+  };
+
+  const handleDepositClick = () => {
+    const current = form.depositAmount ? String(form.depositAmount) : "";
+    const input = window.prompt("Deposito de confirmacion", current);
+    if (input === null) return;
+    const num = input === "" ? "" : Number(input);
+    if (Number.isNaN(num)) {
+      alert("Monto invalido");
+      return;
+    }
+    setForm((f) => ({ ...f, depositAmount: input === "" ? "" : num }));
+  };
 
   useEffect(() => {
     refreshRooms();
@@ -89,74 +222,145 @@ export default function ReservationsPage() {
         if (Array.isArray(data)) setRatePlans(data);
       })
       .catch(() => {});
+    api
+      .get("/api/mealPlans")
+      .then(({ data }) => {
+        if (Array.isArray(data)) setMealPlans(data);
+      })
+      .catch(() => {});
   }, [refreshRooms, refreshGuests, refreshReservations]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return reservations.filter((r) => {
+    const visible = reservations.filter((r) => (r.rawStatus || "").toUpperCase() !== "CANCELED");
+    return visible.filter((r) => {
       const matchesSearch =
         !term ||
         (r.guestName || "").toLowerCase().includes(term) ||
         (r.code || "").toLowerCase().includes(term) ||
         (r.roomNumber || "").toLowerCase().includes(term);
-      const byFrom = dateFrom ? (!r.checkInDate || r.checkInDate >= dateFrom) : true;
-      const byTo = dateTo ? (!r.checkOutDate || r.checkOutDate <= dateTo) : true;
-      return matchesSearch && byFrom && byTo;
+      return matchesSearch;
     });
-  }, [reservations, search, dateFrom, dateTo]);
+  }, [reservations, search]);
+
+  const buildGuest = async (row) => {
+    let guestId = row.guestId;
+    if (!guestId) {
+      if (!row.firstName || !row.lastName) {
+        throw new Error("Completa nombre y apellido del huesped");
+      }
+      const guest = await createGuest({
+        firstName: row.firstName,
+        lastName: row.lastName,
+        email: row.email || undefined,
+        phone: row.phone || undefined,
+      });
+      guestId = guest?.id;
+    }
+    return guestId;
+  };
+
+  const createReservationFromRow = async (row) => {
+    const toISODate = (dateStr) => {
+      if (!dateStr) return "";
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      return Number.isNaN(d.getTime()) ? dateStr : d.toISOString();
+    };
+    const guestId = await buildGuest(row);
+    return createReservation({
+      roomId: row.roomId,
+      guestId,
+      checkInDate: toISODate(row.checkInDate),
+      checkOutDate: toISODate(row.checkOutDate),
+      adults: Number(row.adults) || 2,
+      children: Number(row.children) || 0,
+      infants: Number(row.infants) || 0,
+      quantity: Number(row.quantity) || 1,
+      ratePlanId: row.ratePlanId || undefined,
+      mealPlanId: row.mealPlanId || undefined,
+      price: row.price || undefined,
+      priceRoom: row.priceRoom || undefined,
+      priceRegimen: row.priceRegimen || undefined,
+      priceTax: row.priceTax || undefined,
+      discount: row.discount || undefined,
+      currency: row.currency || "CRC",
+      source: row.source || "FRONTDESK",
+      channel: row.channel || "DIRECT",
+      status: showRowEditor ? "PENDING" : row.status || "CONFIRMED",
+      paymentMethod: row.paymentMethod || undefined,
+      depositAmount: row.depositAmount || undefined,
+      otaCode: row.otaCode || undefined,
+      rooming: row.rooming || undefined,
+      code: row.code || undefined,
+      hotelId: row.hotelId || undefined,
+    });
+  };
 
   const handleCreate = async (e) => {
-    e.preventDefault();
-    if (!form.roomId || !form.checkInDate || !form.checkOutDate) {
-      alert("Faltan datos de habitación o fechas");
-      return;
-    }
-    if (form.checkOutDate <= form.checkInDate) {
-      alert("La fecha de salida debe ser después de la entrada");
-      return;
+    e?.preventDefault?.();
+    const rowsToSave = draftRows.length ? draftRows : [form];
+    for (const r of rowsToSave) {
+      if (!r.roomId || !r.checkInDate || !r.checkOutDate) {
+        alert("Faltan datos de habitacion o fechas");
+        return;
+      }
+      if (r.checkOutDate <= r.checkInDate) {
+        alert("La fecha de salida debe ser despues de la entrada");
+        return;
+      }
     }
     try {
       setCreating(true);
-      let guestId = form.guestId;
-      if (!guestId) {
-        if (!form.firstName || !form.lastName) {
-          alert("Completa nombre y apellido del huésped");
-          return;
-        }
-        const guest = await createGuest({
-          firstName: form.firstName,
-          lastName: form.lastName,
-          email: form.email || undefined,
-          phone: form.phone || undefined,
-        });
-        guestId = guest?.id;
+      let lastId = null;
+      for (const row of rowsToSave) {
+        const created = await createReservationFromRow(row);
+        if (created?.id) lastId = created.id;
       }
-      await createReservation({
-        roomId: form.roomId,
-        guestId,
-        checkInDate: form.checkInDate,
-        checkOutDate: form.checkOutDate,
-        adults: Number(form.adults) || 2,
-        children: Number(form.children) || 0,
-        ratePlanId: form.ratePlanId || undefined,
-        price: form.price || undefined,
-        currency: form.currency || "CRC",
-        source: form.source || "FRONTDESK",
-        channel: form.channel || "DIRECT",
-        status: form.status || "CONFIRMED",
-        paymentMethod: form.paymentMethod || undefined,
-        depositAmount: form.depositAmount || undefined,
-        code: form.code || undefined,
-        hotelId: form.hotelId || undefined,
-      });
-      setForm(emptyForm);
+      if (lastId) setSelectedRow(lastId);
+      setDraftRows([]);
+      await refreshReservations();
+      await refreshRooms();
+      setRowSaved(false);
+      setRowConfirmed(false);
+      setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId }));
       setSearch("");
+      setShowRowEditor(false);
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo crear la reserva";
       alert(msg);
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleSaveRow = () => {
+    if (!form.roomId || !form.checkInDate || !form.checkOutDate) {
+      alert("Faltan datos de habitacion o fechas");
+      return;
+    }
+    if (form.checkOutDate <= form.checkInDate) {
+      alert("La fecha de salida debe ser despues de la entrada");
+      return;
+    }
+    // Mantener datos de huesped para todas las filas; solo limpiamos campos de habitacion al seguir creando
+    setDraftRows((rows) => [...rows, { ...form }]);
+    setRowSaved(true);
+    setShowRowEditor(false);
+    setForm((f) => ({
+      ...f,
+      roomId: "",
+      ratePlanId: f.ratePlanId,
+      mealPlanId: "",
+      quantity: 1,
+      adults: 2,
+      children: 0,
+      infants: 0,
+      price: "",
+      priceRoom: "",
+      priceNet: "",
+      priceRegimen: "",
+      priceTax: "",
+    }));
   };
 
   const canCheckIn = (r) => {
@@ -169,361 +373,795 @@ export default function ReservationsPage() {
     return code !== "CANCELED" && code !== "CHECKED_OUT";
   };
 
+  const resetForm = () => {
+    setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId }));
+    setSelectedRow(null);
+  };
+
+  const loadReservation = (r) => {
+    if (!r) return;
+    setSelectedRow(r.id);
+    setShowRowEditor(true);
+    setForm({
+      ...form,
+      guestId: r.guestId || "",
+      firstName: r.guest?.firstName || "",
+      lastName: r.guest?.lastName || "",
+      email: r.guest?.email || "",
+      phone: r.guest?.phone || "",
+      roomId: r.roomId || "",
+      checkInDate: r.checkInDate || "",
+      checkOutDate: r.checkOutDate || "",
+      adults: r.adults || 2,
+      children: r.children || 0,
+      ratePlanId: r.ratePlanId || "",
+      mealPlanId: r.mealPlanId || form.mealPlanId || "",
+      price: r.price || 0,
+      otaCode: r.otaCode || form.otaCode || "",
+      currency: r.currency || "CRC",
+      source: r.source || "FRONTDESK",
+      channel: r.channel || "DIRECT",
+      status: r.rawStatus || "CONFIRMED",
+      paymentMethod: r.paymentMethod || "",
+      depositAmount: r.depositAmount || "",
+      code: r.code || "",
+      rooming: r.rooming || form.rooming || (isAgencyPlan ? `AG-RM-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(4, "0")}` : ""),
+      hotelId: r.hotelId || "",
+      discount: r.discount || "",
+      quantity: r.quantity || 1,
+      infants: r.infants || 0,
+      priceRoom: r.priceRoom ?? r.room?.baseRate ?? form.priceRoom ?? 0,
+      priceRegimen:
+        r.priceRegimen ??
+        r.ratePlan?.mealplants ??
+        r.ratePlan?.mealsplant ??
+        r.ratePlan?.mealsPlan ??
+        r.ratePlan?.regimenPrice ??
+        r.ratePlan?.regimenAmount ??
+        0,
+      priceTax:
+        r.priceTax ??
+        r.ratePlan?.taxes ??
+        r.ratePlan?.taxAmount ??
+        r.ratePlan?.iva ??
+        (() => {
+          const room = Number(r.priceRoom ?? r.room?.baseRate ?? 0) || 0;
+          const reg =
+            Number(
+              r.priceRegimen ??
+                r.ratePlan?.mealsplant ??
+                r.ratePlan?.mealsPlan ??
+                r.ratePlan?.regimenPrice ??
+                r.ratePlan?.regimenAmount ??
+                0
+            ) || 0;
+          const disc = Number(r.discount ?? 0) || 0;
+          const price = Number(r.price ?? 0) || 0;
+          const calc = price - room - reg + disc;
+          return calc > 0 ? calc : 0;
+        })(),
+    });
+  };
+
+  const handleEmail = () => {
+    if (!form.email) {
+      alert("Agrega un correo para enviar.");
+      return;
+    }
+    const subject = encodeURIComponent(`Reserva ${form.code || ""}`);
+    const body = encodeURIComponent("Detalle de su reserva adjunto.");
+    window.location.href = `mailto:${form.email}?subject=${subject}&body=${body}`;
+  };
+
+  const handleWhatsapp = () => {
+    const phone = (form.phone || "").replace(/\D/g, "");
+    if (!phone) {
+      alert("Agrega un numero de telefono para enviar por WhatsApp.");
+      return;
+    }
+    window.open(`https://wa.me/${phone}`, "_blank", "noopener");
+  };
+
+  const handlePrint = () => window.print();
+
+  const handleNameChange = (value) => {
+    const parts = value.trim().split(/\s+/);
+    const firstName = parts[0] || "";
+    const lastName = parts.slice(1).join(" ");
+    setForm((f) => ({ ...f, firstName, lastName }));
+  };
+
+  const handlePickProfile = () => {
+    if (!guests || !guests.length) {
+      refreshGuests();
+      alert("No hay perfiles cargados. Intenta nuevamente luego de refrescar.");
+      return;
+    }
+    const list = guests
+      .map((g, i) => `${i + 1}. ${[g.firstName, g.lastName].filter(Boolean).join(" ") || g.name || g.id}`)
+      .join("\n");
+    const input = window.prompt(`Selecciona el numero de perfil:\n${list}`, "1");
+    if (input === null) return;
+    const idx = Number(input) - 1;
+    if (Number.isNaN(idx) || idx < 0 || idx >= guests.length) {
+      alert("Opcion invalida");
+      return;
+    }
+    const g = guests[idx];
+    setForm((f) => ({
+      ...f,
+      guestId: g.id || "",
+      firstName: g.firstName || "",
+      lastName: g.lastName || "",
+      email: g.email || "",
+      phone: g.phone || "",
+    }));
+  };
+
+  const handleConfirmAction = async () => {
+    const selected = reservations.find((r) => r.id === selectedRow);
+    if (selected) {
+      setRowConfirmed(true);
+      setReservations((list) =>
+        list.map((r) => (r.id === selectedRow ? { ...r, rawStatus: "CONFIRMED", status: "Confirmada" } : r))
+      );
+      await refreshReservations();
+      return;
+    }
+    await handleCreate();
+    setRowConfirmed(true);
+  };
+
+  const handleCancelAction = () => {
+    const selected = reservations.find((r) => r.id === selectedRow);
+    if (selected && canCancel(selected)) {
+      const ok = window.confirm("Seguro que deseas anular esta reserva?");
+      if (!ok) return;
+      const reason = window.prompt("Motivo de anulacion:", "");
+      if (reason === null || reason.trim() === "") return;
+      cancelReservation(selectedRow, { reason });
+      setSelectedRow(null);
+      refreshReservations();
+      return;
+    }
+    resetForm();
+  };
+
   return (
-    <div className="p-6 bg-gray-50 min-h-screen space-y-6">
+    <div className="min-h-screen bg-gray-50 p-6 space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Reservaciones</h1>
-          <p className="text-sm text-slate-600">Fuente conectada al backend: rooms, guests y check-in/out reales.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Reservas</h1>
+          <p className="text-sm text-slate-600">Diseno tipo maqueta para captura rapida.</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            className="px-3 py-2 rounded border bg-white hover:bg-gray-100 text-sm"
-            onClick={() => {
-              refreshReservations();
-              refreshRooms();
-              refreshGuests();
-            }}
-          >
-            Recargar
-          </button>
+        <div className="flex gap-2 items-end">
+          <PillInput
+            label="Busqueda"
+            value={search}
+            onChange={setSearch}
+            placeholder="Huesped / codigo / habitacion"
+            containerClassName="min-w-[220px]"
+          />
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Buscar</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              placeholder="Huésped, código o habitación"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Desde</label>
-            <input type="date" className="w-full border rounded px-3 py-2" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Hasta</label>
-            <input type="date" className="w-full border rounded px-3 py-2" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+        {/* Sidebar de reservas creadas */}
+        <div className="w-full lg:w-64 rounded-2xl border bg-white shadow-sm p-3 space-y-2">
+          <div className="text-sm font-semibold text-slate-800">Reservas creadas</div>
+          <div className="space-y-1 max-h-[400px] overflow-auto">
+            {filtered.map((r) => (
+              <button
+                key={r.id}
+                className={`w-full text-left rounded-xl border px-3 py-2 text-sm ${
+                  selectedRow === r.id ? "bg-emerald-50 border-emerald-200" : "bg-white hover:bg-slate-50"
+                }`}
+                onClick={() => {
+                  setSelectedRow(r.id);
+                  loadReservation(r);
+                }}
+              >
+                <div className="font-semibold">{r.code || r.id}</div>
+                <div className="text-xs text-slate-600">
+                  {r.guestName || `${r.guest?.firstName || ""} ${r.guest?.lastName || ""}`.trim() || "Sin nombre"}
+                </div>
+              </button>
+            ))}
+            {filtered.length === 0 && <div className="text-xs text-slate-500">Sin reservas para listar.</div>}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase text-slate-500">
-                <th className="p-2">Código</th>
-                <th className="p-2">Huésped</th>
-                <th className="p-2">Habitación</th>
-                <th className="p-2">Entrada</th>
-                <th className="p-2">Salida</th>
-                <th className="p-2">Estado</th>
-                <th className="p-2 text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-2 font-mono text-xs">{r.code || r.id}</td>
-                  <td className="p-2">
-                    <div className="font-medium">{r.guestName || "N/D"}</div>
-                    <div className="text-xs text-slate-500">{r.guest?.email || r.guest?.phone}</div>
-                  </td>
-                  <td className="p-2">{r.roomNumber || r.roomId}</td>
-                  <td className="p-2">{r.checkInDate || "N/D"}</td>
-                  <td className="p-2">{r.checkOutDate || "N/D"}</td>
-                  <td className="p-2">
-                    <Badge status={r.status} />
-                  </td>
-                  <td className="p-2 text-right space-x-2">
-                    <ActionButton tone="green" disabled={!canCheckIn(r) || loading.action} onClick={() => doCheckIn(r.id)}>
-                      Check-in
-                    </ActionButton>
-                    <ActionButton tone="blue" disabled={!canCheckOut(r) || loading.action} onClick={() => doCheckOut(r.id)}>
-                      Check-out
-                    </ActionButton>
-                    <ActionButton tone="red" disabled={!canCancel(r) || loading.action} onClick={() => cancelReservation(r.id)}>
-                      Cancelar
-                    </ActionButton>
-                  </td>
-                </tr>
-              ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td className="p-3 text-center text-slate-500" colSpan={7}>
-                    No hay reservaciones que coincidan con el filtro.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        {/* Contenido principal */}
+        <div className="flex-1 space-y-4">
+          <div className="rounded-2xl border bg-white shadow-sm p-4 space-y-5">
+            {/* Top layout */}
+            <div className="flex flex-col xl:flex-row gap-4">
+              {/* Izquierda */}
+              <div className="flex-1 space-y-2">
+                <PillInput
+                  label="ID - OTAS"
+                  value={form.otaCode}
+                  onChange={(v) => setForm((f) => ({ ...f, otaCode: v }))}
+                  inputClassName="max-w-[160px]"
+                  containerClassName="max-w-[200px]"
+                />
+                <PillSelect
+                  label="Tarifario"
+                  value={form.ratePlanId}
+                  onChange={(v) => setForm((f) => ({ ...f, ratePlanId: v }))}
+                  options={[{ label: "N/A", value: "" }, ...ratePlans.map((r) => ({ label: r.name, value: r.id }))]}
+                  selectClassName="max-w-[200px]"
+                />
+                <div className="flex items-end gap-[3px]">
+                  <PillInput
+                    label="Desde"
+                    type="date"
+                    value={form.checkInDate}
+                    onChange={handleDateFrom}
+                    containerClassName="max-w-[120px]"
+                    pillClassName={rowSaved ? "bg-slate-100 opacity-80" : ""}
+                    disabled={rowSaved}
+                  />
+                  <div className="h-10 w-px bg-slate-300 rounded-full" />
+                  <PillInput
+                    label="Hasta"
+                    type="date"
+                    value={form.checkOutDate}
+                    onChange={handleDateTo}
+                    min={form.checkInDate ? (() => {
+                      const d = new Date(form.checkInDate);
+                      d.setDate(d.getDate() + 1);
+                      return d.toISOString().slice(0, 10);
+                    })() : undefined}
+                    containerClassName="max-w-[120px]"
+                    pillClassName={rowSaved ? "bg-slate-100 opacity-80" : ""}
+                    disabled={rowSaved}
+                  />
+                </div>
+                <div className="flex flex-col gap-1 text-xs text-slate-600 max-w-[200px]">
+                  <span>Deposito de confirmacion</span>
+                  <button
+                    type="button"
+                    onClick={handleDepositClick}
+                    className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-800 hover:bg-slate-200 text-left"
+                  >
+                    {form.depositAmount ? `CRC ${form.depositAmount}` : "Asignar deposito"}
+                  </button>
+                </div>
+                <PillInput
+                  label="Descuento"
+                  value={form.discount}
+                  onChange={(v) => setForm((f) => ({ ...f, discount: v }))}
+                  inputClassName="max-w-[200px]"
+                  containerClassName="max-w-[200px]"
+                />
+              </div>
+
+              <div className="hidden xl:block w-px bg-slate-200" />
+
+              {/* Centro */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-3">
+                  <PillInput
+                    label="ID - reservas"
+                    value={form.code}
+                    onChange={(v) => setForm((f) => ({ ...f, code: v }))}
+                    disabled
+                    containerClassName="max-w-[110px]"
+                  />
+                  <PillInput
+                    label="Rooming"
+                    value={form.rooming}
+                    onChange={(v) => setForm((f) => ({ ...f, rooming: v }))}
+                    disabled
+                    containerClassName="max-w-[110px]"
+                  />
+                </div>
+                <div className="space-y-2 max-w-[620px]">
+                  <div className="flex items-end gap-3">
+                    <PillInput
+                      label="Nombre completo"
+                      value={`${form.firstName} ${form.lastName}`.trim()}
+                      onChange={handleNameChange}
+                      placeholder="Selecciona un perfil o escribe un nombre"
+                      containerClassName="flex-1 max-w-[350px]"
+                    />
+                    <PillButton label="Perfiles: agregar" onClick={handlePickProfile} />
+                  </div>
+                  <PillInput
+                    label="Correo electronico"
+                    value={form.email}
+                    onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+                    placeholder="Escribir texto"
+                    containerClassName="max-w-[350px]"
+                  />
+                  <PillInput
+                    label="Numero de telefono"
+                    value={form.phone}
+                    onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+                    placeholder="Escribir texto"
+                    prefix="+"
+                    containerClassName="max-w-[220px]"
+                  />
+                </div>
+                <div className="text-xs text-slate-500">Fecha y usuario que creo la reserva</div>
+              </div>
+
+              {/* Derecha */}
+              <div className="flex-1 space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <PillInput
+                    label="Nombre de tarjeta"
+                    value={form.paymentMethod}
+                    onChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
+                    placeholder="Nombre de tarjeta de credito"
+                  />
+                  <PillInput
+                    label="Numero de tarjeta"
+                    value={form.currency}
+                    onChange={(v) => setForm((f) => ({ ...f, currency: v }))}
+                    placeholder="Numero de tarjeta de credito"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Tabla estilo maqueta unida al bloque superior */}
+            <div className="border-t border-emerald-100 pt-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-800">
+                <div className="text-xs font-semibold">Seccion de habitaciones</div>
+                <div className="flex gap-2 flex-wrap">
+                  <PillButton
+                    label="Crear"
+                    onClick={() => {
+                      setShowRowEditor(true);
+                      if (rowSaved) {
+                        setSelectedRow(null);
+                      }
+                      setRowSaved(false);
+                      setRowConfirmed(false);
+                    }}
+                    disabled={creating}
+                  />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm border border-slate-200">
+                  <thead className="text-xs uppercase text-slate-600 bg-emerald-50">
+                    <tr>
+                      <th className="px-2 py-1 border-x border-slate-200">Cantidad</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Tipo de habitacion</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Regimen</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Adultos</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Ninos</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Bebes</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Precio + IVA</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Habitacion</th>
+                      <th className="px-2 py-1 border-x border-slate-200">Estado</th>
+                      <th className="px-2 py-1 text-right border-x border-slate-200">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {showRowEditor && (
+                      <tr className="border-t border-slate-200 bg-emerald-50">
+                        <td className="px-2 py-2 text-center border-x border-slate-200">
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-14 rounded border px-2 py-1 text-sm"
+                            value={form.quantity || 1}
+                            onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) || 1 }))}
+                            disabled={rowSaved}
+                          />
+                        </td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          <select
+                            className="w-full rounded border px-2 py-1 text-sm"
+                            value={form.roomId}
+                            onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
+                            disabled={rowSaved}
+                          >
+                            <option value="">Seleccione</option>
+                            {rooms.map((room) => (
+                              <option key={room.id} value={room.id}>
+                                {room.type || "Habitacion"} {room.number ? `#${room.number}` : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          <select
+                            className="w-full rounded border px-2 py-1 text-sm"
+                            value={form.mealPlanId}
+                            onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}
+                            disabled={rowSaved}
+                          >
+                            <option value="">Seleccione</option>
+                            {mealPlans.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">
+                          <input
+                            type="number"
+                            min="1"
+                            className="w-14 rounded border px-2 py-1 text-sm"
+                            value={form.adults}
+                            onChange={(e) => setForm((f) => ({ ...f, adults: Number(e.target.value) || 1 }))}
+                            disabled={rowSaved}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-14 rounded border px-2 py-1 text-sm"
+                            value={form.children}
+                            onChange={(e) => setForm((f) => ({ ...f, children: Number(e.target.value) || 0 }))}
+                            disabled={rowSaved}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">
+                          <input
+                            type="number"
+                            min="0"
+                            className="w-14 rounded border px-2 py-1 text-sm"
+                            value={form.infants}
+                            onChange={(e) => setForm((f) => ({ ...f, infants: Number(e.target.value) || 0 }))}
+                            disabled={rowSaved}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-right border-x border-slate-200">
+                          <span className="font-semibold text-emerald-700">{form.price ? `CRC ${form.price}` : "-"}</span>
+                        </td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          <input
+                            type="text"
+                            className="w-28 rounded border px-2 py-1 text-sm"
+                            value={
+                              rooms.find((r) => String(r.id) === String(form.roomId))?.number ||
+                              rooms.find((r) => String(r.id) === String(form.roomId))?.name ||
+                              form.roomId
+                            }
+                            readOnly
+                            disabled={rowSaved}
+                          />
+                        </td>
+                        <td className="px-2 py-2">
+                          {rowConfirmed ? <StatusBadge status="CONFIRMED" /> : <span className="text-xs text-slate-400"></span>}
+                        </td>
+                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
+                          <ActionButton tone="green" disabled={creating || rowSaved} onClick={handleSaveRow}>
+                            Guardar fila
+                          </ActionButton>
+                          <ActionButton
+                            tone="blue"
+                            disabled={!rowSaved}
+                            onClick={() => {
+                              setRowSaved(false);
+                              setRowConfirmed(false);
+                            }}
+                          >
+                            Editar fila
+                          </ActionButton>
+                          <ActionButton
+                            tone="red"
+                            disabled={!selectedRow}
+                            onClick={() => {
+                              const ok = window.confirm("Seguro que deseas eliminar esta fila / reserva?");
+                              if (!ok || !selectedRow) return;
+                              const reason = window.prompt("Motivo de anulacion:", "");
+                              if (reason === null || reason.trim() === "") return;
+                              cancelReservation(selectedRow, { reason });
+                              setSelectedRow(null);
+                              refreshReservations();
+                            }}
+                          >
+                            Eliminar fila
+                          </ActionButton>
+                        </td>
+                      </tr>
+                    )}
+                    {filtered.map((r) => (
+                      <tr key={r.id} className={`border-t border-slate-200 ${selectedRow === r.id ? "bg-emerald-50" : ""}`}>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">{r.room?.type || "N/D"}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          {r.mealPlan?.name || mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || r.ratePlan?.name || "N/D"}
+                        </td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.infants || 0}</td>
+                        <td className="px-2 py-2 text-right border-x border-slate-200">{r.price ? `CRC ${r.price}` : "-"}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">{r.roomNumber || r.roomId}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          {(r.rawStatus || r.status || "").toUpperCase() === "CONFIRMED" ? (
+                            <StatusBadge status={r.status || r.rawStatus} />
+                          ) : (
+                            <span className="text-xs text-slate-400"></span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
+                          <ActionButton tone="blue" disabled={!canCheckIn(r) || loading.action} onClick={() => doCheckIn(r.id)}>
+                            Check-in
+                          </ActionButton>
+                          <ActionButton tone="green" disabled={!canCheckOut(r) || loading.action} onClick={() => doCheckOut(r.id)}>
+                            Check-out
+                          </ActionButton>
+                          <ActionButton tone="red" disabled={!canCancel(r) || loading.action} onClick={() => cancelReservation(r.id)}>
+                            Cancelar
+                          </ActionButton>
+                          <button className="text-xs underline" onClick={() => loadReservation(r)}>
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {draftRows.map((r, idx) => (
+                      <tr key={`draft-${idx}`} className="border-t border-slate-200 bg-amber-50">
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          {rooms.find((room) => String(room.id) === String(r.roomId))?.type || "N/D"}
+                        </td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          {mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || "N/D"}
+                        </td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
+                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.infants || 0}</td>
+                        <td className="px-2 py-2 text-right border-x border-slate-200">{r.price ? `CRC ${r.price}` : "-"}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          {rooms.find((room) => String(room.id) === String(r.roomId))?.number || r.roomId}
+                        </td>
+                        <td className="px-2 py-2 border-x border-slate-200">
+                          <span className="text-xs text-amber-700">Borrador</span>
+                        </td>
+                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
+                          <ActionButton
+                            tone="blue"
+                            onClick={() => {
+                              setShowRowEditor(true);
+                              setForm(r);
+                              setRowSaved(false);
+                              setDraftRows((rows) => rows.filter((_, i) => i !== idx));
+                            }}
+                          >
+                            Editar
+                          </ActionButton>
+                          <ActionButton
+                            tone="red"
+                            onClick={() => {
+                              setDraftRows((rows) => rows.filter((_, i) => i !== idx));
+                            }}
+                          >
+                            Eliminar
+                          </ActionButton>
+                        </td>
+                      </tr>
+                    ))}
+                    {filtered.length === 0 && (
+                      <tr>
+                        <td className="p-3 text-center text-slate-500" colSpan={10}>
+                          No hay reservaciones que coincidan con el filtro.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="grid grid-cols-6 gap-[8px] text-xs text-slate-700 w-fit justify-start">
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Habitacion</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
+                    value={form.priceRoom}
+                    readOnly
+                  />
+                </label>
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Regimen</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
+                    value={form.priceRegimen}
+                    readOnly
+                  />
+                </label>
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Descuento</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
+                    value={form.discount}
+                    readOnly
+                  />
+                </label>
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Impuesto</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
+                    value={form.priceTax}
+                    readOnly
+                  />
+                </label>
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Deposito</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
+                    value={form.depositAmount || 0}
+                    readOnly
+                  />
+                </label>
+                <label className="flex flex-col gap-[4px] w-[130px]">
+                  <span>Total</span>
+                  <input
+                    type="number"
+                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-blue-50 border-blue-200"
+                    value={(Number(form.price) || 0) - (Number(form.depositAmount) || 0)}
+                    readOnly
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de acciones rapidas */}
+          <div className="flex flex-wrap gap-3 justify-end">
+            {[
+              { key: "new", title: "Nueva reserva", color: "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-800", icon: IconPlus, onClick: resetForm },
+              { key: "save", title: "Guardar", color: "bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-300 text-emerald-900", icon: IconSave, onClick: handleCreate },
+              { key: "email", title: "Correo", color: "bg-gradient-to-br from-sky-50 to-sky-100 border-sky-200 text-sky-800", icon: IconMail, onClick: handleEmail },
+              { key: "whatsapp", title: "WhatsApp", color: "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-800", icon: IconWhatsapp, onClick: handleWhatsapp },
+              { key: "print", title: "Imprimir", color: "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-800", icon: IconPrinter, onClick: handlePrint },
+              { key: "confirm", title: "Confirmar", color: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-800", icon: IconCheck, onClick: handleConfirmAction },
+              { key: "cancel", title: "Cancelar", color: "bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-800", icon: IconClose, onClick: handleCancelAction },
+            ].map(({ key, title, color, icon: Icon, onClick }) => (
+              <button
+                key={key}
+                type="button"
+                title={title}
+                onClick={onClick}
+                className={`h-12 w-12 rounded-2xl border shadow-md hover:shadow-lg hover:-translate-y-0.5 transition transform flex items-center justify-center ${color}`}
+              >
+                <Icon />
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
-
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Crear reserva</h2>
-          {creating && <span className="text-xs text-slate-500">Guardando...</span>}
-        </div>
-        <form className="grid grid-cols-1 lg:grid-cols-3 gap-3" onSubmit={handleCreate}>
-          <div className="space-y-2">
-            <label className="block text-xs text-slate-500">Huésped existente</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.guestId}
-              onChange={(e) => setForm((f) => ({ ...f, guestId: e.target.value }))}
-            >
-              <option value="">-- Nuevo huésped --</option>
-              {guests.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name || `${g.firstName} ${g.lastName}`.trim()} {g.email ? `(${g.email})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-xs text-slate-500">Habitación</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.roomId}
-              onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
-              required
-            >
-              <option value="">Selecciona habitación</option>
-              {rooms.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.number || r.title || r.id}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-xs text-slate-500">Plan / Tarifa</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.ratePlanId}
-              onChange={(e) => setForm((f) => ({ ...f, ratePlanId: e.target.value }))}
-            >
-              <option value="">Sin plan</option>
-              {ratePlans.map((rp) => (
-                <option key={rp.id} value={rp.id}>
-                  {rp.name || rp.id}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {!form.guestId && (
-            <>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Nombre</label>
-                <input
-                  className="w-full border rounded px-3 py-2"
-                  value={form.firstName}
-                  onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Apellidos</label>
-                <input
-                  className="w-full border rounded px-3 py-2"
-                  value={form.lastName}
-                  onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Email</label>
-                <input
-                  type="email"
-                  className="w-full border rounded px-3 py-2"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Teléfono</label>
-                <input
-                  className="w-full border rounded px-3 py-2"
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                />
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Entrada</label>
-            <input
-              type="date"
-              className="w-full border rounded px-3 py-2"
-              value={form.checkInDate}
-              onChange={(e) => setForm((f) => ({ ...f, checkInDate: e.target.value }))}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Salida</label>
-            <input
-              type="date"
-              className="w-full border rounded px-3 py-2"
-              value={form.checkOutDate}
-              onChange={(e) => setForm((f) => ({ ...f, checkOutDate: e.target.value }))}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Adultos</label>
-            <input
-              type="number"
-              min="1"
-              className="w-full border rounded px-3 py-2"
-              value={form.adults}
-              onChange={(e) => setForm((f) => ({ ...f, adults: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Niños</label>
-            <input
-              type="number"
-              min="0"
-              className="w-full border rounded px-3 py-2"
-              value={form.children}
-              onChange={(e) => setForm((f) => ({ ...f, children: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Código</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={form.code}
-              onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-              placeholder="Ej: RES-123"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Estado</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.status}
-              onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-            >
-              <option value="CONFIRMED">Confirmada</option>
-              <option value="PENDING">Pendiente</option>
-              <option value="CANCELED">Cancelada</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Fuente</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.source}
-              onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-            >
-              <option value="FRONTDESK">Front Desk</option>
-              <option value="DIRECT">Directa</option>
-              <option value="OTA">OTA</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Canal</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.channel}
-              onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
-            >
-              <option value="DIRECT">Directo</option>
-              <option value="BOOKING">Booking</option>
-              <option value="EXPEDIA">Expedia</option>
-              <option value="AIRBNB">Airbnb</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Precio (opcional)</label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full border rounded px-3 py-2"
-              value={form.price}
-              onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-              placeholder="Ej: 120.00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Moneda</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.currency}
-              onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))}
-            >
-              <option value="CRC">CRC</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Método de pago</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={form.paymentMethod}
-              onChange={(e) => setForm((f) => ({ ...f, paymentMethod: e.target.value }))}
-              placeholder="Efectivo / Tarjeta / Transferencia"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Depósito / Pago (opcional)</label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full border rounded px-3 py-2"
-              value={form.depositAmount}
-              onChange={(e) => setForm((f) => ({ ...f, depositAmount: e.target.value }))}
-              placeholder="Monto recibido"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">Hotel ID (si aplica)</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              value={form.hotelId}
-              onChange={(e) => setForm((f) => ({ ...f, hotelId: e.target.value }))}
-              placeholder="Opcional"
-            />
-          </div>
-
-          <div className="md:col-span-2 flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              className="px-4 py-2 rounded border bg-gray-100 hover:bg-gray-200 text-sm"
-              onClick={() => setForm(emptyForm)}
-            >
-              Limpiar
-            </button>
-            <button
-              type="submit"
-              disabled={creating || loading.action}
-              className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-500 text-sm"
-            >
-              Crear reserva
-            </button>
-          </div>
-        </form>
       </div>
     </div>
+  );
+}
+
+function PillInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+  placeholder = "",
+  prefix = "",
+  inputClassName = "",
+  containerClassName = "",
+  pillClassName = "",
+  disabled = false
+}) {
+  return (
+    <label className={`flex flex-col gap-1 text-xs text-slate-600 ${containerClassName}`}>
+      <span>{label}</span>
+      <div className={`flex items-center gap-1 rounded-full bg-slate-100 border border-slate-200 px-3 py-2 ${pillClassName}`}>
+        {prefix && <span className="text-slate-400 text-sm">{prefix}</span>}
+        <input
+          type={type}
+          className={`w-full bg-transparent outline-none text-slate-800 text-sm ${inputClassName} ${disabled ? "cursor-not-allowed opacity-70" : ""}`}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+        />
+      </div>
+    </label>
+  );
+}
+
+function PillSelect({ label, value, onChange, options, selectClassName = "" }) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-slate-600">
+      <span>{label}</span>
+      <select
+        className={`w-full rounded-full bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none ${selectClassName}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function PillButton({ label, onClick, disabled }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      className={`rounded-full border px-4 py-2 text-sm ${
+        disabled ? "bg-slate-100 text-slate-400" : "bg-white text-slate-800 hover:bg-slate-50"
+      }`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconMail() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M4 7l8 6 8-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconWhatsapp() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M5 19l1.2-3.4A7.5 7.5 0 1 1 19.5 12a7.6 7.6 0 01-1 3.7A7.5 7.5 0 0112 19.5a7.6 7.6 0 01-3.6-.9z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 9.5c0 2 2 4 4 4l1.1-.6c.2-.1.5 0 .6.2l.5 1c.1.2 0 .5-.2.6-.9.6-2 .8-3.1.6a5.4 5.4 0 01-3.5-3.5c-.2-1-.1-2.2.5-3.1.1-.2.4-.3.6-.2l1 .5c.2.1.3.3.2.5z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconPrinter() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M7 4h10v4H7z" />
+      <rect x="4.5" y="8" width="15" height="8" rx="2" />
+      <path d="M8 15h8v5H8z" />
+      <path d="M7 11h2M15 11h2" strokeLinecap="round" />
+      <path d="M10 17.5h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCheck() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M5 12.5l4 4 10-10" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconClose() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M6 6l12 12M18 6l-12 12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconSave() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <path d="M7 17a5 5 0 01-.3-9.9A6 6 0 1117 11h1a4 4 0 010 8H7z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 9v7m0 0l-3-3m3 3l3-3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }

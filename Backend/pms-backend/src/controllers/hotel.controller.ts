@@ -8,7 +8,7 @@ import type { AuthUser } from "../middleware/auth";
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
-  return (req.params as any)?.hotelId ?? user?.hotelId;
+  return user?.hotelId;
 }
 
 // GET /api/hotel

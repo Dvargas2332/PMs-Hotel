@@ -1,6 +1,7 @@
 // prisma/seed.ts
 
 import { PrismaClient, Role, RoomStatus } from "@prisma/client";
+import { ALL_PERMISSIONS } from "../src/config/permissions.js";
 
 const prisma = new PrismaClient();
 
@@ -14,27 +15,24 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: "admin@pms.local" },
-    update: {},
+    update: {
+      // ensure default admin stays usable if seed runs multiple times
+      name: "Administrador",
+      password: "$2b$10$VGzA6g6enxYQvOJDikAINuvGZ9DTnb7KxAeVGCCCs8igOhFvPyq5i", // "Admin1234"
+      role: Role.ADMIN,
+      hotelId: hotel.id,
+    },
     create: {
       email: "admin@pms.local",
       name: "Administrador",
-      password: "$2b$10$gJxPqOC1kWmH4dT1rF0kQeN8b9D2QHRN4oQ36w2kLk3mRkZsC5y6e", // "Admin1234"
+      password: "$2b$10$VGzA6g6enxYQvOJDikAINuvGZ9DTnb7KxAeVGCCCs8igOhFvPyq5i", // "Admin1234"
       role: Role.ADMIN,
       hotelId: hotel.id,
     },
   });
 
   // permisos base
-  const basePerms = [
-    "frontdesk.read",
-    "frontdesk.create_reservation",
-    "frontdesk.checkin",
-    "frontdesk.checkout",
-    "accounting.read",
-    "management.settings.write",
-    "restaurant.pos.open",
-  ];
-  for (const p of basePerms) {
+  for (const p of ALL_PERMISSIONS) {
     await prisma.permission.upsert({
       where: { id: p },
       update: {},
@@ -50,7 +48,8 @@ async function main() {
   // asignar permisos al admin
   await prisma.rolePermission.deleteMany({ where: { hotelId: hotel.id, roleId: "ADMIN" } });
   await prisma.rolePermission.createMany({
-    data: basePerms.map((p) => ({ roleId: "ADMIN", permissionId: p, hotelId: hotel.id })),
+    data: ALL_PERMISSIONS.map((p) => ({ roleId: "ADMIN", permissionId: p, hotelId: hotel.id })),
+    skipDuplicates: true,
   });
 
   // habitaciones

@@ -193,6 +193,7 @@ model Hotel {
   payments     Payment[]
   auditLogs    AuditLog[]
   invoiceItems InvoiceItem[]
+  reports      Report[]
   restaurantConfig   RestaurantConfig?
   restaurantPrintJobs RestaurantPrintJob[]
   restaurantCloses    RestaurantClose[]
@@ -240,6 +241,7 @@ model Room {
   number    String
   type      String
   status    RoomStatus @default(AVAILABLE)
+  archived  Boolean    @default(false)
   notes     String?
   baseRate  Decimal    @default(0) @db.Decimal(10, 2)
   currency  String     @default("CRC")
@@ -259,6 +261,8 @@ model Room {
 model Reservation {
   id         String            @id @default(cuid())
   code       String            @unique
+  rooming    String?
+  otaCode    String?
   roomId     String
   guestId    String
   userId     String?
@@ -324,6 +328,25 @@ model AuditLog {
   @@index([hotelId])
 }
 
+model Report {
+  id          String   @id @default(cuid())
+  hotelId     String
+  title       String?
+  category    String?
+  type        String?
+  periodStart DateTime?
+  periodEnd   DateTime?
+  filters     Json?
+  payload     Json?
+  createdAt   DateTime @default(now())
+  createdBy   String?
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([hotelId, periodStart, periodEnd])
+}
+
 model Invoice {
   id            String        @id @default(cuid())
   number        String        @unique
@@ -379,6 +402,45 @@ model Payment {
 
   @@index([invoiceId])
   @@index([hotelId])
+}
+
+model AdvanceDeposit {
+  id             String   @id @default(cuid())
+  reservationId  String?
+  guestId        String?
+  amount         Decimal  @default(0) @db.Decimal(12, 2)
+  currency       String   @default("CRC")
+  note           String?
+  appliedInvoice String?
+  createdAt      DateTime @default(now())
+  hotelId        String
+
+  reservation Reservation? @relation(fields: [reservationId], references: [id])
+  guest       Guest?       @relation(fields: [guestId], references: [id])
+  hotel       Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([reservationId])
+  @@index([guestId])
+}
+
+model CreditNote {
+  id          String   @id @default(cuid())
+  invoiceId   String?
+  guestId     String?
+  amount      Decimal  @default(0) @db.Decimal(12, 2)
+  currency    String   @default("CRC")
+  reason      String?
+  createdAt   DateTime @default(now())
+  hotelId     String
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  guest   Guest?   @relation(fields: [guestId], references: [id])
+  hotel   Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([invoiceId])
+  @@index([guestId])
 }
 
 model AppRole {
