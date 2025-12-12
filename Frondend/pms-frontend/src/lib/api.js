@@ -18,6 +18,7 @@ const BACKEND_PREFIXES = [
   "/auth",
   "/reservations",
   "/rooms",
+  "/roomTypes",
   "/guests",
   "/hotel",
   "/health",
