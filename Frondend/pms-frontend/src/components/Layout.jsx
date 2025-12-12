@@ -160,7 +160,7 @@ export default function Layout() {
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Header */}
-        <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center">
+        <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center relative z-20">
           <h1 className="text-xl font-bold text-emerald-900">Hotel Proyect</h1>
           <div className="flex items-center gap-4 relative" ref={menusRef}>
             <div className="hidden md:flex items-center">

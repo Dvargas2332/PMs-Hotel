@@ -12,8 +12,10 @@ export default function Cashier() {
 
   const load = async () => {
     const { data } = await api.get("/cashier");
-    setCfg(data || cfg);
+    setCfg((prev) => data || prev);
   };
+  // cargar configuracion solo una vez al montar
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(()=>{ load(); },[]);
 
   const save = async () => {

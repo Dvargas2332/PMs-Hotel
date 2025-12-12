@@ -956,25 +956,51 @@ export default function RestaurantPage() {
                 ) : (
                   <div className="col-span-3">
                     {selectedSection ? (
-                      <div className="grid sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {(selectedSection.tables || []).map((t) => {
-                          const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
-                          return (
-                            <button
-                              key={t.id}
-                              className={`rounded-xl bg-white border px-4 py-3 text-left shadow hover:border-amber-300 ${hasOrder ? "border-emerald-200" : "border-amber-100"}`}
-                              onClick={() => {
-                                if (!guardSwitch() && selectedTable?.id !== t.id) return;
-                                handleSelectTable(t, selectedSection);
-                              }}
-                            >
-                              <div className="text-xs uppercase text-amber-500">{selectedSection.name}</div>
-                              <div className="text-lg font-semibold text-amber-900">{t.name}</div>
-                              <div className="text-xs text-amber-600">{t.seats} puestos</div>
-                              {hasOrder && <div className="text-[11px] text-emerald-700 mt-1">Orden activa</div>}
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-2">
+                        <div className="text-xs text-amber-700">
+                          Plano de <span className="font-semibold">{selectedSection.name}</span>. Toca una mesa para abrirla.
+                        </div>
+                        <div className="relative w-full h-72 md:h-80 rounded-2xl border border-amber-200 bg-amber-50/60 overflow-hidden">
+                          <div className="absolute inset-x-3 top-2 flex justify-between text-[11px] text-amber-600">
+                            <span>Entrada</span>
+                            <span>Bar / Cocina</span>
+                          </div>
+                          {(selectedSection.tables || []).map((t, idx) => {
+                            const hasCustom = typeof t.x === "number" && typeof t.y === "number";
+                            const cols = 5;
+                            const col = idx % cols;
+                            const row = Math.floor(idx / cols);
+                            const fallbackX = (col + 0.5) * (100 / cols);
+                            const fallbackY = 25 + row * 20;
+                            const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
+                            const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
+                            const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
+                            return (
+                              <button
+                                key={t.id}
+                                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-xl px-3 py-2 shadow text-left text-xs md:text-sm transition border ${
+                                  hasOrder
+                                    ? "bg-emerald-600/90 border-emerald-500 text-white"
+                                    : "bg-white border-amber-200 text-amber-900"
+                                }`}
+                                style={{ left: `${x}%`, top: `${y}%` }}
+                                onClick={() => {
+                                  if (!guardSwitch() && selectedTable?.id !== t.id) return;
+                                  handleSelectTable(t, selectedSection);
+                                }}
+                              >
+                                <div className="font-semibold leading-tight">{t.name}</div>
+                                <div className="text-[11px] opacity-80">{t.seats} puestos</div>
+                                {hasOrder && <div className="text-[10px] mt-0.5">Orden activa</div>}
+                              </button>
+                            );
+                          })}
+                          {(selectedSection.tables || []).length === 0 && (
+                            <div className="absolute inset-0 flex items-center justify-center text-sm text-amber-700">
+                              Sin mesas configuradas en esta seccion.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div className="text-sm text-amber-700">Selecciona una seccion para ver sus mesas.</div>
@@ -1181,6 +1207,4 @@ export default function RestaurantPage() {
     </div>
   );
 }
-
-
 

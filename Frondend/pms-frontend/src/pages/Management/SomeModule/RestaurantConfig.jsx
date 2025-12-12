@@ -26,7 +26,7 @@ export default function RestaurantConfig() {
   const [sections, setSections] = useState([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
   const [formSection, setFormSection] = useState({ id: "", name: "" });
-  const [formTable, setFormTable] = useState({ id: "", name: "", seats: 2 });
+  const [formTable, setFormTable] = useState({ id: "", name: "", seats: 2, x: "", y: "" });
   const [menu, setMenu] = useState([]);
   const [menuItem, setMenuItem] = useState(emptyItem);
 
@@ -184,11 +184,13 @@ export default function RestaurantConfig() {
         id: formTable.id,
         name: formTable.name,
         seats: Number(formTable.seats || 0) || 2,
+        x: formTable.x === "" ? undefined : Number(formTable.x),
+        y: formTable.y === "" ? undefined : Number(formTable.y),
       });
       setSections((prev) =>
         prev.map((s) => (s.id === selectedSectionId ? { ...s, tables: data } : s))
       );
-      setFormTable({ id: "", name: "", seats: 2 });
+      setFormTable({ id: "", name: "", seats: 2, x: "", y: "" });
       alert("Restaurante", "Mesa agregada");
     } finally {
       setSaving((s) => ({ ...s, table: false }));
@@ -376,6 +378,7 @@ export default function RestaurantConfig() {
           <div>
             <div className="text-xs uppercase text-gray-500">Mesas</div>
             <h3 className="font-semibold text-lg">Distribucion de mesas</h3>
+            <p className="text-xs text-gray-500 mt-1">Mapa simple de mesas por salon/seccion.</p>
           </div>
           <div className="flex gap-2">
             <Input
@@ -397,26 +400,58 @@ export default function RestaurantConfig() {
               onChange={(e) => setFormTable((f) => ({ ...f, seats: e.target.value }))}
               className="w-24"
             />
+            <Input
+              type="number"
+              placeholder="X %"
+              value={formTable.x}
+              onChange={(e) => setFormTable((f) => ({ ...f, x: e.target.value }))}
+              className="w-20"
+            />
+            <Input
+              type="number"
+              placeholder="Y %"
+              value={formTable.y}
+              onChange={(e) => setFormTable((f) => ({ ...f, y: e.target.value }))}
+              className="w-20"
+            />
             <Button onClick={addTable} disabled={!selectedSectionId || saving.table}>
               {saving.table ? "Guardando..." : "Agregar mesa"}
             </Button>
           </div>
         </div>
         {selectedSection ? (
-          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {(selectedSection.tables || []).map((t) => (
-              <div key={t.id} className="border rounded-lg p-3 flex justify-between items-start">
-                <div>
-                  <div className="font-semibold text-sm">{t.name}</div>
-                  <div className="text-xs text-gray-500">{t.seats} puestos</div>
-                </div>
-                <button className="text-xs text-red-600" onClick={() => removeTable(t.id)}>
-                  Eliminar
-                </button>
+          <>
+            <div className="text-xs text-gray-500">Mapa de mesas para: <span className="font-semibold">{selectedSection.name || selectedSection.id}</span></div>
+            <div className="mt-2 border rounded-lg p-3 bg-slate-50">
+              <div className="text-[11px] text-gray-500 mb-2">Plano simulado (grid). Cada carta es una mesa.</div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                {(selectedSection.tables || []).map((t) => (
+                  <div
+                    key={t.id}
+                    className="relative flex flex-col items-center justify-center rounded-xl border bg-white shadow-sm py-3 px-2"
+                  >
+                    <div className="text-xs font-semibold text-gray-800">{t.name}</div>
+                    <div className="text-[11px] text-gray-500">{t.seats} puestos</div>
+                    {(typeof t.x === "number" || typeof t.y === "number") && (
+                      <div className="text-[10px] text-gray-400 mt-1">
+                        Pos: {t.x ?? "-"}%, {t.y ?? "-"}%
+                      </div>
+                    )}
+                    <button
+                      className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-red-100 text-red-600 text-xs flex items-center justify-center"
+                      onClick={() => removeTable(t.id)}
+                      title="Eliminar mesa"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {(selectedSection.tables || []).length === 0 && (
+                  <div className="text-sm text-gray-500 col-span-full">Sin mesas en esta seccion.</div>
+                )}
               </div>
-            ))}
-            {(selectedSection.tables || []).length === 0 && <div className="text-sm text-gray-500">Sin mesas en esta seccion.</div>}
-          </div>
+            </div>
+          </>
         ) : (
           <div className="text-sm text-gray-500">Selecciona una seccion para administrar sus mesas.</div>
         )}

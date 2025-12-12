@@ -14,7 +14,21 @@ const BASE = String(process.env.REACT_APP_API_URL || "http://localhost:4000/api"
 );
 
 // Prefijos que existen en el backend real (si alguno no esta, caera al mock)
-const BACKEND_PREFIXES = ["/auth", "/reservations", "/rooms", "/guests", "/hotel", "/health", "/roles", "/permissions", "/restaurant"];
+const BACKEND_PREFIXES = [
+  "/auth",
+  "/reservations",
+  "/rooms",
+  "/guests",
+  "/hotel",
+  "/health",
+  "/roles",
+  "/permissions",
+  "/restaurant",
+  "/reports",
+  "/invoices",
+  "/geo",
+  "/cash-audits",
+];
 
 // ===== Token helpers =====
 export function getToken() {

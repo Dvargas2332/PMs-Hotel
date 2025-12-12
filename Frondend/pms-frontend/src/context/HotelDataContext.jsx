@@ -171,10 +171,37 @@ export function HotelDataProvider({ children }) {
     setInitialized(true);
   }, [refreshRooms, refreshReservations, refreshGuests]);
 
-  const createGuest = useCallback(async ({ firstName, lastName, email, phone }) => {
+  const createGuest = useCallback(async (payload) => {
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      state,
+      idType,
+      idNumber,
+      country,
+      city,
+      address,
+      company,
+      notes,
+    } = payload || {};
     setLoadingKey("action", true);
     try {
-      const { data } = await api.post("/guests", { firstName, lastName, email, phone });
+      const { data } = await api.post("/guests", {
+        firstName,
+        lastName,
+        email,
+        phone,
+        state,
+        idType,
+        idNumber,
+        country,
+        city,
+        address,
+        company,
+        notes,
+      });
       const mapped = mapGuest(data);
       setGuests((g) => [mapped, ...g]);
       return mapped;

@@ -51,6 +51,12 @@ enum BookingSource {
   MANUAL
 }
 
+// Cierres de caja / auditorias
+enum CashAuditModule {
+  FRONTDESK
+  RESTAURANT
+}
+
 // ==== Restaurante ====
 
 model RestaurantConfig {
@@ -183,17 +189,20 @@ model Hotel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  rooms        Room[]
-  reservations Reservation[]
-  users        User[]
-  roles        AppRole[]
-  rolePerms    RolePermission[]
-  invoices     Invoice[]
-  guests       Guest[]
-  payments     Payment[]
-  auditLogs    AuditLog[]
-  invoiceItems InvoiceItem[]
-  reports      Report[]
+  rooms           Room[]
+  reservations    Reservation[]
+  users           User[]
+  roles           AppRole[]
+  rolePerms       RolePermission[]
+  invoices        Invoice[]
+  guests          Guest[]
+  payments        Payment[]
+  auditLogs       AuditLog[]
+  invoiceItems    InvoiceItem[]
+  reports         Report[]
+  advanceDeposits AdvanceDeposit[]
+  creditNotes     CreditNote[]
+  cashAudits      CashAudit[]
   restaurantConfig   RestaurantConfig?
   restaurantPrintJobs RestaurantPrintJob[]
   restaurantCloses    RestaurantClose[]
@@ -225,12 +234,27 @@ model Guest {
   lastName     String
   email        String?
   phone        String?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  reservations Reservation[]
-  invoices     Invoice[]
-  hotelId      String
-  hotel        Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  state        String?
+  idType       String?
+  idNumber     String?
+  legalName        String?
+  managerName      String?
+  economicActivity String?
+  emailAlt1        String?
+  emailAlt2        String?
+  country      String?
+  city         String?
+  address      String?
+  company      String?
+  notes        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  reservations    Reservation[]
+  invoices        Invoice[]
+  advanceDeposits AdvanceDeposit[]
+  creditNotes     CreditNote[]
+  hotelId         String
+  hotel           Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@unique([hotelId, email])
   @@index([hotelId])
@@ -281,7 +305,8 @@ model Reservation {
   user  User? @relation(fields: [userId], references: [id])
 
   /// Relación 1–1 con Invoice (lado SIN FK)
-  invoice Invoice? @relation("ReservationInvoice")
+  invoice          Invoice?         @relation("ReservationInvoice")
+  advanceDeposits  AdvanceDeposit[]
 
   days RoomDay[]
 
@@ -328,6 +353,36 @@ model AuditLog {
   @@index([hotelId])
 }
 
+model Country {
+  code    String   @id
+  name    String
+  regions Region[]
+  cities  City[]
+}
+
+model Region {
+  id          String  @id @default(cuid())
+  code        String?
+  name        String
+  countryCode String
+  country     Country @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  cities      City[]
+
+  @@index([countryCode])
+}
+
+model City {
+  id          String  @id @default(cuid())
+  name        String
+  countryCode String
+  regionId    String?
+  country     Country @relation(fields: [countryCode], references: [code], onDelete: Cascade)
+  region      Region? @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@index([countryCode])
+  @@index([regionId])
+}
+
 model Report {
   id          String   @id @default(cuid())
   hotelId     String
@@ -366,6 +421,7 @@ model Invoice {
   guest       Guest         @relation(fields: [guestId], references: [id])
   items       InvoiceItem[]
   payments    Payment[]
+  creditNotes CreditNote[]
   hotel       Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([guestId])
@@ -441,6 +497,24 @@ model CreditNote {
   @@index([hotelId])
   @@index([invoiceId])
   @@index([guestId])
+}
+
+model CashAudit {
+  id          String          @id @default(cuid())
+  hotelId     String
+  module      CashAuditModule
+  openedAt    DateTime?
+  closedAt    DateTime? @default(now())
+  totals      Json?
+  details     Json?
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([hotelId, module, createdAt])
 }
 
 model AppRole {

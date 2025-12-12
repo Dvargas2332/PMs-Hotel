@@ -35,8 +35,47 @@ export async function createGuest(req: Request, res: Response) {
     // @ts-ignore
     const user = req.user as AuthUser | undefined;
     if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-    const { firstName, lastName, email, phone } = req.body;
-    const guest = await prisma.guest.create({ data: { firstName, lastName, email, phone, hotelId: user.hotelId } });
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      state,
+      idType,
+      idNumber,
+      legalName,
+      managerName,
+      economicActivity,
+      emailAlt1,
+      emailAlt2,
+      country,
+      city,
+      address,
+      company,
+      notes,
+    } = req.body;
+    const guest = await prisma.guest.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        phone,
+        state,
+        idType,
+        idNumber,
+        legalName,
+        managerName,
+        economicActivity,
+        emailAlt1,
+        emailAlt2,
+        country,
+        city,
+        address,
+        company,
+        notes,
+        hotelId: user.hotelId,
+      },
+    });
     res.status(201).json(guest);
   } catch (err: any) {
     if (err?.code === "P2002") {
@@ -52,14 +91,50 @@ export async function updateGuest(req: Request, res: Response) {
     const user = req.user as AuthUser | undefined;
     if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
     const { id } = req.params;
-    const { firstName, lastName, email, phone } = req.body;
+    const {
+      firstName,
+      lastName,
+      email,
+      phone,
+      state,
+      idType,
+      idNumber,
+      legalName,
+      managerName,
+      economicActivity,
+      emailAlt1,
+      emailAlt2,
+      country,
+      city,
+      address,
+      company,
+      notes,
+    } = req.body;
 
     const existing = await prisma.guest.findFirst({ where: { id, hotelId: user.hotelId } });
     if (!existing) return res.status(404).json({ message: "Huésped no encontrado" });
 
     const guest = await prisma.guest.update({
       where: { id },
-      data: { firstName, lastName, email, phone },
+      data: {
+        firstName,
+        lastName,
+        email,
+        phone,
+        state,
+        idType,
+        idNumber,
+        legalName,
+        managerName,
+        economicActivity,
+        emailAlt1,
+        emailAlt2,
+        country,
+        city,
+        address,
+        company,
+        notes,
+      },
     });
     res.json(guest);
   } catch (err: any) {

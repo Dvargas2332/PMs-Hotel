@@ -17,6 +17,9 @@ import rolesRoutes from "./routes/roles.route.js";
 import permissionsRoutes from "./routes/permissions.route.js";
 import restaurantRoutes from "./routes/restaurant.route.js";
 import reportRoutes from "./routes/report.route.js";
+import invoiceRoutes from "./routes/invoice.route.js";
+import geoRoutes from "./routes/geo.route.js";
+import cashAuditRoutes from "./routes/cashAudit.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -56,6 +59,9 @@ api.use("/roles", rolesRoutes);
 api.use("/permissions", permissionsRoutes);
 api.use("/restaurant", restaurantRoutes);
 api.use("/reports", reportRoutes);
+api.use("/invoices", invoiceRoutes);
+api.use("/geo", geoRoutes);
+api.use("/cash-audits", cashAuditRoutes);
 
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { api } from "../../lib/api";
 
 /** --- Utilidades UI --- **/
 function Badge({ color = "gray", children }) {
@@ -29,7 +30,14 @@ function Modal({ open, onClose, title, children, size }) {
         >
           <div className="px-3 py-2 border-b flex items-center justify-between sticky top-0 bg-white z-10">
             <h3 className="font-semibold">{title}</h3>
-            <button className="text-gray-500 hover:text-gray-700" onClick={onClose}></button>
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={onClose}
+              className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
+            >
+              X
+            </button>
           </div>
           {/* Contenido con altura limitada y scroll */}
           <div className="p-3 overflow-y-auto max-h-[80vh]">{children}</div>
@@ -649,13 +657,8 @@ export default function FacturacionPage() {
     []
   );
 
-  // Mock de facturas (sustituir por datos reales)
-  const [invoices, setInvoices] = useState([
-    { number: "F-000123", guest: "John Smith", room: "101", total: 240, status: "Pagada", date: "2025-08-22", source: "manual" },
-    { number: "F-000124", guest: "Sarah Johnson", room: "", total: 180, status: "Pendiente", date: "2025-08-22", source: "manual" },
-    { number: "F-000125", guest: "James Brown", room: "203", total: 520, status: "Pagada", date: "2025-08-21", source: "checkout" },
-    { number: "F-000126", guest: "Emily Wilson", room: "", total: 90, status: "Vencida", date: "2025-08-20", source: "manual" },
-  ]);
+  // Historial resumido para KPIs (podemos poblarlo luego desde backend)
+  const [invoices, setInvoices] = useState([]);
 
   const kpis = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -683,6 +686,36 @@ export default function FacturacionPage() {
     );
   }, [q, invoices]);
 
+  // -------- Histórico de facturas (frontend) --------
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historyFilters, setHistoryFilters] = useState({
+    dateFrom: "",
+    dateTo: "",
+    number: "",
+    guest: "",
+    room: "",
+    status: "",
+  });
+
+  const loadHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(historyFilters).forEach(([key, value]) => {
+        if (value) params.append(key, String(value));
+      });
+      const { data } = await api.get(`/api/invoices?${params.toString()}`);
+      setHistoryItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo cargar el historico de facturas");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const openNewInvoice = (presetData) => {
     setPreset(presetData || null);
     setShowNew(true);
@@ -709,7 +742,10 @@ export default function FacturacionPage() {
   const goToCashClose = () => alert("Abrir flujo de Cierre de Caja (por implementar).");
   const goToCreditNote = () => alert("Crear Nota de Credito (por implementar).");
   const goToDeposits = () => alert("Depositos de adelantos (por implementar).");
-  const goToHistory = () => alert("Historico de facturas (por implementar).");
+  const goToHistory = () => {
+    setShowHistory(true);
+    loadHistory();
+  };
   const [showBillingOverlay, setShowBillingOverlay] = useState(false);
 
   const billingContent = (
@@ -864,23 +900,6 @@ export default function FacturacionPage() {
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold">Facturacion</h1>
         <div className="flex gap-2">
-          <button
-            className="px-3 py-1.5 rounded bg-blue-600 text-white"
-            onClick={() => openNewInvoice()}
-            title="Crear nueva factura"
-          >
-            Nueva factura
-          </button>
-          <button
-            className="px-3 py-1.5 rounded border"
-            onClick={openCheckoutList}
-            title="Ver huespedes para check-out y generar sus facturas"
-          >
-            Facturas de check-out
-          </button>
-          <button className="px-3 py-1.5 rounded bg-purple-700 text-white" onClick={goToCreditNote}>
-            Nota de credito
-          </button>
           <button className="px-3 py-1.5 rounded bg-amber-600 text-white" onClick={goToCashClose}>
             Cierre de caja
           </button>
@@ -897,62 +916,42 @@ export default function FacturacionPage() {
         ))}
       </div>
 
-            {/* Contenedor principal de facturacion y accesos laterales */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-        <div className="lg:col-span-3 space-y-3">
-          <div className="bg-white border rounded-lg p-6 shadow-sm flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-lg text-emerald-900">Panel de facturacion</h3>
-              <p className="text-sm text-gray-600">
-                Abre la ventana de facturacion para ver facturas, habitaciones en casa y acciones detalladas.
-              </p>
-            </div>
-            <button
-              className="px-4 py-2 rounded-full bg-emerald-600 text-white hover:bg-emerald-700 text-sm"
-              onClick={() => setShowBillingOverlay(true)}
-            >
-              Ir a facturacion
-            </button>
-          </div>
-        </div>
-
-        {/* Recuadros laterales */}
-        <div className="grid grid-cols-1 gap-3">
-          {[
-            {
-              title: "Resumen diario",
-              desc: `Facturas hoy: ${kpiMap["Facturas hoy"] || 0}  Pagadas: ${kpiMap["Pagadas"] || 0}  Pendientes: ${kpiMap["Pendientes"] || 0}  Vencidas: ${kpiMap["Vencidas"] || 0}  Habitaciones en casa: ${inHouseRooms.length}`,
-              action: () => {},
-              cta: "Nueva factura",
-              cta2: "Facturas de check-out",
-            },
-            { title: "Facturar", desc: "Crear factura inmediata", action: () => setShowBillingOverlay(true), cta: "Ir a facturacion" },
-            { title: "Depositos de adelantos", desc: "Registrar anticipos y aplicarlos a facturas", action: goToDeposits, cta: "Ir a depositos" },
-            { title: "Notas de credito", desc: "Emitir y consultar notas de credito", action: goToCreditNote, cta: "Crear nota" },
-            { title: "Historico de facturas", desc: "Consultar facturas emitidas", action: goToHistory, cta: "Ver historico" },
-          ].map((card) => (
-            <div key={card.title} className="border rounded-lg bg-white p-4 flex flex-col gap-2 shadow-sm">
-              <div className="text-sm font-semibold text-emerald-800">{card.title}</div>
-              <div className="text-xs text-slate-600 flex-1">{card.desc}</div>
-              <div className="flex gap-2 flex-wrap">
+      {/* Recuadros de accesos rapidos de facturacion */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        {[
+          {
+            title: "Resumen diario",
+            desc: `Facturas hoy: ${kpiMap["Facturas hoy"] || 0}  Pagadas: ${kpiMap["Pagadas"] || 0}  Pendientes: ${kpiMap["Pendientes"] || 0}  Vencidas: ${kpiMap["Vencidas"] || 0}  Habitaciones en casa: ${inHouseRooms.length}`,
+            action: () => {},
+            cta: "Nueva factura",
+            cta2: "Facturas de check-out",
+          },
+          { title: "Facturar", desc: "Crear factura inmediata", action: () => setShowBillingOverlay(true), cta: "Ir a facturacion" },
+          { title: "Depositos de adelantos", desc: "Registrar anticipos y aplicarlos a facturas", action: goToDeposits, cta: "Ir a depositos" },
+          { title: "Notas de credito", desc: "Emitir y consultar notas de credito", action: goToCreditNote, cta: "Crear nota" },
+          { title: "Historico de facturas", desc: "Consultar facturas emitidas", action: goToHistory, cta: "Ver historico" },
+        ].map((card) => (
+          <div key={card.title} className="border rounded-lg bg-white p-4 flex flex-col gap-2 shadow-sm">
+            <div className="text-sm font-semibold text-emerald-800">{card.title}</div>
+            <div className="text-xs text-slate-600 flex-1">{card.desc}</div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                className="px-3 py-1.5 text-xs rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100"
+                onClick={card.action}
+              >
+                {card.cta}
+              </button>
+              {card.cta2 && (
                 <button
-                  className="px-3 py-1.5 text-xs rounded-full bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100"
-                  onClick={card.action}
+                  className="px-3 py-1.5 text-xs rounded-full bg-blue-50 text-blue-800 border border-blue-100 hover:bg-blue-100"
+                  onClick={openCheckoutList}
                 >
-                  {card.cta}
+                  {card.cta2}
                 </button>
-                {card.cta2 && (
-                  <button
-                    className="px-3 py-1.5 text-xs rounded-full bg-blue-50 text-blue-800 border border-blue-100 hover:bg-blue-100"
-                    onClick={openCheckoutList}
-                  >
-                    {card.cta2}
-                  </button>
-                )}
-              </div>
+              )}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
       <Modal
@@ -962,6 +961,181 @@ export default function FacturacionPage() {
         size="max-w-5xl"
       >
         {billingContent}
+      </Modal>
+
+      {/* Modal: Historico de facturas */}
+      <Modal
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        title="Historico de facturas"
+        size="max-w-6xl"
+      >
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs">
+            <div className="flex flex-col gap-1">
+              <span>Desde</span>
+              <input
+                type="date"
+                className="border rounded px-2 py-1"
+                value={historyFilters.dateFrom}
+                onChange={(e) =>
+                  setHistoryFilters((f) => ({ ...f, dateFrom: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span>Hasta</span>
+              <input
+                type="date"
+                className="border rounded px-2 py-1"
+                value={historyFilters.dateTo}
+                onChange={(e) =>
+                  setHistoryFilters((f) => ({ ...f, dateTo: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span># Factura</span>
+              <input
+                className="border rounded px-2 py-1"
+                placeholder="Ej. F-000120"
+                value={historyFilters.number}
+                onChange={(e) =>
+                  setHistoryFilters((f) => ({ ...f, number: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span>Cliente</span>
+              <input
+                className="border rounded px-2 py-1"
+                placeholder="Nombre o correo"
+                value={historyFilters.guest}
+                onChange={(e) =>
+                  setHistoryFilters((f) => ({ ...f, guest: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span>Habitacion</span>
+              <input
+                className="border rounded px-2 py-1"
+                placeholder="Ej. 101"
+                value={historyFilters.room}
+                onChange={(e) =>
+                  setHistoryFilters((f) => ({ ...f, room: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            <select
+              className="border rounded px-2 py-1"
+              value={historyFilters.status}
+              onChange={(e) =>
+                setHistoryFilters((f) => ({ ...f, status: e.target.value }))
+              }
+            >
+              <option value="">Todos los estados</option>
+              <option value="ISSUED">Emitida</option>
+              <option value="DRAFT">Borrador</option>
+              <option value="CANCELED">Anulada</option>
+              <option value="REFUNDED">Reembolsada</option>
+            </select>
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-full bg-emerald-600 text-white text-xs hover:bg-emerald-700"
+              onClick={loadHistory}
+              disabled={historyLoading}
+            >
+              {historyLoading ? "Buscando..." : "Aplicar filtros"}
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 rounded-full border text-xs"
+              onClick={() => {
+                setHistoryFilters({
+                  dateFrom: "",
+                  dateTo: "",
+                  number: "",
+                  guest: "",
+                  room: "",
+                  status: "",
+                });
+                loadHistory();
+              }}
+            >
+              Limpiar
+            </button>
+          </div>
+
+          <div className="overflow-auto border rounded">
+            <table className="min-w-full text-xs">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="px-2 py-2 text-left">Fecha</th>
+                  <th className="px-2 py-2 text-left"># Factura</th>
+                  <th className="px-2 py-2 text-left">Cliente</th>
+                  <th className="px-2 py-2 text-left">Habitacion</th>
+                  <th className="px-2 py-2 text-left">Estado</th>
+                  <th className="px-2 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyItems.map((inv) => {
+                  const guestName =
+                    `${inv.guest?.firstName || ""} ${inv.guest?.lastName || ""}`.trim() ||
+                    inv.guest?.email ||
+                    "-";
+                  const roomLabel =
+                    inv.reservation?.room?.number ||
+                    inv.reservation?.room?.type ||
+                    "";
+                  const dateStr = inv.createdAt
+                    ? new Date(inv.createdAt).toLocaleString()
+                    : "";
+                  return (
+                    <tr key={inv.id} className="border-t hover:bg-slate-50">
+                      <td className="px-2 py-1">{dateStr}</td>
+                      <td className="px-2 py-1">{inv.number}</td>
+                      <td className="px-2 py-1">{guestName}</td>
+                      <td className="px-2 py-1">{roomLabel}</td>
+                      <td className="px-2 py-1">
+                        <Badge
+                          color={
+                            inv.status === "ISSUED"
+                              ? "green"
+                              : inv.status === "CANCELED"
+                              ? "red"
+                              : inv.status === "REFUNDED"
+                              ? "yellow"
+                              : "gray"
+                          }
+                        >
+                          {inv.status}
+                        </Badge>
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        {fmtCurrency(inv.total, management.currency)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!historyItems.length && !historyLoading && (
+                  <tr>
+                    <td
+                      className="px-2 py-4 text-center text-slate-500"
+                      colSpan={6}
+                    >
+                      No hay facturas que coincidan con los filtros.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </Modal>
 
       {/* Modales */}
