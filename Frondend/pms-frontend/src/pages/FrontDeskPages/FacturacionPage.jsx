@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { api } from "../../lib/api";
+import { pushAlert } from "../../lib/uiAlerts";
 
 /** --- Utilidades UI --- **/
 function Badge({ color = "gray", children }) {
@@ -255,13 +256,21 @@ function NewInvoiceModal({ open, onClose, onSave, paymentMethods, preset, manage
       if (p.method === "Tarjeta" && Number(p.amount) > 0) {
         const last4 = String(p.cardLast4 || "").trim();
         if (!/^\d{4}$/.test(last4)) {
-          alert("Para pagos con tarjeta ingrese los ltimos 4 dgitos de la tarjeta.");
+          pushAlert({
+            type: "payment",
+            title: "Datos de tarjeta incompletos",
+            desc: "Para pagos con tarjeta ingresa los ultimos 4 digitos de la tarjeta.",
+          });
           return;
         }
       }
     }
     if (eInvoice.enabled && !eInvoice.profile) {
-      alert("Para emitir factura electrnica, seleccione un perfil del cliente.");
+      pushAlert({
+        type: "payment",
+        title: "Cliente no seleccionado",
+        desc: "Para emitir factura electronica, selecciona primero un perfil de cliente.",
+      });
       return;
     }
     const payload = {
@@ -710,7 +719,11 @@ export default function FacturacionPage() {
       setHistoryItems(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
-      alert("No se pudo cargar el historico de facturas");
+      pushAlert({
+        type: "system",
+        title: "Error al cargar histórico",
+        desc: "No se pudo cargar el histórico de facturas.",
+      });
     } finally {
       setHistoryLoading(false);
     }
@@ -739,9 +752,24 @@ export default function FacturacionPage() {
     openNewInvoice({ guest: room.guest, room: room.room, items, source: "checkout" });
   };
 
-  const goToCashClose = () => alert("Abrir flujo de Cierre de Caja (por implementar).");
-  const goToCreditNote = () => alert("Crear Nota de Credito (por implementar).");
-  const goToDeposits = () => alert("Depositos de adelantos (por implementar).");
+  const goToCashClose = () =>
+    pushAlert({
+      type: "system",
+      title: "Cierre de caja",
+      desc: "Abrir flujo de Cierre de Caja (por implementar).",
+    });
+  const goToCreditNote = () =>
+    pushAlert({
+      type: "system",
+      title: "Notas de crédito",
+      desc: "Crear Nota de Crédito (por implementar).",
+    });
+  const goToDeposits = () =>
+    pushAlert({
+      type: "system",
+      title: "Depósitos de adelantos",
+      desc: "Depósitos de adelantos (por implementar).",
+    });
   const goToHistory = () => {
     setShowHistory(true);
     loadHistory();

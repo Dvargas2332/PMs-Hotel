@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHotelData } from "../../context/HotelDataContext";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
+import { pushAlert } from "../../lib/uiAlerts";
 
 const emptyForm = {
   firstName: "",
@@ -126,11 +127,19 @@ export default function ClientesPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.firstName || !form.lastName) {
-      alert("Nombre y apellidos son obligatorios");
+      pushAlert({
+        type: "system",
+        title: "Datos incompletos",
+        desc: "Nombre y apellidos son obligatorios para crear un huesped.",
+      });
       return;
     }
     if (form.isCompany && !form.company.trim()) {
-      alert("Para clientes empresariales debes indicar el nombre de la empresa");
+      pushAlert({
+        type: "system",
+        title: "Empresa sin nombre",
+        desc: "Para clientes empresariales debes indicar el nombre de la empresa.",
+      });
       return;
     }
     try {
@@ -144,7 +153,7 @@ export default function ClientesPage() {
       setSearch("");
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo guardar el huesped";
-      alert(msg);
+      pushAlert({ type: "system", title: "Error al guardar cliente", desc: msg });
     }
   };
 

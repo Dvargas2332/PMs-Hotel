@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useHotelData } from "../../context/HotelDataContext";
 import { api } from "../../lib/api";
+import { pushAlert } from "../../lib/uiAlerts";
 
 const STATUS_META = {
   Confirmada: { bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
@@ -98,6 +99,9 @@ export default function ReservationsPage() {
   const [rowSaved, setRowSaved] = useState(false);
   const [rowConfirmed, setRowConfirmed] = useState(false);
   const [draftRows, setDraftRows] = useState([]);
+  const [showGuestPicker, setShowGuestPicker] = useState(false);
+  const [guestQuery, setGuestQuery] = useState("");
+  const [guestType, setGuestType] = useState("PERSON"); // PERSON | COMPANY
 
   const currentPlan = useMemo(
     () => ratePlans.find((r) => String(r.id) === String(form.ratePlanId)),
@@ -109,15 +113,42 @@ export default function ReservationsPage() {
   }, [currentPlan]);
 
   const handleDateFrom = (v) => {
+    const parseLocal = (s) => {
+      const [y, m, d] = s.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    };
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let value = v;
+    if (value) {
+      const chosen = parseLocal(value);
+      if (chosen < today) {
+        // Forzar "Desde" a hoy si el usuario elige una fecha pasada
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, "0");
+        const d = String(today.getDate()).padStart(2, "0");
+        value = `${y}-${m}-${d}`;
+        pushAlert({
+          type: "system",
+          title: "Fecha Desde inválida",
+          desc: "La fecha Desde no puede ser menor al día en curso.",
+        });
+      }
+    }
+
     setForm((f) => {
-      const next = { ...f, checkInDate: v };
-      if (v) {
-        const d = new Date(v);
-        d.setDate(d.getDate() + 1);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        next.checkOutDate = `${y}-${m}-${day}`;
+      const next = { ...f, checkInDate: value };
+      if (value) {
+        const base = parseLocal(value);
+        base.setDate(base.getDate() + 1);
+        const y = base.getFullYear();
+        const m = String(base.getMonth() + 1).padStart(2, "0");
+        const d = String(base.getDate()).padStart(2, "0");
+        next.checkOutDate = `${y}-${m}-${d}`;
+      } else {
+        next.checkOutDate = "";
       }
       return next;
     });
@@ -186,16 +217,34 @@ export default function ReservationsPage() {
   }, [form.priceRoom, form.priceRegimen, form.priceTax, form.discount, form.price]);
 
   const handleDateTo = (v) => {
+    const parseLocal = (s) => {
+      const [y, m, d] = s.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    };
+
     setForm((f) => {
       if (f.checkInDate) {
-        const min = new Date(f.checkInDate);
+        const from = parseLocal(f.checkInDate);
+        const min = new Date(from);
         min.setDate(min.getDate() + 1);
-        const minStr = min.toISOString().slice(0, 10);
-        if (v <= f.checkInDate) {
-          alert("La fecha Hasta debe ser mayor que Desde (al menos +1 dia).");
+
+        const y = min.getFullYear();
+        const m = String(min.getMonth() + 1).padStart(2, "0");
+        const d = String(min.getDate()).padStart(2, "0");
+        const minStr = `${y}-${m}-${d}`;
+
+        // Si el usuario elige una fecha menor o igual a "Desde", forzar siempre al día siguiente
+        if (!v || parseLocal(v) <= from) {
+          pushAlert({
+            type: "system",
+            title: "Fecha Hasta inválida",
+            desc: "La fecha Hasta debe ser al menos un día después de Desde.",
+          });
           return { ...f, checkOutDate: minStr };
         }
+        return { ...f, checkOutDate: v };
       }
+      // Si aún no hay "Desde", simplemente guardamos lo seleccionado
       return { ...f, checkOutDate: v };
     });
   };
@@ -206,7 +255,7 @@ export default function ReservationsPage() {
     if (input === null) return;
     const num = input === "" ? "" : Number(input);
     if (Number.isNaN(num)) {
-      alert("Monto invalido");
+      pushAlert({ type: "system", title: "Monto invalido", desc: "Revisa el monto de deposito ingresado." });
       return;
     }
     setForm((f) => ({ ...f, depositAmount: input === "" ? "" : num }));
@@ -301,11 +350,19 @@ export default function ReservationsPage() {
     const rowsToSave = draftRows.length ? draftRows : [form];
     for (const r of rowsToSave) {
       if (!r.roomId || !r.checkInDate || !r.checkOutDate) {
-        alert("Faltan datos de habitacion o fechas");
+        pushAlert({
+          type: "system",
+          title: "Datos incompletos",
+          desc: "Completa habitacion y rango de fechas antes de guardar la reserva.",
+        });
         return;
       }
       if (r.checkOutDate <= r.checkInDate) {
-        alert("La fecha de salida debe ser despues de la entrada");
+        pushAlert({
+          type: "system",
+          title: "Fechas invalidas",
+          desc: "La fecha de salida debe ser despues de la entrada.",
+        });
         return;
       }
     }
@@ -327,7 +384,7 @@ export default function ReservationsPage() {
       setShowRowEditor(false);
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo crear la reserva";
-      alert(msg);
+      pushAlert({ type: "system", title: "Error al crear reserva", desc: msg });
     } finally {
       setCreating(false);
     }
@@ -335,11 +392,19 @@ export default function ReservationsPage() {
 
   const handleSaveRow = () => {
     if (!form.roomId || !form.checkInDate || !form.checkOutDate) {
-      alert("Faltan datos de habitacion o fechas");
+      pushAlert({
+        type: "system",
+        title: "Datos incompletos",
+        desc: "Completa habitacion y rango de fechas antes de guardar la fila.",
+      });
       return;
     }
     if (form.checkOutDate <= form.checkInDate) {
-      alert("La fecha de salida debe ser despues de la entrada");
+      pushAlert({
+        type: "system",
+        title: "Fechas invalidas",
+        desc: "La fecha de salida debe ser despues de la entrada.",
+      });
       return;
     }
     // Mantener datos de huesped para todas las filas; solo limpiamos campos de habitacion al seguir creando
@@ -445,7 +510,11 @@ export default function ReservationsPage() {
 
   const handleEmail = () => {
     if (!form.email) {
-      alert("Agrega un correo para enviar.");
+      pushAlert({
+        type: "payment",
+        title: "Sin correo de contacto",
+        desc: "Agrega un correo electronico del huesped para poder enviar la reserva.",
+      });
       return;
     }
     const subject = encodeURIComponent(`Reserva ${form.code || ""}`);
@@ -456,7 +525,11 @@ export default function ReservationsPage() {
   const handleWhatsapp = () => {
     const phone = (form.phone || "").replace(/\D/g, "");
     if (!phone) {
-      alert("Agrega un numero de telefono para enviar por WhatsApp.");
+      pushAlert({
+        type: "payment",
+        title: "Sin telefono",
+        desc: "Agrega un numero de telefono para enviar la informacion por WhatsApp.",
+      });
       return;
     }
     window.open(`https://wa.me/${phone}`, "_blank", "noopener");
@@ -474,20 +547,43 @@ export default function ReservationsPage() {
   const handlePickProfile = () => {
     if (!guests || !guests.length) {
       refreshGuests();
-      alert("No hay perfiles cargados. Intenta nuevamente luego de refrescar.");
-      return;
     }
-    const list = guests
-      .map((g, i) => `${i + 1}. ${[g.firstName, g.lastName].filter(Boolean).join(" ") || g.name || g.id}`)
-      .join("\n");
-    const input = window.prompt(`Selecciona el numero de perfil:\n${list}`, "1");
-    if (input === null) return;
-    const idx = Number(input) - 1;
-    if (Number.isNaN(idx) || idx < 0 || idx >= guests.length) {
-      alert("Opcion invalida");
-      return;
-    }
-    const g = guests[idx];
+    setGuestQuery("");
+    setGuestType("PERSON");
+    setShowGuestPicker(true);
+  };
+
+  const filteredGuests = useMemo(() => {
+    const term = guestQuery.trim().toLowerCase();
+    return (guests || []).filter((g) => {
+      const isCompany = !!g.company;
+      if (guestType === "PERSON" && isCompany) return false;
+      if (guestType === "COMPANY" && !isCompany) return false;
+
+      if (!term) return true;
+      const fullName = `${g.firstName || ""} ${g.lastName || ""}`.toLowerCase();
+      return (
+        fullName.includes(term) ||
+        (g.email || "").toLowerCase().includes(term) ||
+        (g.phone || "").toLowerCase().includes(term) ||
+        (g.company || "").toLowerCase().includes(term) ||
+        (g.idNumber || "").toLowerCase().includes(term)
+      );
+    });
+  }, [guestQuery, guests, guestType]);
+
+  // Habitaciones agrupadas por tipo para el selector
+  const roomsByType = useMemo(() => {
+    const map = new Map();
+    (rooms || []).forEach((r) => {
+      const key = r.type || "Sin tipo";
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(r);
+    });
+    return Array.from(map.entries());
+  }, [rooms]);
+
+  const selectGuest = (g) => {
     setForm((f) => ({
       ...f,
       guestId: g.id || "",
@@ -496,6 +592,7 @@ export default function ReservationsPage() {
       email: g.email || "",
       phone: g.phone || "",
     }));
+    setShowGuestPicker(false);
   };
 
   const handleConfirmAction = async () => {
@@ -762,10 +859,14 @@ export default function ReservationsPage() {
                             disabled={rowSaved}
                           >
                             <option value="">Seleccione</option>
-                            {rooms.map((room) => (
-                              <option key={room.id} value={room.id}>
-                                {room.type || "Habitacion"} {room.number ? `#${room.number}` : ""}
-                              </option>
+                            {roomsByType.map(([type, list]) => (
+                              <optgroup key={type} label={type}>
+                                {list.map((room) => (
+                                  <option key={room.id} value={room.id}>
+                                    {room.number ? `Hab. ${room.number}` : room.name || `ID ${room.id}`}
+                                  </option>
+                                ))}
+                              </optgroup>
                             ))}
                           </select>
                         </td>
@@ -1035,6 +1136,116 @@ export default function ReservationsPage() {
           </div>
         </div>
       </div>
+
+      {showGuestPicker && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowGuestPicker(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-[95vw] max-w-3xl max-h-[80vh] overflow-hidden border">
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <div>
+                  <h3 className="font-semibold text-slate-800">Seleccionar perfil de huesped</h3>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
+                    <span>Tipo:</span>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded-full border text-[11px] ${
+                        guestType === "PERSON"
+                          ? "bg-emerald-600 text-white border-emerald-600"
+                          : "bg-white text-slate-700 border-slate-300"
+                      }`}
+                      onClick={() => setGuestType("PERSON")}
+                    >
+                      Clientes normales
+                    </button>
+                    <button
+                      type="button"
+                      className={`px-2 py-1 rounded-full border text-[11px] ${
+                        guestType === "COMPANY"
+                          ? "bg-indigo-600 text-white border-indigo-600"
+                          : "bg-white text-slate-700 border-slate-300"
+                      }`}
+                      onClick={() => setGuestType("COMPANY")}
+                    >
+                      Empresas
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 text-lg leading-none flex items-center justify-center hover:bg-slate-200"
+                  onClick={() => setShowGuestPicker(false)}
+                  aria-label="Cerrar"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <input
+                  className="w-full border rounded px-3 py-2 text-sm"
+                  placeholder="Buscar por nombre, empresa, email, telefono o documento"
+                  value={guestQuery}
+                  onChange={(e) => setGuestQuery(e.target.value)}
+                />
+                <div className="max-h-[55vh] overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-slate-500 border-b">
+                        <th className="p-2">{guestType === "COMPANY" ? "Empresa" : "Nombre"}</th>
+                        <th className="p-2">{guestType === "COMPANY" ? "Contacto" : "Email"}</th>
+                        <th className="p-2">Telefono</th>
+                        <th className="p-2">Documento</th>
+                        <th className="p-2 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredGuests.map((g) => (
+                        <tr key={g.id} className="border-b hover:bg-slate-50">
+                          <td className="p-2">
+                            {guestType === "COMPANY"
+                              ? g.company || "Empresa"
+                              : `${g.firstName || ""} ${g.lastName || ""}`.trim() || "Sin nombre"}
+                          </td>
+                          <td className="p-2">
+                            {guestType === "COMPANY" ? (
+                              `${g.firstName || ""} ${g.lastName || ""}`.trim() || (
+                                <span className="text-slate-400">Sin contacto</span>
+                              )
+                            ) : (
+                              g.email || <span className="text-slate-400">Sin email</span>
+                            )}
+                          </td>
+                          <td className="p-2">{g.phone || <span className="text-slate-400">Sin telefono</span>}</td>
+                          <td className="p-2 text-xs">
+                            {g.idType || g.idNumber
+                              ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
+                              : <span className="text-slate-400">N/D</span>}
+                          </td>
+                          <td className="p-2 text-right">
+                            <button
+                              className="px-3 py-1 rounded border bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs"
+                              onClick={() => selectGuest(g)}
+                            >
+                              Usar perfil
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {!filteredGuests.length && (
+                        <tr>
+                          <td className="p-3 text-center text-slate-500" colSpan={5}>
+                            No hay perfiles disponibles.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

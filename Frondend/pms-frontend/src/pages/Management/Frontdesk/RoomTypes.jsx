@@ -14,9 +14,7 @@ export default function RoomTypes() {
   const [typeForm, setTypeForm] = useState({
     id: "",
     name: "",
-    capacity: 2,
     beds: "",
-    amenities: "", // coma separadas en UI
   });
 
   // ---------- HABITACIONES ----------
@@ -55,16 +53,11 @@ export default function RoomTypes() {
   const normalizeType = (f) => ({
     id: f.id.trim(),
     name: f.name.trim(),
-    capacity: Number(f.capacity || 0),
     beds: f.beds.trim(),
-    amenities: (f.amenities || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
   });
 
   const resetTypeForm = () =>
-    setTypeForm({ id: "", name: "", capacity: 2, beds: "", amenities: "" });
+    setTypeForm({ id: "", name: "", beds: "" });
 
   const onTypeCreate = async () => {
     if (typeSubmitting) return;
@@ -86,9 +79,7 @@ export default function RoomTypes() {
     setTypeForm({
       id: row.id || "",
       name: row.name || "",
-      capacity: row.capacity ?? 2,
       beds: row.beds || "",
-      amenities: (row.amenities || []).join(", "),
     });
   };
 
@@ -111,6 +102,14 @@ export default function RoomTypes() {
   const onTypeDelete = async (idFromRow) => {
     const id = idFromRow || typeSelectedId;
     if (!id || typeSubmitting) return;
+    // No permitir borrar un tipo que tenga habitaciones asociadas
+    const hasRooms = rooms.some(
+      (r) => String(r.type) === String(id)
+    );
+    if (hasRooms) {
+      window.alert("No se puede eliminar el tipo porque tiene habitaciones asociadas. Cambia o elimina esas habitaciones primero.");
+      return;
+    }
     const ok = window.confirm("¿Eliminar el tipo de habitación?");
     if (!ok) return;
     setTypeSubmitting(true);
@@ -133,9 +132,8 @@ export default function RoomTypes() {
   // ==========================
   const normalizeRoom = (f) => ({
     number: String(f.number).trim(),
-    typeId: String(f.typeId).trim(),
-    floor: Number(f.floor || 1),
-    capacity: Number(f.capacity || 1),
+    // En backend, el campo se llama "type" y es el cГіdigo del tipo (STD, DBL, etc.)
+    type: String(f.typeId).trim(),
     status: f.status || "AVAILABLE",
   });
 
@@ -144,6 +142,10 @@ export default function RoomTypes() {
 
   const onRoomCreate = async () => {
     if (roomSubmitting) return;
+    if (!roomForm.typeId) {
+      window.alert("Debes seleccionar un tipo de habitación antes de crear la habitación.");
+      return;
+    }
     setRoomSubmitting(true);
     try {
       const payload = normalizeRoom(roomForm);
@@ -161,7 +163,8 @@ export default function RoomTypes() {
     setRoomSelectedId(row.id);
     setRoomForm({
       number: row.number || "",
-      typeId: row.typeId || row.type?.id || "",
+      // El backend devuelve "type" como cГіdigo de tipo
+      typeId: row.type || "",
       floor: row.floor ?? 1,
       capacity: row.capacity ?? 2,
       status: row.status || "AVAILABLE",
@@ -213,36 +216,34 @@ export default function RoomTypes() {
             {typeSelectedId ? "Editar tipo de habitación" : "Nuevo tipo de habitación"}
           </h3>
 
-          <div className="grid grid-cols-[120px_1fr] gap-2">
-            <Input
-              placeholder="ID (ej. STD)"
-              value={typeForm.id}
-              onChange={(e) => setTypeForm((f) => ({ ...f, id: e.target.value }))}
-            />
-            <Input
-              placeholder="Nombre"
-              value={typeForm.name}
-              onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
-            />
+          <div className="grid grid-cols-[140px_1fr] gap-3">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Código de tipo (ej. STD)</label>
+              <Input
+                placeholder="Código (ej. STD)"
+                value={typeForm.id}
+                onChange={(e) => setTypeForm((f) => ({ ...f, id: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Nombre del tipo</label>
+              <Input
+                placeholder="Nombre del tipo"
+                value={typeForm.name}
+                onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            <Input
-              placeholder="Capacidad"
-              type="number"
-              value={typeForm.capacity}
-              onChange={(e) => setTypeForm((f) => ({ ...f, capacity: e.target.value }))}
-            />
-            <Input
-              placeholder="Camas (ej. 1Q)"
-              value={typeForm.beds}
-              onChange={(e) => setTypeForm((f) => ({ ...f, beds: e.target.value }))}
-            />
-            <Input
-              placeholder="Amenities (coma separadas)"
-              value={typeForm.amenities}
-              onChange={(e) => setTypeForm((f) => ({ ...f, amenities: e.target.value }))}
-            />
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Camas</label>
+              <Input
+                placeholder="Cantidad y tipo (ej. 1Q)"
+                value={typeForm.beds}
+                onChange={(e) => setTypeForm((f) => ({ ...f, beds: e.target.value }))}
+              />
+            </div>
           </div>
 
           <div className="flex gap-2">
@@ -368,6 +369,7 @@ export default function RoomTypes() {
                 className="h-10 rounded-lg border px-3 text-sm"
                 value={roomForm.typeId}
                 onChange={(e) => setRoomForm((f) => ({ ...f, typeId: e.target.value }))}
+                disabled={types.length === 0}
               >
                 <option value="">— Selecciona tipo —</option>
                 {types.map((t) => (
@@ -376,6 +378,11 @@ export default function RoomTypes() {
                   </option>
                 ))}
               </select>
+              {types.length === 0 && (
+                <span className="mt-1 text-xs text-red-500">
+                  Primero crea al menos un tipo de habitación.
+                </span>
+              )}
             </div>
 
             {/* Estado */}
@@ -449,10 +456,12 @@ export default function RoomTypes() {
               )}
               {rooms.map((r) => {
                 const isSel = r.id === roomSelectedId;
+                const typeFound = types.find((t) => t.id === r.type);
+                const typeLabel = typeFound ? `${typeFound.id} – ${typeFound.name}` : (r.type || "");
                 return (
                   <tr key={r.id} className={`border-t ${isSel ? "bg-blue-50" : "hover:bg-gray-50"}`}>
                     <td className="py-2 pl-4">{r.number}</td>
-                    <td>{r.type?.id || r.typeId}</td>
+                    <td>{typeLabel}</td>
                     <td>{r.floor}</td>
                     <td>{r.capacity}</td>
                     <td>

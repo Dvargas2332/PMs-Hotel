@@ -10,6 +10,7 @@ import "dotenv/config";
 import authRouter from "./routes/auth.route.js";
 import healthRouter from "./routes/health.route.js";
 import rooms from "./routes/rooms.route.js";
+import roomTypes from "./routes/roomTypes.route.js";
 import reservations from "./routes/reservations.route.js";
 import guests from "./routes/guests.route.js";
 import hotelRoutes from "./routes/hotel.route.js";
@@ -52,6 +53,7 @@ api.use("/auth", authRouter); // p.ej. POST /api/auth/login
 api.use(auth);
 api.use(tenantCtx);
 api.use("/rooms", rooms); //-> GET/POST /api/rooms
+api.use("/roomTypes", roomTypes); // -> /api/roomTypes
 api.use("/reservations", reservations);
 api.use("/guests", guests);
 api.use("/hotel", hotelRoutes);
