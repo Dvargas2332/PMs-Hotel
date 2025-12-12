@@ -29,7 +29,7 @@ export async function createReservation(req: Request, res: Response) {
     checkOut: new Date(checkOut),
     adults: adults ?? 2,
     children: children ?? 0,
-    hotelId: user.hotelId,
+    hotelId: user.hotelId!,
     auditTrail: { createdBy: "api", reason: "create" } as any,
   });
 

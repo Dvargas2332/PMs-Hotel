@@ -73,6 +73,51 @@ async function main() {
     create: { firstName: "Huesped", lastName: "Demo", email: "demo@guest.local", phone: "7000-0000", hotelId: hotel.id },
   });
 
+  // ===== Catálogo geográfico básico (paises / regiones / ciudades) =====
+  try {
+    const fs = await import("fs");
+    const path = await import("path");
+    const filePath = path.resolve(__dirname, "data", "world-geo.sample.json");
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const json = JSON.parse(raw) as {
+        countries?: { code: string; name: string; regions?: { code?: string; name: string; cities?: string[] }[] }[];
+      };
+      for (const c of json.countries || []) {
+        const country = await prisma.country.upsert({
+          where: { code: c.code },
+          update: { name: c.name },
+          create: { code: c.code, name: c.name },
+        });
+        for (const r of c.regions || []) {
+          const regionId = `${country.code}-${r.code || r.name}`;
+          const region = await prisma.region.upsert({
+            where: { id: regionId },
+            update: { name: r.name, code: r.code || null },
+            create: { id: regionId, name: r.name, code: r.code || null, countryCode: country.code },
+          });
+          for (const cityName of r.cities || []) {
+            await prisma.city.upsert({
+              where: {
+                // combinamos nombre + pais para evitar duplicados simples
+                id: `${country.code}-${region.id}-${cityName}`,
+              },
+              update: { name: cityName },
+              create: {
+                id: `${country.code}-${region.id}-${cityName}`,
+                name: cityName,
+                countryCode: country.code,
+                regionId: region.id,
+              },
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("No se pudo cargar catalogo geografico:", err);
+  }
+
   console.log("Seed listo:", { hotel: hotel.id });
 }
 

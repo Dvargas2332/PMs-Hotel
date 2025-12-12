@@ -61,6 +61,8 @@ export default function Contracts() {
     setMealPlans(mps || []);
   };
 
+  // Cargar datos iniciales solo una vez al montar
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (didInit.current) return;
     didInit.current = true;
@@ -73,7 +75,7 @@ export default function Contracts() {
     setSubmitting(true);
     try {
       const payload = normalize(form);
-      const { data } = await api.post("/contracts", payload);
+      await api.post("/contracts", payload);
       // refrescar lista para evitar duplicados y asegurar join
       await load();
       setSelectedId(null);
@@ -100,7 +102,7 @@ export default function Contracts() {
     setSubmitting(true);
     try {
       const payload = normalize(form);
-      const { data } = await api.put(`/contracts/${encodeURIComponent(selectedId)}`, payload);
+      await api.put(`/contracts/${encodeURIComponent(selectedId)}`, payload);
       await load();
       setSelectedId(null);
       resetForm();

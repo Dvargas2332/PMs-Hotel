@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { api } from "../../lib/api";
 
 const SECTIONS = [
   {
@@ -63,6 +64,38 @@ const SECTIONS = [
 ];
 
 export default function ReportesPage() {
+  const [audits, setAudits] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const { data } = await api.get("/cash-audits", {
+          params: { module: "FRONTDESK" },
+        });
+        if (!cancelled) setAudits(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err?.response?.data?.message ||
+              err?.message ||
+              "No se pudieron cargar los cierres de caja"
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -89,6 +122,55 @@ export default function ReportesPage() {
             </button>
           </div>
         ))}
+
+        {/* Cierres de caja Frontdesk */}
+        <div className="rounded-2xl border border-emerald-100 bg-white shadow-sm p-4 space-y-3 md:col-span-2 xl:col-span-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-emerald-800">Cierres de caja Front Desk</h3>
+            <span className="text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100">
+              Auditoría
+            </span>
+          </div>
+          {loading && <div className="text-xs text-slate-500">Cargando cierres...</div>}
+          {error && !loading && <div className="text-xs text-rose-600">{error}</div>}
+          {!loading && !error && audits.length === 0 && (
+            <div className="text-xs text-slate-500">No hay cierres de caja registrados.</div>
+          )}
+          {!loading && !error && audits.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b">
+                    <th className="py-1 pr-3">Fecha</th>
+                    <th className="py-1 pr-3">Módulo</th>
+                    <th className="py-1 pr-3">Totales</th>
+                    <th className="py-1 pr-3">Nota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {audits.slice(0, 20).map((a) => (
+                    <tr key={a.id} className="border-b last:border-0">
+                      <td className="py-1 pr-3">
+                        {a.createdAt ? new Date(a.createdAt).toLocaleString() : "-"}
+                      </td>
+                      <td className="py-1 pr-3 text-emerald-700">
+                        {a.module === "RESTAURANT" ? "Restaurante" : "Frontdesk"}
+                      </td>
+                      <td className="py-1 pr-3">
+                        {a.totals
+                          ? Object.entries(a.totals)
+                              .map(([k, v]) => `${k}: ${v}`)
+                              .join("  •  ")
+                          : "-"}
+                      </td>
+                      <td className="py-1 pr-3">{a.note || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

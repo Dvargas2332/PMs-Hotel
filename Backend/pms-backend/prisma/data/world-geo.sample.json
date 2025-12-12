@@ -1,0 +1,63 @@
+{
+  "countries": [
+    {
+      "code": "CR",
+      "name": "Costa Rica",
+      "regions": [
+        {
+          "code": "SJ",
+          "name": "San Jose",
+          "cities": ["San Jose Centro", "Escazu", "Desamparados"]
+        },
+        {
+          "code": "AL",
+          "name": "Alajuela",
+          "cities": ["Alajuela Centro", "San Ramon", "Grecia"]
+        },
+        {
+          "code": "GU",
+          "name": "Guanacaste",
+          "cities": ["Liberia", "Santa Cruz", "Nicoya"]
+        }
+      ]
+    },
+    {
+      "code": "US",
+      "name": "Estados Unidos",
+      "regions": [
+        {
+          "code": "FL",
+          "name": "Florida",
+          "cities": ["Miami", "Orlando", "Tampa"]
+        },
+        {
+          "code": "CA",
+          "name": "California",
+          "cities": ["Los Angeles", "San Francisco", "San Diego"]
+        },
+        {
+          "code": "NY",
+          "name": "New York",
+          "cities": ["New York City", "Buffalo"]
+        }
+      ]
+    },
+    {
+      "code": "MX",
+      "name": "Mexico",
+      "regions": [
+        {
+          "code": "CMX",
+          "name": "Ciudad de Mexico",
+          "cities": ["Ciudad de Mexico"]
+        },
+        {
+          "code": "JAL",
+          "name": "Jalisco",
+          "cities": ["Guadalajara", "Puerto Vallarta"]
+        }
+      ]
+    }
+  ]
+}
+

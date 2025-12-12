@@ -93,25 +93,25 @@ let DB = {
       id: "sec-salon",
       name: "Salon Principal",
       tables: [
-        { id: "S01", name: "Salon 1", seats: 4 },
-        { id: "S02", name: "Salon 2", seats: 2 },
-        { id: "S03", name: "Salon 3", seats: 4 },
+        { id: "S01", name: "Salon 1", seats: 4, x: 20, y: 40 },
+        { id: "S02", name: "Salon 2", seats: 2, x: 50, y: 35 },
+        { id: "S03", name: "Salon 3", seats: 4, x: 80, y: 45 },
       ],
     },
     {
       id: "sec-terraza",
       name: "Terraza",
       tables: [
-        { id: "T01", name: "Terraza 1", seats: 4 },
-        { id: "T02", name: "Terraza 2", seats: 6 },
+        { id: "T01", name: "Terraza 1", seats: 4, x: 30, y: 50 },
+        { id: "T02", name: "Terraza 2", seats: 6, x: 70, y: 55 },
       ],
     },
     {
       id: "sec-barra",
       name: "Barra",
       tables: [
-        { id: "B01", name: "Barra 1", seats: 2 },
-        { id: "B02", name: "Barra 2", seats: 2 },
+        { id: "B01", name: "Barra 1", seats: 2, x: 40, y: 60 },
+        { id: "B02", name: "Barra 2", seats: 2, x: 60, y: 65 },
       ],
     },
   ],
@@ -430,7 +430,13 @@ export const mockApi = {
       const secId = path.split("/")[3];
       const sec = DB.restaurantSections.find((s) => s.id === secId);
       if (sec) {
-        const tbl = { id: payload.id, name: payload.name, seats: payload.seats || 2 };
+        const tbl = {
+          id: payload.id,
+          name: payload.name,
+          seats: payload.seats || 2,
+          x: typeof payload.x === "number" && !Number.isNaN(payload.x) ? payload.x : undefined,
+          y: typeof payload.y === "number" && !Number.isNaN(payload.y) ? payload.y : undefined,
+        };
         sec.tables = [...(sec.tables || []), tbl];
         return makeResp(sec.tables);
       }

@@ -63,6 +63,8 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  // Mantener objeto de contexto estable; login/logout son funciones locales
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const value = useMemo(() => ({ token, user, setUser, login, logout }), [token, user]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
