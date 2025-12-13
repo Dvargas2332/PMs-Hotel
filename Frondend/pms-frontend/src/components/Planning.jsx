@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useCallback, useEffect } from "react";
-import Timeline from "react-calendar-timeline";
+import Timeline, { TimelineHeaders, DateHeader } from "react-calendar-timeline";
 import moment from "moment";
+import "moment/locale/es";
 import { useHotelData } from "../context/HotelDataContext";
 import "react-calendar-timeline/style.css";
 import "./Planning.css";
@@ -21,6 +22,10 @@ const toYMD = (v) => {
   return d.toISOString().slice(0, 10);
 };
 
+// Localizar fechas a español para encabezados del planning
+moment.locale("en-us");
+moment.updateLocale("en-us");
+
 const mapRemoteReservation = (r) => ({
   id: String(r.id),
   roomId: String(r.roomId),
@@ -32,7 +37,11 @@ const mapRemoteReservation = (r) => ({
   status: r.status,
   rawStatus: r.status,
 });
-const mapRemoteRoom = (r) => ({ id: String(r.id), title: r.title ?? r.number ?? String(r.id) });
+const mapRemoteRoom = (r) => ({
+  id: String(r.id),
+  title: r.title ?? r.number ?? String(r.id),
+  type: r.type,
+});
 
 export default function Planning() {
   const { settings, rooms, reservations } = useHotelData();
@@ -71,15 +80,41 @@ export default function Planning() {
   const reservationsData = remoteReservations ?? reservations;
   const windowDays = useMemo(() => Math.max(1, viewEnd.diff(viewStart, "days")), [viewStart, viewEnd]);
   const isCompact = viewport.width < 1024;
-  const timelineHeight = Math.max(320, viewport.height - 260);
+  const timelineHeight = Math.max(300, viewport.height - 260);
   const timelineMinWidth = isCompact ? 720 : 960;
-  const lineHeight = isCompact ? 42 : 48;
+  const lineHeight = isCompact ? 32 : 38;
 
-  // Grupos (habitaciones)
-  const groups = useMemo(
-    () => (roomsData || []).map((r) => ({ id: String(r.id), title: r.title ?? String(r.id) })),
-    [roomsData]
-  );
+  // Grupos: fila de tipo de habitación y debajo sus habitaciones
+  const groups = useMemo(() => {
+    const byType = new Map();
+    (roomsData || []).forEach((r) => {
+      const type = r.type || "Sin tipo";
+      if (!byType.has(type)) byType.set(type, []);
+      byType.get(type).push(r);
+    });
+
+    const result = [];
+    Array.from(byType.entries()).forEach(([type, list]) => {
+      result.push({ id: `TYPE-${type}`, title: type, isTypeHeader: true });
+      list.forEach((r) => {
+        result.push({
+          id: String(r.id),
+          title: r.title ?? r.number ?? String(r.id),
+          type,
+          isTypeHeader: false,
+        });
+      });
+    });
+    return result;
+  }, [roomsData]);
+
+  const roomTitleById = useMemo(() => {
+    const map = new Map();
+    (roomsData || []).forEach((r) => {
+      map.set(String(r.id), r.title ?? r.number ?? String(r.id));
+    });
+    return map;
+  }, [roomsData]);
 
   // Items (reservas)
   const items = useMemo(() => {
@@ -141,6 +176,7 @@ export default function Planning() {
           },
           data: {
             roomId: String(r.roomId),
+            roomTitle: roomTitleById.get(String(r.roomId)) || String(r.roomId),
             checkInDate: r.checkInDate,
             checkOutDate: r.checkOutDate,
             guestName: r.guestName,
@@ -150,7 +186,7 @@ export default function Planning() {
           },
         };
       });
-  }, [reservationsData, checkIn, checkOut]);
+  }, [reservationsData, checkIn, checkOut, roomTitleById]);
 
   // Modales
   const [active, setActive] = useState(null); // { type, data }
@@ -209,22 +245,32 @@ export default function Planning() {
   return (
     <div className="h-full min-h-0 w-full bg-gradient-to-br from-slate-50 via-white to-emerald-50 p-4 md:p-6">
       <div className="mx-auto w-full max-w-full space-y-4 h-full min-h-0 flex flex-col">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
+	        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+	          <div>
             <h1 className="text-2xl font-semibold text-slate-900">Planner</h1>
-            <p className="text-sm text-slate-600">Vista de ocupacion por habitacion, sin licencias.</p>
+            <p className="text-sm text-slate-600">Vista de ocupacion por habitacion.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <LegendDot color="#10b981" label="Check-in" />
-            <LegendDot color="#3f3f46" label="Estadia" />
-            <LegendDot color="#f59e0b" label="Check-out" />
-          </div>
-        </div>
+	          <div className="flex flex-col items-end gap-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2 justify-end">
+                <LegendDot color="#10b981" label="Check-in" />
+                <LegendDot color="#3f3f46" label="Estadia" />
+                <LegendDot color="#f59e0b" label="Check-out" />
+              </div>
+              <div className="flex flex-wrap items-center gap-1 justify-end">
+                <LegendDot color="#4ade80" label="Reserva confirmada" />
+                <LegendDot color="#fbbf24" label="Reserva pendiente" />
+                <LegendDot color="#0ea5e9" label="Check-in hoy" />
+                <LegendDot color="#f97316" label="Check-out hoy" />
+                <LegendDot color="#94a3b8" label="Finalizó estancia" />
+                <LegendDot color="#c084fc" label="Lista de espera" />
+              </div>
+            </div>
+	        </div>
 
         <div className="rounded-2xl border bg-white shadow-sm p-3 space-y-3 flex-1 min-h-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm text-slate-600">
-              Rango: {viewStart.format("YYYY-MM-DD")} -> {viewEnd.format("YYYY-MM-DD")}
+              Rango: {viewStart.format("YYYY-MM-DD")} al {viewEnd.format("YYYY-MM-DD")}
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -259,32 +305,52 @@ export default function Planning() {
               </button>
             </div>
           </div>
-          <div
-            className="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-100 bg-slate-50/60"
-            style={{ height: timelineHeight, maxHeight: timelineHeight }}
-          >
-            <div className="h-full min-h-0">
-              <div className="h-full" style={{ minWidth: timelineMinWidth }}>
-                <Timeline
-                  groups={groups}
-                  items={items}
-                  defaultTimeStart={viewStart}
-                  defaultTimeEnd={viewEnd}
-                  lineHeight={lineHeight}
-                  itemHeightRatio={0.8}
-                  canMove={false}
-                  canResize={false}
-                  stackItems
-                  onItemSelect={onItemSelect}
-                  itemTouchSendsClick
-                  sidebarWidth={150}
-                  visibleTimeStart={viewStart.valueOf()}
-                  visibleTimeEnd={viewEnd.valueOf()}
-                  onTimeChange={onTimeChange}
-                />
+            <div
+              className="flex-1 min-h-0 overflow-auto rounded-xl border border-slate-100 bg-slate-50/60"
+              style={{ height: timelineHeight, maxHeight: timelineHeight }}
+            >
+              <div className="h-full min-h-0">
+                <div className="h-full" style={{ minWidth: timelineMinWidth }}>
+                  <Timeline
+                    groups={groups}
+                    items={items}
+                    defaultTimeStart={viewStart}
+                    defaultTimeEnd={viewEnd}
+                    lineHeight={lineHeight}
+                    itemHeightRatio={0.8}
+                    canMove={false}
+                    canResize={false}
+                    stackItems
+                    onItemSelect={onItemSelect}
+                    itemTouchSendsClick
+                    sidebarWidth={150}
+                    visibleTimeStart={viewStart.valueOf()}
+                    visibleTimeEnd={viewEnd.valueOf()}
+                    onTimeChange={onTimeChange}
+                    groupRenderer={({ group }) =>
+                      group.isTypeHeader ? (
+                        <div className="px-10 py-0.5 text-s font-semibold text-emerald-900 bg-emerald-50 border-b border-emerald-200 shadow-sm rounded-r-full h-full flex items-center">
+                          {group.title}
+                        </div>
+                      ) : (
+                        <div className="px-2 py-1 text-s text-slate-900 font-medium">{group.title}</div>
+                      )
+                    }
+                  >
+                    <TimelineHeaders>
+                      <DateHeader
+                        unit="primaryHeader"
+                        labelFormat={(range) => range[0].format("MMMM YYYY")}
+                      />
+                      <DateHeader
+                        unit="day"
+                        labelFormat={(range) => range[0].format("ddd D")}
+                      />
+                    </TimelineHeaders>
+                  </Timeline>
+                </div>
               </div>
             </div>
-          </div>
         </div>
       </div>
 
@@ -293,9 +359,8 @@ export default function Planning() {
         <Modal onClose={closeModal} title="Realizar Check-in">
           <div className="space-y-3">
             <Row label="Huesped" value={active.data.guestName} />
-            <Row label="Habitacion" value={active.data.roomId} />
+            <Row label="Habitacion" value={active.data.roomTitle || active.data.roomId} />
             <Row label="Estadia" value={`${active.data.checkInDate} -> ${active.data.checkOutDate}`} />
-            <div className="text-sm text-gray-500">Confirma documentos, firma y metodo de pago de garantia.</div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-2 rounded bg-gray-100" onClick={closeModal}>
                 Cancelar
@@ -324,7 +389,7 @@ export default function Planning() {
               <div className="text-sm text-gray-600">Resumen de cargos</div>
               <ul className="mt-2 text-sm text-gray-700 list-disc ml-5 space-y-1">
                 <li>
-                  Estadia: {checkoutSummary?.nights || 1} noche(s) ({active.data.checkInDate} -> {active.data.checkOutDate})
+                  Estadía: {checkoutSummary?.nights || 1} noche(s) ({active.data.checkInDate} al {active.data.checkOutDate})
                 </li>
                 <li>Impuestos y fees: se calculan al facturar segun configuracion del hotel</li>
                 <li>Consumos: integrar consumos de POS / minibar si aplican</li>

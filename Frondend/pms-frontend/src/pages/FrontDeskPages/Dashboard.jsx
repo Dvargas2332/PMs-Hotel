@@ -547,7 +547,7 @@ export default function Dashboard() {
               >
                 {departuresToday.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.guestName} - Hab {r.roomId} - {r.checkInDate} -> {r.checkOutDate}
+                    {r.guestName} - Hab {r.roomId} - {r.checkInDate} - {r.checkOutDate}
                   </option>
                 ))}
               </select>
@@ -563,7 +563,7 @@ export default function Dashboard() {
             <div className="rounded-xl border bg-white p-3 space-y-2">
               <div className="text-sm font-semibold text-gray-800">Cargos</div>
               <ul className="space-y-1 text-sm text-gray-700">
-                {billingSummary?.charges.map((c) => (
+                {(billingSummary?.charges || []).map((c) => (
                   <li key={c.label} className="flex justify-between">
                     <span>{c.label}</span>
                     <span>CRC  {Number(c.amount || 0).toFixed(2)}</span>
@@ -607,6 +607,5 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
 
