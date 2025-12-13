@@ -21,13 +21,14 @@ const StatusBadge = ({ status }) => {
   return <span className={`px-2 py-1 rounded border text-xs font-medium ${meta.bg}`}>{status || "N/D"}</span>;
 };
 
-const emptyForm = {
-  guestId: "",
-  firstName: "",
-  lastName: "",
-  email: "",
-  phone: "",
-  roomId: "",
+  const emptyForm = {
+    guestId: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    roomType: "",
+    roomId: "",
   checkInDate: "",
   checkOutDate: "",
   adults: 2,
@@ -82,8 +83,6 @@ export default function ReservationsPage() {
     refreshRooms,
     refreshGuests,
     createReservation,
-    doCheckIn,
-    doCheckOut,
     cancelReservation,
     createGuest,
     setReservations,
@@ -292,15 +291,22 @@ export default function ReservationsPage() {
     });
   }, [reservations, search]);
 
+  const sidebarReservations = filtered;
+  const tableReservations = selectedRow ? filtered.filter((r) => r.id === selectedRow) : [];
+
   const buildGuest = async (row) => {
     let guestId = row.guestId;
     if (!guestId) {
-      if (!row.firstName || !row.lastName) {
-        throw new Error("Completa nombre y apellido del huesped");
+      const hasFirst = !!row.firstName && row.firstName.trim().length > 0;
+      const hasLast = !!row.lastName && row.lastName.trim().length > 0;
+      if (!hasFirst && !hasLast) {
+        throw new Error("Agrega al menos un nombre para el huésped o selecciona un perfil.");
       }
+      const firstName = (row.firstName || row.lastName || "Huesped").trim();
+      const lastName = (row.lastName || row.firstName || "Reserva").trim();
       const guest = await createGuest({
-        firstName: row.firstName,
-        lastName: row.lastName,
+        firstName,
+        lastName,
         email: row.email || undefined,
         phone: row.phone || undefined,
       });
@@ -315,6 +321,7 @@ export default function ReservationsPage() {
       const d = new Date(`${dateStr}T00:00:00Z`);
       return Number.isNaN(d.getTime()) ? dateStr : d.toISOString();
     };
+
     const guestId = await buildGuest(row);
     return createReservation({
       roomId: row.roomId,
@@ -368,12 +375,11 @@ export default function ReservationsPage() {
     }
     try {
       setCreating(true);
-      let lastId = null;
       for (const row of rowsToSave) {
-        const created = await createReservationFromRow(row);
-        if (created?.id) lastId = created.id;
+        await createReservationFromRow(row);
       }
-      if (lastId) setSelectedRow(lastId);
+      // Al guardar una reserva nueva, limpiamos la seccion de habitaciones
+      setSelectedRow(null);
       setDraftRows([]);
       await refreshReservations();
       await refreshRooms();
@@ -390,15 +396,15 @@ export default function ReservationsPage() {
     }
   };
 
-  const handleSaveRow = () => {
-    if (!form.roomId || !form.checkInDate || !form.checkOutDate) {
-      pushAlert({
-        type: "system",
-        title: "Datos incompletos",
-        desc: "Completa habitacion y rango de fechas antes de guardar la fila.",
-      });
-      return;
-    }
+    const handleSaveRow = () => {
+      if (!form.roomType || !form.roomId || !form.checkInDate || !form.checkOutDate) {
+        pushAlert({
+          type: "system",
+          title: "Datos incompletos",
+          desc: "Selecciona tipo de habitacion, habitacion y rango de fechas antes de guardar la fila.",
+        });
+        return;
+      }
     if (form.checkOutDate <= form.checkInDate) {
       pushAlert({
         type: "system",
@@ -408,31 +414,27 @@ export default function ReservationsPage() {
       return;
     }
     // Mantener datos de huesped para todas las filas; solo limpiamos campos de habitacion al seguir creando
-    setDraftRows((rows) => [...rows, { ...form }]);
+      setDraftRows((rows) => [...rows, { ...form }]);
     setRowSaved(true);
     setShowRowEditor(false);
-    setForm((f) => ({
-      ...f,
-      roomId: "",
-      ratePlanId: f.ratePlanId,
-      mealPlanId: "",
-      quantity: 1,
-      adults: 2,
-      children: 0,
-      infants: 0,
-      price: "",
-      priceRoom: "",
-      priceNet: "",
-      priceRegimen: "",
-      priceTax: "",
-    }));
+      setForm((f) => ({
+        ...f,
+        roomType: "",
+        roomId: "",
+        ratePlanId: f.ratePlanId,
+        mealPlanId: "",
+        quantity: 1,
+        adults: 2,
+        children: 0,
+        infants: 0,
+        price: "",
+        priceRoom: "",
+        priceNet: "",
+        priceRegimen: "",
+        priceTax: "",
+      }));
   };
 
-  const canCheckIn = (r) => {
-    const code = (r.rawStatus || "").toUpperCase();
-    return code === "CONFIRMED" || code === "PENDING";
-  };
-  const canCheckOut = (r) => (r.rawStatus || "").toUpperCase() === "CHECKED_IN";
   const canCancel = (r) => {
     const code = (r.rawStatus || "").toUpperCase();
     return code !== "CANCELED" && code !== "CHECKED_OUT";
@@ -447,14 +449,15 @@ export default function ReservationsPage() {
     if (!r) return;
     setSelectedRow(r.id);
     setShowRowEditor(true);
-    setForm({
-      ...form,
-      guestId: r.guestId || "",
-      firstName: r.guest?.firstName || "",
-      lastName: r.guest?.lastName || "",
-      email: r.guest?.email || "",
-      phone: r.guest?.phone || "",
-      roomId: r.roomId || "",
+      setForm({
+        ...form,
+        guestId: r.guestId || "",
+        firstName: r.guest?.firstName || "",
+        lastName: r.guest?.lastName || "",
+        email: r.guest?.email || "",
+        phone: r.guest?.phone || "",
+        roomType: r.room?.type || form.roomType || "",
+        roomId: r.roomId || "",
       checkInDate: r.checkInDate || "",
       checkOutDate: r.checkOutDate || "",
       adults: r.adults || 2,
@@ -647,7 +650,7 @@ export default function ReservationsPage() {
         <div className="w-full lg:w-64 rounded-2xl border bg-white shadow-sm p-3 space-y-2">
           <div className="text-sm font-semibold text-slate-800">Reservas creadas</div>
           <div className="space-y-1 max-h-[400px] overflow-auto">
-            {filtered.map((r) => (
+            {sidebarReservations.map((r) => (
               <button
                 key={r.id}
                 className={`w-full text-left rounded-xl border px-3 py-2 text-sm ${
@@ -664,7 +667,7 @@ export default function ReservationsPage() {
                 </div>
               </button>
             ))}
-            {filtered.length === 0 && <div className="text-xs text-slate-500">Sin reservas para listar.</div>}
+            {sidebarReservations.length === 0 && <div className="text-xs text-slate-500">Sin reservas para listar.</div>}
           </div>
         </div>
 
@@ -733,7 +736,6 @@ export default function ReservationsPage() {
                   containerClassName="max-w-[200px]"
                 />
               </div>
-
               <div className="hidden xl:block w-px bg-slate-200" />
 
               {/* Centro */}
@@ -761,9 +763,9 @@ export default function ReservationsPage() {
                       value={`${form.firstName} ${form.lastName}`.trim()}
                       onChange={handleNameChange}
                       placeholder="Selecciona un perfil o escribe un nombre"
-                      containerClassName="flex-1 max-w-[350px]"
+                      containerClassName="max-w-[350px]"
                     />
-                    <PillButton label="Perfiles: agregar" onClick={handlePickProfile} />
+                    <PillButton label="Perfiles" onClick={handlePickProfile} />
                   </div>
                   <PillInput
                     label="Correo electronico"
@@ -805,16 +807,16 @@ export default function ReservationsPage() {
 
             {/* Tabla estilo maqueta unida al bloque superior */}
             <div className="border-t border-emerald-100 pt-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-800">
-                <div className="text-xs font-semibold">Seccion de habitaciones</div>
-                <div className="flex gap-2 flex-wrap">
-                  <PillButton
-                    label="Crear"
-                    onClick={() => {
-                      setShowRowEditor(true);
-                      if (rowSaved) {
+                <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-800">
+                  <div className="text-xs font-semibold">Seccion de habitaciones</div>
+                  <div className="flex gap-2 flex-wrap">
+                    <PillButton
+                      label="Crear"
+                      onClick={() => {
+                        setShowRowEditor(true);
+                        // Al crear una nueva reserva, limpiamos seleccion y borradores anteriores
                         setSelectedRow(null);
-                      }
+                        setDraftRows([]);
                       setRowSaved(false);
                       setRowConfirmed(false);
                     }}
@@ -827,7 +829,7 @@ export default function ReservationsPage() {
                   <thead className="text-xs uppercase text-slate-600 bg-emerald-50">
                     <tr>
                       <th className="px-2 py-1 border-x border-slate-200">Cantidad</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Tipo de habitacion</th>
+                        <th className="px-2 py-1 border-x border-slate-200">Tipo de habitacion</th>
                       <th className="px-2 py-1 border-x border-slate-200">Regimen</th>
                       <th className="px-2 py-1 border-x border-slate-200">Adultos</th>
                       <th className="px-2 py-1 border-x border-slate-200">Ninos</th>
@@ -851,25 +853,27 @@ export default function ReservationsPage() {
                             disabled={rowSaved}
                           />
                         </td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          <select
-                            className="w-full rounded border px-2 py-1 text-sm"
-                            value={form.roomId}
-                            onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
-                            disabled={rowSaved}
-                          >
-                            <option value="">Seleccione</option>
-                            {roomsByType.map(([type, list]) => (
-                              <optgroup key={type} label={type}>
-                                {list.map((room) => (
-                                  <option key={room.id} value={room.id}>
-                                    {room.number ? `Hab. ${room.number}` : room.name || `ID ${room.id}`}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </td>
+                          <td className="px-2 py-2 border-x border-slate-200">
+                            <select
+                              className="w-full rounded border px-2 py-1 text-sm"
+                              value={form.roomType}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  roomType: e.target.value,
+                                  roomId: "", // al cambiar de tipo limpiamos habitacion
+                                }))
+                              }
+                              disabled={rowSaved}
+                            >
+                              <option value="">Seleccione tipo</option>
+                              {roomsByType.map(([type]) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                         <td className="px-2 py-2 border-x border-slate-200">
                           <select
                             className="w-full rounded border px-2 py-1 text-sm"
@@ -918,19 +922,25 @@ export default function ReservationsPage() {
                         <td className="px-2 py-2 text-right border-x border-slate-200">
                           <span className="font-semibold text-emerald-700">{form.price ? `CRC ${form.price}` : "-"}</span>
                         </td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          <input
-                            type="text"
-                            className="w-28 rounded border px-2 py-1 text-sm"
-                            value={
-                              rooms.find((r) => String(r.id) === String(form.roomId))?.number ||
-                              rooms.find((r) => String(r.id) === String(form.roomId))?.name ||
-                              form.roomId
-                            }
-                            readOnly
-                            disabled={rowSaved}
-                          />
-                        </td>
+                          <td className="px-2 py-2 border-x border-slate-200">
+                            <select
+                              className="w-full rounded border px-2 py-1 text-sm"
+                              value={form.roomId}
+                              onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
+                              disabled={rowSaved || !form.roomType}
+                            >
+                              <option value="">
+                                {form.roomType ? "Seleccione habitacion" : "Seleccione tipo primero"}
+                              </option>
+                              {rooms
+                                .filter((r) => (form.roomType ? r.type === form.roomType : false))
+                                .map((room) => (
+                                  <option key={room.id} value={room.id}>
+                                    {room.number ? `Hab. ${room.number}` : room.name || `ID ${room.id}`}
+                                  </option>
+                                ))}
+                            </select>
+                          </td>
                         <td className="px-2 py-2">
                           {rowConfirmed ? <StatusBadge status="CONFIRMED" /> : <span className="text-xs text-slate-400"></span>}
                         </td>
@@ -966,7 +976,7 @@ export default function ReservationsPage() {
                         </td>
                       </tr>
                     )}
-                    {filtered.map((r) => (
+                    {tableReservations.map((r) => (
                       <tr key={r.id} className={`border-t border-slate-200 ${selectedRow === r.id ? "bg-emerald-50" : ""}`}>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
                         <td className="px-2 py-2 border-x border-slate-200">{r.room?.type || "N/D"}</td>
@@ -986,12 +996,6 @@ export default function ReservationsPage() {
                           )}
                         </td>
                         <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
-                          <ActionButton tone="blue" disabled={!canCheckIn(r) || loading.action} onClick={() => doCheckIn(r.id)}>
-                            Check-in
-                          </ActionButton>
-                          <ActionButton tone="green" disabled={!canCheckOut(r) || loading.action} onClick={() => doCheckOut(r.id)}>
-                            Check-out
-                          </ActionButton>
                           <ActionButton tone="red" disabled={!canCancel(r) || loading.action} onClick={() => cancelReservation(r.id)}>
                             Cancelar
                           </ActionButton>
@@ -1043,7 +1047,7 @@ export default function ReservationsPage() {
                         </td>
                       </tr>
                     ))}
-                    {filtered.length === 0 && (
+                    {tableReservations.length === 0 && draftRows.length === 0 && !showRowEditor && (
                       <tr>
                         <td className="p-3 text-center text-slate-500" colSpan={10}>
                           No hay reservaciones que coincidan con el filtro.

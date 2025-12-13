@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 
@@ -627,6 +628,9 @@ function CheckoutGuestsModal({ open, onClose, guests = [], onGenerate }) {
 
 /** --- Pgina de Facturacin --- **/
 export default function FacturacionPage() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const reservationIdFromUrl = searchParams.get("id");
   const [q, setQ] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [preset, setPreset] = useState(null);
@@ -774,7 +778,7 @@ export default function FacturacionPage() {
     setShowHistory(true);
     loadHistory();
   };
-  const [showBillingOverlay, setShowBillingOverlay] = useState(false);
+  const [showBillingOverlay, setShowBillingOverlay] = useState(!!reservationIdFromUrl);
 
   const billingContent = (
     <div className="space-y-3">
@@ -1188,7 +1192,6 @@ export default function FacturacionPage() {
     </div>
   );
 }
-
 
 
 

@@ -1,6 +1,22 @@
 .rct-cursor-line {
-  background: #0ea5e9 !important; /* azul suave en lugar de rojo */
+  background: #0aac68 !important;
 }
 .rct-header-root {
-  background: linear-gradient(90deg, #0ea5e9, #22d3ee) !important;
+  background: linear-gradient(90deg, #0aac68, #22d3ee) !important;
+}
+
+/* Ajuste de altura y texto para que los dias no se salgan de los recuadros */
+.rct-dateHeader,
+.rct-dateHeader-primary,
+.rct-dateHeader-secondary {
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none; /* evitar que se haga zoom al hacer click */
+}
+.rct-dateHeader {
+  padding-top: 2px;
+  padding-bottom: 2px;
 }

@@ -210,6 +210,14 @@ model Hotel {
   restaurantOrders    RestaurantOrder[]
   restaurantSections  RestaurantSection[]
   restaurantMenuItems RestaurantMenuItem[]
+  reservationSequences ReservationSequence[]
+}
+
+model ReservationSequence {
+  hotelId    String @id
+  nextNumber Int    @default(1)
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 }
 
 // ===== Models =====
