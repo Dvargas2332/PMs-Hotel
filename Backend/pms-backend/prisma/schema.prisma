@@ -209,8 +209,9 @@ model Hotel {
   restaurantCloses    RestaurantClose[]
   restaurantOrders    RestaurantOrder[]
   restaurantSections  RestaurantSection[]
-  restaurantMenuItems RestaurantMenuItem[]
+  restaurantMenuItems  RestaurantMenuItem[]
   reservationSequences ReservationSequence[]
+  launcherAccounts     LauncherAccount[]
 }
 
 model ReservationSequence {
@@ -218,6 +219,25 @@ model ReservationSequence {
   nextNumber Int    @default(1)
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+}
+
+// Usuarios de launcher (acceso previo por hotel, independientes de User)
+model LauncherAccount {
+  id        String   @id @default(cuid())
+  username  String   // identificador de usuario (login) ─ unico por hotel
+  name      String   @default("") // nombre visible
+  password  String
+  hotelId   String
+  roleId    String   @default("ADMIN")
+  createdAt DateTime @default(now())
+
+  hotel Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  role  AppRole @relation(fields: [hotelId, roleId], references: [hotelId, id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([hotelId, roleId])
+  @@unique([hotelId, username])
+  @@map("UserLauncher")
 }
 
 // ===== Models =====
@@ -545,8 +565,9 @@ model AppRole {
   description String?
   hotelId     String
 
-  hotel       Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  permissions RolePermission[]
+  hotel           Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  permissions     RolePermission[]
+  launcherAccounts LauncherAccount[]
 
   @@unique([hotelId, id])
   @@index([hotelId])
