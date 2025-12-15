@@ -1,10 +1,20 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Bell, Hotel, Settings, Banknote, UtensilsCrossed, LogOut } from "lucide-react";
+import {
+  ChevronRight,
+  Bell,
+  Hotel,
+  Settings,
+  Banknote,
+  UtensilsCrossed,
+  LogOut,
+} from "lucide-react";
 
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
+import { Input } from "../components/ui/input";
+import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 
 const THEMES = {
@@ -16,30 +26,40 @@ const THEMES = {
 
 export default function Launcher() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { hotel, user, loginUser, logout, logoutUser } = useAuth();
+
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [userLogin, setUserLogin] = useState({
+    username: "",
+    password: "",
+    loading: false,
+    error: "",
+  });
 
   const modules = useMemo(
     () => [
       {
+        code: "frontdesk",
         name: "Front Desk",
         path: "/frontdesk",
         icon: Hotel,
-        description: "Check-in/out, planning y reservas.",
+        description: "Check-in/out, planner y reservas.",
         tag: "Operación",
         theme: THEMES.frontdesk,
       },
       {
+        code: "restaurant",
         name: "Restaurant",
         path: "/restaurant",
         icon: UtensilsCrossed,
-        description: "Órdenes y mesas.",
-        tag: "F&D",
+        description: "Órdenes, mesas y comandas.",
+        tag: "F&B",
         theme: THEMES.restaurant,
       },
       {
+        code: "accounting",
         name: "Accounting",
         path: "/accounting",
         icon: Banknote,
@@ -48,6 +68,7 @@ export default function Launcher() {
         theme: THEMES.accounting,
       },
       {
+        code: "management",
         name: "Management",
         path: "/management",
         icon: Settings,
@@ -59,9 +80,14 @@ export default function Launcher() {
     []
   );
 
-  const filtered = modules;
+  // Módulos permitidos por membresía del HOTEL
+  const filtered = useMemo(() => {
+    const allowed = hotel?.allowedModules;
+    if (!Array.isArray(allowed) || allowed.length === 0) return modules;
+    return modules.filter((m) => !m.code || allowed.includes(m.code));
+  }, [modules, hotel?.allowedModules]);
 
-  // Suscribirse a alertas globales
+  // Suscripción al bus de alertas globales
   useEffect(() => {
     const onToggle = () => setAlertsOpen((v) => !v);
     const onOpen = () => setAlertsOpen(true);
@@ -96,6 +122,19 @@ export default function Launcher() {
     };
   }, []);
 
+  const handleOpenModule = useCallback(
+    (path) => {
+      // Regla: el login del hotel NO puede entrar a módulos, solo al launcher.
+      if (!user) {
+        alert("Debes iniciar sesión como USUARIO para ingresar a los módulos.");
+        return;
+      }
+      navigate(path);
+    },
+    [navigate, user]
+  );
+
+  // Navegación por teclado entre módulos
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
@@ -107,64 +146,182 @@ export default function Launcher() {
         setFocusedIndex((i) => Math.max(i - 1, 0));
       }
       if (e.key === "Enter" && focusedIndex >= 0) {
-        navigate(filtered[focusedIndex].path);
+        handleOpenModule(filtered[focusedIndex].path);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, focusedIndex, navigate]);
+  }, [filtered, focusedIndex, handleOpenModule]);
 
-  const openModule = (path) => navigate(path);
+  const handleUserLoginSubmit = async (e) => {
+    e?.preventDefault?.();
+    if (userLogin.loading) return;
+    setUserLogin((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      const u = await loginUser(userLogin.username, userLogin.password);
+      if (!u) {
+        setUserLogin((prev) => ({
+          ...prev,
+          error: "Credenciales inválidas.",
+          loading: false,
+        }));
+        return;
+      }
+      setUserLogin({ username: "", password: "", loading: false, error: "" });
+    } catch (err) {
+      setUserLogin((prev) => ({
+        ...prev,
+        error: "No se pudo iniciar sesión de usuario.",
+        loading: false,
+      }));
+    }
+  };
+
+  const handleHotelLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  const handleUserLogout = () => {
+    logoutUser();
+  };
 
   return (
     <TooltipProvider>
       <div className="min-h-screen w-full bg-slate-50">
-        <div className="mx-auto max-w-6xl grid grid-cols-1 md:grid-cols-3 gap-6 px-6 py-8">
-          {/* Columna izquierda: logo grande */}
-          <div className="md:col-span-1 flex items-start justify-center">
-            <div className="w-full rounded-3xl border bg-white shadow-lg p-6 flex flex-col items-center justify-center space-y-4">
-              <div className="bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-400 rounded-3xl flex items-center justify-center w-full aspect-square max-w-[320px]">
-                <img src="/kazehanalogo.png" alt="Kazehana PMS" className="h-64 w-64 md:h-72 md:w-72 object-contain drop-shadow-2xl" />
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 px-6 py-8 md:grid-cols-3">
+          {/* Columna izquierda: logo + info hotel/usuario + login de usuario */}
+          <div className="flex items-start justify-center md:col-span-1">
+            <div className="flex w-full flex-col items-center justify-center space-y-4 rounded-3xl border bg-white p-6 shadow-lg">
+              <div className="flex aspect-square w-full max-w-[320px] items-center justify-center rounded-3xl bg-gradient-to-br from-emerald-600 via-emerald-500 to-emerald-400">
+                <img
+                  src="/kazehanalogo.png"
+                  alt="Kazehana PMS"
+                  className="h-64 w-64 object-contain drop-shadow-2xl md:h-72 md:w-72"
+                />
               </div>
-              <div className="text-center">
-                <div className="text-lg font-semibold text-gray-900">{user?.name || user?.email || "Usuario"}</div>
-                <div className="text-xs text-gray-600">Selecciona un módulo para continuar.</div>
+
+              <div className="space-y-1 text-center">
+                <div className="text-lg font-semibold text-gray-900">
+                  {hotel?.name || "Hotel"}
+                </div>
+                <div className="text-xs text-gray-600">
+                  {hotel?.email || "Sesión de hotel (nivel 1)"}
+                </div>
+                {hotel?.membership && (
+                  <div className="mt-1 text-[15px] font-medium text-emerald-700">
+                    Membresía: {hotel.membership}
+                  </div>
+                )}
+                
               </div>
+
+              {/* Login de usuario (nivel 2) debajo del logo */}
+              <div className="flex w-full justify-center">
+                <div className="w-full max-w-xs rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
+                  {user ? (
+                    <div className="space-y-1 text-s text-gray-700">
+                      <div className="font-semibold text-gray-900">
+                        Usuario: {user.name || user.username}
+                      </div>
+                      <div className="text-[12px] text-gray-500">
+                        Rol:{" "}
+                        {Array.isArray(user.roles) ? user.roles.join(", ") : user.role || "N/A"}
+                      </div>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleUserLoginSubmit} className="space-y-3">
+                      <div>
+                        <h2 className="text-sm font-semibold text-gray-800">
+                        Inicia sesión para acceder a los módulos.
+                        </h2>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="max-w-[220px] space-y-1">
+                          <label className="text-xs font-medium text-slate-700">Usuario</label>
+                          <Input
+                            value={userLogin.username}
+                            onChange={(e) =>
+                              setUserLogin((prev) => ({ ...prev, username: e.target.value }))
+                            }
+                            placeholder="usuario"
+                            autoComplete="username"
+                          />
+                        </div>
+                        <div className="max-w-[220px] space-y-1">
+                          <label className="text-xs font-medium text-slate-700">
+                            Contraseña
+                          </label>
+                          <Input
+                            type="password"
+                            value={userLogin.password}
+                            onChange={(e) =>
+                              setUserLogin((prev) => ({ ...prev, password: e.target.value }))
+                            }
+                            placeholder="********"
+                            autoComplete="current-password"
+                          />
+                        </div>
+                      </div>
+                      {userLogin.error && (
+                        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                          {userLogin.error}
+                        </div>
+                      )}
+                      <div className="flex justify-end">
+                        <Button type="submit" size="sm" disabled={userLogin.loading}>
+                          {userLogin.loading ? "Ingresando..." : "Entrar"}
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setAlertsOpen((s) => !s)}
-                  className="relative p-2 rounded-lg border bg-white hover:bg-slate-50"
+                  className="relative rounded-lg border bg-white p-2 hover:bg-slate-50"
                   aria-label="Alertas"
                 >
                   <Bell size={16} className="text-emerald-600" />
                   {alerts.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] leading-3 px-1.5 py-0.5 rounded-full">
+                    <span className="absolute -right-1 -top-1 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] leading-3 text-white">
                       {alerts.length}
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => {
-                    logout();
-                    navigate("/login");
-                  }}
-                  className="inline-flex items-center gap-2 px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 text-xs font-medium shadow-sm"
-                >
-                  <LogOut size={14} className="text-rose-600" />
-                  log out
-                </button>
+                {user && (
+                  <button
+                    onClick={handleUserLogout}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <LogOut size={14} className="text-amber-600" />
+                    Cerrar usuario
+                  </button>
+                )}
+                {!user && (
+                  <button
+                    onClick={handleHotelLogout}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                  >
+                    <LogOut size={14} className="text-rose-600" />
+                    Cerrar hotel
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Columna derecha: módulos en columna */}
-          <div className="md:col-span-2 space-y-4">
+          {/* Columna derecha: alertas + módulos */}
+          <div className="space-y-4 md:col-span-2">
+            {/* Panel de alertas */}
             {alertsOpen && (
-              <Card className="p-4 shadow border-slate-200/80">
-                <div className="flex items-center justify-between mb-2">
+              <Card className="border-slate-200/80 p-4 shadow">
+                <div className="mb-2 flex items-center justify-between">
                   <div className="font-semibold">Alertas</div>
                   <button
-                    className="text-xs text-gray-500 hover:text-gray-700 underline"
+                    className="text-xs text-gray-500 underline hover:text-gray-700"
                     onClick={() => setAlerts([])}
                   >
                     Limpiar
@@ -175,10 +332,15 @@ export default function Launcher() {
                 ) : (
                   <ul className="space-y-2 text-sm">
                     {alerts.map((a) => (
-                      <li key={a.id ?? a.title} className="flex items-start gap-2 border rounded-lg px-3 py-2">
+                      <li
+                        key={a.id ?? a.title}
+                        className="flex items-start gap-2 rounded-lg border px-3 py-2"
+                      >
                         <span className="mt-1 h-2.5 w-2.5 rounded-full bg-amber-500" />
                         <div>
-                          <div className="font-medium text-gray-800">{a.title || a.msg || "Alerta"}</div>
+                          <div className="font-medium text-gray-800">
+                            {a.title || a.msg || "Alerta"}
+                          </div>
                           {a.desc || a.msg ? (
                             <div className="text-xs text-gray-600">{a.desc || a.msg}</div>
                           ) : null}
@@ -190,18 +352,37 @@ export default function Launcher() {
               </Card>
             )}
 
+            {/* Módulos */}
             <div className="grid auto-rows-fr grid-cols-1 gap-6">
-              {filtered.map((mod, idx) => (
-                <ModuleCard key={mod.name} mod={mod} focused={idx === focusedIndex} onOpen={() => openModule(mod.path)} />
-              ))}
+              {filtered
+                .filter((mod) => {
+                  // Antes de que el usuario del launcher inicie sesión,
+                  // mostramos todos los módulos atenuados.
+                  if (!user) return true;
+                  if (!Array.isArray(user.allowedModules)) return true;
+                  // Una vez logueado, solo mostrar módulos permitidos para ese perfil.
+                  return user.allowedModules.includes(mod.code);
+                })
+                .map((mod, idx) => {
+                  const disabled = !user;
+                  return (
+                    <ModuleCard
+                      key={mod.name}
+                      mod={mod}
+                      focused={idx === focusedIndex}
+                      onOpen={() => !disabled && handleOpenModule(mod.path)}
+                      disabled={disabled}
+                    />
+                  );
+                })}
             </div>
           </div>
         </div>
 
         <footer className="mx-auto my-8 w-full max-w-6xl px-6 text-[11px] text-gray-600">
           <div className="flex items-center justify-between">
-            <span>© {new Date().getFullYear()} Kazenohana PMS </span>
-            <span className="hidden sm:inline-flex items-center gap-1" />
+            <span>© {new Date().getFullYear()} Kazehana PMS</span>
+            <span className="hidden items-center gap-1 sm:inline-flex" />
           </div>
         </footer>
       </div>
@@ -209,21 +390,26 @@ export default function Launcher() {
   );
 }
 
-function ModuleCard({ mod, onOpen, focused }) {
+function ModuleCard({ mod, onOpen, focused, disabled }) {
   const Icon = mod.icon;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           onClick={onOpen}
-          className={`text-left transition focus:outline-none h-full w-full ${focused ? "ring-2 ring-offset-2 ring-blue-400" : ""}`}
+          disabled={disabled}
+          className={`h-full w-full text-left transition focus:outline-none ${
+            focused && !disabled ? "ring-2 ring-blue-400 ring-offset-2" : ""
+          } ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
         >
-          <Card className="rounded-2xl border border-slate-200 bg-white p-5 shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 h-full">
+          <Card className="h-full transform rounded-2xl border border-slate-200 bg-white p-5 shadow-md transition">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-4">
-                <div className={`relative h-16 w-16 rounded-3xl bg-gradient-to-br ${mod.theme.from} ${mod.theme.to} shadow-md`}>
-                  <div className="absolute inset-0 rounded-3xl opacity-30 bg-[radial-gradient(circle_at_30%_30%,white,transparent_55%)]" />
-                  <div className="absolute inset-0 rounded-3xl opacity-20 bg-[radial-gradient(circle_at_70%_70%,white,transparent_55%)]" />
+                <div
+                  className={`relative h-16 w-16 rounded-3xl bg-gradient-to-br ${mod.theme.from} ${mod.theme.to} shadow-md`}
+                >
+                  <div className="absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_30%_30%,white,transparent_55%)] opacity-30" />
+                  <div className="absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_70%_70%,white,transparent_55%)] opacity-20" />
                   <div className="relative flex h-full w-full items-center justify-center">
                     <Icon className={`h-8 w-8 ${mod.theme.text}`} />
                   </div>
@@ -233,7 +419,10 @@ function ModuleCard({ mod, onOpen, focused }) {
                   <p className="mt-1 line-clamp-2 text-sm text-gray-600">{mod.description}</p>
                 </div>
               </div>
-              <Badge variant="outline" className="rounded-sm text-[11px] border-gray-200 text-gray-700">
+              <Badge
+                variant="outline"
+                className="rounded-sm border-gray-200 text-[11px] text-gray-700"
+              >
                 {mod.tag}
               </Badge>
             </div>
@@ -250,4 +439,3 @@ function ModuleCard({ mod, onOpen, focused }) {
     </Tooltip>
   );
 }
-

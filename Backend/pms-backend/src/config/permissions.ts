@@ -15,11 +15,28 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     name: "Frontdesk",
     access: { id: "frontdesk.read", name: "Acceso a Frontdesk" },
     permissions: [
-      { id: "frontdesk.create_reservation", name: "Crear/editar reservas y huéspedes" },
-      { id: "frontdesk.checkin", name: "Check-in" },
-      { id: "frontdesk.checkout", name: "Check-out / Cancelar" },
+      // Reservas
+      { id: "frontdesk.create_reservation", name: "Crear reservas" },
+      { id: "frontdesk.reservation.edit", name: "Editar reservas" },
+      { id: "frontdesk.reservation.cancel", name: "Cancelar reservas" },
+      { id: "frontdesk.no_show.mark", name: "Marcar no‑show" },
+  
+      // Check-in / Check-out
+      { id: "frontdesk.checkin", name: "Realizar check‑in" },
+      { id: "frontdesk.checkout", name: "Realizar check‑out" },
+      { id: "frontdesk.room.move", name: "Cambiar habitación de reserva" },
+  
+      // Huéspedes / perfiles
+      { id: "frontdesk.guests.write", name: "Crear/editar perfiles de huésped" },
+  
+      // Cobros / pagos
+      { id: "frontdesk.payments.apply", name: "Aplicar pagos y depósitos" },
+  
+      // Operaciones rápidas
+      { id: "frontdesk.walkin.create", name: "Crear reservas walk‑in" },
     ],
   },
+  
   {
     id: "restaurant",
     name: "Restaurante",

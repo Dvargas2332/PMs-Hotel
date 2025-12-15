@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useHotelData } from "../../context/HotelDataContext";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
+import { frontdeskTheme } from "../../theme/frontdeskTheme";
 
 const STATUS_META = {
   Confirmada: { bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
@@ -448,7 +449,11 @@ export default function ReservationsPage() {
   const loadReservation = (r) => {
     if (!r) return;
     setSelectedRow(r.id);
-    setShowRowEditor(true);
+    // Al seleccionar una reserva existente solo mostramos las filas guardadas;
+    // el editor de filas se abre únicamente con el botón "Crear" o "Editar".
+    setShowRowEditor(false);
+    setRowSaved(false);
+    setDraftRows([]);
       setForm({
         ...form,
         guestId: r.guestId || "",
@@ -628,7 +633,10 @@ export default function ReservationsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6 space-y-6">
+    <div
+      className="min-h-screen p-6 space-y-6"
+      style={{ background: frontdeskTheme.background.app }}
+    >
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Reservas</h1>

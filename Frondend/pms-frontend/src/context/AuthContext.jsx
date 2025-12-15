@@ -1,10 +1,27 @@
-import React, { createContext, useContext, useMemo, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("token"));
+  // Hotel autenticado (login 1)
+  const [hotel, setHotel] = useState(() => {
+    try {
+      const stored = localStorage.getItem("hotel");
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  // Usuario del launcher (login 2, creado en Management > Perfiles)
   const [user, setUser] = useState(() => {
     try {
       const stored = localStorage.getItem("user");
@@ -26,46 +43,87 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (token) localStorage.setItem("token", token);
     else localStorage.removeItem("token");
+  }, [token]);
 
-    // Si hay token pero no tenemos user (p.ej. refresh), intenta decodificar email/role/hotel
-    if (token && !user) {
-      const payload = decodeToken(token);
-      if (payload?.email) {
-        setUser({
-          id: payload.sub,
-          email: payload.email,
-          role: payload.role,
-          name: payload.name,
-          hotelId: payload.hotelId,
-        });
-      }
-    }
-  }, [token, user]);
+  useEffect(() => {
+    if (hotel) localStorage.setItem("hotel", JSON.stringify(hotel));
+    else localStorage.removeItem("hotel");
+  }, [hotel]);
 
   useEffect(() => {
     if (user) localStorage.setItem("user", JSON.stringify(user));
     else localStorage.removeItem("user");
   }, [user]);
 
-  const login = async (email, password) => {
-    const { token, user: userResp } = await api.login(email, password);
-    setToken(token);
-    if (userResp) setUser(userResp);
-    else {
-      const payload = decodeToken(token);
-      setUser({ email, hotelId: payload?.hotelId });
-    }
-    return token;
-  };
+  // Login de HOTEL (primer nivel). Solo habilita acceso al launcher.
+  const login = useCallback(
+    async (email, password) => {
+      const { token: hotelToken, user: userResp } = await api.login(email, password);
+      setToken(hotelToken);
+      // En este flujo, "user" de la API representa al hotel
+      if (userResp) setHotel(userResp);
+      else {
+        const payload = decodeToken(hotelToken);
+        setHotel({ email, hotelId: payload?.hotelId });
+      }
+      // Al cambiar de hotel, se limpia cualquier usuario de launcher
+      setUser(null);
+      return hotelToken;
+    },
+    [] // setToken/setHotel/setUser son estables
+  );
 
-  const logout = () => {
+  // Login de USUARIO DEL LAUNCHER (segundo nivel).
+  const loginUser = useCallback(async (username, password) => {
+    const data = await api.loginUser(username, password);
+    const launcher = data?.launcher;
+    const nextToken = data?.token;
+    if (!launcher || !nextToken) return null;
+
+    // Por ahora mantenemos el token del HOTEL para que
+    // las pantallas de Management sigan funcionando sin 403.
+    // El token del launcher solo se usa para construir el perfil (permisos/front-end).
+
+    const u = {
+      id: launcher.id,
+      username: launcher.username,
+      name: launcher.name || launcher.username,
+      hotelId: launcher.hotelId,
+      hotelName: launcher.hotelName,
+      roleId: launcher.roleId,
+      role: launcher.roleId,
+      permissions: launcher.permissions || [],
+      allowedModules: launcher.allowedModules || [],
+    };
+    setUser(u);
+    return u;
+  }, []);
+
+  const logout = useCallback(() => {
+    // Cierra todo: hotel + usuario de launcher
     setToken(null);
+    setHotel(null);
     setUser(null);
-  };
+  }, []);
 
-  // Mantener objeto de contexto estable; login/logout son funciones locales
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const value = useMemo(() => ({ token, user, setUser, login, logout }), [token, user]);
+  const logoutUser = useCallback(() => {
+    // Solo cierra la sesión del usuario de launcher, manteniendo el hotel
+    setUser(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      token,
+      hotel,
+      user,
+      setUser,
+      login, // login de hotel
+      loginUser,
+      logout, // logout completo (hotel + usuario)
+      logoutUser,
+    }),
+    [token, hotel, user, login, loginUser, logout, logoutUser]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

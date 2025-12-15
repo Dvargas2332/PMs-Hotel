@@ -100,6 +100,7 @@ export async function listLauncherAccounts(req: Request, res: Response) {
     roleId: acc.roleId,
     roleName: acc.role?.name ?? acc.roleId,
     permissions: acc.role?.permissions.map((p) => p.permissionId) ?? [],
+    createdAt: acc.createdAt,
   }));
 
   return res.json(result);

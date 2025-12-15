@@ -9,6 +9,7 @@ import { api } from "../../lib/api";
 
 export default function Roles() {
   const [roles, setRoles] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [rolePerms, setRolePerms] = useState({});
   const [formRole, setFormRole] = useState({ id: "", name: "", description: "", jobTitle: "" });
@@ -16,12 +17,18 @@ export default function Roles() {
   const [editingId, setEditingId] = useState(null);
 
   const load = useCallback(async () => {
-    const [r, p] = await Promise.all([api.get("/roles"), api.get("/permissions")]);
-    setRoles(r.data);
-    setPermissions(p.data.map((x) => x.id || x));
+    const [r, p, acc] = await Promise.all([
+      api.get("/roles"),
+      api.get("/permissions"),
+      api.get("/launcher").catch(() => ({ data: [] })),
+    ]);
+    const rolesData = Array.isArray(r.data) ? r.data : [];
+    setRoles(rolesData);
+    setPermissions((Array.isArray(p.data) ? p.data : []).map((x) => x.id || x));
+    setProfiles(Array.isArray(acc.data) ? acc.data : []);
 
     const rp = {};
-    for (const rr of r.data) {
+    for (const rr of rolesData) {
       const { data } = await api.get(`/permissions/role/${rr.id}`);
       rp[rr.id] = data?.permissions || [];
     }
@@ -30,6 +37,15 @@ export default function Roles() {
 
   useEffect(() => {
     load();
+
+    const onAccountsChanged = () => {
+      load();
+    };
+    window.addEventListener("pms:launcher-accounts-changed", onAccountsChanged);
+
+    return () => {
+      window.removeEventListener("pms:launcher-accounts-changed", onAccountsChanged);
+    };
   }, [load]);
 
   const resetForm = () => {
@@ -69,13 +85,15 @@ export default function Roles() {
     if (!selectedRole) return;
     const perms = rolePerms[selectedRole] || [];
     await api.put(`/permissions/role/${selectedRole}`, { permissions: perms });
+    // Al guardar permisos, volver a dejar el selector de perfil vacío
+    setSelectedRole("");
   };
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Card>
         <Card className="space-y-3 p-5">
-          <h3 className="font-medium">Usuarios / Perfiles</h3>
+          <h3 className="font-medium">Roles</h3>
           <div className="flex gap-2">
             <Input
               placeholder="ID (ej. FRONTDESK_AGENT)"
@@ -110,7 +128,6 @@ export default function Roles() {
             cols={[
               { key: "id", label: "ID" },
               { key: "name", label: "Nombre" },
-              { key: "jobTitle", label: "Puesto" },
               { key: "description", label: "Descripción" },
               { key: "actions", label: "Acciones" },
             ]}
@@ -139,7 +156,14 @@ export default function Roles() {
             <Select
               value={selectedRole}
               onChange={(val) => setSelectedRole(val)}
-              options={[{ value: "", label: "Selecciona..." }, ...roles.map((r) => ({ value: r.id, label: r.name }))]}
+              options={[
+                { value: "", label: "Selecciona..." },
+                // Solo perfiles de launcher (UserLauncher)
+                ...profiles.map((acc) => ({
+                  value: acc.roleId,
+                  label: acc.name || acc.username || acc.roleId,
+                })),
+              ]}
             />
           </div>
           {selectedRole && (

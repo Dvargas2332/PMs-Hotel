@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import { CircleUser, LogOut, Bell } from "lucide-react";
 import useConfigStore from "../store/configStore";
 import { api } from "../lib/api";
+import { frontdeskTheme } from "../theme/frontdeskTheme";
 
 const TYPE_STYLES = {
   checkin:      "bg-emerald-100 text-emerald-900",
@@ -123,7 +124,10 @@ export default function Layout() {
   ];
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-emerald-50 via-white to-sky-50">
+    <div
+      className="flex h-screen"
+      style={{ background: frontdeskTheme.background.app }}
+    >
       {/* Sidebar */}
       <aside className="w-48 flex-shrink-0 overflow-hidden bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-lg">
         <div className="px-2 py-4 border-b border-emerald-500/50 flex items-center justify-center">

@@ -5,6 +5,12 @@ import { useNavigate } from "react-router-dom";
 
 import Roles from "./Roles";
 import AuditLog from "./AuditLog";
+import { Card } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
+import { Button } from "../../components/ui/button";
+import { SimpleTable } from "../../components/ui/table";
+import { Select } from "../../components/ui/select";
+import { api } from "../../lib/api";
 
 // Frontdesk
 import RoomTypes from "./Frontdesk/RoomTypes";
@@ -20,7 +26,7 @@ import Printers from "./Printers/Printers";
 import Currency from "./Currency/Currency";
 import Hotel from "./Hotel/HotelInfo";
 import Cashier from "./Cashier/Cashier";
-import UsersFD from "./UsersFD/UsersFD";
+
 import Invoicing from "./Invoicing/Invoicing";
 import AccountingConfig from "./SomeModule/AccountingConfig";
 import RestaurantConfig from "./SomeModule/RestaurantConfig";
@@ -35,10 +41,238 @@ import RestaurantRecipes from "./Restaurant/RestaurantRecipes";
 import RestaurantInventory from "./Restaurant/RestaurantInventory";
 import RestaurantItems from "./Restaurant/RestaurantItems";
 
+// Vista de perfiles de launcher (UserLauncher)
+function LauncherProfiles() {
+  const [accounts, setAccounts] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({
+    userId: "",
+    name: "",
+    roleId: "",
+    password: "",
+  });
+
+  const normalizeList = (res) => {
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    return [];
+  };
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      try {
+        const [accRes, rolesRes] = await Promise.all([api.get("/launcher"), api.get("/roles")]);
+        setAccounts(normalizeList(accRes));
+        setRoles(normalizeList(rolesRes));
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const resetForm = () => {
+    setForm({
+      userId: "",
+      name: "",
+      roleId: "",
+      password: "",
+    });
+    setEditingId(null);
+  };
+
+  const handleSave = async () => {
+    if (saving) return;
+    if (!form.userId.trim() || !form.name.trim() || !form.roleId) return;
+    if (!editingId && (!form.password || form.password.length < 4)) return;
+
+    setSaving(true);
+    try {
+      const payload = {
+        userId: form.userId.trim(),
+        name: form.name.trim(),
+        roleId: form.roleId,
+        // En edición, el password es opcional (solo si se quiere cambiar)
+        ...(form.password ? { password: form.password } : {}),
+      };
+
+      if (editingId) {
+        await api.put(`/launcher/${encodeURIComponent(editingId)}`, payload);
+      } else {
+        await api.post("/launcher", payload);
+      }
+
+      const accRes = await api.get("/launcher");
+      setAccounts(normalizeList(accRes));
+      resetForm();
+    } catch (err) {
+      // opcional: podríamos mostrar un alert amigable
+      console.error("Error guardando perfil de launcher", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEdit = (acc) => {
+    setEditingId(acc.id);
+    setForm({
+      userId: acc.userId || acc.username || "",
+      name: acc.name || "",
+      roleId: acc.roleId || "",
+      password: "",
+    });
+  };
+
+  const handleDelete = async (id) => {
+    if (!id) return;
+    if (!window.confirm("¿Eliminar este perfil de launcher?")) return;
+    try {
+      await api.delete(`/launcher/${encodeURIComponent(id)}`);
+      setAccounts((list) => list.filter((a) => a.id !== id));
+      if (editingId === id) resetForm();
+    } catch (err) {
+      console.error("Error eliminando perfil de launcher", err);
+    }
+  };
+
+  const roleOptions = [
+    { value: "", label: "Selecciona rol..." },
+    ...roles.map((r) => ({ value: r.id, label: r.name || r.id })),
+  ];
+
+  const rows = accounts.map((acc) => ({
+    id: acc.id,
+    userId: acc.userId || acc.username,
+    name: acc.name,
+    roleId: acc.roleId,
+    roleName: roles.find((r) => r.id === acc.roleId)?.name || acc.roleId,
+    createdAt: acc.createdAt ? new Date(acc.createdAt).toLocaleString() : "",
+  }));
+
+  return (
+    <div className="grid gap-6 md:grid-cols-2">
+      <Card className="space-y-4 p-5">
+        <h3 className="font-medium">Perfiles para iniciar sesión</h3>
+        
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-slate-500">Usuario (ID de inicio de sesión)</label>
+            <Input
+              placeholder="Ej: recepcion1"
+              value={form.userId}
+              onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-500">Nombre y Apellido</label>
+            <Input
+              placeholder="Nombre del usuario"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-500">Rol: </label>
+            <Select
+              value={form.roleId}
+              onChange={(val) => setForm((f) => ({ ...f, roleId: val }))}
+              options={roleOptions}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-slate-500">
+              Contraseña / PIN (mínimo 4 dígitos)
+            </label>
+            <Input
+              type="password"
+              placeholder={editingId ? "Deja en blanco para no cambiar" : "PIN numérico (ej. 1234)"}
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-2">
+          <Button type="button" onClick={handleSave} disabled={saving || loading}>
+            {editingId ? "Guardar cambios" : "Crear perfil"}
+          </Button>
+          {editingId && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={resetForm}
+              disabled={saving}
+            >
+              Cancelar
+            </Button>
+          )}
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium">Perfiles configurados</h3>
+          {loading && <span className="text-xs text-slate-400">Cargando...</span>}
+        </div>
+        <SimpleTable
+          cols={[
+            { key: "userId", label: "ID de usuario" },
+            { key: "name", label: "Nombre" },
+            { key: "roleName", label: "Rol" },
+            { key: "createdAt", label: "Creado" },
+            { key: "actions", label: "Acciones" },
+          ]}
+          rows={rows.map((r) => ({
+            ...r,
+            actions: (
+              <div className="flex gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  type="button"
+                  onClick={() => handleEdit(r)}
+                >
+                  Editar
+                </Button>
+                <Button
+                  size="xs"
+                  variant="destructive"
+                  type="button"
+                  onClick={() => handleDelete(r.id)}
+                >
+                  Eliminar
+                </Button>
+              </div>
+            ),
+          }))}
+        />
+      </Card>
+    </div>
+  );
+}
+
+function ProfilesView() {
+  return (
+    <div className="space-y-6">
+      <LauncherProfiles />
+      <div className="border-t border-slate-200 pt-6 mt-2">
+        <Roles />
+      </div>
+    </div>
+  );
+}
+
 const VIEWS = {
-  // Profiles
-  profileCreation: Roles,
-  profilePermissions: Roles,
+  // Perfiles (launcher + roles internos)
+  profiles: ProfilesView,
   usageLog: AuditLog,
 
   // Frontdesk
@@ -53,7 +287,6 @@ const VIEWS = {
   hotelInfo: Hotel,
   cashClosures: Cashier,
   mealPlans: MealPlans,
-  frontdeskUsers: UsersFD,
   billingSystem: Invoicing,
 
   // Accounting
@@ -77,7 +310,7 @@ const VIEWS = {
 export default function ManagementPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [selected, setSelected] = useState("profileCreation");
+  const [selected, setSelected] = useState("profiles");
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -150,9 +383,9 @@ export default function ManagementPage() {
   const menu = useMemo(
     () => [
       {
-        title: "Usuarios",
+        title: "Perfiles",
         key: "profiles",
-        items: [{ id: "profileCreation", label: "Perfiles y permisos" }],
+        items: [{ id: "profiles", label: "Perfiles" }],
       },
       {
         title: "Auditoria",
@@ -250,6 +483,26 @@ export default function ManagementPage() {
           </div>
           {menu.map((group) => {
             const isOpen = expanded.has(group.key);
+
+            // Grupo "Perfiles" sin submenu: el título actúa como botón directo
+            if (group.key === "profiles") {
+              return (
+                <div key={group.key} className="border-b border-indigo-800/60">
+                  <button
+                    onClick={() => setSelected("profiles")}
+                    className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold ${
+                      selected === "profiles"
+                        ? "bg-indigo-800 text-white"
+                        : "text-indigo-100 hover:bg-indigo-800/60"
+                    }`}
+                  >
+                    <span>{group.title}</span>
+                  </button>
+                </div>
+              );
+            }
+
+            // Resto de grupos con submenu
             return (
               <div key={group.key} className="border-b border-indigo-800/60">
                 <button
