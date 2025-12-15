@@ -21,6 +21,8 @@ import reportRoutes from "./routes/report.route.js";
 import invoiceRoutes from "./routes/invoice.route.js";
 import geoRoutes from "./routes/geo.route.js";
 import cashAuditRoutes from "./routes/cashAudit.route.js";
+import usersRoutes from "./routes/users.route.js";
+import launcherRoutes from "./routes/launcher.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -46,8 +48,7 @@ app.use("/api", api);
 // Públicas
 api.use("/health", healthRouter);   // → /api/health y /api/health/db
 api.use("/auth", authRouter); // p.ej. POST /api/auth/login
-
-
+api.use("/launcher", launcherRoutes);
 
 // Protegidas (requieren Authorization: Bearer <token>)
 api.use(auth);
@@ -64,6 +65,7 @@ api.use("/reports", reportRoutes);
 api.use("/invoices", invoiceRoutes);
 api.use("/geo", geoRoutes);
 api.use("/cash-audits", cashAuditRoutes);
+api.use("/users", usersRoutes);
 
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

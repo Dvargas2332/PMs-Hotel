@@ -147,11 +147,34 @@ export async function cancelReservation(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const existing = await prisma.reservation.findFirst({
     where: { id, hotelId: user.hotelId },
-    include: { room: true },
+    include: { room: true, guest: true },
   });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
-  const r = await prisma.reservation.update({ where: { id }, data: { status: ReservationStatus.CANCELED } });
-  if (existing.roomId) await prisma.room.update({ where: { id: existing.roomId }, data: { status: "AVAILABLE" } });
-  res.json(r);
-}
 
+  const reason = (req.body as any)?.reason as string | undefined;
+
+  // Guardar registro de auditoría con la reserva completa y motivo de anulación
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorId: user.sub,
+        action: "RESERVATION_ANULADA",
+        entity: "Reservation",
+        entityId: existing.id,
+        reason: reason || null,
+        payload: existing as any,
+        hotelId: user.hotelId,
+      },
+    });
+  } catch (err) {
+    console.error("No se pudo registrar auditoria de anulacion de reserva", err);
+  }
+
+  // Liberar habitación (si aplica) y eliminar la reserva
+  if (existing.roomId) {
+    await prisma.room.update({ where: { id: existing.roomId }, data: { status: "AVAILABLE" } });
+  }
+
+  await prisma.reservation.delete({ where: { id } });
+  res.json({ ok: true });
+}

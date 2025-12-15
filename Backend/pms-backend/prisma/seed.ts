@@ -18,14 +18,32 @@ async function main() {
     update: {
       // ensure default admin stays usable if seed runs multiple times
       name: "Administrador",
-      password: "$2b$10$VGzA6g6enxYQvOJDikAINuvGZ9DTnb7KxAeVGCCCs8igOhFvPyq5i", // "Admin1234"
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
       role: Role.ADMIN,
       hotelId: hotel.id,
     },
     create: {
       email: "admin@pms.local",
       name: "Administrador",
-      password: "$2b$10$VGzA6g6enxYQvOJDikAINuvGZ9DTnb7KxAeVGCCCs8igOhFvPyq5i", // "Admin1234"
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
+      role: Role.ADMIN,
+      hotelId: hotel.id,
+    },
+  });
+
+  // Super usuario adicional para acceso completo al hotel demo
+  await prisma.user.upsert({
+    where: { email: "superadmin@pms.local" },
+    update: {
+      name: "Super Admin",
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
+      role: Role.ADMIN,
+      hotelId: hotel.id,
+    },
+    create: {
+      email: "superadmin@pms.local",
+      name: "Super Admin",
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
       role: Role.ADMIN,
       hotelId: hotel.id,
     },
@@ -39,17 +57,47 @@ async function main() {
       create: { id: p, description: p },
     });
   }
-  // rol admin para hotel
-  await prisma.appRole.upsert({
-    where: { hotelId_id: { hotelId: hotel.id, id: "ADMIN" } },
-    update: { name: "ADMIN", description: "Administrador" },
-    create: { id: "ADMIN", name: "ADMIN", description: "Administrador", hotelId: hotel.id },
-  });
-  // asignar permisos al admin
-  await prisma.rolePermission.deleteMany({ where: { hotelId: hotel.id, roleId: "ADMIN" } });
+
+  // Roles predefinidos para el hotel demo
+  const predefinedRoles = [
+    { id: "ADMIN", name: "Admin", description: "Administrador" },
+    { id: "RECEPTION", name: "Recepción", description: "Recepción / Front Desk" },
+    { id: "ACCOUNTING", name: "Contabilidad", description: "Contabilidad / Finanzas" },
+    { id: "RESTAURANT", name: "Restaurante", description: "Operaciones de restaurante" },
+  ] as const;
+
+  for (const r of predefinedRoles) {
+    await prisma.appRole.upsert({
+      where: { hotelId_id: { hotelId: hotel.id, id: r.id } },
+      update: { name: r.name, description: r.description },
+      create: { id: r.id, name: r.name, description: r.description, hotelId: hotel.id },
+    });
+  }
+
+  // Asignar permisos a cada rol (todos los permisos para ADMIN, módulos específicos para otros roles)
+  await prisma.rolePermission.deleteMany({ where: { hotelId: hotel.id } });
+
+  // Admin: todos los permisos
   await prisma.rolePermission.createMany({
     data: ALL_PERMISSIONS.map((p) => ({ roleId: "ADMIN", permissionId: p, hotelId: hotel.id })),
     skipDuplicates: true,
+  });
+
+  // Cuenta de launcher admin por defecto para el hotel demo
+  await prisma.launcherAccount.upsert({
+    where: { hotelId_username: { hotelId: hotel.id, username: "admin" } },
+    update: {
+      name: "Admin",
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
+      roleId: "ADMIN",
+    },
+    create: {
+      username: "admin",
+      name: "Admin",
+      password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
+      hotelId: hotel.id,
+      roleId: "ADMIN",
+    },
   });
 
   // habitaciones
@@ -76,10 +124,9 @@ async function main() {
   // ===== Catálogo geográfico básico (paises / regiones / ciudades) =====
   try {
     const fs = await import("fs");
-    const path = await import("path");
-    const filePath = path.resolve(__dirname, "data", "world-geo.sample.json");
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, "utf-8");
+    const fileUrl = new URL("./data/world-geo.sample.json", import.meta.url);
+    if (fs.existsSync(fileUrl)) {
+      const raw = fs.readFileSync(fileUrl, "utf-8");
       const json = JSON.parse(raw) as {
         countries?: { code: string; name: string; regions?: { code?: string; name: string; cities?: string[] }[] }[];
       };

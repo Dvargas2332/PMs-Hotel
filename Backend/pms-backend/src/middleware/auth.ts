@@ -6,8 +6,10 @@ import { verify } from "../lib/jwt.js";
 
 export interface AuthUser {
   sub: string;
-  role: "ADMIN" | "MANAGER" | "RECEPTION";
+  role: "ADMIN" | "MANAGER" | "RECEPTION" | "ACCOUNTING" | "RESTAURANT";
   hotelId?: string;
+  // Marcador para diferenciar logins del launcher de usuarios normales
+  isLauncher?: boolean;
 }
 
 export function auth(req: Request, res: Response, next: NextFunction) {
@@ -32,6 +34,15 @@ export function requireRole(...roles: AuthUser["role"][]) {
     if (!roles.includes(user.role)) return res.status(403).json({ message: "No autorizado" });
     next();
   };
+}
+
+// Solo permite acceso a usuarios "normales" (no launcher)
+export function requireManagementUser(req: Request, res: Response, next: NextFunction) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (user.isLauncher) return res.status(403).json({ message: "No autorizado para management" });
+  next();
 }
 
 export function requirePermission(...permissions: string[]) {

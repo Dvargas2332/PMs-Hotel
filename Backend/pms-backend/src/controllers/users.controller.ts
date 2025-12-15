@@ -1,0 +1,32 @@
+// src/controllers/users.controller.ts
+
+import type { Request, Response } from "express";
+import bcrypt from "bcrypt";
+import prisma from "../lib/prisma.js";
+import type { AuthUser } from "../middleware/auth.js";
+
+const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
+
+export async function resetUserPassword(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+
+  const { id } = req.params;
+  const { password } = req.body as { password: string };
+
+  const target = await prisma.user.findFirst({
+    where: { id, hotelId: user.hotelId },
+  });
+  if (!target) return res.status(404).json({ message: "Usuario no encontrado" });
+
+  const hash = await bcrypt.hash(password, ROUNDS);
+
+  await prisma.user.update({
+    where: { id: target.id },
+    data: { password: hash },
+  });
+
+  return res.json({ ok: true });
+}
+

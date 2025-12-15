@@ -12,6 +12,11 @@ export async function register(req: Request, res: Response) {
     const { name, email, password, hotelName } = req.body as { name?: string; email: string; password: string; hotelName?: string };
 
     if (!email || !password) return res.status(400).json({ message: "Email y password son requeridos" });
+    if (!/^\d{4,}$/.test(password)) {
+      return res
+        .status(400)
+        .json({ message: "La contraseña debe tener al menos 4 dígitos numéricos" });
+    }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ message: "El email ya esta registrado" });
@@ -60,10 +65,13 @@ export async function register(req: Request, res: Response) {
 
 export async function login(req: Request, res: Response) {
   try {
-    const { email, password } = req.body as { email: string; password: string };
-    if (!email || !password) return res.status(400).json({ message: "Email y password son requeridos" });
+    const { email, username, password } = req.body as { email?: string; username?: string; password?: string };
+    const identifier = (email || username || "").trim();
+    if (!identifier || !password) {
+      return res.status(400).json({ message: "Email/usuario y password son requeridos" });
+    }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: identifier } });
     if (!user) return res.status(401).json({ message: "Credenciales invalidas" });
 
     const ok = await bcrypt.compare(password, user.password);
