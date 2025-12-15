@@ -2,7 +2,8 @@
   background: #0aac68 !important;
 }
 .rct-header-root {
-  background: linear-gradient(90deg, #0aac68, #22d3ee) !important;
+  /* degradado de encabezado del planner (verde -> agua) */
+  background: linear-gradient(90deg, #059669, #0ea5e9) !important;
 }
 
 /* Ajuste de altura y texto para que los dias no se salgan de los recuadros */

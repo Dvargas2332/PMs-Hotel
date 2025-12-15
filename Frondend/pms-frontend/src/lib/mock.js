@@ -81,7 +81,19 @@ let DB = {
     { id: "RO", name: "Room Only" },
     { id: "BB", name: "Bed & Breakfast" },
   ],
-  usersFD: [{ id: "u1", name: "Agente 1", username: "fd1", roles: ["FRONTDESK_AGENT"], pinPolicy: 4, active: true }],
+  usersFD: [
+    {
+      id: "u1",
+      name: "Agente 1",
+      username: "fd1",
+      password: "1234",
+      roles: ["FRONTDESK_AGENT"],
+      pinPolicy: 4,
+      active: true,
+      // Relación usuario-hotel (se mantiene como hotelId en el modelo)
+      hotelId: "HOTEL-DEMO-1",
+    },
+  ],
   invoicing: {
     einvoiceEnabled: true,
     profile: "GENERAL",
@@ -330,9 +342,72 @@ export const mockApi = {
     await sleep();
     const path = normalize(url);
     if (path === "/auth/login") {
+      // Login de HOTEL (demo): membresía PLATINUM con todos los módulos
       return makeResp({
-        token: "mock-token",
-        user: { id: "mock-user", name: payload?.email || "Mock User", email: payload?.email || "mock@example.com" },
+        token: "mock-hotel-token",
+        user: {
+          id: "hotel-demo-1",
+          name: payload?.email || "Hotel Demo",
+          email: payload?.email || "hotel@demo.com",
+          hotelId: "HOTEL-DEMO-1",
+          membership: "PLATINUM",
+          // Códigos de módulos habilitados para esta membresía
+          allowedModules: ["frontdesk", "restaurant", "accounting", "management"],
+        },
+      });
+    }
+    if (path === "/auth/user-login") {
+      // Login de USUARIO interno: valida contra DB.usersFD
+      const username = (payload?.username || "").trim();
+      const password = String(payload?.password || "").trim();
+      const user = (DB.usersFD || []).find((u) => u.username === username);
+      if (!user || !user.active) {
+        return makeResp({ error: "INVALID_USER" }, 401);
+      }
+      // Si el usuario tiene password definido en DB, valídalo (simple, demo)
+      if (typeof user.password === "string" && user.password !== password) {
+        return makeResp({ error: "INVALID_CREDENTIALS" }, 401);
+      }
+
+      // Construir permisos efectivos a partir de roles
+      const roles = Array.isArray(user.roles) ? user.roles : [];
+      const permsSet = new Set();
+      roles.forEach((r) => {
+        const rp = DB.rolePermissions?.[r] || [];
+        rp.forEach((p) => {
+          if (p === "*") {
+            (DB.permissions || []).forEach((all) => permsSet.add(all));
+          } else if (p.endsWith(".*")) {
+            const prefix = p.replace(/\.\*$/, "");
+            (DB.permissions || []).forEach((all) => {
+              if (all.startsWith(prefix + ".")) permsSet.add(all);
+            });
+          } else {
+            permsSet.add(p);
+          }
+        });
+      });
+
+      const perms = Array.from(permsSet);
+      const modulesSet = new Set();
+      if (perms.some((p) => p.startsWith("frontdesk."))) modulesSet.add("frontdesk");
+      if (perms.some((p) => p.startsWith("restaurant."))) modulesSet.add("restaurant");
+      if (perms.some((p) => p.startsWith("accounting."))) modulesSet.add("accounting");
+      if (perms.some((p) => p.startsWith("management."))) modulesSet.add("management");
+
+      return makeResp({
+        token: "mock-user-token",
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: Array.isArray(user.roles) ? user.roles[0] || "" : "",
+          roles,
+          // Campo de relación con hotel para usuarios (se expone como hotelId)
+          hotelId: user.hotelId || "HOTEL-DEMO-1",
+          permissions: perms,
+          modules: Array.from(modulesSet),
+        },
       });
     }
     if (path === "/auth/register") {

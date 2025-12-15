@@ -3,6 +3,7 @@ import { useHotelData } from "../../context/HotelDataContext";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
 import { pushAlert } from "../../lib/uiAlerts";
+import { frontdeskTheme } from "../../theme/frontdeskTheme";
 
 const emptyForm = {
   firstName: "",
@@ -182,7 +183,10 @@ export default function ClientesPage() {
   };
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen space-y-5">
+    <div
+      className="p-6 min-h-screen space-y-5"
+      style={{ background: frontdeskTheme.background.app }}
+    >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Huespedes</h1>

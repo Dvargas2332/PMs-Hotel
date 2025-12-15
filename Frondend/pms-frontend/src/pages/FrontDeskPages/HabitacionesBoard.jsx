@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useHotelData } from "../../context/HotelDataContext";
+import { frontdeskTheme } from "../../theme/frontdeskTheme";
 
 /**
  * HabitacionesBoard
@@ -133,7 +134,10 @@ export default function HabitacionesBoard() {
   }, [roomsEnriched, term, filter]);
 
   return (
-    <div className="p-6 bg-gray-50 min-h-screen">
+    <div
+      className="p-6 min-h-screen"
+      style={{ background: frontdeskTheme.background.app }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Habitaciones (Estado)</h1>
         <div className="flex gap-2">

@@ -16,6 +16,7 @@ const BASE = String(process.env.REACT_APP_API_URL || "http://localhost:4000/api"
 // Prefijos que existen en el backend real (si alguno no esta, caera al mock)
 const BACKEND_PREFIXES = [
   "/auth",
+  "/launcher",
   "/reservations",
   "/rooms",
   "/roomTypes",
@@ -136,6 +137,11 @@ export const api = {
   // --- auth ---
   async login(email, password) {
     const { data } = await post("/auth/login", { email, password });
+    return data;
+  },
+  async loginUser(username, password) {
+    // Login de usuario del launcher (tabla UserLauncher)
+    const { data } = await post("/launcher/login", { username, password });
     return data;
   },
   async register(name, email, password) {

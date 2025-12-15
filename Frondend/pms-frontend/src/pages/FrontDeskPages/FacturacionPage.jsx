@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
+import { frontdeskTheme } from "../../theme/frontdeskTheme";
 
 /** --- Utilidades UI --- **/
 function Badge({ color = "gray", children }) {
@@ -927,7 +928,10 @@ export default function FacturacionPage() {
   );
 
   return (
-    <div className="p-4 bg-gray-50 min-h-screen text-sm">
+    <div
+      className="p-4 min-h-screen text-sm"
+      style={{ background: frontdeskTheme.background.app }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold">Facturacion</h1>
@@ -1192,7 +1196,6 @@ export default function FacturacionPage() {
     </div>
   );
 }
-
 
 
 

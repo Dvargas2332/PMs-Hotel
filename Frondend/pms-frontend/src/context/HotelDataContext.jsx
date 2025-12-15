@@ -42,8 +42,9 @@ const mapReservation = (r) => {
     rooming: r.rooming,
     otaCode: r.otaCode,
     mealPlanId: r.mealPlanId,
-    roomId: String(r.roomId),
-    roomNumber: r.room?.number ?? r.roomId,
+    // Si no hay habitacion asignada, dejamos roomId en null para manejar lista de espera
+    roomId: r.roomId ? String(r.roomId) : null,
+    roomNumber: r.room?.number ?? (r.roomId ? String(r.roomId) : null),
     guestId: r.guestId,
     guestName: guestName || r.guestId,
     checkInDate: toYMD(r.checkIn) || toYMD(r.checkInDate),
@@ -261,7 +262,8 @@ export function HotelDataProvider({ children }) {
           children: Number(children) || 0,
           infants: Number(infants) || 0,
           quantity: Number(quantity) || 1,
-          code: code || `RES-${Date.now()}`,
+          // Si no se pasa un código explícito, el backend genera el consecutivo por hotel
+          code: code || undefined,
           rooming,
           otaCode,
           status,
@@ -328,11 +330,11 @@ export function HotelDataProvider({ children }) {
       setLoadingKey("action", true);
       try {
         const payload = meta?.reason ? { reason: meta.reason } : {};
-        const { data } = await api.post(`/reservations/${id}/cancel`, payload);
-        const mapped = mapReservation(data);
-        setReservations((list) => list.map((r) => (r.id === String(id) ? mapped : r)));
+        await api.post(`/reservations/${id}/cancel`, payload);
+        // Eliminamos la reserva localmente; el backend guarda auditoría en AuditLog.
+        setReservations((list) => list.filter((r) => r.id !== String(id)));
         await refreshRooms();
-        return mapped;
+        return { id };
       } finally {
         setLoadingKey("action", false);
       }

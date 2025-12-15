@@ -6,6 +6,7 @@ import { useHotelData } from "../context/HotelDataContext";
 import "react-calendar-timeline/style.css";
 import "./Planning.css";
 import { api } from "../lib/api";
+import { frontdeskTheme } from "../theme/frontdeskTheme";
 
 // Util: YYYY-MM-DD local (sin timezone UTC shift)
 function ymdLocal(d) {
@@ -23,12 +24,12 @@ const toYMD = (v) => {
 };
 
 // Localizar fechas a español para encabezados del planning
-moment.locale("en-us");
-moment.updateLocale("en-us");
+moment.locale("es");
 
 const mapRemoteReservation = (r) => ({
   id: String(r.id),
-  roomId: String(r.roomId),
+  // Si no hay habitación asignada dejamos roomId en null para poder usar lista de espera
+  roomId: r.roomId ? String(r.roomId) : null,
   guestName: [r.guest?.firstName, r.guest?.lastName].filter(Boolean).join(" ").trim() || r.guestId,
   checkInDate: toYMD(r.checkInDate || r.checkIn),
   checkOutDate: toYMD(r.checkOutDate || r.checkOut),
@@ -36,6 +37,8 @@ const mapRemoteReservation = (r) => ({
   channel: r.channel || r.source || "",
   status: r.status,
   rawStatus: r.status,
+  room: r.room,
+  guest: r.guest,
 });
 const mapRemoteRoom = (r) => ({
   id: String(r.id),
@@ -148,6 +151,8 @@ export default function Planning() {
     };
 
     return (reservationsData || [])
+      // Solo reservas con habitación asignada; las demás irán a lista de espera
+      .filter((r) => r.roomId)
       .filter((r) => (r.rawStatus || r.status || "").toUpperCase() !== "CANCELED")
       .map((r) => {
         const start = moment(`${r.checkInDate}T${checkIn}`);
@@ -190,6 +195,13 @@ export default function Planning() {
 
   // Modales
   const [active, setActive] = useState(null); // { type, data }
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+
+  // Reservas sin habitación => lista de espera
+  const waitlist = useMemo(
+    () => (reservationsData || []).filter((r) => !r.roomId),
+    [reservationsData]
+  );
   const closeModal = () => setActive(null);
 
   const onItemSelect = useCallback(
@@ -245,12 +257,26 @@ export default function Planning() {
   return (
     <div className="h-full min-h-0 w-full bg-gradient-to-br from-slate-50 via-white to-emerald-50 p-4 md:p-6">
       <div className="mx-auto w-full max-w-full space-y-4 h-full min-h-0 flex flex-col">
-	        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-	          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Planner</h1>
-            <p className="text-sm text-slate-600">Vista de ocupacion por habitacion.</p>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Planner</h1>
+              <p className="text-sm text-slate-600">Vista de ocupación por habitación.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setWaitlistOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              Lista de espera
+              {waitlist.length > 0 && (
+                <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[11px] text-white">
+                  {waitlist.length}
+                </span>
+              )}
+            </button>
           </div>
-	          <div className="flex flex-col items-end gap-2 text-xs">
+          <div className="flex flex-col items-end gap-2 text-xs">
               <div className="flex flex-wrap items-center gap-2 justify-end">
                 <LegendDot color="#10b981" label="Check-in" />
                 <LegendDot color="#3f3f46" label="Estadia" />
@@ -329,11 +355,20 @@ export default function Planning() {
                     onTimeChange={onTimeChange}
                     groupRenderer={({ group }) =>
                       group.isTypeHeader ? (
-                        <div className="px-10 py-0.5 text-s font-semibold text-emerald-900 bg-emerald-50 border-b border-emerald-200 shadow-sm rounded-r-full h-full flex items-center">
+                        <div
+                          className="px-10 py-0.5 text-sm font-semibold rounded-r-full h-full flex items-center border-b"
+                          style={{
+                            background: frontdeskTheme.planning.roomTypeRowBg,
+                            color: frontdeskTheme.planning.roomTypeRowFg,
+                            borderColor: frontdeskTheme.planning.roomTypeRowBorder,
+                          }}
+                        >
                           {group.title}
                         </div>
                       ) : (
-                        <div className="px-2 py-1 text-s text-slate-900 font-medium">{group.title}</div>
+                        <div className="px-2 py-1 text-sm text-slate-900 font-medium">
+                          {group.title}
+                        </div>
                       )
                     }
                   >
@@ -353,6 +388,40 @@ export default function Planning() {
             </div>
         </div>
       </div>
+
+      {/* Lista de espera (reservas sin habitación) */}
+      {waitlistOpen && (
+        <Modal onClose={() => setWaitlistOpen(false)} title="Lista de espera">
+          {waitlist.length === 0 ? (
+            <div className="text-sm text-gray-500">No hay reservas en lista de espera.</div>
+          ) : (
+            <div className="space-y-2 text-sm">
+              {waitlist.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-center justify-between rounded-lg border px-3 py-2 bg-white"
+                >
+                  <div>
+                    <div className="font-medium text-gray-900">{r.guestName || "Sin nombre"}</div>
+                    <div className="text-xs text-gray-500">
+                      {r.checkInDate} → {r.checkOutDate} {r.code ? `• ${r.code}` : ""}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-full border px-3 py-1 text-xs hover:bg-gray-50"
+                    onClick={() => {
+                      window.location.href = "/frontdesk/reservas";
+                    }}
+                  >
+                    Ver en reservas
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
 
       {/* Modales */}
       {active?.type === "checkin" && (
