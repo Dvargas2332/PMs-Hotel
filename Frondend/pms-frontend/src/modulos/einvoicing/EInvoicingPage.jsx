@@ -8,10 +8,6 @@ import {
   ChevronRight,
   FileCheck2,
   FileText,
-  KeyRound,
-  Mail,
-  PlugZap,
-  ScrollText,
   Settings,
   Shield,
 } from "lucide-react";
@@ -113,7 +109,6 @@ export default function EInvoicingPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [savingReqs, setSavingReqs] = React.useState(false);
   const [docsLoading, setDocsLoading] = React.useState(false);
   const [docs, setDocs] = React.useState([]);
   const [docsFilters, setDocsFilters] = React.useState({
@@ -149,9 +144,6 @@ export default function EInvoicingPage() {
   const [docDetailOpen, setDocDetailOpen] = React.useState(false);
   const [docDetailLoading, setDocDetailLoading] = React.useState(false);
   const [docDetail, setDocDetail] = React.useState(null);
-  const [query, setQuery] = React.useState("");
-  const [category, setCategory] = React.useState("ALL");
-  const [requirements, setRequirements] = React.useState([]);
   const [cfg, setCfg] = React.useState({
     enabled: false,
     version: "CR-4.4",
@@ -419,10 +411,7 @@ export default function EInvoicingPage() {
     let mounted = true;
     const load = async () => {
       try {
-        const [cfgRes, reqRes] = await Promise.all([
-          api.get("/einvoicing/config"),
-          api.get("/einvoicing/requirements"),
-        ]);
+        const cfgRes = await api.get("/einvoicing/config");
         if (mounted) {
           const nextCfg = cfgRes.data || cfg;
           setCfg((prev) => ({
@@ -431,12 +420,9 @@ export default function EInvoicingPage() {
             settings: ensureSettings(nextCfg?.settings),
           }));
           setSecretMeta(nextCfg?.credentials || { smtp: {}, atv: {}, crypto: {} });
-          setRequirements(Array.isArray(reqRes.data) ? reqRes.data : []);
         }
       } catch {
-        if (mounted) {
-          setRequirements([]);
-        }
+        // ignore; UI will show defaults
       } finally {
         if (mounted) setLoading(false);
       }
@@ -451,10 +437,7 @@ export default function EInvoicingPage() {
   const reload = async () => {
     setLoading(true);
     try {
-      const [cfgRes, reqRes] = await Promise.all([
-        api.get("/einvoicing/config"),
-        api.get("/einvoicing/requirements"),
-      ]);
+      const cfgRes = await api.get("/einvoicing/config");
       const nextCfg = cfgRes.data || cfg;
       setCfg((prev) => ({
         ...prev,
@@ -462,7 +445,6 @@ export default function EInvoicingPage() {
         settings: ensureSettings(nextCfg?.settings),
       }));
       setSecretMeta(nextCfg?.credentials || { smtp: {}, atv: {}, crypto: {} });
-      setRequirements(Array.isArray(reqRes.data) ? reqRes.data : []);
     } finally {
       setLoading(false);
     }
@@ -576,51 +558,6 @@ export default function EInvoicingPage() {
     reader.readAsDataURL(file);
   };
 
-  const categories = React.useMemo(() => {
-    const set = new Set();
-    for (const r of requirements) set.add(r.category || "General");
-    return ["ALL", ...Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))];
-  }, [requirements]);
-
-  const filteredRequirements = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return requirements.filter((r) => {
-      if (category !== "ALL" && String(r.category || "General") !== category) return false;
-      if (!q) return true;
-      const hay = `${r.code || ""} ${r.category || ""} ${r.title || ""} ${r.description || ""}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [requirements, query, category]);
-
-  const updateReq = (code, patch) => {
-    setRequirements((prev) => prev.map((r) => (String(r.code) === String(code) ? { ...r, ...patch } : r)));
-  };
-
-  const saveRequirements = async () => {
-    if (savingReqs) return;
-    setSavingReqs(true);
-    try {
-      await api.put("/einvoicing/requirements", requirements);
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", {
-          detail: { title: "Electronic invoicing", desc: "Checklist saved." },
-        })
-      );
-      await reload();
-    } catch {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", {
-          detail: {
-            title: "Electronic invoicing",
-            desc: "Could not save checklist (missing permissions?).",
-          },
-        })
-      );
-    } finally {
-      setSavingReqs(false);
-    }
-  };
-
   const loadDocuments = async () => {
     setDocsLoading(true);
     try {
@@ -691,6 +628,73 @@ export default function EInvoicingPage() {
   const closeDocDetail = () => {
     setDocDetailOpen(false);
     setDocDetail(null);
+  };
+
+  const submitDoc = async (id) => {
+    if (!id) return;
+    try {
+      await api.post(`/einvoicing/documents/${encodeURIComponent(id)}/submit`);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: "Submitted (sandbox)." },
+        })
+      );
+      await openDocDetail(id);
+      await loadDocuments();
+      await loadAcks();
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not submit document.";
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: msg },
+        })
+      );
+    }
+  };
+
+  const refreshDoc = async (id) => {
+    if (!id) return;
+    try {
+      await api.post(`/einvoicing/documents/${encodeURIComponent(id)}/refresh`);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: "Status refreshed (sandbox)." },
+        })
+      );
+      await openDocDetail(id);
+      await loadDocuments();
+      await loadAcks();
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not refresh status.";
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: msg },
+        })
+      );
+    }
+  };
+
+  const cancelDoc = async (id) => {
+    if (!id) return;
+    if (!window.confirm("Cancel this electronic document?")) return;
+    try {
+      await api.post(`/einvoicing/documents/${encodeURIComponent(id)}/cancel`);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: "Canceled." },
+        })
+      );
+      await openDocDetail(id);
+      await loadDocuments();
+      await loadAcks();
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not cancel document.";
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: msg },
+        })
+      );
+    }
   };
 
   const openAckCreate = () => {
@@ -777,15 +781,10 @@ export default function EInvoicingPage() {
 
   const panelTitle = React.useMemo(
     () => ({
-      requirements: "Compliance checklist (CR-4.4)",
       documents: "Issued documents (FE/TE)",
       acks: "Acknowledgements (acuses)",
       general: "General settings",
       issuer: "Issuer (emitter)",
-      connections: "Module connections",
-      smtp: "Billing email (SMTP)",
-      atv: "ATV / Tax Authority",
-      crypto: "Signing certificate",
       catalogs: "Catalogs (CABYS + official codes)",
     }),
     []
@@ -813,13 +812,6 @@ export default function EInvoicingPage() {
 
         <div className={`grid gap-4 ${gridCols}`}>
           <Tile
-            title="Checklist"
-            desc="All CR-4.4 requirements, status and notes."
-            icon={ScrollText}
-            onClick={() => setPanel("requirements")}
-            tone="violet"
-          />
-          <Tile
             title="Documents"
             desc="All issued FE/TE documents and their status."
             icon={FileText}
@@ -842,37 +834,9 @@ export default function EInvoicingPage() {
           />
           <Tile
             title="General"
-            desc="Enable/disable, environment and provider."
+            desc="Core config + connections, SMTP, Hacienda (ATV), signing certificate."
             icon={Settings}
             onClick={() => setPanel("general")}
-            tone="slate"
-          />
-          <Tile
-            title="Module connections"
-            desc="Choose which modules can issue invoices."
-            icon={PlugZap}
-            onClick={() => setPanel("connections")}
-            tone="indigo"
-          />
-          <Tile
-            title="Billing email (SMTP)"
-            desc="Per-module sender email and SMTP credentials."
-            icon={Mail}
-            onClick={() => setPanel("smtp")}
-            tone="emerald"
-          />
-          <Tile
-            title="ATV / Hacienda"
-            desc="Manual mode or API credentials storage."
-            icon={Shield}
-            onClick={() => setPanel("atv")}
-            tone="violet"
-          />
-          <Tile
-            title="Signing certificate"
-            desc="Upload P12/PFX and certificate password."
-            icon={KeyRound}
-            onClick={() => setPanel("crypto")}
             tone="slate"
           />
           <Tile
@@ -903,86 +867,17 @@ export default function EInvoicingPage() {
                   <div className="text-lg font-semibold text-slate-900">{panelTitle[panel] || "Settings"}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={reload} disabled={loading || saving || savingReqs}>
+                  <Button variant="outline" onClick={reload} disabled={loading || saving}>
                     Reload
                   </Button>
-                  {panel === "requirements" ? (
-                    <Button onClick={saveRequirements} disabled={loading || savingReqs}>
-                      Save checklist
-                    </Button>
-                  ) : (
-                    <Button onClick={save} disabled={loading || saving}>
-                      Save
-                    </Button>
-                  )}
+                  <Button onClick={save} disabled={loading || saving}>
+                    Save
+                  </Button>
                   <Button variant="outline" onClick={closePanel}>
                     Close
                   </Button>
                 </div>
               </div>
-
-              {panel === "requirements" && (
-                <div className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      className="h-10 rounded-lg border px-3 text-sm w-full md:w-[320px]"
-                      placeholder="Search requirements..."
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                    />
-                    <select
-                      className="h-10 rounded-lg border px-3 text-sm"
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                    >
-                      {categories.map((c) => (
-                        <option key={c} value={c}>
-                          {c === "ALL" ? "All categories" : c}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="text-xs text-slate-500">{filteredRequirements.length} items</div>
-                  </div>
-                  {loading ? (
-                    <div className="text-sm text-slate-600">Loading...</div>
-                  ) : requirements.length === 0 ? (
-                    <div className="text-sm text-slate-600">No requirements found for this hotel.</div>
-                  ) : (
-                    <div className="grid gap-2 max-h-[65vh] overflow-auto pr-1">
-                      {filteredRequirements.map((r) => (
-                        <div key={r.id || r.code} className="rounded-lg border bg-white p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="text-xs uppercase text-slate-500">{r.category}</div>
-                              <div className="font-medium text-slate-900">{r.title}</div>
-                              <div className="text-sm text-slate-600">{r.description}</div>
-                            </div>
-                            <div className="flex flex-col items-end gap-2">
-                              <div className="text-xs text-slate-500 whitespace-nowrap">{r.version || "CR-4.4"}</div>
-                              <select
-                                className="h-9 rounded-lg border px-2 text-sm"
-                                value={r.status || "PENDING"}
-                                onChange={(e) => updateReq(r.code, { status: e.target.value })}
-                              >
-                                <option value="PENDING">Pending</option>
-                                <option value="IN_PROGRESS">In progress</option>
-                                <option value="DONE">Done</option>
-                                <option value="NOT_APPLICABLE">N/A</option>
-                              </select>
-                            </div>
-                          </div>
-                          <textarea
-                            className="mt-2 min-h-[64px] w-full rounded-lg border px-3 py-2 text-sm"
-                            placeholder="Notes (optional)"
-                            value={r.notes || ""}
-                            onChange={(e) => updateReq(r.code, { notes: e.target.value })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
 
               {panel === "documents" && (
                 <div className="space-y-3">
@@ -1265,37 +1160,246 @@ export default function EInvoicingPage() {
               )}
 
               {panel === "general" && (
-                <Card className="p-4 space-y-3">
-                  <div className="font-semibold">General</div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(cfg.enabled)}
-                      onChange={(e) => setCfg((s) => ({ ...s, enabled: e.target.checked }))}
-                    />
-                    Enable electronic invoicing
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      className="h-10 rounded-lg border px-3 text-sm"
-                      value={cfg.version || "CR-4.4"}
-                      onChange={(e) => setCfg((s) => ({ ...s, version: e.target.value }))}
-                      placeholder="Version"
-                    />
-                    <input
-                      className="h-10 rounded-lg border px-3 text-sm"
-                      value={cfg.environment || "sandbox"}
-                      onChange={(e) => setCfg((s) => ({ ...s, environment: e.target.value }))}
-                      placeholder="Environment (sandbox/production)"
-                    />
-                    <input
-                      className="h-10 rounded-lg border px-3 text-sm col-span-2"
-                      value={cfg.provider || "hacienda-cr"}
-                      onChange={(e) => setCfg((s) => ({ ...s, provider: e.target.value }))}
-                      placeholder="Provider"
-                    />
+                <div className="space-y-3">
+                  <div className="grid lg:grid-cols-2 gap-3">
+                    <Card className="p-4 space-y-3">
+                      <div className="font-semibold">General</div>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(cfg.enabled)}
+                          onChange={(e) => setCfg((s) => ({ ...s, enabled: e.target.checked }))}
+                        />
+                        Enable electronic invoicing
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          className="h-10 rounded-lg border px-3 text-sm"
+                          value={cfg.version || "CR-4.4"}
+                          onChange={(e) => setCfg((s) => ({ ...s, version: e.target.value }))}
+                          placeholder="Version"
+                        />
+                        <input
+                          className="h-10 rounded-lg border px-3 text-sm"
+                          value={cfg.environment || "sandbox"}
+                          onChange={(e) => setCfg((s) => ({ ...s, environment: e.target.value }))}
+                          placeholder="Environment (sandbox/production)"
+                        />
+                        <input
+                          className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                          value={cfg.provider || "hacienda-cr"}
+                          onChange={(e) => setCfg((s) => ({ ...s, provider: e.target.value }))}
+                          placeholder="Provider"
+                        />
+                      </div>
+                    </Card>
+
+                    <Card className="p-4 space-y-3">
+                      <div className="font-semibold">Module connections</div>
+                      <div className="text-sm text-slate-600">
+                        Enable which modules can issue electronic documents. Each module can have its own SMTP settings.
+                      </div>
+                      <div className="grid gap-2 text-sm">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(cfg.settings?.moduleConnections?.frontdesk)}
+                            onChange={(e) => setModuleConnection("frontdesk", e.target.checked)}
+                          />
+                          Front Desk
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(cfg.settings?.moduleConnections?.restaurant)}
+                            onChange={(e) => setModuleConnection("restaurant", e.target.checked)}
+                          />
+                          Restaurant
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(cfg.settings?.moduleConnections?.accounting)}
+                            onChange={(e) => setModuleConnection("accounting", e.target.checked)}
+                          />
+                          Accounting
+                        </label>
+                      </div>
+                    </Card>
                   </div>
-                </Card>
+
+                  <Card className="p-4 space-y-3">
+                    <div className="font-semibold">Billing Email (SMTP) per module</div>
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {["frontdesk", "restaurant", "accounting"].map((m) => {
+                        const emailCfg = cfg.settings?.moduleEmail?.[m] || {};
+                        const connected = Boolean(cfg.settings?.moduleConnections?.[m]);
+                        const hasPass = Boolean(secretMeta?.smtp?.[m]?.hasPassword);
+                        return (
+                          <Card key={m} className={`p-3 space-y-2 ${connected ? "" : "opacity-50"}`}>
+                            <div className="flex items-center justify-between">
+                              <div className="font-semibold text-sm">{m}</div>
+                              <div className="text-xs text-slate-500">{hasPass ? "Password set" : "No password"}</div>
+                            </div>
+                            <input
+                              className="h-10 rounded-lg border px-3 text-sm"
+                              placeholder="Billing email (from)"
+                              value={emailCfg.fromEmail || ""}
+                              onChange={(e) => updateEmailSetting(m, { fromEmail: e.target.value })}
+                              disabled={!connected}
+                            />
+                            <select
+                              className="h-10 rounded-lg border px-3 text-sm"
+                              value={emailCfg.provider || "gmail"}
+                              onChange={(e) => setEmailProvider(m, e.target.value)}
+                              disabled={!connected}
+                            >
+                              <option value="gmail">Gmail</option>
+                              <option value="hotmail">Hotmail / Office365</option>
+                              <option value="custom">Custom SMTP</option>
+                            </select>
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                placeholder="SMTP host"
+                                value={emailCfg.smtpHost || ""}
+                                onChange={(e) => updateEmailSetting(m, { smtpHost: e.target.value })}
+                                disabled={!connected}
+                              />
+                              <input
+                                className="h-10 rounded-lg border px-3 text-sm"
+                                placeholder="Port"
+                                type="number"
+                                value={emailCfg.smtpPort ?? 587}
+                                onChange={(e) => updateEmailSetting(m, { smtpPort: Number(e.target.value) })}
+                                disabled={!connected}
+                              />
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(emailCfg.smtpSecure)}
+                                  onChange={(e) => updateEmailSetting(m, { smtpSecure: e.target.checked })}
+                                  disabled={!connected}
+                                />
+                                Secure (TLS)
+                              </label>
+                              <input
+                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                placeholder="SMTP username"
+                                value={emailCfg.smtpUsername || ""}
+                                onChange={(e) => updateEmailSetting(m, { smtpUsername: e.target.value })}
+                                disabled={!connected}
+                              />
+                              <input
+                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                placeholder={hasPass ? "SMTP password (leave blank to keep)" : "SMTP password"}
+                                type="password"
+                                onChange={(e) => setSecret(["smtp", m, "password"], e.target.value)}
+                                disabled={!connected}
+                              />
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  </Card>
+
+                  <div className="grid lg:grid-cols-2 gap-3">
+                    <Card className="p-4 space-y-3">
+                      <div className="font-semibold">Hacienda (ATV)</div>
+                      <div className="text-sm text-slate-600">
+                        Manual mode or API credentials storage (for future automation).
+                      </div>
+                      <select
+                        className="h-10 rounded-lg border px-3 text-sm"
+                        value={cfg.settings?.atv?.mode || "manual"}
+                        onChange={(e) =>
+                          setCfg((prev) => ({
+                            ...prev,
+                            settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), mode: e.target.value } },
+                          }))
+                        }
+                      >
+                        <option value="manual">Manual (ATV website)</option>
+                        <option value="api">API</option>
+                      </select>
+                      <input
+                        className="h-10 rounded-lg border px-3 text-sm"
+                        placeholder="ATV username"
+                        value={cfg.settings?.atv?.username || ""}
+                        onChange={(e) =>
+                          setCfg((prev) => ({
+                            ...prev,
+                            settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), username: e.target.value } },
+                          }))
+                        }
+                      />
+                      <input
+                        className="h-10 rounded-lg border px-3 text-sm"
+                        placeholder={secretMeta?.atv?.hasPassword ? "ATV password (leave blank to keep)" : "ATV password"}
+                        type="password"
+                        onChange={(e) =>
+                          setSecrets((prev) => ({ ...prev, atv: { ...(prev.atv || {}), password: e.target.value } }))
+                        }
+                      />
+                      <input
+                        className="h-10 rounded-lg border px-3 text-sm"
+                        placeholder={
+                          secretMeta?.atv?.hasClientSecret ? "Client secret (leave blank to keep)" : "Client secret"
+                        }
+                        type="password"
+                        onChange={(e) =>
+                          setSecrets((prev) => ({
+                            ...prev,
+                            atv: { ...(prev.atv || {}), clientSecret: e.target.value },
+                          }))
+                        }
+                      />
+                      <textarea
+                        className="min-h-[80px] rounded-lg border px-3 py-2 text-sm"
+                        placeholder="Notes / manual steps"
+                        value={cfg.settings?.atv?.notes || ""}
+                        onChange={(e) =>
+                          setCfg((prev) => ({
+                            ...prev,
+                            settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), notes: e.target.value } },
+                          }))
+                        }
+                      />
+                    </Card>
+
+                    <Card className="p-4 space-y-3">
+                      <div className="font-semibold">Signing Certificate</div>
+                      <div className="text-sm text-slate-600">
+                        Upload the certificate (P12/PFX) used to sign documents. The file is stored as base64.
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        Current:{" "}
+                        {cfg.settings?.crypto?.certificateName ||
+                          (secretMeta?.crypto?.hasCertificate ? "Stored" : "None")}
+                      </div>
+                      <input type="file" accept=".p12,.pfx" onChange={(e) => onCertificateFile(e.target.files?.[0])} />
+                      <input
+                        className="h-10 rounded-lg border px-3 text-sm"
+                        placeholder={
+                          secretMeta?.crypto?.hasCertificatePassword
+                            ? "Certificate password (leave blank to keep)"
+                            : "Certificate password"
+                        }
+                        type="password"
+                        onChange={(e) =>
+                          setSecrets((prev) => ({
+                            ...prev,
+                            crypto: { ...(prev.crypto || {}), certificatePassword: e.target.value },
+                          }))
+                        }
+                      />
+                      <div className="text-xs text-slate-500">
+                        Recommended: use an app password for Gmail SMTP and keep certificate passwords secure.
+                      </div>
+                    </Card>
+                  </div>
+                </div>
               )}
 
               {panel === "issuer" && (
@@ -1446,215 +1550,6 @@ export default function EInvoicingPage() {
                     <div className="text-xs text-slate-500 mt-2">
                       Restaurant issuance requires Issuer ID number and the module connection enabled.
                     </div>
-                  </div>
-                </Card>
-              )}
-
-              {panel === "connections" && (
-                <Card className="p-4 space-y-3">
-                  <div className="font-semibold">Connect modules for invoicing</div>
-                  <div className="grid gap-2 text-sm">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(cfg.settings?.moduleConnections?.frontdesk)}
-                        onChange={(e) => setModuleConnection("frontdesk", e.target.checked)}
-                      />
-                      Front Desk
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(cfg.settings?.moduleConnections?.restaurant)}
-                        onChange={(e) => setModuleConnection("restaurant", e.target.checked)}
-                      />
-                      Restaurant
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(cfg.settings?.moduleConnections?.accounting)}
-                        onChange={(e) => setModuleConnection("accounting", e.target.checked)}
-                      />
-                      Accounting
-                    </label>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Each connected module can have its own billing email (SMTP) settings.
-                  </div>
-                </Card>
-              )}
-
-              {panel === "smtp" && (
-                <Card className="p-4 space-y-3">
-                  <div className="font-semibold">Billing email (SMTP) per module</div>
-                  <div className="grid md:grid-cols-3 gap-3">
-                    {["frontdesk", "restaurant", "accounting"].map((m) => {
-                      const emailCfg = cfg.settings?.moduleEmail?.[m] || {};
-                      const connected = Boolean(cfg.settings?.moduleConnections?.[m]);
-                      const hasPass = Boolean(secretMeta?.smtp?.[m]?.hasPassword);
-                      return (
-                        <Card key={m} className={`p-3 space-y-2 ${connected ? "" : "opacity-50"}`}>
-                          <div className="flex items-center justify-between">
-                            <div className="font-semibold text-sm">{m}</div>
-                            <div className="text-xs text-slate-500">{hasPass ? "Password set" : "No password"}</div>
-                          </div>
-                          <input
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            placeholder="Billing email (from)"
-                            value={emailCfg.fromEmail || ""}
-                            onChange={(e) => updateEmailSetting(m, { fromEmail: e.target.value })}
-                            disabled={!connected}
-                          />
-                          <select
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            value={emailCfg.provider || "gmail"}
-                            onChange={(e) => setEmailProvider(m, e.target.value)}
-                            disabled={!connected}
-                          >
-                            <option value="gmail">Gmail</option>
-                            <option value="hotmail">Hotmail / Office365</option>
-                            <option value="custom">Custom SMTP</option>
-                          </select>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              className="h-10 rounded-lg border px-3 text-sm col-span-2"
-                              placeholder="SMTP host"
-                              value={emailCfg.smtpHost || ""}
-                              onChange={(e) => updateEmailSetting(m, { smtpHost: e.target.value })}
-                              disabled={!connected}
-                            />
-                            <input
-                              className="h-10 rounded-lg border px-3 text-sm"
-                              placeholder="Port"
-                              type="number"
-                              value={emailCfg.smtpPort ?? 587}
-                              onChange={(e) => updateEmailSetting(m, { smtpPort: Number(e.target.value) })}
-                              disabled={!connected}
-                            />
-                            <label className="flex items-center gap-2 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={Boolean(emailCfg.smtpSecure)}
-                                onChange={(e) => updateEmailSetting(m, { smtpSecure: e.target.checked })}
-                                disabled={!connected}
-                              />
-                              Secure (TLS)
-                            </label>
-                            <input
-                              className="h-10 rounded-lg border px-3 text-sm col-span-2"
-                              placeholder="SMTP username"
-                              value={emailCfg.smtpUsername || ""}
-                              onChange={(e) => updateEmailSetting(m, { smtpUsername: e.target.value })}
-                              disabled={!connected}
-                            />
-                            <input
-                              className="h-10 rounded-lg border px-3 text-sm col-span-2"
-                              placeholder={hasPass ? "SMTP password (leave blank to keep)" : "SMTP password"}
-                              type="password"
-                              onChange={(e) => setSecret(["smtp", m, "password"], e.target.value)}
-                              disabled={!connected}
-                            />
-                          </div>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </Card>
-              )}
-
-              {panel === "atv" && (
-                <Card className="p-4 space-y-3">
-                  <div className="font-semibold">ATV / Tax Authority API</div>
-                  <div className="text-sm text-slate-600">
-                    You can connect via API or keep it manual (ATV website). Store credentials here for future automation.
-                  </div>
-                  <select
-                    className="h-10 rounded-lg border px-3 text-sm"
-                    value={cfg.settings?.atv?.mode || "manual"}
-                    onChange={(e) =>
-                      setCfg((prev) => ({
-                        ...prev,
-                        settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), mode: e.target.value } },
-                      }))
-                    }
-                  >
-                    <option value="manual">Manual (ATV website)</option>
-                    <option value="api">API</option>
-                  </select>
-                  <input
-                    className="h-10 rounded-lg border px-3 text-sm"
-                    placeholder="ATV username"
-                    value={cfg.settings?.atv?.username || ""}
-                    onChange={(e) =>
-                      setCfg((prev) => ({
-                        ...prev,
-                        settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), username: e.target.value } },
-                      }))
-                    }
-                  />
-                  <input
-                    className="h-10 rounded-lg border px-3 text-sm"
-                    placeholder={secretMeta?.atv?.hasPassword ? "ATV password (leave blank to keep)" : "ATV password"}
-                    type="password"
-                    onChange={(e) =>
-                      setSecrets((prev) => ({ ...prev, atv: { ...(prev.atv || {}), password: e.target.value } }))
-                    }
-                  />
-                  <input
-                    className="h-10 rounded-lg border px-3 text-sm"
-                    placeholder={secretMeta?.atv?.hasClientSecret ? "Client secret (leave blank to keep)" : "Client secret"}
-                    type="password"
-                    onChange={(e) =>
-                      setSecrets((prev) => ({
-                        ...prev,
-                        atv: { ...(prev.atv || {}), clientSecret: e.target.value },
-                      }))
-                    }
-                  />
-                  <textarea
-                    className="min-h-[80px] rounded-lg border px-3 py-2 text-sm"
-                    placeholder="Notes / manual steps"
-                    value={cfg.settings?.atv?.notes || ""}
-                    onChange={(e) =>
-                      setCfg((prev) => ({
-                        ...prev,
-                        settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), notes: e.target.value } },
-                      }))
-                    }
-                  />
-                </Card>
-              )}
-
-              {panel === "crypto" && (
-                <Card className="p-4 space-y-3">
-                  <div className="font-semibold">Signing certificate / cryptographic key</div>
-                  <div className="text-sm text-slate-600">
-                    Upload the certificate (P12/PFX) used to sign documents. The file is stored as base64.
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Current:{" "}
-                    {cfg.settings?.crypto?.certificateName ||
-                      (secretMeta?.crypto?.hasCertificate ? "Stored" : "None")}
-                  </div>
-                  <input type="file" accept=".p12,.pfx" onChange={(e) => onCertificateFile(e.target.files?.[0])} />
-                  <input
-                    className="h-10 rounded-lg border px-3 text-sm"
-                    placeholder={
-                      secretMeta?.crypto?.hasCertificatePassword
-                        ? "Certificate password (leave blank to keep)"
-                        : "Certificate password"
-                    }
-                    type="password"
-                    onChange={(e) =>
-                      setSecrets((prev) => ({
-                        ...prev,
-                        crypto: { ...(prev.crypto || {}), certificatePassword: e.target.value },
-                      }))
-                    }
-                  />
-                  <div className="text-xs text-slate-500">
-                    Recommended: use an app password for Gmail SMTP and keep certificate passwords secure.
                   </div>
                 </Card>
               )}
@@ -2035,6 +1930,33 @@ export default function EInvoicingPage() {
                   <div className="text-lg font-semibold text-slate-900">Details</div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {docDetail?.id && (
+                    <>
+                      <Button
+                        onClick={() => submitDoc(docDetail.id)}
+                        disabled={docDetail.status === "ACCEPTED" || docDetail.status === "CANCELED"}
+                        title="Sandbox: sign + send + accept (simulated)"
+                      >
+                        Submit (sandbox)
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => refreshDoc(docDetail.id)}
+                        disabled={docDetail.status === "ACCEPTED" || docDetail.status === "CANCELED"}
+                        title="Sandbox: refresh status (simulated)"
+                      >
+                        Refresh status
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => cancelDoc(docDetail.id)}
+                        disabled={docDetail.status === "CANCELED"}
+                        title="Cancel document"
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  )}
                   {docDetail?.id && (
                     <Button
                       variant="outline"
