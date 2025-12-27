@@ -225,11 +225,12 @@ export async function createSection(req: Request, res: Response) {
   if (!id || !name) return res.status(400).json({ message: "id y name requeridos" });
 
   const externalId = String(id);
-  const internalId = toInternalId(user.hotelId, externalId);
+  const hotelId = user.hotelId;
+  const internalId = toInternalId(hotelId, externalId);
   const section = await prisma.restaurantSection.upsert({
-    where: { id: internalId },
-    update: { name, hotelId: user.hotelId },
-    create: { id: internalId, name, hotelId: user.hotelId },
+    where: { hotelId_id: { hotelId, id: internalId } },
+    update: { name },
+    create: { id: internalId, name, hotelId },
   });
   res.json({ ...section, id: externalId });
 }
@@ -407,13 +408,53 @@ export async function createFamily(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
 
-  const { name, active } = req.body || {};
+  const { name, active, cabys } = req.body || {};
   if (!name) return res.status(400).json({ message: "name requerido" });
 
+  const cabysCode = cabys ? String(cabys).trim() : "";
+
   const created = await prisma.restaurantFamily.create({
-    data: { hotelId: user.hotelId, name: String(name).trim(), active: active !== false },
+    data: {
+      hotelId: user.hotelId,
+      name: String(name).trim(),
+      active: active !== false,
+      cabys: cabysCode || null,
+    },
   });
   res.json(created);
+}
+
+export async function updateFamily(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const { id } = req.params as { id?: string };
+  if (!id) return res.status(400).json({ message: "id requerido" });
+
+  const family = await prisma.restaurantFamily.findFirst({ where: { id: String(id), hotelId: user.hotelId } });
+  if (!family) return res.status(404).json({ message: "Familia no encontrada" });
+
+  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
+  const data: any = {};
+  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if ("active" in body) data.active = body.active !== false;
+
+  if ("cabys" in body) {
+    const cabysCode = body.cabys ? String(body.cabys).trim() : "";
+    data.cabys = cabysCode || null;
+  }
+
+  const updated = await prisma.restaurantFamily.update({ where: { id: family.id }, data });
+
+  if ("cabys" in data) {
+    await prisma.restaurantItem.updateMany({
+      where: { hotelId: user.hotelId, familyId: family.id },
+      data: { cabys: data.cabys },
+    });
+  }
+
+  res.json(updated);
 }
 
 export async function deleteFamily(req: Request, res: Response) {
@@ -590,6 +631,7 @@ export async function createItems(req: Request, res: Response) {
 
     const family = await prisma.restaurantFamily.findFirst({ where: { id: familyId, hotelId: user.hotelId } });
     if (!family) return res.status(404).json({ message: `Familia no encontrada (${familyId})` });
+    if (!family.cabys) return res.status(400).json({ message: "La familia seleccionada no tiene CABYS configurado" });
 
     let sf: any = null;
     if (subFamilyId) {
@@ -614,7 +656,7 @@ export async function createItems(req: Request, res: Response) {
         number,
         code,
         name,
-        cabys: raw?.cabys ? String(raw.cabys) : null,
+        cabys: family.cabys,
         price: Number(raw?.price || 0),
         tax: Number(raw?.tax || 0),
         notes: raw?.notes ? String(raw.notes) : null,
@@ -1102,11 +1144,19 @@ export async function listRecipes(req: Request, res: Response) {
   return res.json(
     list.map((r) => ({
       id: r.id,
+      restaurantItemId: r.restaurantItemId,
+      restaurantItemCode: r.restaurantItem?.code || null,
+      restaurantItemName: r.restaurantItem?.name || null,
+      inventoryItemId: r.inventoryItemId,
+      inventorySku: r.inventoryItem?.sku || null,
+      inventoryDesc: r.inventoryItem?.desc || null,
+      qty: Number(r.qty || 0),
+      unit: r.inventoryItem?.unit || "",
+      note: r.note || "",
       codigo: r.restaurantItem?.code || r.restaurantItemId,
       ingrediente: r.inventoryItem?.sku || r.inventoryItemId,
       cantidad: Number(r.qty || 0),
       unidad: r.inventoryItem?.unit || "",
-      note: r.note || "",
     }))
   );
 }
@@ -1169,6 +1219,14 @@ export async function createRecipeLine(req: Request, res: Response) {
 
   return res.status(201).json({
     id: created.id,
+    restaurantItemId: restaurantItem.id,
+    restaurantItemCode: restaurantItem.code,
+    restaurantItemName: restaurantItem.name,
+    inventoryItemId: inventoryItem.id,
+    inventorySku: inventoryItem.sku,
+    inventoryDesc: inventoryItem.desc,
+    qty: Number(qtyInInvUnit),
+    unit: inventoryItem.unit,
     codigo: restaurantItem.code,
     ingrediente: inventoryItem.sku,
     cantidad: Number(qtyInInvUnit),
