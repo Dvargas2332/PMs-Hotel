@@ -5,6 +5,7 @@ import { CircleUser, LogOut, Bell } from "lucide-react";
 import useConfigStore from "../store/configStore";
 import { api } from "../lib/api";
 import { frontdeskTheme } from "../theme/frontdeskTheme";
+import { useLanguage } from "../context/LanguageContext";
 
 const TYPE_STYLES = {
   checkin:      "bg-emerald-100 text-emerald-900",
@@ -17,11 +18,12 @@ const TYPE_STYLES = {
 export default function Layout() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t } = useLanguage();
   const { config, setFx } = useConfigStore();
   const fx = config?.accounting?.fx || {};
   const fmtFx = (v) => (v || v === 0 ? Number(v).toFixed(2) : "—");
 
-  // Panel de alertas y listado
+  // Alerts panel
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alerts, setAlerts] = useState([]); // [{id?, type, title, desc, at?}]
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -50,7 +52,7 @@ export default function Layout() {
       setAlertsOpen(true);
     };
 
-    // Limpiar
+    // Clear
     const onClear = () => setAlerts([]);
 
     window.addEventListener("pms:toggle-alerts", onToggle);
@@ -60,13 +62,13 @@ export default function Layout() {
     window.addEventListener("pms:push-alert", onPush);
     window.addEventListener("pms:clear-alerts", onClear);
 
-    // Cerrar con ESC
+    // Close with ESC
     const onKey = (e) => {
       if (e.key === "Escape") setAlertsOpen(false);
     };
     window.addEventListener("keydown", onKey);
 
-    // Cerrar al hacer click fuera
+    // Close on outside click
     const onDocClick = (e) => {
       if (!alertsOpen && !userMenuOpen) return;
       const clickAlerts = panelRef.current && panelRef.current.contains(e.target);
@@ -106,22 +108,25 @@ export default function Layout() {
           setFx(next);
         }
       } catch (err) {
-        console.error("No se pudo cargar tipo de cambio", err);
+        console.error("Could not load FX rate", err);
       }
     };
     loadFx();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const menu = [
-    { to: ".", label: "Dashboard", end: true }, // index de /frontdesk
-    { to: "planning", label: "Planner" },
-    { to: "reservas", label: "Reservas" },
-    { to: "facturacion", label: "Facturación" },
-    { to: "habitaciones", label: "Habitaciones" },
-    { to: "clientes", label: "Clientes" },
-    { to: "reportes", label: "Reportes" },
-  ];
+  const menu = React.useMemo(
+    () => [
+      { to: ".", label: t("frontdesk.menu.dashboard"), end: true }, // index de /frontdesk
+      { to: "planning", label: t("frontdesk.menu.planning") },
+      { to: "reservas", label: t("frontdesk.menu.reservations") },
+      { to: "facturacion", label: t("frontdesk.menu.billing") },
+      { to: "habitaciones", label: t("frontdesk.menu.rooms") },
+      { to: "clientes", label: t("frontdesk.menu.guests") },
+      { to: "reportes", label: t("frontdesk.menu.reports") },
+    ],
+    [t]
+  );
 
   return (
     <div
@@ -165,13 +170,13 @@ export default function Layout() {
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Header */}
         <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center relative z-20">
-          <h1 className="text-xl font-bold text-emerald-900">Hotel Proyect</h1>
+          <h1 className="text-xl font-bold text-emerald-900">Hotel Project</h1>
           <div className="flex items-center gap-4 relative" ref={menusRef}>
             <div className="hidden md:flex items-center">
               <div className="rounded-lg px-4 py-2 text-sm text-white bg-gradient-to-r from-emerald-600 via-emerald-700 to-sky-700 shadow">
                 <span className="font-semibold">USD</span>
-                <span className="ml-3">Compra ₡{fmtFx(fx.buy || fx.rates?.USD)}</span>
-                <span className="ml-2">Venta ₡{fmtFx(fx.sell || fx.rates?.USD)}</span>
+                <span className="ml-3">Buy {fmtFx(fx.buy || fx.rates?.USD)}</span>
+                <span className="ml-2">Sell {fmtFx(fx.sell || fx.rates?.USD)}</span>
               </div>
             </div>
             <button
@@ -180,7 +185,7 @@ export default function Layout() {
                 setAlertsOpen((s) => !s);
                 setUserMenuOpen(false);
               }}
-              aria-label="Alertas"
+              aria-label={t("layout.alertsTitle")}
             >
               <Bell className="w-4 h-4" />
               {alerts.length > 0 && (
@@ -201,14 +206,14 @@ export default function Layout() {
               >
                 <CircleUser className="w-5 h-5 text-gray-600" />
                 <div className="text-left text-sm leading-tight">
-                  <div className="font-medium text-gray-800">{user?.name || user?.email || "Usuario"}</div>
+                  <div className="font-medium text-gray-800">{user?.name || user?.email || "User"}</div>
                   <div className="text-xs text-gray-500">{user?.role || "Hotel"}</div>
                 </div>
               </button>
               {userMenuOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border shadow-xl rounded-xl overflow-hidden z-30">
                   <div className="px-3 py-2 text-sm border-b">
-                    <div className="font-semibold text-gray-800">{user?.name || "Usuario"}</div>
+                    <div className="font-semibold text-gray-800">{user?.name || "User"}</div>
                     <div className="text-xs text-gray-500">{user?.email || user?.role || ""}</div>
                   </div>
                   <button
@@ -219,7 +224,7 @@ export default function Layout() {
                     }}
                   >
                     <LogOut className="w-4 h-4 text-emerald-700" />
-                    <span>Salir</span>
+                    <span>{t("common.logout")}</span>
                   </button>
                 </div>
               )}
@@ -244,29 +249,29 @@ export default function Layout() {
             className="fixed top-20 right-6 w-[420px] max-h-[70vh] overflow-auto bg-white border shadow-2xl rounded-xl p-4 z-50"
             role="dialog"
             aria-modal="true"
-            aria-label="Panel de alertas"
+            aria-label={t("layout.alertsTitle")}
           >
             <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold">Alertas</div>
+              <div className="font-semibold">{t("layout.alertsTitle")}</div>
               <div className="flex items-center gap-2">
                 <button
                   className="text-xs text-gray-500 hover:text-gray-700 underline"
                   onClick={() => setAlerts([])}
-                  title="Limpiar alertas"
+                  title={t("common.clear")}
                 >
-                  Limpiar
+                  {t("common.clear")}
                 </button>
                 <button
                   className="text-sm text-gray-500 hover:text-gray-700"
                   onClick={() => setAlertsOpen(false)}
                 >
-                  Cerrar
+                  {t("common.close")}
                 </button>
               </div>
             </div>
 
             {alerts.length === 0 ? (
-              <div className="text-sm text-gray-600">No hay alertas pendientes.</div>
+              <div className="text-sm text-gray-600">{t("layout.noPendingAlerts")}</div>
             ) : (
               <ul className="space-y-3">
                 {alerts.map((a) => {
@@ -291,7 +296,7 @@ export default function Layout() {
                             className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
                             onClick={() => navigate("/frontdesk/reservas?q=today")}
                           >
-                            Ver check-ins
+                            {t("layout.viewCheckins")}
                           </button>
                         )}
                         {a.type === "checkout" && (
@@ -299,7 +304,7 @@ export default function Layout() {
                             className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
                             onClick={() => navigate("/frontdesk/reservas?q=today")}
                           >
-                            Ver check-outs
+                            {t("layout.viewCheckouts")}
                           </button>
                         )}
                         {a.type === "housekeeping" && (
@@ -307,7 +312,7 @@ export default function Layout() {
                             className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
                             onClick={() => navigate("/frontdesk/habitaciones")}
                           >
-                            Ir a habitaciones
+                            {t("layout.goToRooms")}
                           </button>
                         )}
                         {a.type === "payment" && (
@@ -315,7 +320,7 @@ export default function Layout() {
                             className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
                             onClick={() => navigate("/frontdesk/facturacion")}
                           >
-                            Ir a facturación
+                            {t("layout.goToBilling")}
                           </button>
                         )}
                       </div>

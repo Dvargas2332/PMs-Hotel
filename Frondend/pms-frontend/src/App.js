@@ -18,12 +18,20 @@ import ReportesPage from "./pages/FrontDeskPages/ReportesPage";
 
 import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
+import EInvoicingPage from "./modulos/einvoicing/EInvoicingPage";
 import RestaurantPage from "./modulos/restaurant/RestaurantPage";
+import KdsPage from "./modulos/restaurant/KdsPage";
+import RestaurantLobby from "./modulos/restaurant/RestaurantLobby";
+import RestaurantReportsPage from "./modulos/restaurant/RestaurantReportsPage";
+import RestaurantClosesPage from "./modulos/restaurant/RestaurantClosesPage";
+import RestaurantBillingHistoryPage from "./modulos/restaurant/RestaurantBillingHistoryPage";
 import Managementpage from "./pages/Management/ManagementPage";
 import Login from "./pages/Login";
 import ProtectedRoute from "./components/ProtectedRoutes";
+import { useLanguage } from "./context/LanguageContext";
 
 export default function App() {
+  const { t } = useLanguage();
   return (
     <SettingsProvider>
       <Routes>
@@ -82,16 +90,64 @@ export default function App() {
           }
         />
         <Route
+          path="/e-invoicing"
+          element={
+            <ProtectedRoute>
+              <EInvoicingPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/restaurant"
+          element={
+            <ProtectedRoute>
+              <RestaurantLobby />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant/pos"
           element={
             <ProtectedRoute>
               <RestaurantPage />
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/restaurant/kds"
+          element={
+            <ProtectedRoute>
+              <KdsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant/reports"
+          element={
+            <ProtectedRoute>
+              <RestaurantReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant/closes"
+          element={
+            <ProtectedRoute>
+              <RestaurantClosesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant/billing"
+          element={
+            <ProtectedRoute>
+              <RestaurantBillingHistoryPage />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Fallback global */}
-        <Route path="*" element={<div className="p-4">Página no encontrada</div>} />
+        <Route path="*" element={<div className="p-4">{t("common.notFound")}</div>} />
       </Routes>
     </SettingsProvider>
   );
