@@ -38,6 +38,18 @@ enum RestaurantOrderStatus {
   PAID
 }
 
+enum RestaurantKdsArea {
+  KITCHEN
+  BAR
+}
+
+enum RestaurantOrderItemStatus {
+  NEW
+  IN_KITCHEN
+  READY
+  SERVED
+}
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
@@ -63,6 +75,10 @@ model RestaurantConfig {
   hotelId        String  @id
   kitchenPrinter String?
   barPrinter     String?
+  taxes          Json?
+  payments       Json?
+  general        Json?
+  billing        Json?
   updatedAt      DateTime @updatedAt
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
@@ -111,6 +127,8 @@ model RestaurantOrder {
   status           RestaurantOrderStatus   @default(OPEN)
   note             String?
   covers           Int?
+  serviceType      String                  @default("DINE_IN")
+  roomId           String?
   total            Decimal                 @default(0) @db.Decimal(12, 2)
   tip10            Decimal                 @default(0) @db.Decimal(12, 2)
   paymentBreakdown Json?
@@ -127,14 +145,21 @@ model RestaurantOrder {
 
 model RestaurantOrderItem {
   id        String   @id @default(cuid())
+  hotelId   String
   orderId   String
   itemId    String
   name      String
   category  String?
   price     Decimal  @db.Decimal(12, 2)
   qty       Int
+  area      RestaurantKdsArea       @default(KITCHEN)
+  status    RestaurantOrderItemStatus @default(NEW)
 
   order RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@unique([hotelId, orderId, itemId])
 }
 
 model RestaurantSection {
@@ -153,13 +178,18 @@ model RestaurantSection {
 
 model RestaurantTable {
   id        String @id
+  hotelId   String
   sectionId String
   name      String
   seats     Int    @default(2)
+  x         Float?
+  y         Float?
 
   section RestaurantSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  hotel   Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([sectionId])
+  @@index([hotelId])
 }
 
 model RestaurantMenuItem {
@@ -179,10 +209,92 @@ model RestaurantMenuItem {
   @@index([sectionId])
 }
 
+model RestaurantFamily {
+  id        String   @id @default(cuid())
+  hotelId   String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel       Hotel                @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  subFamilies RestaurantSubFamily[]
+  items       RestaurantItem[]
+
+  @@unique([hotelId, name])
+  @@index([hotelId])
+}
+
+model RestaurantSubFamily {
+  id        String   @id @default(cuid())
+  hotelId   String
+  familyId  String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel          Hotel                   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  family         RestaurantFamily        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  subSubFamilies RestaurantSubSubFamily[]
+  items          RestaurantItem[]
+
+  @@unique([hotelId, familyId, name])
+  @@index([hotelId])
+  @@index([familyId])
+}
+
+model RestaurantSubSubFamily {
+  id          String   @id @default(cuid())
+  hotelId     String
+  subFamilyId String
+  name        String
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hotel      Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  subFamily  RestaurantSubFamily @relation(fields: [subFamilyId], references: [id], onDelete: Cascade)
+  items      RestaurantItem[]
+
+  @@unique([hotelId, subFamilyId, name])
+  @@index([hotelId])
+  @@index([subFamilyId])
+}
+
+model RestaurantItem {
+  id             String   @id @default(cuid())
+  hotelId         String
+  code            String
+  name            String
+  cabys           String?
+  price           Decimal  @default(0) @db.Decimal(12, 2)
+  tax             Decimal  @default(0) @db.Decimal(5, 2)
+  notes           String?
+  active          Boolean  @default(true)
+  familyId        String
+  subFamilyId     String?
+  subSubFamilyId  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  hotel        Hotel                   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  family       RestaurantFamily        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  subFamily    RestaurantSubFamily?    @relation(fields: [subFamilyId], references: [id], onDelete: Restrict)
+  subSubFamily RestaurantSubSubFamily? @relation(fields: [subSubFamilyId], references: [id], onDelete: Restrict)
+
+  @@unique([hotelId, code])
+  @@index([hotelId])
+  @@index([familyId])
+  @@index([subFamilyId])
+  @@index([subSubFamilyId])
+}
+
 // ⬇️ NUEVO
 model Hotel {
   id        String   @id @default(cuid())
   name      String
+  membership String  @default("PLATINUM")
   currency  String   @default("CRC")
   fxBuy     Decimal  @default(0) @db.Decimal(12, 4)
   fxSell    Decimal  @default(0) @db.Decimal(12, 4)
@@ -206,12 +318,54 @@ model Hotel {
   cashAudits      CashAudit[]
   restaurantConfig   RestaurantConfig?
   restaurantPrintJobs RestaurantPrintJob[]
-  restaurantCloses    RestaurantClose[]
-  restaurantOrders    RestaurantOrder[]
-  restaurantSections  RestaurantSection[]
-  restaurantMenuItems  RestaurantMenuItem[]
-  reservationSequences ReservationSequence[]
-  launcherAccounts     LauncherAccount[]
+    restaurantCloses    RestaurantClose[]
+    restaurantOrders    RestaurantOrder[]
+    restaurantOrderItems RestaurantOrderItem[]
+    restaurantSections  RestaurantSection[]
+    restaurantTables     RestaurantTable[]
+    restaurantMenuItems  RestaurantMenuItem[]
+    restaurantFamilies   RestaurantFamily[]
+    restaurantSubFamilies RestaurantSubFamily[]
+    restaurantSubSubFamilies RestaurantSubSubFamily[]
+    restaurantItems      RestaurantItem[]
+    reservationSequences ReservationSequence[]
+    launcherAccounts     LauncherAccount[]
+    roomDays             RoomDay[]
+    eInvoicingConfig      EInvoicingConfig?
+    eInvoicingRequirements EInvoicingRequirement[]
+  }
+
+model EInvoicingConfig {
+  hotelId   String  @id
+  version   String  @default("CR-4.4")
+  enabled   Boolean @default(false)
+  provider  String  @default("hacienda-cr")
+  environment String @default("sandbox") // sandbox | production
+  credentials Json?
+  settings    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+}
+
+model EInvoicingRequirement {
+  id          String   @id @default(cuid())
+  hotelId     String
+  version     String   @default("CR-4.4")
+  code        String
+  category    String
+  title       String
+  description String
+  required    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, code])
+  @@index([hotelId])
 }
 
 model ReservationSequence {
@@ -365,19 +519,22 @@ model RoomDay {
   date          DateTime
   roomId        String
   reservationId String?
-
+  hotelId       String
+  
   status RoomStatus @default(AVAILABLE)
   rate   Decimal    @default(0) @db.Decimal(12, 2)
   notes  String?
-
+  
   room        Room         @relation(fields: [roomId], references: [id])
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
-
+  hotel       Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  @@unique([roomId, date])
+  
+  @@unique([hotelId, roomId, date])
   @@index([reservationId])
+  @@index([hotelId])
 }
 
 model AuditLog {

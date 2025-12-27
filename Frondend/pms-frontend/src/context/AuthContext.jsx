@@ -58,11 +58,18 @@ export function AuthProvider({ children }) {
   // Login de HOTEL (primer nivel). Solo habilita acceso al launcher.
   const login = useCallback(
     async (email, password) => {
-      const { token: hotelToken, user: userResp } = await api.login(email, password);
+      const { token: hotelToken, user: userResp, hotel: hotelResp } = await api.login(
+        email,
+        password
+      );
       setToken(hotelToken);
-      // En este flujo, "user" de la API representa al hotel
-      if (userResp) setHotel(userResp);
-      else {
+      // Nivel 1: sesion del hotel (para launcher + management).
+      // Preferimos `hotel` real del backend si viene (incluye membership/allowedModules).
+      if (hotelResp) {
+        setHotel({ ...hotelResp, email: userResp?.email ?? email });
+      } else if (userResp) {
+        setHotel(userResp);
+      } else {
         const payload = decodeToken(hotelToken);
         setHotel({ email, hotelId: payload?.hotelId });
       }

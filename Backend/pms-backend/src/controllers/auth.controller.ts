@@ -4,30 +4,30 @@ import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import { sign } from "../lib/jwt.js";
 import { ALL_PERMISSIONS } from "../config/permissions.js";
+import { allowedModulesForMembership } from "../config/membership.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 
 export async function register(req: Request, res: Response) {
   try {
-    const { name, email, password, hotelName } = req.body as { name?: string; email: string; password: string; hotelName?: string };
+    const { name, email, password, hotelName } = req.body as {
+      name?: string;
+      email: string;
+      password: string;
+      hotelName?: string;
+    };
 
     if (!email || !password) return res.status(400).json({ message: "Email y password son requeridos" });
-    if (!/^\d{4,}$/.test(password)) {
-      return res
-        .status(400)
-        .json({ message: "La contraseña debe tener al menos 4 dígitos numéricos" });
-    }
+    if (String(password).length < 4) return res.status(400).json({ message: "La contraseña debe tener al menos 4 caracteres" });
 
     const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) return res.status(409).json({ message: "El email ya esta registrado" });
+    if (existing) return res.status(409).json({ message: "El email ya está registrado" });
 
-    // Crea hotel (uno por tenant) y asocia al usuario admin
     const hotel = await prisma.hotel.create({
       data: { name: hotelName || "Hotel Demo", currency: "CRC" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, membership: true },
     });
 
-    // Crear permisos base y rol ADMIN para el hotel recién creado
     await prisma.permission.createMany({ data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })), skipDuplicates: true });
     await prisma.appRole.upsert({
       where: { hotelId_id: { hotelId: hotel.id, id: "ADMIN" } },
@@ -53,10 +53,14 @@ export async function register(req: Request, res: Response) {
     });
 
     const token = sign({ sub: user.id, email: user.email, role: user.role, hotelId: user.hotelId });
-    return res.status(201).json({ user, token, hotel });
+    return res.status(201).json({
+      user,
+      token,
+      hotel: { ...hotel, allowedModules: allowedModulesForMembership(hotel.membership) },
+    });
   } catch (err: any) {
     if (err?.code === "P2002") {
-      return res.status(409).json({ message: "El email ya esta registrado" });
+      return res.status(409).json({ message: "El email ya está registrado" });
     }
     console.error("[auth.register] error:", err);
     return res.status(500).json({ message: "No se pudo registrar" });
@@ -72,18 +76,25 @@ export async function login(req: Request, res: Response) {
     }
 
     const user = await prisma.user.findUnique({ where: { email: identifier } });
-    if (!user) return res.status(401).json({ message: "Credenciales invalidas" });
+    if (!user) return res.status(401).json({ message: "Credenciales inválidas" });
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ message: "Credenciales invalidas" });
+    if (!ok) return res.status(401).json({ message: "Credenciales inválidas" });
 
     const token = sign({ sub: user.id, email: user.email, role: user.role, hotelId: user.hotelId });
+    const hotel = await prisma.hotel.findUnique({
+      where: { id: user.hotelId },
+      select: { id: true, name: true, membership: true },
+    });
     return res.json({
       token,
       user: { id: user.id, name: user.name, email: user.email, role: user.role, createdAt: user.createdAt, hotelId: user.hotelId },
+      hotel: hotel
+        ? { ...hotel, allowedModules: allowedModulesForMembership(hotel.membership) }
+        : { id: user.hotelId, name: "Hotel", membership: "PLATINUM", allowedModules: allowedModulesForMembership("PLATINUM") },
     });
   } catch (err) {
     console.error("[auth.login] error:", err);
-    return res.status(500).json({ message: "No se pudo iniciar sesion" });
+    return res.status(500).json({ message: "No se pudo iniciar sesión" });
   }
 }
