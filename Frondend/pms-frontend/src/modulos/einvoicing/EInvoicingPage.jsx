@@ -1323,6 +1323,75 @@ export default function EInvoicingPage() {
                         <option value="manual">Manual (ATV website)</option>
                         <option value="api">API</option>
                       </select>
+                      {String(cfg.settings?.atv?.mode || "manual") === "api" && (
+                        <>
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm"
+                            placeholder="Client ID"
+                            value={cfg.settings?.atv?.clientId || ""}
+                            onChange={(e) =>
+                              setCfg((prev) => ({
+                                ...prev,
+                                settings: {
+                                  ...prev.settings,
+                                  atv: { ...(prev.settings?.atv || {}), clientId: e.target.value },
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm"
+                            placeholder="Token URL (sandbox)"
+                            value={cfg.settings?.atv?.endpoints?.tokenUrl || ""}
+                            onChange={(e) =>
+                              setCfg((prev) => ({
+                                ...prev,
+                                settings: {
+                                  ...prev.settings,
+                                  atv: {
+                                    ...(prev.settings?.atv || {}),
+                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), tokenUrl: e.target.value },
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm"
+                            placeholder="Send URL (sandbox)"
+                            value={cfg.settings?.atv?.endpoints?.sendUrl || ""}
+                            onChange={(e) =>
+                              setCfg((prev) => ({
+                                ...prev,
+                                settings: {
+                                  ...prev.settings,
+                                  atv: {
+                                    ...(prev.settings?.atv || {}),
+                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), sendUrl: e.target.value },
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm"
+                            placeholder="Status URL (sandbox) - use {{key}}"
+                            value={cfg.settings?.atv?.endpoints?.statusUrl || ""}
+                            onChange={(e) =>
+                              setCfg((prev) => ({
+                                ...prev,
+                                settings: {
+                                  ...prev.settings,
+                                  atv: {
+                                    ...(prev.settings?.atv || {}),
+                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), statusUrl: e.target.value },
+                                  },
+                                },
+                              }))
+                            }
+                          />
+                        </>
+                      )}
                       <input
                         className="h-10 rounded-lg border px-3 text-sm"
                         placeholder="ATV username"
