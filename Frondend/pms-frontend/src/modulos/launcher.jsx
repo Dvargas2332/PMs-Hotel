@@ -7,6 +7,7 @@ import {
   Settings,
   Banknote,
   UtensilsCrossed,
+  FileCheck2,
   LogOut,
 } from "lucide-react";
 
@@ -16,17 +17,20 @@ import { Tooltip, TooltipProvider, TooltipTrigger } from "../components/ui/toolt
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
+import { useLanguage } from "../context/LanguageContext";
 
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
   management: { from: "from-indigo-500/90", to: "to-blue-500/80", text: "text-white" },
   accounting: { from: "from-rose-500/90", to: "to-slate-800/90", text: "text-white" },
   restaurant: { from: "from-amber-500/90", to: "to-orange-500/80", text: "text-white" },
+  einvoicing: { from: "from-violet-500/90", to: "to-fuchsia-600/80", text: "text-white" },
 };
 
 export default function Launcher() {
   const navigate = useNavigate();
   const { hotel, user, loginUser, logout, logoutUser } = useAuth();
+  const { t } = useLanguage();
 
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [alerts, setAlerts] = useState([]);
@@ -42,42 +46,51 @@ export default function Launcher() {
     () => [
       {
         code: "frontdesk",
-        name: "Front Desk",
+        name: t("modules.frontdesk.name"),
         path: "/frontdesk",
         icon: Hotel,
-        description: "Check-in/out, planner y reservas.",
-        tag: "Operación",
+        description: t("modules.frontdesk.desc"),
+        tag: t("modules.frontdesk.tag"),
         theme: THEMES.frontdesk,
       },
       {
         code: "restaurant",
-        name: "Restaurant",
+        name: t("modules.restaurant.name"),
         path: "/restaurant",
         icon: UtensilsCrossed,
-        description: "Órdenes, mesas y comandas.",
-        tag: "F&B",
+        description: t("modules.restaurant.desc"),
+        tag: t("modules.restaurant.tag"),
         theme: THEMES.restaurant,
       },
       {
         code: "accounting",
-        name: "Accounting",
+        name: t("modules.accounting.name"),
         path: "/accounting",
         icon: Banknote,
-        description: "Facturación y reportes.",
-        tag: "Finanzas",
+        description: t("modules.accounting.desc"),
+        tag: t("modules.accounting.tag"),
         theme: THEMES.accounting,
       },
       {
+        code: "einvoicing",
+        name: t("modules.einvoicing.name"),
+        path: "/e-invoicing",
+        icon: FileCheck2,
+        description: t("modules.einvoicing.desc"),
+        tag: t("modules.einvoicing.tag"),
+        theme: THEMES.einvoicing,
+      },
+      {
         code: "management",
-        name: "Management",
+        name: t("modules.management.name"),
         path: "/management",
         icon: Settings,
-        description: "Tarifas, usuarios, permisos.",
-        tag: "Admin",
+        description: t("modules.management.desc"),
+        tag: t("modules.management.tag"),
         theme: THEMES.management,
       },
     ],
-    []
+    [t]
   );
 
   // Módulos permitidos por membresía del HOTEL
@@ -126,12 +139,12 @@ export default function Launcher() {
     (path) => {
       // Regla: el login del hotel NO puede entrar a módulos, solo al launcher.
       if (!user) {
-        alert("Debes iniciar sesión como USUARIO para ingresar a los módulos.");
+        alert(t("launcher.mustLoginUser"));
         return;
       }
       navigate(path);
     },
-    [navigate, user]
+    [navigate, t, user]
   );
 
   // Navegación por teclado entre módulos
@@ -162,7 +175,7 @@ export default function Launcher() {
       if (!u) {
         setUserLogin((prev) => ({
           ...prev,
-          error: "Credenciales inválidas.",
+          error: t("launcher.invalidCreds"),
           loading: false,
         }));
         return;
@@ -171,7 +184,7 @@ export default function Launcher() {
     } catch (err) {
       setUserLogin((prev) => ({
         ...prev,
-        error: "No se pudo iniciar sesión de usuario.",
+        error: t("launcher.userLoginFailed"),
         loading: false,
       }));
     }
@@ -206,11 +219,11 @@ export default function Launcher() {
                   {hotel?.name || "Hotel"}
                 </div>
                 <div className="text-xs text-gray-600">
-                  {hotel?.email || "Sesión de hotel (nivel 1)"}
+                  {hotel?.email || t("launcher.hotelSession")}
                 </div>
                 {hotel?.membership && (
                   <div className="mt-1 text-[15px] font-medium text-emerald-700">
-                    Membresía: {hotel.membership}
+                    {t("launcher.membership", { membership: hotel.membership })}
                   </div>
                 )}
                 
@@ -233,12 +246,14 @@ export default function Launcher() {
                     <form onSubmit={handleUserLoginSubmit} className="space-y-3">
                       <div>
                         <h2 className="text-sm font-semibold text-gray-800">
-                        Inicia sesión para acceder a los módulos.
+                        {t("launcher.userLoginTitle")}
                         </h2>
                       </div>
                       <div className="space-y-2">
                         <div className="max-w-[220px] space-y-1">
-                          <label className="text-xs font-medium text-slate-700">Usuario</label>
+                          <label className="text-xs font-medium text-slate-700">
+                            {t("launcher.username")}
+                          </label>
                           <Input
                             value={userLogin.username}
                             onChange={(e) =>
@@ -250,7 +265,7 @@ export default function Launcher() {
                         </div>
                         <div className="max-w-[220px] space-y-1">
                           <label className="text-xs font-medium text-slate-700">
-                            Contraseña
+                            {t("launcher.password")}
                           </label>
                           <Input
                             type="password"
@@ -270,7 +285,7 @@ export default function Launcher() {
                       )}
                       <div className="flex justify-end">
                         <Button type="submit" size="sm" disabled={userLogin.loading}>
-                          {userLogin.loading ? "Ingresando..." : "Entrar"}
+                          {userLogin.loading ? t("launcher.signingIn") : t("common.enter")}
                         </Button>
                       </div>
                     </form>
@@ -282,7 +297,7 @@ export default function Launcher() {
                 <button
                   onClick={() => setAlertsOpen((s) => !s)}
                   className="relative rounded-lg border bg-white p-2 hover:bg-slate-50"
-                  aria-label="Alertas"
+                  aria-label={t("launcher.alerts")}
                 >
                   <Bell size={16} className="text-emerald-600" />
                   {alerts.length > 0 && (
@@ -297,7 +312,7 @@ export default function Launcher() {
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <LogOut size={14} className="text-amber-600" />
-                    Cerrar usuario
+                    {t("launcher.userLogout")}
                   </button>
                 )}
                 {!user && (
@@ -306,7 +321,7 @@ export default function Launcher() {
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50"
                   >
                     <LogOut size={14} className="text-rose-600" />
-                    Cerrar hotel
+                    {t("launcher.hotelLogout")}
                   </button>
                 )}
               </div>
@@ -319,16 +334,16 @@ export default function Launcher() {
             {alertsOpen && (
               <Card className="border-slate-200/80 p-4 shadow">
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="font-semibold">Alertas</div>
+                  <div className="font-semibold">{t("launcher.alerts")}</div>
                   <button
                     className="text-xs text-gray-500 underline hover:text-gray-700"
                     onClick={() => setAlerts([])}
                   >
-                    Limpiar
+                    {t("launcher.clear")}
                   </button>
                 </div>
                 {alerts.length === 0 ? (
-                  <div className="text-sm text-gray-500">No hay alertas.</div>
+                  <div className="text-sm text-gray-500">{t("launcher.noAlerts")}</div>
                 ) : (
                   <ul className="space-y-2 text-sm">
                     {alerts.map((a) => (
@@ -339,7 +354,7 @@ export default function Launcher() {
                         <span className="mt-1 h-2.5 w-2.5 rounded-full bg-amber-500" />
                         <div>
                           <div className="font-medium text-gray-800">
-                            {a.title || a.msg || "Alerta"}
+                            {a.title || a.msg || t("launcher.alert")}
                           </div>
                           {a.desc || a.msg ? (
                             <div className="text-xs text-gray-600">{a.desc || a.msg}</div>
@@ -392,6 +407,7 @@ export default function Launcher() {
 
 function ModuleCard({ mod, onOpen, focused, disabled }) {
   const Icon = mod.icon;
+  const { t } = useLanguage();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -428,7 +444,7 @@ function ModuleCard({ mod, onOpen, focused, disabled }) {
             </div>
             <div className="mt-4 flex items-center justify-between text-[12px] text-gray-500">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-medium text-gray-800">Entrar</span>
+                <span className="text-sm font-medium text-gray-800">{t("common.enter")}</span>
                 <ChevronRight className="h-4 w-4 text-blue-500" />
               </div>
               <div className="text-[11px] text-gray-400">{mod.path}</div>
