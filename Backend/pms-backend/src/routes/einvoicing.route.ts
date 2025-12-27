@@ -24,6 +24,11 @@ import {
   listCabys,
   listCatalogEntries,
 } from "../controllers/einvoicing.catalog.controller.js";
+import {
+  cancelEInvoicingDocument,
+  refreshEInvoicingDocumentStatus,
+  submitEInvoicingDocument,
+} from "../controllers/einvoicing.hacienda.controller.js";
 
 const router = Router();
 
@@ -33,6 +38,9 @@ router.use(auth, requirePermission("einvoicing.access"));
 router.get("/requirements", listEInvoicingRequirements);
 router.get("/documents", listEInvoicingDocuments);
 router.get("/documents/:id", getEInvoicingDocument);
+router.post("/documents/:id/submit", requirePermission("einvoicing.issue"), submitEInvoicingDocument);
+router.post("/documents/:id/refresh", requirePermission("einvoicing.issue"), refreshEInvoicingDocumentStatus);
+router.post("/documents/:id/cancel", requirePermission("einvoicing.cancel"), cancelEInvoicingDocument);
 router.get("/acks", requirePermission("einvoicing.issue"), listEInvoicingAcknowledgements);
 router.get("/acks/:id", requirePermission("einvoicing.issue"), getEInvoicingAcknowledgement);
 router.post("/acks", requirePermission("einvoicing.issue"), createEInvoicingAcknowledgement);
