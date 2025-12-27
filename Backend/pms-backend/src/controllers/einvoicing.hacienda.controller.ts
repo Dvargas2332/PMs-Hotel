@@ -1,6 +1,13 @@
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
+import {
+  getSandboxStatus,
+  getSandboxToken,
+  sendSandboxDocument,
+  validateHaciendaSandboxConfig,
+  type HaciendaApiConfig,
+} from "../services/haciendaCr.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -99,10 +106,96 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
 
   const cfg = await ensureEinvoicingEnabled(hotelId);
   const env = String(cfg.environment || "sandbox").toLowerCase();
-  if (env !== "sandbox") {
-    return res.status(400).json({
-      message: "Este endpoint está habilitado solo para SANDBOX por ahora.",
+  const settings = (cfg.settings || {}) as any;
+  const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
+  const provider = String(cfg.provider || "hacienda-cr");
+
+  // "Directo con Hacienda" (placeholder integration) - only sandbox for now.
+  if (env === "sandbox" && atvMode === "api" && provider === "hacienda-cr") {
+    const atv = (settings?.atv || {}) as any;
+    const endpoints = (atv.endpoints || {}) as any;
+    const creds = ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials ||
+      {}) as any;
+    const atvCreds = (creds.atv || {}) as any;
+
+    const apiCfg: HaciendaApiConfig = {
+      env: "sandbox",
+      endpoints: {
+        tokenUrl: endpoints.tokenUrl || "https://example.com/ATV_TOKEN_URL_PLACEHOLDER",
+        sendUrl: endpoints.sendUrl || "https://example.com/HACIENDA_SEND_URL_PLACEHOLDER",
+        statusUrl: endpoints.statusUrl || "https://example.com/HACIENDA_STATUS_URL_PLACEHOLDER?key={{key}}",
+      },
+      atv: {
+        username: String(atv.username || ""),
+        password: String(atvCreds.password || ""),
+        clientId: atv.clientId ? String(atv.clientId) : undefined,
+        clientSecret: String(atvCreds.clientSecret || ""),
+      },
+    };
+
+    const issues = validateHaciendaSandboxConfig(apiCfg);
+    if (issues.length) {
+      return res.status(400).json({
+        message:
+          "Hacienda sandbox API no está configurada (placeholders). Completa ATV username/password/clientId/clientSecret y endpoints token/send/status en /e-invoicing.",
+        issues,
+      });
+    }
+
+    const doc = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
+    if (!doc) return res.status(404).json({ message: "Documento no encontrado" });
+    if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
+
+    const xmlSigned = doc.xmlSigned || buildSandboxXml(doc);
+
+    // mark SIGNED locally (placeholder signing)
+    await prisma.eInvoicingDocument.updateMany({
+      where: { id: doc.id, hotelId },
+      data: { status: "SIGNED", xmlSigned, response: { placeholder: true, step: "SIGNED", at: nowIso() } },
     });
+
+    try {
+      const token = await getSandboxToken(apiCfg);
+      const sendResp = await sendSandboxDocument(apiCfg, token, xmlSigned, doc.key);
+      await prisma.eInvoicingDocument.updateMany({
+        where: { id: doc.id, hotelId },
+        data: { status: "SENT", response: { placeholder: true, step: "SENT", sendResp, at: nowIso() } },
+      });
+
+      await prisma.eInvoicingAcknowledgement.create({
+        data: {
+          hotelId,
+          documentId: doc.id,
+          type: "HACIENDA_RECEIPT",
+          status: "RECEIVED",
+          message: "Sent to Hacienda (sandbox placeholder).",
+          payload: { placeholder: true, sendResp, at: nowIso() },
+        },
+      });
+
+      // optional immediate status call (placeholder)
+      const statusResp = await getSandboxStatus(apiCfg, token, doc.key);
+      await prisma.eInvoicingAcknowledgement.create({
+        data: {
+          hotelId,
+          documentId: doc.id,
+          type: "HACIENDA_STATUS",
+          status: "RECEIVED",
+          message: "Status retrieved (sandbox placeholder).",
+          payload: { placeholder: true, statusResp, at: nowIso() },
+        },
+      });
+
+      await prisma.eInvoicingDocument.updateMany({
+        where: { id: doc.id, hotelId },
+        data: { response: { placeholder: true, step: "STATUS", statusResp, at: nowIso() } },
+      });
+    } catch (err: any) {
+      return res.status(502).json({ message: err?.message || "Hacienda sandbox API call failed" });
+    }
+
+    const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
+    return res.json(fresh);
   }
 
   const doc = await prisma.eInvoicingDocument.findFirst({
@@ -204,9 +297,9 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
 
   const cfg = await ensureEinvoicingEnabled(hotelId);
   const env = String(cfg.environment || "sandbox").toLowerCase();
-  if (env !== "sandbox") {
-    return res.status(400).json({ message: "Solo sandbox por ahora" });
-  }
+  const settings = (cfg.settings || {}) as any;
+  const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
+  const provider = String(cfg.provider || "hacienda-cr");
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: { id, hotelId },
@@ -216,6 +309,55 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
 
   if (doc.status === "ACCEPTED" || doc.status === "REJECTED" || doc.status === "CANCELED") {
     return res.json(doc);
+  }
+
+  if (env === "sandbox" && atvMode === "api" && provider === "hacienda-cr") {
+    const atv = (settings?.atv || {}) as any;
+    const endpoints = (atv.endpoints || {}) as any;
+    const creds = ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials ||
+      {}) as any;
+    const atvCreds = (creds.atv || {}) as any;
+
+    const apiCfg: HaciendaApiConfig = {
+      env: "sandbox",
+      endpoints: {
+        tokenUrl: endpoints.tokenUrl || "https://example.com/ATV_TOKEN_URL_PLACEHOLDER",
+        sendUrl: endpoints.sendUrl || "https://example.com/HACIENDA_SEND_URL_PLACEHOLDER",
+        statusUrl: endpoints.statusUrl || "https://example.com/HACIENDA_STATUS_URL_PLACEHOLDER?key={{key}}",
+      },
+      atv: {
+        username: String(atv.username || ""),
+        password: String(atvCreds.password || ""),
+        clientId: atv.clientId ? String(atv.clientId) : undefined,
+        clientSecret: String(atvCreds.clientSecret || ""),
+      },
+    };
+    const issues = validateHaciendaSandboxConfig(apiCfg);
+    if (issues.length) return res.status(400).json({ message: "Hacienda sandbox API no configurada", issues });
+    if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
+
+    try {
+      const token = await getSandboxToken(apiCfg);
+      const statusResp = await getSandboxStatus(apiCfg, token, doc.key);
+      await prisma.eInvoicingAcknowledgement.create({
+        data: {
+          hotelId,
+          documentId: doc.id,
+          type: "HACIENDA_STATUS",
+          status: "RECEIVED",
+          message: "Status retrieved (sandbox placeholder).",
+          payload: { placeholder: true, statusResp, at: nowIso() },
+        },
+      });
+      await prisma.eInvoicingDocument.updateMany({
+        where: { id: doc.id, hotelId },
+        data: { response: { placeholder: true, step: "STATUS", statusResp, at: nowIso() } },
+      });
+    } catch (err: any) {
+      return res.status(502).json({ message: err?.message || "Hacienda status call failed" });
+    }
+    const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
+    return res.json(fresh);
   }
 
   await prisma.eInvoicingAcknowledgement.create({
@@ -304,4 +446,3 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
   const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
   return res.json(fresh);
 }
-
