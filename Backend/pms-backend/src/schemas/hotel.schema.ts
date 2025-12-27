@@ -1,5 +1,6 @@
 // src/schemas/hotel.schema.ts
 import { z } from "zod";
+import { MEMBERSHIP_TIERS } from "../config/membership.js";
 
 export const updateHotelSchema = z.object({
   params: z.object({
@@ -9,6 +10,7 @@ export const updateHotelSchema = z.object({
     .object({
       name: z.string().min(1).optional(),
       currency: z.string().min(1).optional(),
+      membership: z.enum(MEMBERSHIP_TIERS).optional(),
     })
     .refine((body) => Object.keys(body).length > 0, { message: "Debe enviar al menos un campo a actualizar" }),
 });

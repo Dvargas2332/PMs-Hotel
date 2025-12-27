@@ -2,8 +2,9 @@
 
 
 import type { Request, Response } from "express";
-import { prisma } from "../lib/prisma";
-import type { AuthUser } from "../middleware/auth";
+import { prisma } from "../lib/prisma.js";
+import type { AuthUser } from "../middleware/auth.js";
+import { allowedModulesForMembership, normalizeMembershipTier } from "../config/membership.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -17,19 +18,19 @@ export async function getHotel(req: Request, res: Response) {
   if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const hotel = await prisma.hotel.findUnique({ where: { id: hotelId } });
   if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
-  res.json(hotel);
+  res.json({ ...hotel, allowedModules: allowedModulesForMembership((hotel as any).membership) });
 }
 
 // PUT /api/hotel
 export async function updateHotel(req: Request, res: Response) {
   const hotelId = resolveHotelId(req);
   if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const { name, currency } = req.body as { name?: string; currency?: string };
+  const { name, currency, membership } = req.body as { name?: string; currency?: string; membership?: string };
   const hotel = await prisma.hotel.update({
     where: { id: hotelId },
-    data: { name, currency },
+    data: { name, currency, membership: membership ? normalizeMembershipTier(membership) : undefined },
   });
-  res.json(hotel);
+  res.json({ ...hotel, allowedModules: allowedModulesForMembership((hotel as any).membership) });
 }
 
 // GET /api/hotel/currency
