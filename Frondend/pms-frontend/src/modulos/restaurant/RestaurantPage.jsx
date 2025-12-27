@@ -825,7 +825,7 @@ export default function RestaurantPage() {
             </header>
 
           {sectionLauncher || !selectedTable ? (
-            <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
+            <div key={sectionLauncher ? "restaurant-launcher" : `restaurant-section-${String(selectedSection?.id || "none")}`} className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
               {sectionLauncher ? (
                 <div className="col-span-3">
                   {sectionsLoading && <div className="text-sm text-amber-700">Loading sections...</div>}
@@ -879,9 +879,9 @@ export default function RestaurantPage() {
                           <span>Entrance</span>
                           <span>Bar / Kitchen</span>
                         </div>
-                        {(selectedSection.objects || []).map((o) => (
+                        {(selectedSection.objects || []).map((o, objIdx) => (
                           <div
-                            key={o.id}
+                            key={String(o.id || `${o.kind || "obj"}-${objIdx}`)}
                             className={`absolute -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none ${
                               String(o.kind || "").toUpperCase() === "LABEL" ? "px-2 py-1" : "rounded-xl border border-slate-200 bg-white/70 shadow-sm"
                             }`}
@@ -980,7 +980,7 @@ export default function RestaurantPage() {
                 )}
               </div>
             ) : (
-              <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
+              <div key={`restaurant-pos-${String(selectedTable?.id || "none")}`} className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
                 <div className="col-span-2 flex flex-col gap-3">
                   <div className="rounded-2xl bg-white border border-amber-100 shadow-sm p-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
