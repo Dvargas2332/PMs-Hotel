@@ -1,56 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleUser, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { Circle, CircleDot, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
-
-const FALLBACK_SECTIONS = [
-  {
-    id: "sec-salon",
-    name: "Salon Principal",
-    tables: [
-      { id: "S01", name: "Salon 1", seats: 4 },
-      { id: "S02", name: "Salon 2", seats: 2 },
-      { id: "S03", name: "Salon 3", seats: 4 },
-    ],
-  },
-  {
-    id: "sec-terraza",
-    name: "Terraza",
-    tables: [
-      { id: "T01", name: "Terraza 1", seats: 4 },
-      { id: "T02", name: "Terraza 2", seats: 6 },
-    ],
-  },
-  {
-    id: "sec-barra",
-    name: "Barra",
-    tables: [
-      { id: "B01", name: "Barra 1", seats: 2 },
-      { id: "B02", name: "Barra 2", seats: 2 },
-    ],
-  },
-];
-
-const FALLBACK_MENU = [
-  { id: "E01", name: "Nachos", price: 8, category: "Entradas" },
-  { id: "E02", name: "Ceviche", price: 9, category: "Entradas" },
-  { id: "E03", name: "Alitas BBQ", price: 7.5, category: "Entradas" },
-  { id: "P01", name: "Hamburguesa", price: 11, category: "Platos" },
-  { id: "P02", name: "Pasta Alfredo", price: 12, category: "Platos" },
-  { id: "P03", name: "Pollo a la plancha", price: 10, category: "Platos" },
-  { id: "P04", name: "Taco trio", price: 9, category: "Platos" },
-  { id: "B01", name: "Refresco", price: 3, category: "Bebidas" },
-  { id: "B02", name: "Cerveza", price: 4, category: "Bebidas" },
-  { id: "B03", name: "Limonada", price: 3.5, category: "Bebidas" },
-  { id: "D01", name: "Brownie", price: 5, category: "Postres" },
-  { id: "D02", name: "Helado", price: 4, category: "Postres" },
-  { id: "C01", name: "Combo Burger + Refresco", price: 13.5, category: "Combos" },
-  { id: "C02", name: "Alitas + Cerveza", price: 11, category: "Combos" },
-];
+import RestaurantUserMenu from "./RestaurantUserMenu";
+import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
+}
+
+function getFloorObjectMeta(kind) {
+  const k = String(kind || "OTHER").toUpperCase();
+  const map = {
+    LABEL: { label: "Label", Icon: Tag, bg: "#334155" },
+    BAR: { label: "Bar", Icon: UtensilsCrossed, bg: "#f59e0b" },
+    POOL: { label: "Pool", Icon: Waves, bg: "#0ea5e9" },
+    PLANT: { label: "Plant", Icon: Leaf, bg: "#10b981" },
+    WALL: { label: "Wall", Icon: RectangleHorizontal, bg: "#64748b" },
+    COUNTER: { label: "Counter", Icon: Columns2, bg: "#f97316" },
+    DOOR: { label: "Door", Icon: DoorOpen, bg: "#6366f1" },
+    WC: { label: "WC", Icon: Toilet, bg: "#d946ef" },
+    OTHER: { label: "Object", Icon: Droplets, bg: "#94a3b8" },
+  };
+  return map[k] || map.OTHER;
 }
 
 const sumNumbers = (obj = {}) => Object.values(obj).reduce((acc, v) => acc + (Number(v) || 0), 0);
@@ -59,10 +32,10 @@ export default function RestaurantPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const [userMenu, setUserMenu] = useState(false);
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedSection, setSelectedSection] = useState(null);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [tablePickerMode, setTablePickerMode] = useState("NEW"); // NEW | MOVE
   const [sectionLauncher, setSectionLauncher] = useState(true);
 
   const [covers, setCovers] = useState(2);
@@ -70,7 +43,9 @@ export default function RestaurantPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [sections, setSections] = useState([]);
-  const [menuItems, setMenuItems] = useState(FALLBACK_MENU);
+  const [sectionsLoading, setSectionsLoading] = useState(false);
+  const [sectionsError, setSectionsError] = useState("");
+  const [menuItems, setMenuItems] = useState([]);
   const [ordersByTable, setOrdersByTable] = useState({});
   const [now, setNow] = useState(new Date());
   const [printerCfg, setPrinterCfg] = useState({ kitchenPrinter: "", barPrinter: "" });
@@ -80,12 +55,7 @@ export default function RestaurantPage() {
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
 
-  const [closesOpen, setClosesOpen] = useState(false);
-  const [closesLoading, setClosesLoading] = useState(false);
-  const [closes, setCloses] = useState([]);
-  const [closesError, setClosesError] = useState("");
-
-  const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cajero" }));
+  const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cashier" }));
   const [taxesCfg, setTaxesCfg] = useState({ iva: 13, servicio: 10 });
   const [paymentsCfg, setPaymentsCfg] = useState({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [] });
   const [stats, setStats] = useState({ systemTotal: 0, openOrders: 0, salesCount: 0, openOrderValue: 0, lastCloseAt: null, byMethod: {} });
@@ -100,7 +70,7 @@ export default function RestaurantPage() {
 
   const allTables = useMemo(() => {
     const list = [];
-    (sections.length ? sections : FALLBACK_SECTIONS).forEach((sec) => {
+    (sections || []).forEach((sec) => {
       (sec.tables || []).forEach((t) => list.push({ ...t, section: sec }));
     });
     return list;
@@ -108,8 +78,7 @@ export default function RestaurantPage() {
 
   const categories = useMemo(() => {
     const set = new Set((menuItems || []).map((m) => m.category).filter(Boolean));
-    const list = Array.from(set);
-    return list.length ? list : ["Entradas", "Platos", "Bebidas", "Postres", "Combos"];
+    return Array.from(set);
   }, [menuItems]);
 
   const filteredMenu = useMemo(() => {
@@ -122,9 +91,9 @@ export default function RestaurantPage() {
 
   const shift = useMemo(() => {
     const h = now.getHours();
-    if (h < 15) return "Turno Manana";
-    if (h < 22) return "Turno Tarde";
-    return "Turno Noche";
+    if (h < 15) return "Morning shift";
+    if (h < 22) return "Afternoon shift";
+    return "Night shift";
   }, [now]);
 
   const currentOrder = useMemo(() => {
@@ -173,11 +142,6 @@ export default function RestaurantPage() {
   const paymentTotal = useMemo(() => sumNumbers(paymentForm), [paymentForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
-  const hasOpenOrders = useMemo(
-    () => Object.values(ordersByTable).some((o) => (o.items || []).length > 0),
-    [ordersByTable]
-  );
-
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
@@ -191,16 +155,20 @@ export default function RestaurantPage() {
   }, [user?.name, user?.email]);
 
   const loadSections = useCallback(async () => {
+    setSectionsLoading(true);
+    setSectionsError("");
     try {
       const { data } = await api.get("/restaurant/sections");
-      if (Array.isArray(data) && data.length > 0) {
-        setSections(data);
-        return;
+      setSections(Array.isArray(data) ? data : []);
+      if (!Array.isArray(data) || data.length === 0) {
+        setSectionsError("No sections/tables configured. Create them from Management.");
       }
     } catch {
-      /* ignore */
+      setSections([]);
+      setSectionsError("Could not load sections. Check configuration in Management.");
+    } finally {
+      setSectionsLoading(false);
     }
-    setSections(FALLBACK_SECTIONS);
   }, []);
 
   const loadPrinters = useCallback(async () => {
@@ -302,8 +270,8 @@ export default function RestaurantPage() {
       } catch {
         /* ignore */
       }
-      setMenuItems(FALLBACK_MENU);
-      setCategory(FALLBACK_MENU[0]?.category || "");
+      setMenuItems([]);
+      setCategory("");
     },
     [serviceType]
   );
@@ -325,6 +293,64 @@ export default function RestaurantPage() {
     loadMenu(section?.id);
     setSectionLauncher(false);
     setTablePickerOpen(false);
+  };
+
+  const openNewOrderPicker = () => {
+    if (!guardSwitch()) return;
+    setSelectedTable(null);
+    setSelectedSection(null);
+    setTablePickerMode("NEW");
+    setTablePickerOpen(true);
+    setSectionLauncher(true);
+  };
+
+  const openMoveTablePicker = () => {
+    if (!selectedTable?.id) return;
+    setTablePickerMode("MOVE");
+    setTablePickerOpen(true);
+  };
+
+  const moveToTable = async (toTable) => {
+    if (!selectedTable?.id || !toTable?.id) return;
+    try {
+      await api.post("/restaurant/order/move", { fromTableId: selectedTable.id, toTableId: toTable.id });
+      await refreshOrders();
+      setSelectedSection(toTable.section || selectedSection);
+      setSelectedTable(toTable);
+      setTablePickerOpen(false);
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Table changed." } }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not change table.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
+  };
+
+  const reprintCurrent = async () => {
+    if (!selectedTable?.id) return;
+    try {
+      await api.post("/restaurant/order/reprint", { tableId: selectedTable.id });
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reprint sent." } }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not reprint.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
+  };
+
+  const voidInvoice = async () => {
+    const orderId = ordersByTable?.[selectedTable?.id]?.id;
+    if (!orderId) {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No paid order found." } }));
+      return;
+    }
+    const type = (window.prompt("Document type to void (FE/TE). Leave blank for latest:", "") || "").trim().toUpperCase();
+    const reason = window.prompt("Void reason (optional):", "") || "";
+    try {
+      await api.post("/restaurant/order/void-invoice", { restaurantOrderId: orderId, docType: type || undefined, reason });
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Invoice voided." } }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not void invoice.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
   };
 
   const resetToLobby = () => {
@@ -419,7 +445,7 @@ export default function RestaurantPage() {
       refreshStats();
       window.alert("Pedido enviado a cocina.");
     } catch {
-      window.alert("No se pudo enviar a impresoras.");
+      window.alert("Could not send to printers.");
     }
   };
 
@@ -458,9 +484,9 @@ export default function RestaurantPage() {
       setOrderNote("");
       setPaymentForm({ cash: "", card: "", sinpe: "", transfer: "", room: "" });
       refreshStats();
-      window.alert("Orden cobrada.");
+      window.alert("Order paid.");
     } catch {
-      window.alert("No se pudo cobrar la orden.");
+      window.alert("Could not charge the order.");
     }
   };
 
@@ -475,26 +501,19 @@ export default function RestaurantPage() {
     return false;
   };
 
-  const openCloses = async () => {
-    if (!canViewTotals) return;
-    setClosesOpen(true);
-    setClosesLoading(true);
-    setClosesError("");
-    try {
-      const { data } = await api.get("/restaurant/close");
-      setCloses(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setClosesError("No se pudieron cargar los cierres");
-    } finally {
-      setClosesLoading(false);
-    }
-  };
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
       <header className="relative h-14 bg-gradient-to-r from-amber-700 to-slate-800 text-white flex items-center justify-between px-6 shadow">
         <div className="flex items-center gap-3">
-          <span className="text-lg font-semibold">Restaurante</span>
-          <span className="text-sm text-amber-200">Bienvenido</span>
+          <button
+            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold"
+            onClick={() => navigate("/restaurant")}
+            title="Back to lobby"
+          >
+            Lobby
+          </button>
+          <span className="text-lg font-semibold">Restaurant</span>
+          <span className="text-sm text-amber-200">Welcome</span>
         </div>
         <div className="flex items-center gap-4 relative">
           <div className="hidden md:flex items-center gap-3 text-xs">
@@ -515,33 +534,9 @@ export default function RestaurantPage() {
               setOpenInfo((prev) => ({ ...prev, openedAt: prev.openedAt || new Date().toISOString() }));
             }}
           >
-            Estado de caja
+            Cash status
           </button>
-          <button
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold"
-            onClick={() => setUserMenu((s) => !s)}
-          >
-            <CircleUser className="w-5 h-5" />
-            <span className="hidden sm:inline">{user?.name || user?.email || "Cajero"}</span>
-          </button>
-          {userMenu && (
-            <div className="absolute right-0 top-12 w-48 bg-white text-amber-900 rounded-lg shadow-lg border">
-              <div className="px-3 py-2 text-sm border-b">
-                <div className="font-semibold">{user?.name || "Usuario"}</div>
-                <div className="text-xs text-amber-700/80">{user?.email}</div>
-              </div>
-              <button
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-amber-50"
-                onClick={() => {
-                  setUserMenu(false);
-                  navigate("/launcher");
-                }}
-              >
-                <LogOut className="w-4 h-4" />
-                <span>Salir</span>
-              </button>
-            </div>
-          )}
+          <RestaurantUserMenu />
         </div>
       </header>
 
@@ -550,43 +545,37 @@ export default function RestaurantPage() {
           <div className="w-full max-w-[360px] max-h-[40vh] min-h-[200px] bg-white rounded-l-2xl shadow-2xl p-3 flex flex-col gap-3 overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-amber-500">Estado de caja</div>
-                <div className="text-lg font-semibold text-amber-900">Caja Restaurante</div>
+                <div className="text-xs uppercase text-amber-500">Cash status</div>
+                <div className="text-lg font-semibold text-amber-900">Restaurant cash</div>
                 <div className="text-xs text-amber-700">
-                  Apertura: {new Date(openInfo.openedAt).toLocaleString()}  {openInfo.user}
+                  Opened: {new Date(openInfo.openedAt).toLocaleString()}  {openInfo.user}
                 </div>
               </div>
-              <button
-                className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
-                onClick={() => setCloseOpen(false)}
-                aria-label="Cerrar"
-              >
-                X
-              </button>
+              <RestaurantCloseXButton onClick={() => setCloseOpen(false)} />
             </div>
 
             <div className="grid grid-cols-1 gap-3">
               <div className="rounded-lg border bg-gradient-to-r from-amber-50 to-slate-50 px-4 py-3 text-sm">
-                <div className="text-xs text-amber-700">Ventas sistema</div>
+                <div className="text-xs text-amber-700">System sales</div>
                 <div className="text-xl font-bold text-amber-900">{canViewTotals ? formatMoney(closeSummary.system) : "***"}</div>
-                <div className="text-xs text-amber-500">Total vendido (ventas cobradas)</div>
+                <div className="text-xs text-amber-500">Total sold (paid sales)</div>
               </div>
               <div className="rounded-lg border bg-gradient-to-r from-amber-50 to-slate-50 px-4 py-3 text-sm">
-                <div className="text-xs text-amber-700">Ordenes abiertas</div>
+                <div className="text-xs text-amber-700">Open orders</div>
                 <div className="text-xl font-bold text-amber-900">{stats.openOrders}</div>
-                <div className="text-xs text-amber-500">Valor estimado {formatMoney(stats.openOrderValue || 0)}</div>
+                <div className="text-xs text-amber-500">Estimated value {formatMoney(stats.openOrderValue || 0)}</div>
               </div>
               <button
                 className="px-4 py-2 rounded-lg bg-amber-700 text-white text-sm font-semibold"
                 onClick={() => {
                   if (!canViewTotals) {
-                    window.alert("No tienes permisos para cerrar caja. Solicita a un administrador.");
+                    window.alert("You do not have permission to close cash. Ask an administrator.");
                     return;
                   }
                   setCloseModalOpen(true);
                 }}
               >
-                Ir a cierre
+                Go to close
               </button>
             </div>
           </div>
@@ -598,37 +587,31 @@ export default function RestaurantPage() {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-amber-500">Cierre de caja</div>
-                <div className="text-lg font-semibold text-amber-900">Caja Restaurante</div>
+                <div className="text-xs uppercase text-amber-500">Cash close</div>
+                <div className="text-lg font-semibold text-amber-900">Restaurant cash</div>
               </div>
-              <button
-                className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
-                onClick={() => setCloseModalOpen(false)}
-                aria-label="Cerrar"
-              >
-                X
-              </button>
+              <RestaurantCloseXButton onClick={() => setCloseModalOpen(false)} />
             </div>
 
             <div className="grid grid-cols-1 gap-3">
               <div className="rounded-lg border bg-gradient-to-r from-amber-50 to-slate-50 px-4 py-3 text-sm">
-                <div className="text-xs text-amber-700">Reportado (manual)</div>
+                <div className="text-xs text-amber-700">Reported (manual)</div>
                 <div className="text-xl font-bold text-amber-900">{canViewTotals ? formatMoney(closeSummary.reported) : "***"}</div>
-                <div className="text-xs text-amber-500">Suma de metodos</div>
+                <div className="text-xs text-amber-500">Sum of methods</div>
               </div>
             </div>
 
             <div className="grid md:grid-cols-2 gap-3">
               <input
                 className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Efectivo"
+                placeholder="Cash"
                 type="number"
                 value={closeForm.cash}
                 onChange={(e) => setCloseForm((f) => ({ ...f, cash: e.target.value }))}
               />
               <input
                 className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Tarjeta"
+                placeholder="Card"
                 type="number"
                 value={closeForm.card}
                 onChange={(e) => setCloseForm((f) => ({ ...f, card: e.target.value }))}
@@ -642,14 +625,14 @@ export default function RestaurantPage() {
               />
               <input
                 className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Transferencia"
+                placeholder="Bank transfer"
                 type="number"
                 value={closeForm.transfer}
                 onChange={(e) => setCloseForm((f) => ({ ...f, transfer: e.target.value }))}
               />
               <input
                 className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Cargo a habitacion"
+                placeholder="Room charge"
                 type="number"
                 value={closeForm.room}
                 onChange={(e) => setCloseForm((f) => ({ ...f, room: e.target.value }))}
@@ -657,19 +640,19 @@ export default function RestaurantPage() {
             </div>
             <textarea
               className="w-full rounded-lg border px-3 py-2 text-sm min-h-[90px]"
-              placeholder="Notas del cierre..."
+              placeholder="Close notes..."
               value={closeForm.notes}
               onChange={(e) => setCloseForm((f) => ({ ...f, notes: e.target.value }))}
             />
             <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-              Sistema: {formatMoney(closeSummary.system)}  Reportado: {formatMoney(closeSummary.reported)}  Diferencia: {formatMoney(closeSummary.diff)}
+              System: {formatMoney(closeSummary.system)}  Reported: {formatMoney(closeSummary.reported)}  Difference: {formatMoney(closeSummary.diff)}
             </div>
             <div className="flex justify-end gap-2">
               <button
                 className="px-4 py-2 rounded-lg border text-sm"
                 onClick={() => setCloseModalOpen(false)}
               >
-                Cancelar
+                Cancel
               </button>
               <button
                 className="px-4 py-2 rounded-lg bg-amber-700 text-white text-sm font-semibold"
@@ -693,13 +676,13 @@ export default function RestaurantPage() {
                     setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
                     refreshStats();
                   } catch (e) {
-                    window.alert("No se pudo registrar el cierre.");
+                    window.alert("Could not record the cash close.");
                   } finally {
                     setCloseLoading(false);
                   }
                 }}
               >
-                {closeLoading ? "Enviando..." : "Registrar cierre"}
+                {closeLoading ? "Sending..." : "Record close"}
               </button>
             </div>
           </div>
@@ -711,42 +694,36 @@ export default function RestaurantPage() {
           <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-y-auto max-h-[70vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-emerald-600">Cobro</div>
+                <div className="text-xs uppercase text-emerald-600">Payment</div>
                 <div className="text-lg font-semibold text-slate-900">{selectedTable?.name}</div>
               </div>
-              <button
-                className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
-                onClick={() => setPaymentsModalOpen(false)}
-                aria-label="Cerrar"
-              >
-                X
-              </button>
+              <RestaurantCloseXButton onClick={() => setPaymentsModalOpen(false)} />
             </div>
             <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm">
-              <div className="text-xs text-slate-600">Total a cobrar</div>
+              <div className="text-xs text-slate-600">Total due</div>
               <div className="text-2xl font-bold text-slate-900">{formatMoney(totals.total)}</div>
-              <div className="text-xs text-slate-500">Subtotal {formatMoney(totals.subtotal)}  Servicio {formatMoney(totals.service)}  Impuestos {formatMoney(totals.tax)}</div>
+              <div className="text-xs text-slate-500">Subtotal {formatMoney(totals.subtotal)}  Service {formatMoney(totals.service)}  Taxes {formatMoney(totals.tax)}</div>
             </div>
             <div className="grid md:grid-cols-2 gap-3">
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Efectivo" type="number" value={paymentForm.cash} onChange={(e) => setPaymentForm((f) => ({ ...f, cash: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Tarjeta" type="number" value={paymentForm.card} onChange={(e) => setPaymentForm((f) => ({ ...f, card: e.target.value }))} />
+              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Cash" type="number" value={paymentForm.cash} onChange={(e) => setPaymentForm((f) => ({ ...f, cash: e.target.value }))} />
+              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Card" type="number" value={paymentForm.card} onChange={(e) => setPaymentForm((f) => ({ ...f, card: e.target.value }))} />
               <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="SINPE" type="number" value={paymentForm.sinpe} onChange={(e) => setPaymentForm((f) => ({ ...f, sinpe: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Transferencia" type="number" value={paymentForm.transfer} onChange={(e) => setPaymentForm((f) => ({ ...f, transfer: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Habitacion" type="number" value={paymentForm.room} onChange={(e) => setPaymentForm((f) => ({ ...f, room: e.target.value }))} />
+              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Bank transfer" type="number" value={paymentForm.transfer} onChange={(e) => setPaymentForm((f) => ({ ...f, transfer: e.target.value }))} />
+              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Room charge" type="number" value={paymentForm.room} onChange={(e) => setPaymentForm((f) => ({ ...f, room: e.target.value }))} />
             </div>
             <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-              Pagado: {formatMoney(paymentTotal)}  Cambio/Dif: {formatMoney(paymentDiff)}
+              Paid: {formatMoney(paymentTotal)}  Change/Diff: {formatMoney(paymentDiff)}
             </div>
             <div className="flex justify-end gap-2">
               <button className="px-4 py-2 rounded-lg border text-sm" onClick={() => setPaymentsModalOpen(false)}>
-                Cancelar
+                Cancel
               </button>
               <button
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                 disabled={!hasItems}
                 onClick={confirmChargeOrder}
               >
-                Confirmar cobro
+                Confirm payment
               </button>
             </div>
           </div>
@@ -757,30 +734,25 @@ export default function RestaurantPage() {
           <div className="w-full md:w-[560px] h-full bg-white rounded-l-2xl shadow-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-amber-500">Mesa rapida</div>
-                <div className="text-lg font-semibold text-amber-900">Selecciona mesa</div>
+                <div className="text-xs uppercase text-amber-500">{tablePickerMode === "MOVE" ? "Change table" : "Quick table"}</div>
+                <div className="text-lg font-semibold text-amber-900">{tablePickerMode === "MOVE" ? "Select destination table" : "Select table"}</div>
               </div>
-              <button
-                className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
-                onClick={() => setTablePickerOpen(false)}
-                aria-label="Cerrar"
-              >
-                X
-              </button>
+              <RestaurantCloseXButton onClick={() => setTablePickerOpen(false)} />
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto">
-              {allTables.map((t) => {
+              {allTables.map((t, idx) => {
                 const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
+                const pickerKey = String(`${t.section?.id || "sec"}-${t.id || t.name || idx}`);
                 return (
                   <button
-                    key={`${t.section?.id}-${t.id}`}
+                    key={pickerKey}
                     className={`rounded-2xl border ${hasOrder ? "border-emerald-200 bg-emerald-50" : "border-amber-100 bg-amber-50"} hover:bg-amber-100 text-left px-4 py-3 shadow-sm`}
-                    onClick={() => handleSelectTable(t, t.section)}
+                    onClick={() => (tablePickerMode === "MOVE" ? moveToTable(t) : handleSelectTable(t, t.section))}
                   >
-                    <div className="text-xs text-amber-500">{t.section?.name || "Seccion"}</div>
+                    <div className="text-xs text-amber-500">{t.section?.name || "Section"}</div>
                     <div className="text-lg font-semibold text-amber-900">{t.name}</div>
-                    <div className="text-xs text-amber-700/80">{t.seats} puestos</div>
-                    {hasOrder && <div className="text-[11px] text-emerald-700 mt-1">Orden activa</div>}
+                    <div className="text-xs text-amber-700/80">{t.seats} seats</div>
+                    {hasOrder && <div className="text-[11px] text-emerald-700 mt-1">Active order</div>}
                   </button>
                 );
               })}
@@ -789,71 +761,12 @@ export default function RestaurantPage() {
         </div>
       )}
 
-      {closesOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4">
-          <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl p-5 mt-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <div className="text-xs uppercase text-amber-500">Cierres recientes</div>
-                <div className="text-lg font-semibold text-amber-900">Restaurante</div>
-              </div>
-              <button
-                className="h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200"
-                onClick={() => setClosesOpen(false)}
-                aria-label="Cerrar"
-              >
-                X
-              </button>
-            </div>
-            {closesLoading && <div className="text-sm text-amber-700">Cargando...</div>}
-            {closesError && <div className="text-sm text-red-600">{closesError}</div>}
-            {!closesLoading && !closesError && (
-              <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-                {(closes || []).length === 0 && <div className="text-sm text-amber-700">Sin cierres.</div>}
-                {(closes || []).map((c) => (
-                  <div key={c.id} className="border border-amber-100 rounded-xl p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-amber-900">{c.turno || c.id}</div>
-                        <div className="text-xs text-amber-600">
-                          {c.createdAt ? new Date(c.createdAt).toLocaleString() : ""}
-                        </div>
-                      </div>
-                      <div className="text-sm font-semibold text-amber-800">
-                        Sistema: {formatMoney(c.totals?.system || 0)}
-                      </div>
-                    </div>
-                    <div className="text-xs text-amber-700 mt-1">
-                      Reportado: {formatMoney(c.totals?.reported || 0)}  Dif: {formatMoney(c.totals?.diff || 0)}
-                    </div>
-                    <div className="text-xs text-amber-700 mt-1">
-                      Pagos: ef {formatMoney(c.payments?.cash || 0)}, tj {formatMoney(c.payments?.card || 0)}, sinpe {formatMoney(c.payments?.sinpe || 0)}, trans {formatMoney(c.payments?.transfer || 0)}, hab {formatMoney(c.payments?.room || 0)}
-                    </div>
-                    {c.breakdown && typeof c.breakdown === "object" && Object.keys(c.breakdown || {}).length > 0 && (
-                      <div className="text-xs text-amber-700 mt-2 space-y-1">
-                        <div className="font-semibold text-amber-800">Detalle</div>
-                        {Object.entries(c.breakdown).map(([k, v]) => (
-                          <div key={k} className="flex justify-between gap-2">
-                            <span className="text-amber-600">{k}</span>
-                            <span className="text-amber-900">{typeof v === "number" ? formatMoney(v) : String(v)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-1">
-        <div className="flex-1 flex flex-col">
-          <header className="px-4 py-3 bg-white border-b flex items-center gap-3 shadow-sm">
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold text-amber-900">
+       <div className="flex flex-1">
+         <div className="flex-1 flex flex-col">
+            <header className="px-4 py-3 bg-white border-b flex items-center gap-3 shadow-sm">
+              <div className="flex items-center justify-between w-full">
+               <div className="flex items-center gap-3">
+                 <div className="text-lg font-semibold text-amber-900">
                   {selectedTable
                     ? `${selectedSection?.name || ""}${selectedSection ? " - " : ""}${selectedTable?.name}`
                     : sectionLauncher
@@ -861,214 +774,281 @@ export default function RestaurantPage() {
                       : selectedSection
                         ? selectedSection.name
                         : "Elige una seccion"}
-                </div>
-                <button
-                  className="px-3 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-sm font-semibold"
-                  onClick={() => {
-                    if (!guardSwitch()) return;
-                    setSelectedTable(null);
-                    setSelectedSection(null);
-                    setTablePickerOpen(true);
-                    setSectionLauncher(true);
-                  }}
-                >
-                  Nueva orden
-                </button>
-              </div>
+                 </div>
+                 <button
+                   className="px-3 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-sm font-semibold"
+                   onClick={openNewOrderPicker}
+                 >
+                   New order
+                 </button>
+                 <button
+                   className="px-3 py-2 rounded-lg bg-amber-100 hover:bg-amber-200 text-sm font-semibold text-amber-900 disabled:opacity-50"
+                   onClick={openMoveTablePicker}
+                   disabled={!selectedTable?.id || !(ordersByTable[selectedTable.id]?.items?.length)}
+                 >
+                   Change table
+                 </button>
+                 <button
+                   className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
+                   onClick={reprintCurrent}
+                   disabled={!selectedTable?.id}
+                 >
+                   Reprint
+                 </button>
+                 <button
+                   className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
+                   onClick={voidInvoice}
+                   disabled={!selectedTable?.id || String(ordersByTable[selectedTable.id]?.status || "").toUpperCase() !== "PAID"}
+                 >
+                   Void invoice
+                 </button>
+                 <button
+                   className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white disabled:opacity-50"
+                   onClick={openPayments}
+                   disabled={!selectedTable?.id || !(ordersByTable[selectedTable.id]?.items?.length)}
+                 >
+                   Charge
+                 </button>
+               </div>
               {!selectedTable && !sectionLauncher && (
-                <button
-                  className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold"
-                  onClick={() => {
-                    if (!guardSwitch()) return;
-                    resetToLobby();
-                  }}
-                >
-                  Volver
-                </button>
-              )}
-              {selectedTable && (
-                <div className="flex items-center gap-2">
-                  <button
-                    className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold"
-                    onClick={() => {
-                      if (!guardSwitch()) return;
-                      resetToLobby();
-                    }}
+                 <button
+                   className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold hover:bg-amber-200"
+                   onClick={() => {
+                     if (!guardSwitch()) return;
+                     resetToLobby();
+                   }}
                   >
-                    Cambiar mesa
+                    Back
                   </button>
-                  <button
-                    className="h-11 px-4 rounded-xl bg-amber-700 text-white text-sm font-semibold"
-                    onClick={() => {
-                      if (hasOpenOrders) {
-                        window.alert("No puedes cerrar con ordenes abiertas. Finaliza o cobra primero.");
-                        return;
-                      }
-                      setCloseOpen(true);
-                    }}
-                  >
-                    Cierre
-                  </button>
-                </div>
-              )}
-            </div>
-          </header>
+                )}
+              </div>
+            </header>
 
           {sectionLauncher || !selectedTable ? (
-            <div className="flex flex-1 overflow-hidden">
-              {["ADMIN", "MANAGER"].includes(role) && (
-                <aside className="w-56 bg-amber-50 border-r border-amber-100 p-4 space-y-2">
-                  <div className="text-xs uppercase text-amber-600">Menu</div>
-                  <button
-                    className="w-full text-left px-3 py-2 rounded-lg bg-white border border-amber-100 text-sm hover:border-amber-200"
-                    onClick={openCloses}
-                  >
-                    Reportes
-                  </button>
-                  <button
-                    className="w-full text-left px-3 py-2 rounded-lg bg-white border border-amber-100 text-sm hover:border-amber-200"
-                    onClick={() => setTablePickerOpen(true)}
-                  >
-                    Seleccion rapida
-                  </button>
-                </aside>
-              )}
-              <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
-                {sectionLauncher ? (
-                  <div className="col-span-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {(sections.length ? sections : FALLBACK_SECTIONS).map((sec) => (
-                      <div
-                        key={sec.id || sec.name}
-                        className="rounded-md bg-gradient-to-br from-amber-100 to-purple-50 border border-amber-100 shadow hover:shadow-md transition p-2 text-left cursor-pointer aspect-square flex flex-col"
-                        onClick={() => {
-                          setSelectedSection(sec);
-                          setSelectedTable(null);
-                          setSectionLauncher(false);
-                        }}
-                      >
-                        <div className="text-xs uppercase text-amber-500">Seccion</div>
-                        <div className="text-lg font-semibold text-amber-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
-                        <div className="text-xs text-amber-700/90 mt-1">{(sec.tables || []).length} mesas</div>
-                        <div className="mt-auto text-[11px] text-amber-500">Tap para ver mesas</div>
+            <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
+              {sectionLauncher ? (
+                <div className="col-span-3">
+                  {sectionsLoading && <div className="text-sm text-amber-700">Loading sections...</div>}
+                  {!sectionsLoading && sectionsError && <div className="text-sm text-amber-700">{sectionsError}</div>}
+                  {!sectionsLoading && !sectionsError && (sections || []).length === 0 && (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="text-sm font-semibold text-amber-900">No sections configured</div>
+                      <div className="text-sm text-amber-700 mt-1">
+                        Create sections and tables from <span className="font-semibold">Management → Restaurant → Sections, tables and menu</span>.
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="col-span-3">
-                    {selectedSection ? (
-                      <div className="space-y-2">
-                        <div className="text-xs text-amber-700">
-                          Plano de <span className="font-semibold">{selectedSection.name}</span>. Toca una mesa para abrirla.
+                      {["ADMIN", "MANAGER"].includes(role) && (
+                        <button
+                          className="mt-3 h-10 px-4 rounded-xl bg-amber-700 text-white text-sm font-semibold hover:bg-amber-600"
+                          onClick={() => navigate("/management?view=restaurantConfig")}
+                        >
+                          Open Management
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!sectionsLoading && (sections || []).length > 0 && (
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {(sections || []).map((sec, secIdx) => (
+                        <div
+                          key={String(sec.id || sec.name || `sec-${secIdx}`)}
+                          className="rounded-md bg-gradient-to-br from-amber-100 to-purple-50 border border-amber-100 shadow hover:shadow-md transition p-2 text-left cursor-pointer aspect-square flex flex-col"
+                          onClick={() => {
+                            setSelectedSection(sec);
+                            setSelectedTable(null);
+                            setSectionLauncher(false);
+                          }}
+                        >
+                          <div className="text-xs uppercase text-amber-500">Section</div>
+                          <div className="text-lg font-semibold text-amber-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
+                          <div className="text-xs text-amber-700/90 mt-1">{(sec.tables || []).length} tables</div>
+                          <div className="mt-auto text-[11px] text-amber-500">Tap to view tables</div>
                         </div>
-                        <div className="relative w-full h-72 md:h-80 rounded-2xl border border-amber-200 bg-amber-50/60 overflow-hidden">
-                          <div className="absolute inset-x-3 top-2 flex justify-between text-[11px] text-amber-600">
-                            <span>Entrada</span>
-                            <span>Bar / Cocina</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="col-span-3">
+                  {selectedSection ? (
+                    <div className="space-y-2">
+                      <div className="text-xs text-amber-700">
+                        Floor plan of <span className="font-semibold">{selectedSection.name}</span>. Tap a table to open it.
+                      </div>
+                      <div className="relative w-full h-72 md:h-80 rounded-2xl border border-amber-200 bg-amber-50/60 overflow-hidden">
+                        <div className="absolute inset-x-3 top-2 flex justify-between text-[11px] text-amber-600">
+                          <span>Entrance</span>
+                          <span>Bar / Kitchen</span>
+                        </div>
+                        {(selectedSection.objects || []).map((o) => (
+                          <div
+                            key={o.id}
+                            className={`absolute -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none ${
+                              String(o.kind || "").toUpperCase() === "LABEL" ? "px-2 py-1" : "rounded-xl border border-slate-200 bg-white/70 shadow-sm"
+                            }`}
+                            style={{
+                              left: `${Number(o.x ?? 50)}%`,
+                              top: `${Number(o.y ?? 50)}%`,
+                              width: `${Number(o.w ?? 18)}%`,
+                              height: `${Number(o.h ?? 10)}%`,
+                              transform: `translate(-50%, -50%) rotate(${Number(o.rotation || 0)}deg)`,
+                              backgroundColor: o.color ? `${o.color}20` : undefined,
+                              borderColor: o.color ? `${o.color}55` : undefined,
+                              zIndex: Number(o.zIndex ?? 0),
+                            }}
+                            title={`${o.kind}${o.label ? ` - ${o.label}` : ""}`}
+                          >
+                            <div
+                              className={`h-full w-full flex items-center justify-center gap-2 text-slate-700 px-2 ${
+                                String(o.kind || "").toUpperCase() === "LABEL" ? "text-sm font-semibold" : "text-[11px]"
+                              }`}
+                            >
+                              {(() => {
+                                const { Icon, label } = getFloorObjectMeta(o.kind);
+                                const iconDataUrl = o?.meta?.iconDataUrl;
+                                const iconUrl = o?.meta?.iconUrl;
+                                const hasCustom = Boolean(iconDataUrl || iconUrl);
+                                return (
+                                  <>
+                                    {String(o.kind || "").toUpperCase() !== "LABEL" && (
+                                      <span
+                                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg overflow-hidden border border-white/40"
+                                        style={{ backgroundColor: o.color || getFloorObjectMeta(o.kind).bg }}
+                                        title={label}
+                                      >
+                                        {hasCustom ? (
+                                          <img alt="" src={iconDataUrl || iconUrl} className="h-full w-full object-contain bg-white/80" />
+                                        ) : (
+                                          <Icon size={14} className="text-white" />
+                                        )}
+                                      </span>
+                                    )}
+                                    <span className="truncate">{o.label || label}</span>
+                                  </>
+                                );
+                              })()}
+                            </div>
                           </div>
-                          {(selectedSection.tables || []).map((t, idx) => {
-                            const hasCustom = typeof t.x === "number" && typeof t.y === "number";
-                            const cols = 5;
-                            const col = idx % cols;
-                            const row = Math.floor(idx / cols);
-                            const fallbackX = (col + 0.5) * (100 / cols);
+                        ))}
+                        {(selectedSection.tables || []).map((t, idx) => {
+                          const hasCustom = typeof t.x === "number" && typeof t.y === "number";
+                          const cols = 5;
+                          const col = idx % cols;
+                          const row = Math.floor(idx / cols);
+                          const fallbackX = (col + 0.5) * (100 / cols);
                             const fallbackY = 25 + row * 20;
-                            const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
-                            const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
-                            const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
-                            return (
-                              <button
-                                key={t.id}
-                                className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-xl px-3 py-2 shadow text-left text-xs md:text-sm transition border ${
-                                  hasOrder
-                                    ? "bg-emerald-600/90 border-emerald-500 text-white"
-                                    : "bg-white border-amber-200 text-amber-900"
-                                }`}
-                                style={{ left: `${x}%`, top: `${y}%` }}
-                                onClick={() => {
-                                  if (!guardSwitch() && selectedTable?.id !== t.id) return;
-                                  handleSelectTable(t, selectedSection);
-                                }}
-                              >
+                          const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
+                          const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
+                          const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
+                          const TableIcon = hasOrder ? CircleDot : Circle;
+                          const tableKey = String(t.id || t.name || `table-${idx}`);
+                          return (
+                            <button
+                              key={tableKey}
+                              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-xl px-3 py-2 shadow text-left text-xs md:text-sm transition border ${
+                                hasOrder
+                                  ? "bg-emerald-600/90 border-emerald-500 text-white"
+                                  : "bg-white border-amber-200 text-amber-900"
+                              }`}
+                              style={{ left: `${x}%`, top: `${y}%` }}
+                              onClick={() => {
+                                if (!guardSwitch() && selectedTable?.id !== t.id) return;
+                                handleSelectTable(t, selectedSection);
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
                                 <div className="font-semibold leading-tight">{t.name}</div>
-                                <div className="text-[11px] opacity-80">{t.seats} puestos</div>
-                                {hasOrder && <div className="text-[10px] mt-0.5">Orden activa</div>}
-                              </button>
-                            );
-                          })}
+                                <span className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-black/10" title={hasOrder ? "Occupied" : "Free"}>
+                                  <TableIcon size={16} />
+                                </span>
+                              </div>
+                              <div className="text-[11px] opacity-80">{t.seats} seats</div>
+                              {hasOrder && <div className="text-[10px] mt-0.5">Active order</div>}
+                            </button>
+                          );
+                        })}
                           {(selectedSection.tables || []).length === 0 && (
                             <div className="absolute inset-0 flex items-center justify-center text-sm text-amber-700">
-                              Sin mesas configuradas en esta seccion.
+                              No tables configured in this section.
                             </div>
                           )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-sm text-amber-700">Selecciona una seccion para ver sus mesas.</div>
+                      <div className="text-sm text-amber-700">Select a section to view its tables.</div>
                     )}
                   </div>
                 )}
               </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex overflow-hidden">
-              <aside className="w-64 bg-gradient-to-b from-amber-900 via-slate-900 to-slate-800 text-white flex flex-col p-4 gap-3">
-                <div>
-                  <div className="text-xs uppercase text-amber-200/80">Seccion</div>
-                  <div className="text-sm font-semibold">{selectedSection?.name}</div>
-                  <div className="text-xs text-amber-200/80">{selectedTable?.name}</div>
-                </div>
-                <div>
-                  <div className="text-xs uppercase text-amber-200/80 mb-2">Categorias</div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {categories.map((cat) => (
+            ) : (
+              <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
+                <div className="col-span-2 flex flex-col gap-3">
+                  <div className="rounded-2xl bg-white border border-amber-100 shadow-sm p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase text-amber-500">Section / Table</div>
+                        <div className="text-sm font-semibold text-amber-900">
+                          {selectedSection?.name || "-"} → {selectedTable?.name || "-"}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 w-full md:w-auto">
+                        <input
+                          className="h-10 w-full md:w-[260px] rounded-lg border border-amber-200 px-3 text-sm"
+                          placeholder="Search item..."
+                          value={search}
+                          onChange={(e) => setSearch(e.target.value)}
+                        />
+                        <button className="h-10 px-3 rounded-lg bg-amber-600 text-white text-sm font-semibold" onClick={() => setSearch("")}>
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                        key={cat}
-                        className={`text-left rounded-lg px-3 py-2 text-sm ${category === cat ? "bg-amber-600 text-white" : "bg-slate-900 text-amber-100/90"}`}
-                        onClick={() => setCategory(cat)}
+                        className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                          !category ? "bg-amber-600 border-amber-600 text-white" : "bg-white border-amber-200 text-amber-700"
+                        }`}
+                        onClick={() => setCategory("")}
                       >
-                        {cat}
+                        All
+                      </button>
+                      {categories.map((cat) => (
+                        <button
+                          key={cat}
+                          className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                            category === cat ? "bg-amber-600 border-amber-600 text-white" : "bg-white border-amber-200 text-amber-700"
+                          }`}
+                          onClick={() => setCategory(cat)}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                    {filteredMenu.map((item, idx) => (
+                      <button
+                        key={String(item.id || item.code || `${item.name}-${idx}`)}
+                        onClick={() => addItem(item)}
+                        className="rounded-lg bg-white border border-amber-100 shadow-sm hover:shadow-md transition text-left p-2 flex flex-col gap-1 text-sm aspect-square"
+                      >
+                        <div className="text-[11px] uppercase tracking-wide text-amber-500">{item.category}</div>
+                        <div className="text-sm font-semibold text-amber-900 leading-tight line-clamp-2">{item.name}</div>
+                        <div className="text-amber-700 font-semibold text-sm">{formatMoney(item.price)}</div>
+                        <div className="mt-auto text-[11px] text-amber-500">Tap to add</div>
                       </button>
                     ))}
                   </div>
-                </div>
-                <div className="space-y-2">
-                  <input
-                    className="h-10 w-full rounded-lg border border-slate-600 bg-slate-800 px-3 text-sm text-white placeholder:text-slate-200/70"
-                    placeholder="Buscar plato..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  <button
-                    className="w-full h-10 rounded-lg bg-amber-600 text-white text-sm font-semibold"
-                    onClick={() => setSearch("")}
-                  >
-                    Limpiar
-                  </button>
-                </div>
-              </aside>
-              <div className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
-                <div className="col-span-2 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                  {filteredMenu.map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => addItem(item)}
-                      className="rounded-lg bg-white border border-amber-100 shadow-sm hover:shadow-md transition text-left p-2 flex flex-col gap-1 text-sm aspect-square"
-                    >
-                      <div className="text-[11px] uppercase tracking-wide text-amber-500">{item.category}</div>
-                      <div className="text-sm font-semibold text-amber-900 leading-tight line-clamp-2">{item.name}</div>
-                      <div className="text-amber-700 font-semibold text-sm">{formatMoney(item.price)}</div>
-                      <div className="mt-auto text-[11px] text-amber-500">Tap para agregar</div>
-                    </button>
-                  ))}
                 </div>
 
                 <div className="bg-white border border-amber-100 rounded-2xl shadow p-4 flex flex-col">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="text-xs uppercase text-amber-500">Orden</div>
+                      <div className="text-xs uppercase text-amber-500">Order</div>
                       <div className="text-lg font-semibold text-amber-900">
                         {selectedSection ? `${selectedSection.name} - ` : ""}
-                        {selectedTable?.name || "Sin mesa"}
+                        {selectedTable?.name || "No table"}
                       </div>
                       {currentOrder.status && (
                         <div className="text-[11px] text-amber-600 mt-1">{currentOrder.status}</div>
@@ -1098,9 +1078,9 @@ export default function RestaurantPage() {
                     <div className="grid grid-cols-2 gap-2">
                       {[
                         { id: "DINE_IN", label: "Comer aqui" },
-                        { id: "TAKEOUT", label: "Para llevar" },
+                        { id: "TAKEOUT", label: "Takeout" },
                         { id: "DELIVERY", label: "Delivery" },
-                        { id: "ROOM", label: "Habitacion" },
+                        { id: "ROOM", label: "Room charge" },
                       ].map((opt) => (
                         <button
                           key={opt.id}
@@ -1114,7 +1094,7 @@ export default function RestaurantPage() {
                     {serviceType === "ROOM" && (
                       <input
                         className="w-full h-10 rounded-lg border border-amber-200 px-3 text-sm"
-                        placeholder="Habitacion / cargo a cuarto"
+                        placeholder="Room / room charge"
                         value={roomCharge}
                         onChange={(e) => handleRoomChargeChange(e.target.value)}
                       />
@@ -1127,8 +1107,8 @@ export default function RestaurantPage() {
                         Agrega productos con un tap.
                       </div>
                     )}
-                    {(currentOrder.items || []).map((item) => (
-                      <div key={item.id} className="border border-amber-100 rounded-xl p-3">
+                    {(currentOrder.items || []).map((item, idx) => (
+                      <div key={String(item.id || item.code || `${item.name}-${idx}`)} className="border border-amber-100 rounded-xl p-3">
                         <div className="flex justify-between items-center gap-2">
                           <div>
                             <div className="font-semibold text-amber-900">{item.name}</div>
@@ -1169,11 +1149,11 @@ export default function RestaurantPage() {
                       <span>{formatMoney(totals.subtotal)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Servicio {taxesCfg.servicio || 0}%</span>
+                      <span>Service {taxesCfg.servicio || 0}%</span>
                       <span>{formatMoney(totals.service)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span>Impuestos {taxesCfg.iva || 0}%</span>
+                      <span>Taxes {taxesCfg.iva || 0}%</span>
                       <span>{formatMoney(totals.tax)}</span>
                     </div>
                     <div className="flex justify-between font-semibold text-lg mt-1">
@@ -1188,7 +1168,7 @@ export default function RestaurantPage() {
                       onClick={sendToKitchen}
                       disabled={!hasItems}
                     >
-                      Enviar a cocina
+                      Send to kitchen
                     </button>
                     <button
                       className="h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:bg-emerald-300"
@@ -1200,11 +1180,9 @@ export default function RestaurantPage() {
                   </div>
                 </div>
               </div>
-            </div>
           )}
         </div>
       </div>
     </div>
   );
 }
-
