@@ -50,11 +50,43 @@ enum RestaurantOrderItemStatus {
   SERVED
 }
 
+// Restaurant inventory units
+// Stored as String to keep backward/forward compatibility with UI.
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
   CANCELED
   REFUNDED
+}
+
+enum EInvoicingDocType {
+  FE // Factura Electrónica
+  TE // Tiquete Electrónico
+}
+
+enum EInvoicingDocStatus {
+  DRAFT
+  SIGNED
+  SENT
+  ACCEPTED
+  REJECTED
+  CANCELED
+  CONTINGENCY
+}
+
+enum EInvoicingAckType {
+  HACIENDA_RECEIPT
+  HACIENDA_STATUS
+  RECEIVER_MESSAGE
+  OTHER
+}
+
+enum EInvoicingAckStatus {
+  RECEIVED
+  ACCEPTED
+  REJECTED
+  ERROR
 }
 
 enum BookingSource {
@@ -72,7 +104,7 @@ enum CashAuditModule {
 // ==== Restaurante ====
 
 model RestaurantConfig {
-  hotelId        String  @id
+  hotelId        String   @id
   kitchenPrinter String?
   barPrinter     String?
   taxes          Json?
@@ -103,15 +135,15 @@ model RestaurantPrintJob {
 }
 
 model RestaurantClose {
-  id             String   @id @default(cuid())
-  hotelId        String
-  turno          String
-  totals         Json
-  payments       Json
-  breakdown      Json?
-  note           String?
-  createdAt      DateTime @default(now())
-  userId         String?
+  id        String   @id @default(cuid())
+  hotelId   String
+  turno     String
+  totals    Json
+  payments  Json
+  breakdown Json?
+  note      String?
+  createdAt DateTime @default(now())
+  userId    String?
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
@@ -119,23 +151,24 @@ model RestaurantClose {
 }
 
 model RestaurantOrder {
-  id               String                  @id @default(cuid())
+  id               String                @id @default(cuid())
   hotelId          String
   sectionId        String?
   tableId          String
   waiterId         String?
-  status           RestaurantOrderStatus   @default(OPEN)
+  status           RestaurantOrderStatus @default(OPEN)
   note             String?
   covers           Int?
-  serviceType      String                  @default("DINE_IN")
+  serviceType      String                @default("DINE_IN")
   roomId           String?
-  total            Decimal                 @default(0) @db.Decimal(12, 2)
-  tip10            Decimal                 @default(0) @db.Decimal(12, 2)
+  total            Decimal               @default(0) @db.Decimal(12, 2)
+  tip10            Decimal               @default(0) @db.Decimal(12, 2)
   paymentBreakdown Json?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
-  items RestaurantOrderItem[]
+  items               RestaurantOrderItem[]
+  eInvoicingDocuments EInvoicingDocument[]
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
@@ -144,22 +177,22 @@ model RestaurantOrder {
 }
 
 model RestaurantOrderItem {
-  id        String   @id @default(cuid())
-  hotelId   String
-  orderId   String
-  itemId    String
-  name      String
-  category  String?
-  price     Decimal  @db.Decimal(12, 2)
-  qty       Int
-  area      RestaurantKdsArea       @default(KITCHEN)
-  status    RestaurantOrderItemStatus @default(NEW)
+  id       String                    @id @default(cuid())
+  hotelId  String
+  orderId  String
+  itemId   String
+  name     String
+  category String?
+  price    Decimal                   @db.Decimal(12, 2)
+  qty      Int
+  area     RestaurantKdsArea         @default(KITCHEN)
+  status   RestaurantOrderItemStatus @default(NEW)
 
   order RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
-  @@index([hotelId])
   @@unique([hotelId, orderId, itemId])
+  @@index([hotelId])
 }
 
 model RestaurantSection {
@@ -167,13 +200,38 @@ model RestaurantSection {
   hotelId String
   name    String
 
-  tables RestaurantTable[]
-  menu   RestaurantMenuItem[]
+  tables  RestaurantTable[]
+  objects RestaurantSectionObject[]
+  menu    RestaurantMenuItem[]
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@unique([hotelId, id])
   @@index([hotelId])
+}
+
+model RestaurantSectionObject {
+  id        String   @id @default(cuid())
+  hotelId   String
+  sectionId String
+  kind      String // BAR | POOL | PLANT | WALL | COUNTER | DOOR | WC | OTHER
+  label     String?
+  x         Float    @default(50)
+  y         Float    @default(50)
+  w         Float    @default(18)
+  h         Float    @default(10)
+  zIndex    Int      @default(0)
+  rotation  Float    @default(0)
+  color     String? // optional tailwind/css color hint
+  meta      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  section RestaurantSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  hotel   Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([sectionId])
 }
 
 model RestaurantTable {
@@ -186,7 +244,7 @@ model RestaurantTable {
   y         Float?
 
   section RestaurantSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  hotel   Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel   Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([sectionId])
   @@index([hotelId])
@@ -217,7 +275,7 @@ model RestaurantFamily {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  hotel       Hotel                @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel       Hotel                 @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   subFamilies RestaurantSubFamily[]
   items       RestaurantItem[]
 
@@ -234,8 +292,8 @@ model RestaurantSubFamily {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  hotel          Hotel                   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  family         RestaurantFamily        @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  hotel          Hotel                    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  family         RestaurantFamily         @relation(fields: [familyId], references: [id], onDelete: Cascade)
   subSubFamilies RestaurantSubSubFamily[]
   items          RestaurantItem[]
 
@@ -253,9 +311,9 @@ model RestaurantSubSubFamily {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  hotel      Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  subFamily  RestaurantSubFamily @relation(fields: [subFamilyId], references: [id], onDelete: Cascade)
-  items      RestaurantItem[]
+  hotel     Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  subFamily RestaurantSubFamily @relation(fields: [subFamilyId], references: [id], onDelete: Cascade)
+  items     RestaurantItem[]
 
   @@unique([hotelId, subFamilyId, name])
   @@index([hotelId])
@@ -264,87 +322,175 @@ model RestaurantSubSubFamily {
 
 model RestaurantItem {
   id             String   @id @default(cuid())
-  hotelId         String
-  code            String
-  name            String
-  cabys           String?
-  price           Decimal  @default(0) @db.Decimal(12, 2)
-  tax             Decimal  @default(0) @db.Decimal(5, 2)
-  notes           String?
-  active          Boolean  @default(true)
-  familyId        String
-  subFamilyId     String?
-  subSubFamilyId  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  hotelId        String
+  number         Int
+  code           String
+  name           String
+  cabys          String?
+  price          Decimal  @default(0) @db.Decimal(12, 2)
+  tax            Decimal  @default(0) @db.Decimal(5, 2)
+  notes          String?
+  active         Boolean  @default(true)
+  familyId       String
+  subFamilyId    String?
+  subSubFamilyId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   hotel        Hotel                   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   family       RestaurantFamily        @relation(fields: [familyId], references: [id], onDelete: Restrict)
   subFamily    RestaurantSubFamily?    @relation(fields: [subFamilyId], references: [id], onDelete: Restrict)
   subSubFamily RestaurantSubSubFamily? @relation(fields: [subSubFamilyId], references: [id], onDelete: Restrict)
+  recipeLines  RestaurantRecipeLine[]
 
   @@unique([hotelId, code])
+  @@unique([hotelId, number])
   @@index([hotelId])
   @@index([familyId])
   @@index([subFamilyId])
   @@index([subSubFamilyId])
 }
 
+model HotelSequence {
+  id         String   @id @default(cuid())
+  hotelId    String
+  key        String
+  nextNumber Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, key])
+  @@index([hotelId])
+}
+
+model RestaurantInventoryItem {
+  id        String   @id @default(cuid())
+  hotelId   String
+  number    Int
+  sku       String
+  desc      String
+  unit      String
+  stock     Decimal  @default(0) @db.Decimal(14, 4)
+  min       Decimal  @default(0) @db.Decimal(14, 4)
+  cost      Decimal  @default(0) @db.Decimal(14, 4)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel     Hotel                       @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  movements RestaurantInventoryMovement[]
+  recipes   RestaurantRecipeLine[]
+
+  @@unique([hotelId, number])
+  @@unique([hotelId, sku])
+  @@index([hotelId])
+}
+
+model RestaurantInventoryMovement {
+  id        String   @id @default(cuid())
+  hotelId   String
+  itemId    String
+  qtyDelta  Decimal  @db.Decimal(14, 4) // + adds stock, - consumes stock
+  reason    String?
+  refType   String?
+  refId     String?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  item RestaurantInventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  hotel Hotel                 @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([itemId])
+  @@index([hotelId, refType, refId])
+}
+
+model RestaurantRecipeLine {
+  id              String   @id @default(cuid())
+  hotelId         String
+  restaurantItemId String
+  inventoryItemId String
+  qty             Decimal  @db.Decimal(14, 4) // stored in inventory item unit
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  hotel          Hotel                 @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  restaurantItem RestaurantItem        @relation(fields: [restaurantItemId], references: [id], onDelete: Cascade)
+  inventoryItem  RestaurantInventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, restaurantItemId, inventoryItemId])
+  @@index([hotelId])
+  @@index([restaurantItemId])
+  @@index([inventoryItemId])
+}
+
 // ⬇️ NUEVO
 model Hotel {
-  id        String   @id @default(cuid())
-  name      String
-  membership String  @default("PLATINUM")
-  currency  String   @default("CRC")
-  fxBuy     Decimal  @default(0) @db.Decimal(12, 4)
-  fxSell    Decimal  @default(0) @db.Decimal(12, 4)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String
+  membership String   @default("PLATINUM")
+  currency   String   @default("CRC")
+  fxBuy      Decimal  @default(0) @db.Decimal(12, 4)
+  fxSell     Decimal  @default(0) @db.Decimal(12, 4)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  rooms           Room[]
-  roomTypes       RoomType[]
-  reservations    Reservation[]
-  users           User[]
-  roles           AppRole[]
-  rolePerms       RolePermission[]
-  invoices        Invoice[]
-  guests          Guest[]
-  payments        Payment[]
-  auditLogs       AuditLog[]
-  invoiceItems    InvoiceItem[]
-  reports         Report[]
-  advanceDeposits AdvanceDeposit[]
-  creditNotes     CreditNote[]
-  cashAudits      CashAudit[]
-  restaurantConfig   RestaurantConfig?
-  restaurantPrintJobs RestaurantPrintJob[]
-    restaurantCloses    RestaurantClose[]
-    restaurantOrders    RestaurantOrder[]
-    restaurantOrderItems RestaurantOrderItem[]
-    restaurantSections  RestaurantSection[]
-    restaurantTables     RestaurantTable[]
-    restaurantMenuItems  RestaurantMenuItem[]
-    restaurantFamilies   RestaurantFamily[]
-    restaurantSubFamilies RestaurantSubFamily[]
-    restaurantSubSubFamilies RestaurantSubSubFamily[]
-    restaurantItems      RestaurantItem[]
-    reservationSequences ReservationSequence[]
-    launcherAccounts     LauncherAccount[]
-    roomDays             RoomDay[]
-    eInvoicingConfig      EInvoicingConfig?
-    eInvoicingRequirements EInvoicingRequirement[]
-  }
+  rooms                      Room[]
+  roomTypes                  RoomType[]
+  reservations               Reservation[]
+  users                      User[]
+  roles                      AppRole[]
+  rolePerms                  RolePermission[]
+  invoices                   Invoice[]
+  guests                     Guest[]
+  payments                   Payment[]
+  auditLogs                  AuditLog[]
+  invoiceItems               InvoiceItem[]
+  reports                    Report[]
+  advanceDeposits            AdvanceDeposit[]
+  creditNotes                CreditNote[]
+  cashAudits                 CashAudit[]
+  restaurantConfig           RestaurantConfig?
+  restaurantPrintJobs        RestaurantPrintJob[]
+  restaurantCloses           RestaurantClose[]
+  restaurantOrders           RestaurantOrder[]
+  restaurantOrderItems       RestaurantOrderItem[]
+  restaurantSections         RestaurantSection[]
+  restaurantTables           RestaurantTable[]
+  restaurantMenuItems        RestaurantMenuItem[]
+  restaurantFamilies         RestaurantFamily[]
+  restaurantSubFamilies      RestaurantSubFamily[]
+  restaurantSubSubFamilies   RestaurantSubSubFamily[]
+  restaurantItems            RestaurantItem[]
+  restaurantInventoryItems   RestaurantInventoryItem[]
+  restaurantInventoryMovements RestaurantInventoryMovement[]
+  restaurantRecipeLines      RestaurantRecipeLine[]
+  reservationSequences       ReservationSequence[]
+  hotelSequences             HotelSequence[]
+  launcherAccounts           LauncherAccount[]
+  roomDays                   RoomDay[]
+  eInvoicingConfig           EInvoicingConfig?
+  eInvoicingRequirements     EInvoicingRequirement[]
+  eInvoicingSequences        EInvoicingSequence[]
+  eInvoicingDocuments        EInvoicingDocument[]
+  eInvoicingAcknowledgements EInvoicingAcknowledgement[]
+  cabysCodes                 CabysCode[]
+  eInvoicingCatalogEntries   EInvoicingCatalogEntry[]
+  RestaurantSectionObject    RestaurantSectionObject[]
+}
 
 model EInvoicingConfig {
-  hotelId   String  @id
-  version   String  @default("CR-4.4")
-  enabled   Boolean @default(false)
-  provider  String  @default("hacienda-cr")
-  environment String @default("sandbox") // sandbox | production
+  hotelId     String   @id
+  version     String   @default("CR-4.4")
+  enabled     Boolean  @default(false)
+  provider    String   @default("hacienda-cr")
+  environment String   @default("sandbox") // sandbox | production
   credentials Json?
   settings    Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 }
@@ -358,6 +504,8 @@ model EInvoicingRequirement {
   title       String
   description String
   required    Boolean  @default(true)
+  status      String   @default("PENDING") // PENDING | IN_PROGRESS | DONE | NOT_APPLICABLE
+  notes       String?
   sortOrder   Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -366,6 +514,69 @@ model EInvoicingRequirement {
 
   @@unique([hotelId, code])
   @@index([hotelId])
+}
+
+model EInvoicingSequence {
+  id         String            @id @default(cuid())
+  hotelId    String
+  docType    EInvoicingDocType
+  branch     String            @default("001") // 3 digits
+  terminal   String            @default("00001") // 5 digits
+  nextNumber Int               @default(1) // 1..N (10 digits in consecutive)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, docType, branch, terminal])
+  @@index([hotelId])
+}
+
+model EInvoicingDocument {
+  id                String                      @id @default(cuid())
+  hotelId           String
+  invoiceId         String?
+  restaurantOrderId String?
+  docType           EInvoicingDocType
+  status            EInvoicingDocStatus         @default(DRAFT)
+  branch            String                      @default("001")
+  terminal          String                      @default("00001")
+  consecutive       String?
+  key               String?
+  receiver          Json?
+  payload           Json?
+  xmlSigned         String?
+  response          Json?
+  acknowledgements  EInvoicingAcknowledgement[]
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+
+  invoice         Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  restaurantOrder RestaurantOrder? @relation(fields: [restaurantOrderId], references: [id], onDelete: Cascade)
+  hotel           Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, invoiceId, docType])
+  @@unique([hotelId, restaurantOrderId, docType])
+  @@index([hotelId])
+  @@index([invoiceId])
+  @@index([restaurantOrderId])
+}
+
+model EInvoicingAcknowledgement {
+  id         String              @id @default(cuid())
+  hotelId    String
+  documentId String
+  type       EInvoicingAckType
+  status     EInvoicingAckStatus @default(RECEIVED)
+  message    String?
+  payload    Json?
+  createdAt  DateTime            @default(now())
+
+  document EInvoicingDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  hotel    Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([documentId])
 }
 
 model ReservationSequence {
@@ -378,19 +589,19 @@ model ReservationSequence {
 // Usuarios de launcher (acceso previo por hotel, independientes de User)
 model LauncherAccount {
   id        String   @id @default(cuid())
-  username  String   // identificador de usuario (login) ─ unico por hotel
+  username  String // identificador de usuario (login) ─ unico por hotel
   name      String   @default("") // nombre visible
   password  String
   hotelId   String
   roleId    String   @default("ADMIN")
   createdAt DateTime @default(now())
 
-  hotel Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel Hotel   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   role  AppRole @relation(fields: [hotelId, roleId], references: [hotelId, id], onDelete: Cascade)
 
+  @@unique([hotelId, username])
   @@index([hotelId])
   @@index([hotelId, roleId])
-  @@unique([hotelId, username])
   @@map("UserLauncher")
 }
 
@@ -412,32 +623,32 @@ model User {
 }
 
 model Guest {
-  id           String        @id @default(cuid())
-  firstName    String
-  lastName     String
-  email        String?
-  phone        String?
-  state        String?
-  idType       String?
-  idNumber     String?
+  id               String           @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  state            String?
+  idType           String?
+  idNumber         String?
   legalName        String?
   managerName      String?
   economicActivity String?
   emailAlt1        String?
   emailAlt2        String?
-  country      String?
-  city         String?
-  address      String?
-  company      String?
-  notes        String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  reservations    Reservation[]
-  invoices        Invoice[]
-  advanceDeposits AdvanceDeposit[]
-  creditNotes     CreditNote[]
-  hotelId         String
-  hotel           Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  country          String?
+  city             String?
+  address          String?
+  company          String?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  reservations     Reservation[]
+  invoices         Invoice[]
+  advanceDeposits  AdvanceDeposit[]
+  creditNotes      CreditNote[]
+  hotelId          String
+  hotel            Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@unique([hotelId, email])
   @@index([hotelId])
@@ -501,8 +712,8 @@ model Reservation {
   user  User? @relation(fields: [userId], references: [id])
 
   /// Relación 1–1 con Invoice (lado SIN FK)
-  invoice          Invoice?         @relation("ReservationInvoice")
-  advanceDeposits  AdvanceDeposit[]
+  invoice         Invoice?         @relation("ReservationInvoice")
+  advanceDeposits AdvanceDeposit[]
 
   days RoomDay[]
 
@@ -520,18 +731,18 @@ model RoomDay {
   roomId        String
   reservationId String?
   hotelId       String
-  
+
   status RoomStatus @default(AVAILABLE)
   rate   Decimal    @default(0) @db.Decimal(12, 2)
   notes  String?
-  
+
   room        Room         @relation(fields: [roomId], references: [id])
   reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
   hotel       Hotel        @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   @@unique([hotelId, roomId, date])
   @@index([reservationId])
   @@index([hotelId])
@@ -547,7 +758,7 @@ model AuditLog {
   payload   Json?
   createdAt DateTime @default(now())
   hotelId   String
-  hotel     Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([hotelId])
 }
@@ -583,7 +794,7 @@ model City {
 }
 
 model Report {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   hotelId     String
   title       String?
   category    String?
@@ -592,7 +803,7 @@ model Report {
   periodEnd   DateTime?
   filters     Json?
   payload     Json?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   createdBy   String?
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
@@ -616,12 +827,13 @@ model Invoice {
   hotelId       String
 
   /// Lado CON FK (1–1). Todo en una línea para evitar parseos raros:
-  reservation Reservation   @relation("ReservationInvoice", fields: [reservationId], references: [id], onDelete: Cascade)
-  guest       Guest         @relation(fields: [guestId], references: [id])
-  items       InvoiceItem[]
-  payments    Payment[]
-  creditNotes CreditNote[]
-  hotel       Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservation         Reservation          @relation("ReservationInvoice", fields: [reservationId], references: [id], onDelete: Cascade)
+  guest               Guest                @relation(fields: [guestId], references: [id])
+  items               InvoiceItem[]
+  payments            Payment[]
+  creditNotes         CreditNote[]
+  eInvoicingDocuments EInvoicingDocument[]
+  hotel               Hotel                @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([guestId])
   @@index([hotelId])
@@ -680,14 +892,14 @@ model AdvanceDeposit {
 }
 
 model CreditNote {
-  id          String   @id @default(cuid())
-  invoiceId   String?
-  guestId     String?
-  amount      Decimal  @default(0) @db.Decimal(12, 2)
-  currency    String   @default("CRC")
-  reason      String?
-  createdAt   DateTime @default(now())
-  hotelId     String
+  id        String   @id @default(cuid())
+  invoiceId String?
+  guestId   String?
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  currency  String   @default("CRC")
+  reason    String?
+  createdAt DateTime @default(now())
+  hotelId   String
 
   invoice Invoice? @relation(fields: [invoiceId], references: [id])
   guest   Guest?   @relation(fields: [guestId], references: [id])
@@ -703,12 +915,12 @@ model CashAudit {
   hotelId     String
   module      CashAuditModule
   openedAt    DateTime?
-  closedAt    DateTime? @default(now())
+  closedAt    DateTime?       @default(now())
   totals      Json?
   details     Json?
   note        String?
   createdById String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime        @default(now())
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
@@ -716,14 +928,45 @@ model CashAudit {
   @@index([hotelId, module, createdAt])
 }
 
+model CabysCode {
+  id          String   @id // CABYS code
+  description String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  hotelId     String
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([hotelId, description])
+}
+
+model EInvoicingCatalogEntry {
+  id        String   @id @default(cuid())
+  hotelId   String
+  catalog   String
+  code      String
+  label     String
+  version   String?
+  extra     Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([hotelId, catalog, code])
+  @@index([hotelId, catalog])
+  @@index([hotelId, code])
+}
+
 model AppRole {
-  id          String   @id
+  id          String  @id
   name        String
   description String?
   hotelId     String
 
-  hotel           Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  permissions     RolePermission[]
+  hotel            Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  permissions      RolePermission[]
   launcherAccounts LauncherAccount[]
 
   @@unique([hotelId, id])
@@ -731,13 +974,13 @@ model AppRole {
 }
 
 model Permission {
-  id          String   @id
+  id          String           @id
   description String?
   permissions RolePermission[]
 }
 
 model RolePermission {
-  id           String      @id @default(cuid())
+  id           String @id @default(cuid())
   roleId       String
   permissionId String
   hotelId      String

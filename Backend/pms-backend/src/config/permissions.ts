@@ -44,6 +44,10 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     permissions: [
       { id: "restaurant.menu.write", name: "Gestionar menú" },
       { id: "restaurant.sections.write", name: "Gestionar secciones/mesas" },
+      { id: "restaurant.families.write", name: "Gestionar familias" },
+      { id: "restaurant.items.write", name: "Gestionar artículos" },
+      { id: "restaurant.inventory.write", name: "Gestionar inventario" },
+      { id: "restaurant.recipes.write", name: "Gestionar recetas" },
       { id: "restaurant.orders.write", name: "Crear/editar órdenes" },
       { id: "restaurant.orders.close", name: "Cerrar/pagar órdenes" },
       { id: "restaurant.print", name: "Enviar a impresoras" },
@@ -56,6 +60,17 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     name: "Contabilidad",
     access: { id: "accounting.read", name: "Acceso a contabilidad" },
     permissions: [],
+  },
+  {
+    id: "einvoicing",
+    name: "Facturación electrónica",
+    access: { id: "einvoicing.access", name: "Acceso a facturación electrónica" },
+    permissions: [
+      { id: "einvoicing.issue", name: "Emitir comprobantes electrónicos" },
+      { id: "einvoicing.cancel", name: "Anular comprobantes electrónicos" },
+      { id: "einvoicing.reprint", name: "Reimprimir comprobantes electrónicos" },
+      { id: "einvoicing.settings.write", name: "Configurar facturación electrónica" },
+    ],
   },
   {
     id: "management",
