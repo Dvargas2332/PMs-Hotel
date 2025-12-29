@@ -40,7 +40,14 @@ app.use(
 app.use(express.json({ limit: BODY_LIMIT }));
 
 app.use((req, res, next) => {
-  const key = String(req.headers["x-api-key"] || "").trim();
+  if (req.path === "/health") return next();
+
+  const headerKey = String(req.headers["x-api-key"] || "").trim();
+  const auth = String(req.headers.authorization || "").trim();
+  const bearerKey = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
+  const queryKey = String((req.query && req.query.key) || "").trim();
+  const key = headerKey || bearerKey || queryKey;
+
   if (key !== API_KEY) return res.status(401).json({ message: "Invalid API key" });
   next();
 });
