@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
+import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
@@ -620,6 +621,19 @@ export default function RestaurantPage() {
     }
   };
 
+  const printToAgent = async ({ printerNames, text, copies = 1 }) => {
+    const cfg = ensurePrintAgentConfigInteractive();
+    if (!cfg) throw new Error("Print Agent API key not set.");
+
+    const list = Array.from(new Set((printerNames || []).map((p) => String(p || "").trim()).filter(Boolean)));
+    if (list.length === 0) throw new Error("No printer configured for this action.");
+
+    for (const printerName of list) {
+      // eslint-disable-next-line no-await-in-loop
+      await printTextToAgent({ agentUrl: cfg.url, apiKey: cfg.key, printerName, text, copies });
+    }
+  };
+
   const reprintCurrent = async () => {
     if (!selectedTable?.id) return;
     const order = ordersByTable?.[selectedTable.id] || {};
@@ -654,10 +668,15 @@ export default function RestaurantPage() {
       totals: previewTotals,
       onConfirm: async () => {
         try {
-          await api.post("/restaurant/print", payload);
+          const text = buildPrintPreviewText({ title: "ReimpresiИn de factura", payload, totals: previewTotals });
+          await printToAgent({
+            printerNames: [printerCfg.cashierPrinter],
+            text,
+            copies: Number(printSettings?.types?.document?.copies || 1),
+          });
           window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reimpresión enviada." } }));
         } catch (err) {
-          const msg = err?.response?.data?.message || "No se pudo reimprimir.";
+          const msg = err?.message || err?.response?.data?.message || "No se pudo reimprimir.";
           window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
         }
       },
@@ -773,7 +792,14 @@ export default function RestaurantPage() {
         if (markAsSent) {
           await api.post("/restaurant/order", payload);
         }
-        await api.post("/restaurant/print", payload);
+        const title = markAsSent ? "Imprimir comanda" : "Reimprimir comanda";
+        const text = buildPrintPreviewText({ title, payload, totals });
+        const printers = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
+        await printToAgent({
+          printerNames: printers.length ? printers : [printerCfg.cashierPrinter],
+          text,
+          copies: 1,
+        });
         if (markAsSent) {
           updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
           refreshStats();
@@ -787,7 +813,7 @@ export default function RestaurantPage() {
         }
       } catch (err) {
         if (!silent) {
-          const msg = err?.response?.data?.message || "No se pudo enviar a impresoras.";
+          const msg = err?.message || err?.response?.data?.message || "No se pudo enviar a impresoras.";
           window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
         }
       }
