@@ -1,4 +1,4 @@
-# PMS Print Agent (Windows)
+# Kazehana Print (Windows)
 
 Small local service that runs on the **PC that has the printers** (USB or network printers installed in Windows) and exposes a local API for the web app to print.
 
@@ -12,6 +12,13 @@ Browsers cannot access local printers directly (without dialogs) reliably. A loc
    - Copy `.env.example` to `.env` and edit values
    - `npm run start`
 
+### First run (EXE)
+When running the compiled EXE, if no config exists yet, the agent auto-creates:
+- `.env` (with a generated `PRINT_AGENT_API_KEY`)
+- `pms-print-agent.config.json` (stores generated keys + allowed printers per key)
+
+By default, these files are stored in `%APPDATA%\\PMS Print Agent\\`.
+
 ## Configuration
 See `.env.example`.
 
@@ -23,6 +30,15 @@ Recommended defaults:
 All requests must include header: `x-api-key: <API_KEY>`
 
 API key value comes from `PRINT_AGENT_API_KEY`.
+
+## Local UI (Key/Printer manager)
+Open from the same PC:
+- `http://127.0.0.1:8787/ui`
+
+From there you can:
+- Generate API keys
+- See existing keys
+- Restrict which printers each key can use
 
 ### `GET /health`
 Returns `{ ok: true }`
