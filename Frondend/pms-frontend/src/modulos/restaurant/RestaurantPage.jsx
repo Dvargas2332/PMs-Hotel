@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
@@ -6,8 +6,94 @@ import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
+const OCCUPIED_TABLE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/table-occupied.png`;
+const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
+
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
+}
+
+function asInt(n, fallback = 0) {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.trunc(v) : fallback;
+}
+
+function buildPrintPreviewText({ title, payload, totals }) {
+  const now = new Date();
+  const lines = [];
+
+  lines.push(String(title || "IMPRIMIR").toUpperCase());
+  lines.push(`Fecha: ${now.toLocaleString()}`);
+  if (payload?.type) lines.push(`Tipo: ${String(payload.type)}`);
+  if (payload?.sectionId) lines.push(`Sección: ${String(payload.sectionId)}`);
+  if (payload?.tableId) lines.push(`Mesa: ${String(payload.tableId)}`);
+  if (payload?.covers != null) lines.push(`Personas: ${asInt(payload.covers, 0)}`);
+  if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
+  if (payload?.roomId) lines.push(`Habitación: ${String(payload.roomId)}`);
+  lines.push("");
+
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (items.length > 0) {
+    lines.push("Items:");
+    for (const it of items) {
+      const qty = asInt(it?.qty ?? it?.quantity ?? 1, 1);
+      const name = String(it?.name || it?.label || it?.title || it?.id || "Item");
+      const price = it?.price ?? it?.unitPrice ?? it?.amount;
+      const hasPrice = price != null && String(price).trim() !== "";
+      if (hasPrice) lines.push(`- ${qty} x ${name} @ ${formatMoney(price)} = ${formatMoney(qty * (Number(price) || 0))}`);
+      else lines.push(`- ${qty} x ${name}`);
+      const note = String(it?.note || "").trim();
+      if (note) lines.push(`  Nota: ${note}`);
+    }
+    lines.push("");
+  }
+
+  const note = String(payload?.note || "").trim();
+  if (note) {
+    lines.push("Nota:");
+    lines.push(note);
+    lines.push("");
+  }
+
+  const t = totals && typeof totals === "object" ? totals : null;
+  if (t) {
+    const total = t.total ?? t.system ?? t.grandTotal ?? t.totalAmount;
+    const tax = t.tax ?? t.iva ?? t.impuesto;
+    const service = t.service ?? t.servicio;
+    if (service != null) lines.push(`Servicio: ${formatMoney(service)}`);
+    if (tax != null) lines.push(`Impuesto: ${formatMoney(tax)}`);
+    if (total != null) lines.push(`Total: ${formatMoney(total)}`);
+  }
+
+  return lines.join("\n");
+}
+
+function applyTableStylesToSections(sectionsList, tableStyles) {
+  const styles = tableStyles && typeof tableStyles === "object" ? tableStyles : null;
+  if (!styles) return sectionsList;
+  return (sectionsList || []).map((sec) => {
+    const secId = String(sec?.id || "");
+    const byTable = secId && styles[secId] && typeof styles[secId] === "object" ? styles[secId] : null;
+    if (!byTable) return sec;
+    return {
+      ...sec,
+      tables: (sec.tables || []).map((t) => {
+        const tableId = String(t?.id || "");
+        const st = tableId && byTable[tableId] && typeof byTable[tableId] === "object" ? byTable[tableId] : null;
+        if (!st) return t;
+        const next = { ...t };
+        const size = Number(st.size ?? st.iconSize);
+        const rotation = Number(st.rotation ?? st.angle);
+        const color = String(st.color || st.colorHex || st.iconColor || "").trim();
+        const kind = st.kind;
+        if (Number.isFinite(size)) next.size = size;
+        if (Number.isFinite(rotation)) next.rotation = rotation;
+        if (color) next.color = color;
+        if (kind) next.kind = kind;
+        return next;
+      }),
+    };
+  });
 }
 
 function getFloorObjectMeta(kind) {
@@ -107,6 +193,14 @@ export default function RestaurantPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const pendingPrintRef = useRef(null);
+  const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
+  const [printConfirmTitle, setPrintConfirmTitle] = useState("");
+  const [printConfirmText, setPrintConfirmText] = useState("");
+  const [printConfirmBusy, setPrintConfirmBusy] = useState(false);
+  const [occupiedIconOk, setOccupiedIconOk] = useState(true);
+  const [camastroIconOk, setCamastroIconOk] = useState(true);
+
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedSection, setSelectedSection] = useState(null);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
@@ -205,11 +299,31 @@ export default function RestaurantPage() {
   const totals = useMemo(() => {
     const serviceRate = Number(taxesCfg.servicio || 0) / 100;
     const taxRate = Number(taxesCfg.iva || 0) / 100;
-    const subtotal = (currentOrder.items || []).reduce((acc, i) => acc + i.price * i.qty, 0);
-    const service = subtotal * serviceRate;
-    const tax = subtotal * taxRate;
-    const total = subtotal + service + tax;
-    return { subtotal, service, tax, total };
+    const sums = (currentOrder.items || []).reduce(
+      (acc, i) => {
+        const qty = Number(i.qty || 0);
+        const price = Number(i.price || 0);
+        const gross = price * qty;
+        const includes = i?.priceIncludesTaxesAndService !== false;
+        if (includes) {
+          const denom = 1 + serviceRate + taxRate;
+          const net = denom > 0 ? gross / denom : gross;
+          acc.subtotal += net;
+          acc.service += net * serviceRate;
+          acc.tax += net * taxRate;
+          acc.total += gross;
+        } else {
+          const net = gross;
+          acc.subtotal += net;
+          acc.service += net * serviceRate;
+          acc.tax += net * taxRate;
+          acc.total += net + net * serviceRate + net * taxRate;
+        }
+        return acc;
+      },
+      { subtotal: 0, service: 0, tax: 0, total: 0 }
+    );
+    return sums;
   }, [currentOrder.items, taxesCfg.iva, taxesCfg.servicio]);
 
   const systemTotal = useMemo(() => {
@@ -266,21 +380,31 @@ export default function RestaurantPage() {
     setSectionsError("");
     try {
       const { data } = await api.get("/restaurant/sections");
-      const baseSections = Array.isArray(data) ? data : [];
+      let baseSections = Array.isArray(data) ? data : [];
+
+      // Table style persistence is stored in /restaurant/general.tableStyles (backend doesn't persist size/rotation/color on tables).
+      try {
+        const { data: gen } = await api.get("/restaurant/general");
+        const tableStyles = gen?.tableStyles;
+        if (tableStyles) baseSections = applyTableStylesToSections(baseSections, tableStyles);
+      } catch {
+        // ignore
+      }
+
       setSections(baseSections);
 
-      // Some backends store floorplan/layout separately per section.
-      // Merge `/layout` into section tables (x/y/size/rotation/color/kind) when available.
-      try {
-        const layoutResults = await Promise.allSettled(
-          baseSections.map(async (s) => {
-            const id = String(s?.id || "");
-            if (!id) return null;
-            const res = await api.get(`/restaurant/sections/${encodeURIComponent(id)}/layout`);
-            const tables = Array.isArray(res?.data?.tables) ? res.data.tables : Array.isArray(res?.data) ? res.data : [];
-            return { id, tables };
-          })
-        );
+        // Some backends store floorplan/layout separately per section.
+        // Merge `/layout` into section tables when available.
+        try {
+          const layoutResults = await Promise.allSettled(
+            baseSections.map(async (s) => {
+              const id = String(s?.id || "");
+              if (!id) return null;
+              const res = await api.get(`/restaurant/sections/${encodeURIComponent(id)}/layout`);
+              const tables = Array.isArray(res?.data?.tables) ? res.data.tables : Array.isArray(res?.data) ? res.data : [];
+              return { id, tables };
+            })
+          );
         const layouts = new Map();
         for (const r of layoutResults) {
           if (r.status !== "fulfilled" || !r.value?.id) continue;
@@ -297,7 +421,16 @@ export default function RestaurantPage() {
                 tables: (sec.tables || []).map((t) => {
                   const p = byId.get(String(t?.id));
                   if (!p) return t;
-                  return { ...t, ...p, id: t.id };
+                  const next = { ...t };
+                  if (Number.isFinite(Number(p?.x))) next.x = Number(p.x);
+                  if (Number.isFinite(Number(p?.y))) next.y = Number(p.y);
+
+                  // Style fields: prefer layout values when present.
+                  if (Number.isFinite(Number(p?.size))) next.size = Number(p.size);
+                  if (Number.isFinite(Number(p?.rotation))) next.rotation = Number(p.rotation);
+                  if (typeof p?.color === "string" && String(p.color).trim()) next.color = String(p.color);
+                  if (p?.kind) next.kind = String(p.kind);
+                  return next;
                 }),
               };
             })
@@ -499,22 +632,36 @@ export default function RestaurantPage() {
       );
       return;
     }
-    try {
-      const payload = {
-        sectionId: order?.sectionId || selectedSection?.id,
-        tableId: selectedTable.id,
-        items: Array.isArray(order?.items) ? order.items : [],
-        note: order?.note || orderNote || "",
-        covers: order?.covers || covers,
-        type: "DOCUMENT",
-        printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
-      };
-      await api.post("/restaurant/print", payload);
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Invoice reprint sent." } }));
-    } catch (err) {
-      const msg = err?.response?.data?.message || "Could not reprint.";
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
-    }
+
+    const payload = {
+      sectionId: order?.sectionId || selectedSection?.id,
+      tableId: selectedTable.id,
+      items: Array.isArray(order?.items) ? order.items : [],
+      note: order?.note || orderNote || "",
+      covers: order?.covers || covers,
+      type: "DOCUMENT",
+      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+    };
+
+    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
+    const taxRate = Number(taxesCfg.iva || 0) / 100;
+    const subtotal = (payload.items || []).reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
+    const previewTotals = { subtotal, service: subtotal * serviceRate, tax: subtotal * taxRate, total: subtotal + subtotal * serviceRate + subtotal * taxRate };
+
+    openPrintConfirm({
+      title: "Reimpresión de factura",
+      payload,
+      totals: previewTotals,
+      onConfirm: async () => {
+        try {
+          await api.post("/restaurant/print", payload);
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reimpresión enviada." } }));
+        } catch (err) {
+          const msg = err?.response?.data?.message || "No se pudo reimprimir.";
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+        }
+      },
+    });
   };
 
   const voidInvoice = async () => {
@@ -620,28 +767,43 @@ export default function RestaurantPage() {
       serviceType: currentOrder.serviceType || serviceType,
       roomId: currentOrder.roomId || roomCharge,
     };
-    try {
-      if (markAsSent) {
-        await api.post("/restaurant/order", payload);
+
+    const run = async () => {
+      try {
+        if (markAsSent) {
+          await api.post("/restaurant/order", payload);
+        }
+        await api.post("/restaurant/print", payload);
+        if (markAsSent) {
+          updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
+          refreshStats();
+        }
+        if (!silent) {
+          window.dispatchEvent(
+            new CustomEvent("pms:push-alert", {
+              detail: { title: "Restaurant", desc: markAsSent ? "Comanda enviada." : "Comanda reimpresa." },
+            })
+          );
+        }
+      } catch (err) {
+        if (!silent) {
+          const msg = err?.response?.data?.message || "No se pudo enviar a impresoras.";
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+        }
       }
-      await api.post("/restaurant/print", payload);
-      if (markAsSent) {
-        updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
-        refreshStats();
-      }
-      if (!silent) {
-        window.dispatchEvent(
-          new CustomEvent("pms:push-alert", {
-            detail: { title: "Restaurant", desc: markAsSent ? "Comanda enviada." : "Comanda reimpresa." },
-          })
-        );
-      }
-    } catch (err) {
-      if (!silent) {
-        const msg = err?.response?.data?.message || "Could not send to printers.";
-        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
-      }
+    };
+
+    if (silent) {
+      await run();
+      return;
     }
+
+    openPrintConfirm({
+      title: markAsSent ? "Imprimir comanda" : "Reimprimir comanda",
+      payload,
+      totals,
+      onConfirm: run,
+    });
   };
 
   const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: false });
@@ -710,6 +872,35 @@ export default function RestaurantPage() {
     return false;
   };
 
+  const closePrintConfirm = () => {
+    if (printConfirmBusy) return;
+    pendingPrintRef.current = null;
+    setPrintConfirmOpen(false);
+  };
+
+  const openPrintConfirm = ({ title, payload, totals: previewTotals, onConfirm }) => {
+    pendingPrintRef.current = onConfirm;
+    setPrintConfirmTitle(title || "Confirmar impresión");
+    setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
+    setPrintConfirmOpen(true);
+  };
+
+  const confirmPrint = async () => {
+    if (printConfirmBusy) return;
+    const fn = pendingPrintRef.current;
+    if (typeof fn !== "function") {
+      closePrintConfirm();
+      return;
+    }
+    setPrintConfirmBusy(true);
+    try {
+      await fn();
+    } finally {
+      setPrintConfirmBusy(false);
+      closePrintConfirm();
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
       <header className="relative h-14 bg-gradient-to-r from-amber-700 to-slate-800 text-white flex items-center justify-between px-6 shadow">
@@ -748,6 +939,35 @@ export default function RestaurantPage() {
           <RestaurantUserMenu />
         </div>
       </header>
+
+      {printConfirmOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4">
+          <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase text-indigo-600">Impresión</div>
+                <div className="text-lg font-semibold text-slate-900">{printConfirmTitle}</div>
+              </div>
+              <RestaurantCloseXButton onClick={closePrintConfirm} />
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3 max-h-[60vh] overflow-auto">
+              <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">{printConfirmText}</pre>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-4 py-2 rounded-lg border text-sm" disabled={printConfirmBusy} onClick={closePrintConfirm}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:bg-indigo-300"
+                disabled={printConfirmBusy}
+                onClick={confirmPrint}
+              >
+                {printConfirmBusy ? "Enviando..." : "Confirmar e imprimir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {closeOpen && (
         <div className="fixed inset-0 z-50 bg-black/40 flex justify-end">
@@ -1086,6 +1306,9 @@ export default function RestaurantPage() {
                           <div className="text-xs uppercase text-amber-500">Section</div>
                           <div className="text-lg font-semibold text-amber-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
                           <div className="text-xs text-amber-700/90 mt-1">{(sec.tables || []).length} tables</div>
+                          <div className="text-[11px] text-amber-700/80 mt-1">
+                            Menu: <span className="font-semibold">{sec?.activeMenu?.name || "-"}</span>
+                          </div>
                           <div className="mt-auto text-[11px] text-amber-500">Tap to view tables</div>
                         </div>
                       ))}
@@ -1098,6 +1321,9 @@ export default function RestaurantPage() {
                     <div className="space-y-2">
                       <div className="text-xs text-amber-700">
                         Floor plan of <span className="font-semibold">{selectedSection.name}</span>. Tap a table to open it.
+                      </div>
+                      <div className="text-[11px] text-amber-700/80">
+                        Active menu: <span className="font-semibold">{selectedSection?.activeMenu?.name || "-"}</span>
                       </div>
                       <div className="relative w-full h-72 md:h-80 rounded-2xl border border-amber-200 bg-amber-50/60 overflow-hidden">
                         <div className="absolute inset-x-3 top-2 flex justify-between text-[11px] text-amber-600">
@@ -1187,7 +1413,6 @@ export default function RestaurantPage() {
                               >
                                 {(() => {
                                   const { Free, Occupied } = getTableIcons(t.kind);
-                                  const Icon = hasOrder ? Occupied : Free;
                                   return (
                                     <div
                                       style={{
@@ -1197,7 +1422,26 @@ export default function RestaurantPage() {
                                         color: color || undefined,
                                       }}
                                     >
-                                      <Icon className="w-full h-full" />
+                                  {hasOrder && occupiedIconOk ? (
+                                        <img
+                                          alt="Occupied table"
+                                          src={OCCUPIED_TABLE_ICON_URL}
+                                          className="w-full h-full object-contain"
+                                          onError={() => setOccupiedIconOk(false)}
+                                        />
+                                      ) : !hasOrder && String(t.kind || "mesa").toLowerCase() === "camastro" && camastroIconOk ? (
+                                        <img
+                                          alt="Camastro"
+                                          src={CAMASTRO_FREE_ICON_URL}
+                                          className="w-full h-full object-contain"
+                                          onError={() => setCamastroIconOk(false)}
+                                        />
+                                      ) : (
+                                        (() => {
+                                          const Icon = hasOrder ? Occupied : Free;
+                                          return <Icon className="w-full h-full" />;
+                                        })()
+                                      )}
                                     </div>
                                   );
                                 })()}
@@ -1274,20 +1518,42 @@ export default function RestaurantPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                    {filteredMenu.map((item, idx) => (
-                      <button
-                        key={String(item.id || item.code || `${item.name}-${idx}`)}
-                        onClick={() => addItem(item)}
-                        className="rounded-lg bg-white border border-amber-100 shadow-sm hover:shadow-md transition text-left p-2 flex flex-col gap-1 text-sm aspect-square"
-                      >
-                        <div className="text-[11px] uppercase tracking-wide text-amber-500">{item.category}</div>
-                        <div className="text-sm font-semibold text-amber-900 leading-tight line-clamp-2">{item.name}</div>
-                        <div className="text-amber-700 font-semibold text-sm">{formatMoney(item.price)}</div>
-                        <div className="mt-auto text-[11px] text-amber-500">Tap to add</div>
-                      </button>
-                    ))}
-                  </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                      {filteredMenu.map((item, idx) => (
+                        <button
+                          key={String(item.id || item.code || `${item.name}-${idx}`)}
+                          onClick={() => addItem(item)}
+                          className="rounded-lg bg-white border-2 border-amber-100 shadow-sm hover:shadow-md transition text-left p-2 flex flex-col gap-2 text-sm aspect-square"
+                          style={{
+                            borderColor: item?.color ? String(item.color) : undefined,
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div
+                              className="text-[11px] uppercase tracking-wide"
+                              style={{ color: item?.color ? String(item.color) : "#f59e0b" }}
+                            >
+                              {item.category}
+                            </div>
+                          </div>
+                          {item.imageUrl ? (
+                            <div className="rounded-lg overflow-hidden border border-amber-100 bg-amber-50/50 h-20">
+                              <img
+                                alt=""
+                                src={item.imageUrl}
+                                className="h-full w-full object-cover"
+                                onError={(ev) => {
+                                  ev.currentTarget.style.display = "none";
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                          <div className="text-sm font-semibold text-amber-900 leading-tight line-clamp-2">{item.name}</div>
+                          <div className="text-amber-700 font-semibold text-sm">{formatMoney(item.price)}</div>
+                          <div className="mt-auto text-[11px] text-amber-500">Tap to add</div>
+                        </button>
+                      ))}
+                    </div>
                 </div>
 
                 <div className="bg-white border border-amber-100 rounded-2xl shadow p-4 flex flex-col">

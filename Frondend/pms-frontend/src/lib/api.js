@@ -8,10 +8,21 @@ const USE_MOCK = ["1", "true", "yes"].includes(
   String(process.env.REACT_APP_MOCK || "").toLowerCase()
 );
 
-const BASE = String(process.env.REACT_APP_API_URL || "http://localhost:4000/api").replace(
-  /\/+$/,
-  ""
+// When false (default), 404/501 from backend are treated as real errors (no silent mock fallback).
+// Set REACT_APP_ALLOW_MOCK_FALLBACK=1 only for local development.
+const ALLOW_MOCK_FALLBACK = ["1", "true", "yes"].includes(
+  String(process.env.REACT_APP_ALLOW_MOCK_FALLBACK || "").toLowerCase()
 );
+
+const DEFAULT_BASE =
+  typeof window !== "undefined" && window?.location?.origin
+    ? // In local CRA dev, the frontend runs on :3000 and backend on :4000 (no proxy by default).
+      window.location.port === "3000"
+      ? "http://localhost:4000/api"
+      : `${window.location.origin}/api`
+    : "http://localhost:4000/api";
+
+const BASE = String(process.env.REACT_APP_API_URL || DEFAULT_BASE).replace(/\/+$/, "");
 
 // Prefijos que existen en el backend real (si alguno no esta, caera al mock)
 const BACKEND_PREFIXES = [
@@ -84,7 +95,7 @@ const get = async (url, config) => {
       return await http.get(path, config);
     } catch (err) {
       const status = err?.response?.status;
-      if (status !== 404 && status !== 501) throw err;
+      if (!ALLOW_MOCK_FALLBACK || (status !== 404 && status !== 501)) throw err;
     }
   }
   return mockApi.get(path, config);
@@ -97,7 +108,7 @@ const post = async (url, data, config) => {
       return await http.post(path, data, config);
     } catch (err) {
       const status = err?.response?.status;
-      if (status !== 404 && status !== 501) throw err;
+      if (!ALLOW_MOCK_FALLBACK || (status !== 404 && status !== 501)) throw err;
     }
   }
   return mockApi.post(path, data, config);
@@ -110,7 +121,7 @@ const put = async (url, data, config) => {
       return await http.put(path, data, config);
     } catch (err) {
       const status = err?.response?.status;
-      if (status !== 404 && status !== 501) throw err;
+      if (!ALLOW_MOCK_FALLBACK || (status !== 404 && status !== 501)) throw err;
     }
   }
   return mockApi.put(path, data, config);
@@ -123,7 +134,7 @@ const patch = async (url, data, config) => {
       return await http.patch(path, data, config);
     } catch (err) {
       const status = err?.response?.status;
-      if (status !== 404 && status !== 501) throw err;
+      if (!ALLOW_MOCK_FALLBACK || (status !== 404 && status !== 501)) throw err;
     }
   }
   return mockApi.patch(path, data, config);
@@ -136,7 +147,7 @@ const del = async (url, config) => {
       return await http.delete(path, config);
     } catch (err) {
       const status = err?.response?.status;
-      if (status !== 404 && status !== 501) throw err;
+      if (!ALLOW_MOCK_FALLBACK || (status !== 404 && status !== 501)) throw err;
     }
   }
   return mockApi.delete(path, config);

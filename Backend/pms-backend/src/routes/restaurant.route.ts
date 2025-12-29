@@ -30,6 +30,7 @@ import {
   addTableToSection,
   deleteTableFromSection,
   updateTablePosition,
+  updateTableStyle,
   saveSectionLayout,
   listSectionObjects,
   createSectionObject,
@@ -108,6 +109,7 @@ router.post("/sections", requirePermission("restaurant.sections.write"), createS
 router.delete("/sections/:sectionId", requirePermission("restaurant.sections.write"), deleteSection);
 router.post("/sections/:sectionId/tables", requirePermission("restaurant.sections.write"), addTableToSection);
 router.delete("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write"), deleteTableFromSection);
+router.patch("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write"), updateTableStyle);
 router.patch("/sections/:sectionId/tables/:tableId/position", requirePermission("restaurant.sections.write"), updateTablePosition);
 router.put("/sections/:sectionId/layout", requirePermission("restaurant.sections.write"), saveSectionLayout);
 router.get("/sections/:sectionId/objects", requirePermission("restaurant.pos.open", "restaurant.sections.write"), listSectionObjects);

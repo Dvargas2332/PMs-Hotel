@@ -13,6 +13,7 @@ export default function RestaurantItems() {
     subFamilyId: "",
     subSubFamilyId: "",
     price: "",
+    priceIncludesTaxesAndService: true,
     taxIds: [],
     notes: "",
     active: true,
@@ -66,6 +67,7 @@ export default function RestaurantItems() {
         ...d,
         price: Number(d.price || 0),
         taxIds: Array.isArray(d.taxIds) ? d.taxIds : [],
+        priceIncludesTaxesAndService: d.priceIncludesTaxesAndService !== false,
       }));
       const { data } = await api.post("/restaurant/items", { items: payload });
       const savedList = Array.isArray(data) ? data : [data];
@@ -89,6 +91,7 @@ export default function RestaurantItems() {
       taxIds: Array.isArray(it.taxIds) ? it.taxIds : [],
       notes: String(it.notes || ""),
       active: it.active !== false,
+      priceIncludesTaxesAndService: it.priceIncludesTaxesAndService !== false,
     });
   };
 
@@ -108,6 +111,7 @@ export default function RestaurantItems() {
       taxIds: Array.isArray(form.taxIds) ? form.taxIds : [],
       notes: form.notes || null,
       active: form.active !== false,
+      priceIncludesTaxesAndService: form.priceIncludesTaxesAndService !== false,
     };
     const { data } = await api.patch(`/restaurant/items/${editingId}`, payload);
     setItems((prev) => prev.map((x) => (x.id === data.id ? data : x)));
@@ -238,6 +242,13 @@ export default function RestaurantItems() {
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={form.active} onCheckedChange={(v) => setForm((f) => ({ ...f, active: Boolean(v) }))} />
           Active item
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={form.priceIncludesTaxesAndService !== false}
+            onCheckedChange={(v) => setForm((f) => ({ ...f, priceIncludesTaxesAndService: Boolean(v) }))}
+          />
+          Price includes taxes and service
         </label>
         <div className="flex justify-end">
           {editingId ? (
