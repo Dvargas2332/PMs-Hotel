@@ -74,7 +74,7 @@ export default function Discounts() {
 
   const onDelete = async () => {
     if (!selectedId || submitting) return;
-    const ok = window.confirm("¿Eliminar este descuento? Esta acción no se puede deshacer.");
+    const ok = window.confirm("Delete this discount? This action cannot be undone.");
     if (!ok) return;
     setSubmitting(true);
     try {
@@ -125,7 +125,7 @@ export default function Discounts() {
       {/* Formulario */}
       <Card className="space-y-3 p-5">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">{editing ? "Editar descuento" : "Nuevo descuento"}</h3>
+          <h3 className="font-medium">{editing ? "Edit discount" : "New discount"}</h3>
           {editing && (
             <button
               type="button"
@@ -135,7 +135,7 @@ export default function Discounts() {
                 resetForm();
               }}
             >
-              Cancelar
+              Cancel
             </button>
           )}
         </div>
@@ -148,7 +148,7 @@ export default function Discounts() {
             onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
           />
           <Input
-            placeholder="Nombre"
+            placeholder="Name"
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
@@ -161,13 +161,13 @@ export default function Discounts() {
             onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}
           />
           <Input
-            placeholder="Valor"
+            placeholder="Value"
             type="number"
             value={form.value}
             onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
           />
           <Input
-            placeholder="Expira"
+            placeholder="Expires"
             type="date"
             value={form.expiresAt}
             onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value }))}
@@ -176,7 +176,7 @@ export default function Discounts() {
 
         <div className="grid grid-cols-2 gap-3">
           <Input
-            placeholder="Max sin PIN (%)"
+            placeholder="Max without PIN (%)"
             type="number"
             onChange={(e) =>
               localStorage.setItem("discounts.maxPercentWithoutPin", e.target.value)
@@ -189,7 +189,7 @@ export default function Discounts() {
                 checked={form.requiresPin}
                 onChange={(e) => setForm((f) => ({ ...f, requiresPin: e.target.checked }))}
               />
-              Requiere PIN
+              Requires PIN
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -197,7 +197,7 @@ export default function Discounts() {
                 checked={form.active}
                 onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
               />
-              Activo
+              Active
             </label>
           </div>
         </div>
@@ -205,12 +205,12 @@ export default function Discounts() {
         <div className="flex gap-2">
           {!editing ? (
             <Button type="button" onClick={onCreate} disabled={submitting}>
-              Crear
+              Create
             </Button>
           ) : (
             <>
               <Button type="button" onClick={onUpdate} disabled={submitting}>
-                Guardar cambios
+                Save changes
               </Button>
               <Button
                 type="button"
@@ -218,7 +218,7 @@ export default function Discounts() {
                 disabled={submitting}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                Eliminar
+                Delete
               </Button>
               <Button
                 type="button"
@@ -228,7 +228,7 @@ export default function Discounts() {
                 }}
                 className="bg-gray-200 text-gray-700 hover:bg-gray-300"
               >
-                Cancelar
+                Cancel
               </Button>
             </>
           )}
@@ -241,20 +241,20 @@ export default function Discounts() {
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="py-2 pl-4 text-left">ID</th>
-              <th className="text-left">Nombre</th>
-              <th className="text-left">Tipo</th>
-              <th className="text-left">Valor</th>
-              <th className="text-left">Expira</th>
+              <th className="text-left">Name</th>
+              <th className="text-left">Type</th>
+              <th className="text-left">Value</th>
+              <th className="text-left">Expires</th>
               <th className="text-left">PIN</th>
-              <th className="text-left">Activo</th>
-              <th className="pr-4 text-right">Acciones</th>
+              <th className="text-left">Active</th>
+              <th className="pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
               <tr>
                 <td colSpan={8} className="py-6 text-center text-gray-500">
-                  Sin descuentos aún.
+                  No discounts yet.
                 </td>
               </tr>
             )}
@@ -270,8 +270,8 @@ export default function Discounts() {
                   <td>{x.type}</td>
                   <td>{x.value}</td>
                   <td>{x.expiresAt ? new Date(x.expiresAt).toLocaleDateString() : "—"}</td>
-                  <td>{x.requiresPin ? "Sí" : "No"}</td>
-                  <td>{x.active ? "Sí" : "No"}</td>
+                  <td>{x.requiresPin ? "Yes" : "No"}</td>
+                  <td>{x.active ? "Yes" : "No"}</td>
                   <td className="pr-4 py-2 text-right space-x-1">
                     <button
                       type="button"
@@ -279,14 +279,14 @@ export default function Discounts() {
                       onClick={() => onRowSelect(x)}
                       disabled={submitting}
                     >
-                      Editar
+                      Edit
                     </button>
                     <button
                       type="button"
                       className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
                       onClick={async () => {
                         if (submitting) return;
-                        const ok = window.confirm(`¿Eliminar el descuento "${x.name}"?`);
+                        const ok = window.confirm(`Delete discount "${x.name}"?`);
                         if (!ok) return;
                         setSubmitting(true);
                         try {
@@ -302,7 +302,7 @@ export default function Discounts() {
                       }}
                       disabled={submitting}
                     >
-                      Eliminar
+                      Delete
                     </button>
                   </td>
                 </tr>

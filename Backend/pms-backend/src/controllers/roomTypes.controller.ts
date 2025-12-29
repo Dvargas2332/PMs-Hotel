@@ -1,7 +1,7 @@
 // src/controllers/roomTypes.controller.ts
 import type { Request, Response } from "express";
-import { prisma } from "../lib/prisma";
-import type { AuthUser } from "../middleware/auth";
+import { prisma } from "../lib/prisma.js";
+import type { AuthUser } from "../middleware/auth.js";
 
 export async function listRoomTypes(req: Request, res: Response) {
   // @ts-ignore
@@ -79,4 +79,3 @@ export async function deleteRoomType(req: Request, res: Response) {
   });
   res.status(204).send();
 }
-

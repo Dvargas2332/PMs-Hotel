@@ -139,11 +139,11 @@ export default function HabitacionesBoard() {
       style={{ background: frontdeskTheme.background.app }}
     >
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Habitaciones (Estado)</h1>
+        <h1 className="text-2xl font-bold">Rooms (Status)</h1>
         <div className="flex gap-2">
           <input
             className="border rounded px-3 py-2 w-64"
-            placeholder="Buscar #, tipo o huésped…"
+            placeholder="Search by #, type, or guest..."
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
@@ -158,8 +158,8 @@ export default function HabitacionesBoard() {
         <SummaryCard title="Sucias"         value={counts.dirty}      className="border-amber-200" />
         <SummaryCard title="Bloqueadas"     value={counts.blocked}    className="border-gray-300" />
         <SummaryCard title="Mantenimiento"  value={counts.maintenance}className="border-yellow-200" />
-        <SummaryCard title="Entradas hoy"   value={arrivalsToday}     className="border-sky-200" />
-        <SummaryCard title="Salidas hoy"    value={departuresToday}   className="border-indigo-200" />
+        <SummaryCard title="Arrivals today" value={arrivalsToday}     className="border-sky-200" />
+        <SummaryCard title="Departures today" value={departuresToday} className="border-indigo-200" />
       </div>
 
       {/* Filtros rápidos */}
@@ -192,8 +192,8 @@ export default function HabitacionesBoard() {
 
       {/* Grid de habitaciones */}
       {filteredRooms.length === 0 ? (
-        <div className="py-10 text-center text-gray-500 border rounded-xl bg-white">
-          No hay habitaciones que coincidan con el filtro.
+          <div className="py-10 text-center text-gray-500 border rounded-xl bg-white">
+          No rooms match the filter.
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -210,7 +210,7 @@ export default function HabitacionesBoard() {
                 <div className="text-sm text-gray-600">{r.type || "—"}</div>
                 {r.guestName && (
                   <div className="mt-2 text-xs text-gray-700">
-                    Huésped: <span className="font-medium">{r.guestName}</span>
+                    Guest: <span className="font-medium">{r.guestName}</span>
                   </div>
                 )}
               </div>

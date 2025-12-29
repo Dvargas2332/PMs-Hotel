@@ -25,9 +25,11 @@ const BACKEND_PREFIXES = [
   "/health",
   "/roles",
   "/permissions",
+  "/taxes",
   "/restaurant",
   "/reports",
   "/invoices",
+  "/einvoicing",
   "/geo",
   "/cash-audits",
 ];
@@ -114,6 +116,19 @@ const put = async (url, data, config) => {
   return mockApi.put(path, data, config);
 };
 
+const patch = async (url, data, config) => {
+  const path = normalizePath(url);
+  if (!USE_MOCK && http && shouldUseBackend(path)) {
+    try {
+      return await http.patch(path, data, config);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status !== 404 && status !== 501) throw err;
+    }
+  }
+  return mockApi.patch(path, data, config);
+};
+
 const del = async (url, config) => {
   const path = normalizePath(url);
   if (!USE_MOCK && http && shouldUseBackend(path)) {
@@ -133,6 +148,7 @@ export const api = {
   get,
   post,
   put,
+  patch,
   delete: del,
   // --- auth ---
   async login(email, password) {

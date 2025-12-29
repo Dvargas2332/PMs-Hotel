@@ -498,6 +498,55 @@ const DEFAULT_REQUIREMENTS: Array<{
   },
 ];
 
+const DEFAULT_PRINT_FORMS = [
+  // Restaurant
+  { id: "restaurant_comanda_80mm_standard", module: "restaurant", docType: "COMANDA", paperType: "80mm", name: "Restaurant Comanda (80mm) - Standard" },
+  { id: "restaurant_comanda_58mm_standard", module: "restaurant", docType: "COMANDA", paperType: "58mm", name: "Restaurant Comanda (58mm) - Standard" },
+  { id: "restaurant_comanda_a4_standard", module: "restaurant", docType: "COMANDA", paperType: "A4", name: "Restaurant Comanda (A4) - Standard" },
+  { id: "restaurant_te_80mm_standard", module: "restaurant", docType: "TE", paperType: "80mm", name: "Restaurant Ticket (TE) - 80mm" },
+  { id: "restaurant_te_58mm_standard", module: "restaurant", docType: "TE", paperType: "58mm", name: "Restaurant Ticket (TE) - 58mm" },
+  { id: "restaurant_te_a4_standard", module: "restaurant", docType: "TE", paperType: "A4", name: "Restaurant Ticket (TE) - A4" },
+  { id: "restaurant_fe_80mm_standard", module: "restaurant", docType: "FE", paperType: "80mm", name: "Restaurant Invoice (FE) - 80mm" },
+  { id: "restaurant_fe_58mm_standard", module: "restaurant", docType: "FE", paperType: "58mm", name: "Restaurant Invoice (FE) - 58mm" },
+  { id: "restaurant_fe_a4_standard", module: "restaurant", docType: "FE", paperType: "A4", name: "Restaurant Invoice (FE) - A4" },
+  { id: "restaurant_closes_80mm_standard", module: "restaurant", docType: "CLOSES", paperType: "80mm", name: "Restaurant Close - 80mm" },
+  { id: "restaurant_closes_58mm_standard", module: "restaurant", docType: "CLOSES", paperType: "58mm", name: "Restaurant Close - 58mm" },
+  { id: "restaurant_closes_a4_standard", module: "restaurant", docType: "CLOSES", paperType: "A4", name: "Restaurant Close - A4" },
+  { id: "restaurant_sales_report_80mm_standard", module: "restaurant", docType: "SALES_REPORT", paperType: "80mm", name: "Restaurant Sales Report - 80mm" },
+  { id: "restaurant_sales_report_58mm_standard", module: "restaurant", docType: "SALES_REPORT", paperType: "58mm", name: "Restaurant Sales Report - 58mm" },
+  { id: "restaurant_sales_report_a4_standard", module: "restaurant", docType: "SALES_REPORT", paperType: "A4", name: "Restaurant Sales Report - A4" },
+  { id: "restaurant_document_80mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "80mm", name: "Restaurant Document - 80mm" },
+  { id: "restaurant_document_58mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "58mm", name: "Restaurant Document - 58mm" },
+  { id: "restaurant_document_a4_standard", module: "restaurant", docType: "DOCUMENT", paperType: "A4", name: "Restaurant Document - A4" },
+
+  // Frontdesk
+  { id: "frontdesk_te_80mm_standard", module: "frontdesk", docType: "TE", paperType: "80mm", name: "Front Desk Ticket (TE) - 80mm" },
+  { id: "frontdesk_te_58mm_standard", module: "frontdesk", docType: "TE", paperType: "58mm", name: "Front Desk Ticket (TE) - 58mm" },
+  { id: "frontdesk_te_a4_standard", module: "frontdesk", docType: "TE", paperType: "A4", name: "Front Desk Ticket (TE) - A4" },
+  { id: "frontdesk_fe_80mm_standard", module: "frontdesk", docType: "FE", paperType: "80mm", name: "Front Desk Invoice (FE) - 80mm" },
+  { id: "frontdesk_fe_58mm_standard", module: "frontdesk", docType: "FE", paperType: "58mm", name: "Front Desk Invoice (FE) - 58mm" },
+  { id: "frontdesk_fe_a4_standard", module: "frontdesk", docType: "FE", paperType: "A4", name: "Front Desk Invoice (FE) - A4" },
+  { id: "frontdesk_document_80mm_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "80mm", name: "Front Desk Document - 80mm" },
+  { id: "frontdesk_document_58mm_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "58mm", name: "Front Desk Document - 58mm" },
+  { id: "frontdesk_document_a4_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "A4", name: "Front Desk Document - A4" },
+];
+
+function withSettingsDefaults(input: any) {
+  const settings = input && typeof input === "object" ? { ...(input as any) } : {};
+  const moduleBranding = settings.moduleBranding && typeof settings.moduleBranding === "object" ? { ...(settings.moduleBranding as any) } : {};
+  for (const key of ["frontdesk", "restaurant", "accounting"]) {
+    moduleBranding[key] = { ...(moduleBranding[key] || {}) };
+  }
+  const printForms = Array.isArray(settings.printForms) ? settings.printForms : [];
+  const hasPrintForms = printForms.length > 0;
+
+  return {
+    ...settings,
+    moduleBranding,
+    printForms: hasPrintForms ? printForms : DEFAULT_PRINT_FORMS,
+  };
+}
+
 async function ensureDefaults(hotelId: string) {
   await prisma.eInvoicingRequirement.createMany({
     data: DEFAULT_REQUIREMENTS.map((r) => ({
@@ -539,7 +588,7 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   const smtp = credentials.smtp || {};
   const crypto = credentials.crypto || {};
   const atv = credentials.atv || {};
-  const settings = (config.settings || {}) as any;
+  const settings = withSettingsDefaults((config.settings || {}) as any);
 
   const readinessIssues: string[] = [];
   const issuer = (settings.issuer || {}) as any;
@@ -584,6 +633,7 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
         hasPassword: Boolean(atv?.password),
       },
     },
+    settings,
     readiness: {
       ok: readinessIssues.length === 0,
       issues: readinessIssues,
@@ -592,6 +642,19 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
       environment: config.environment,
     },
   };
+
+  // Persist defaults once to keep config consistent per tenant.
+  try {
+    const currentSettings = (config.settings || {}) as any;
+    if (!Array.isArray(currentSettings?.printForms) || (currentSettings?.printForms || []).length === 0 || !currentSettings?.moduleBranding) {
+      await prisma.eInvoicingConfig.update({
+        where: { hotelId },
+        data: { settings: settings as any },
+      });
+    }
+  } catch {
+    // ignore persistence of defaults
+  }
 
   return res.json(redacted);
 }

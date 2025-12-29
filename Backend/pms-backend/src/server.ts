@@ -1,4 +1,5 @@
 // src/server.ts
+import "dotenv/config";
 import { setDefaultResultOrder } from "node:dns";
 setDefaultResultOrder("ipv4first");
 import app from "./app.js";

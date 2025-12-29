@@ -24,6 +24,7 @@ import {
   listCabys,
   listCatalogEntries,
 } from "../controllers/einvoicing.catalog.controller.js";
+import { importEInvoicingXml } from "../controllers/einvoicing.import.controller.js";
 import {
   cancelEInvoicingDocument,
   refreshEInvoicingDocumentStatus,
@@ -38,6 +39,7 @@ router.use(auth, requirePermission("einvoicing.access"));
 router.get("/requirements", listEInvoicingRequirements);
 router.get("/documents", listEInvoicingDocuments);
 router.get("/documents/:id", getEInvoicingDocument);
+router.post("/documents/import-xml", requirePermission("einvoicing.issue"), importEInvoicingXml);
 router.post("/documents/:id/submit", requirePermission("einvoicing.issue"), submitEInvoicingDocument);
 router.post("/documents/:id/refresh", requirePermission("einvoicing.issue"), refreshEInvoicingDocumentStatus);
 router.post("/documents/:id/cancel", requirePermission("einvoicing.cancel"), cancelEInvoicingDocument);

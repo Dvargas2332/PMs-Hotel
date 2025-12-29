@@ -25,11 +25,16 @@ export default function ProtectedRoute({ children, fallback }) {
     if (path.startsWith("/frontdesk")) moduleCode = "frontdesk";
     else if (path.startsWith("/restaurant")) moduleCode = "restaurant";
     else if (path.startsWith("/accounting")) moduleCode = "accounting";
+    else if (path.startsWith("/e-invoicing")) moduleCode = "einvoicing";
     else if (path.startsWith("/management")) moduleCode = "management";
 
-    const allowed = Array.isArray(user.allowedModules)
-      ? user.allowedModules.includes(moduleCode)
-      : false;
+    const hasAllowedModules = Array.isArray(user.allowedModules) && user.allowedModules.length > 0;
+    const allowedByList = hasAllowedModules ? user.allowedModules.includes(moduleCode) : false;
+    const allowedByPerms =
+      Array.isArray(user.permissions) &&
+      user.permissions.some((p) => typeof p === "string" && p.startsWith(`${moduleCode}.`));
+
+    const allowed = allowedByList || allowedByPerms;
 
     if (moduleCode && !allowed) {
       // Si no tiene permiso para este módulo, lo devolvemos al launcher

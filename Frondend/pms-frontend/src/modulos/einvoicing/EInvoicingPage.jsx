@@ -153,6 +153,7 @@ export default function EInvoicingPage() {
     credentials: {},
   });
   const [panel, setPanel] = React.useState(null);
+  const [generalTab, setGeneralTab] = React.useState("core"); // core | connections | forms | smtp | atv | certificate
   const [secretMeta, setSecretMeta] = React.useState({ smtp: {}, atv: {}, crypto: {} });
   const [secrets, setSecrets] = React.useState({ smtp: {}, atv: {}, crypto: {} });
 
@@ -169,6 +170,7 @@ export default function EInvoicingPage() {
   const [catalogRows, setCatalogRows] = React.useState([]);
   const [catalogImportText, setCatalogImportText] = React.useState("");
   const [cabysImportItems, setCabysImportItems] = React.useState([]);
+  const [xmlImporting, setXmlImporting] = React.useState(false);
   const [catalogImportItems, setCatalogImportItems] = React.useState([]);
 
   const parseCsv = React.useCallback((input) => {
@@ -295,6 +297,23 @@ export default function EInvoicingPage() {
     }
   };
 
+  const importXmlFile = async (file) => {
+    if (!file) return;
+    setXmlImporting(true);
+    try {
+      const xml = await file.text();
+      const { data } = await api.post("/einvoicing/documents/import-xml", { xml });
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "XML", desc: data?.reused ? "Document already exists." : "Imported." } }));
+      await loadDocuments();
+      if (data?.id) openDocDetail(String(data.id));
+    } catch (err) {
+      const msg = err?.response?.data?.message || "Could not import XML.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "XML", desc: msg } }));
+    } finally {
+      setXmlImporting(false);
+    }
+  };
+
   const loadCatalog = async () => {
     setCatalogLoading(true);
     try {
@@ -374,11 +393,18 @@ export default function EInvoicingPage() {
       const issuer = { ...(settings.issuer || {}) };
       const frontdesk = { ...(settings.frontdesk || {}) };
       const restaurant = { ...(settings.restaurant || {}) };
+      const moduleBranding = { ...(settings.moduleBranding || {}) };
+      moduleBranding.frontdesk = { ...(moduleBranding.frontdesk || {}) };
+      moduleBranding.restaurant = { ...(moduleBranding.restaurant || {}) };
+      moduleBranding.accounting = { ...(moduleBranding.accounting || {}) };
+      const printForms = Array.isArray(settings.printForms) ? settings.printForms : [];
 
       return {
         ...settings,
         moduleConnections,
         moduleEmail,
+        moduleBranding,
+        printForms,
         issuer: {
           countryCode: issuer.countryCode || "506",
           idNumber: issuer.idNumber || "",
@@ -406,6 +432,113 @@ export default function EInvoicingPage() {
     },
     [defaultModuleConnections, defaultSmtpSettings]
   );
+
+  const PRINT_FORM_FIELDS = React.useMemo(
+    () => [
+      { key: "logo", label: "Logo" },
+      { key: "issuerName", label: "Issuer name" },
+      { key: "issuerId", label: "Issuer ID" },
+      { key: "issuerContact", label: "Issuer phone/email" },
+      { key: "issuerAddress", label: "Issuer address" },
+      { key: "customer", label: "Customer" },
+      { key: "tableRoom", label: "Table / Room" },
+      { key: "items", label: "Items detail" },
+      { key: "taxes", label: "Taxes breakdown" },
+      { key: "totals", label: "Totals" },
+      { key: "payments", label: "Payments breakdown" },
+      { key: "notes", label: "Notes" },
+      { key: "qr", label: "QR / key" },
+    ],
+    []
+  );
+
+  const [formEditor, setFormEditor] = React.useState({
+    id: "",
+    name: "",
+    module: "restaurant",
+    docType: "TE",
+    paperType: "80mm",
+    fields: {
+      logo: true,
+      issuerName: true,
+      issuerId: true,
+      issuerContact: true,
+      issuerAddress: true,
+      customer: true,
+      tableRoom: true,
+      items: true,
+      taxes: true,
+      totals: true,
+      payments: true,
+      notes: true,
+      qr: true,
+    },
+  });
+
+  const upsertPrintForm = () => {
+    const id = String(formEditor.id || "").trim() || `form_${Date.now()}`;
+    const name = String(formEditor.name || "").trim();
+    if (!name) return window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Electronic invoicing", desc: "Form name is required." } }));
+
+    setCfg((prev) => {
+      const list = Array.isArray(prev.settings?.printForms) ? prev.settings.printForms : [];
+      const next = {
+        id,
+        name,
+        module: String(formEditor.module || "restaurant"),
+        docType: String(formEditor.docType || "TE").toUpperCase(),
+        paperType: String(formEditor.paperType || "80mm"),
+        fields: { ...(formEditor.fields || {}) },
+      };
+      const idx = list.findIndex((f) => String(f?.id) === id);
+      const nextList = idx >= 0 ? list.map((f, i) => (i === idx ? next : f)) : [next, ...list];
+      return { ...prev, settings: { ...prev.settings, printForms: nextList } };
+    });
+
+    setFormEditor((p) => ({ ...p, id: id }));
+  };
+
+  const deletePrintForm = (id) => {
+    if (!id) return;
+    setCfg((prev) => {
+      const list = Array.isArray(prev.settings?.printForms) ? prev.settings.printForms : [];
+      return { ...prev, settings: { ...prev.settings, printForms: list.filter((f) => String(f?.id) !== String(id)) } };
+    });
+  };
+
+  const editPrintForm = (f) => {
+    if (!f) return;
+    setFormEditor({
+      id: String(f.id || ""),
+      name: String(f.name || ""),
+      module: String(f.module || "restaurant"),
+      docType: String(f.docType || "TE").toUpperCase(),
+      paperType: String(f.paperType || "80mm"),
+      fields: { ...(f.fields || {}) },
+    });
+  };
+
+  const onLogoFile = async (moduleKey, file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      setCfg((prev) => ({
+        ...prev,
+        settings: {
+          ...prev.settings,
+          moduleBranding: {
+            ...(prev.settings?.moduleBranding || {}),
+            [moduleKey]: {
+              ...((prev.settings?.moduleBranding || {})[moduleKey] || {}),
+              logoDataUrl: dataUrl,
+            },
+          },
+        },
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
 
   React.useEffect(() => {
     let mounted = true;
@@ -767,6 +900,7 @@ export default function EInvoicingPage() {
       loadCabys();
       loadCatalog();
     }
+    if (panel === "general") setGeneralTab("core");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panel]);
 
@@ -787,6 +921,18 @@ export default function EInvoicingPage() {
       issuer: "Issuer (emitter)",
       catalogs: "Catalogs (CABYS + official codes)",
     }),
+    []
+  );
+
+  const GENERAL_TABS = React.useMemo(
+    () => [
+      { id: "core", label: "Core" },
+      { id: "connections", label: "Connections" },
+      { id: "forms", label: "Print forms" },
+      { id: "smtp", label: "SMTP" },
+      { id: "atv", label: "ATV" },
+      { id: "certificate", label: "Certificate" },
+    ],
     []
   );
 
@@ -939,6 +1085,16 @@ export default function EInvoicingPage() {
                     <Button variant="outline" onClick={loadDocuments} disabled={docsLoading}>
                       {docsLoading ? "Loading..." : "Apply filters"}
                     </Button>
+                    <label className="h-10 inline-flex items-center justify-center rounded-lg border px-3 text-sm font-semibold cursor-pointer hover:bg-slate-50">
+                      {xmlImporting ? "Importing..." : "Import XML"}
+                      <input
+                        type="file"
+                        accept=".xml,text/xml,application/xml"
+                        className="hidden"
+                        disabled={xmlImporting}
+                        onChange={(e) => importXmlFile(e.target.files?.[0])}
+                      />
+                    </label>
                     <Button
                       variant="outline"
                       onClick={() =>
@@ -1160,9 +1316,39 @@ export default function EInvoicingPage() {
               )}
 
               {panel === "general" && (
-                <div className="space-y-3">
-                  <div className="grid lg:grid-cols-2 gap-3">
-                    <Card className="p-4 space-y-3">
+                <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="hidden sm:flex items-center gap-1 rounded-lg border bg-white p-1">
+                      {GENERAL_TABS.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={`px-3 py-1.5 rounded-md text-sm ${
+                            generalTab === t.id ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                          onClick={() => setGeneralTab(t.id)}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      className="sm:hidden h-10 rounded-lg border px-3 text-sm bg-white w-full"
+                      value={generalTab}
+                      onChange={(e) => setGeneralTab(e.target.value)}
+                    >
+                      {GENERAL_TABS.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(generalTab === "core" || generalTab === "connections") && (
+                    <div className="grid lg:grid-cols-2 gap-3">
+                      {generalTab === "core" && (
+                        <Card className="p-4 space-y-3">
                       <div className="font-semibold">General</div>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -1192,43 +1378,207 @@ export default function EInvoicingPage() {
                           placeholder="Provider"
                         />
                       </div>
-                    </Card>
+                        </Card>
+                      )}
 
+                      {generalTab === "connections" && (
+                        <Card className="p-4 space-y-3">
+                          <div className="font-semibold">Module connections</div>
+                          <div className="text-sm text-slate-600">
+                            Enable which modules can issue electronic documents. Each module can have its own SMTP settings.
+                          </div>
+                          <div className="grid gap-2 text-sm">
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(cfg.settings?.moduleConnections?.frontdesk)}
+                                onChange={(e) => setModuleConnection("frontdesk", e.target.checked)}
+                              />
+                              Front Desk
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(cfg.settings?.moduleConnections?.restaurant)}
+                                onChange={(e) => setModuleConnection("restaurant", e.target.checked)}
+                              />
+                              Restaurant
+                            </label>
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(cfg.settings?.moduleConnections?.accounting)}
+                                onChange={(e) => setModuleConnection("accounting", e.target.checked)}
+                              />
+                              Accounting
+                            </label>
+                          </div>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+
+                  {generalTab === "forms" && (
                     <Card className="p-4 space-y-3">
-                      <div className="font-semibold">Module connections</div>
-                      <div className="text-sm text-slate-600">
-                        Enable which modules can issue electronic documents. Each module can have its own SMTP settings.
-                      </div>
-                      <div className="grid gap-2 text-sm">
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(cfg.settings?.moduleConnections?.frontdesk)}
-                            onChange={(e) => setModuleConnection("frontdesk", e.target.checked)}
-                          />
-                          Front Desk
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(cfg.settings?.moduleConnections?.restaurant)}
-                            onChange={(e) => setModuleConnection("restaurant", e.target.checked)}
-                          />
-                          Restaurant
-                        </label>
-                        <label className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(cfg.settings?.moduleConnections?.accounting)}
-                            onChange={(e) => setModuleConnection("accounting", e.target.checked)}
-                          />
-                          Accounting
-                        </label>
-                      </div>
-                    </Card>
-                  </div>
+                    <div className="font-semibold">Print forms (global templates + per-hotel checklist)</div>
+                    <div className="text-sm text-slate-600">
+                      Design is shared (global). Each hotel controls what fields appear per form (checklist) and can add a module logo.
+                    </div>
 
-                  <Card className="p-4 space-y-3">
+                    <div className="grid md:grid-cols-3 gap-3">
+                      {["frontdesk", "restaurant"].map((m) => {
+                        const branding = cfg.settings?.moduleBranding?.[m] || {};
+                        const hasLogo = Boolean(branding.logoDataUrl || branding.logoUrl);
+                        return (
+                          <Card key={m} className="p-3 bg-slate-50 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-semibold">{m === "frontdesk" ? "Front Desk" : "Restaurant"}</div>
+                              <div className="text-[11px] text-slate-500">{hasLogo ? "Logo set" : "No logo"}</div>
+                            </div>
+                            <input
+                              className="h-10 rounded-lg border px-3 text-sm bg-white"
+                              placeholder="Logo URL (optional)"
+                              value={branding.logoUrl || ""}
+                              onChange={(e) =>
+                                setCfg((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    moduleBranding: {
+                                      ...(prev.settings?.moduleBranding || {}),
+                                      [m]: { ...((prev.settings?.moduleBranding || {})[m] || {}), logoUrl: e.target.value },
+                                    },
+                                  },
+                                }))
+                              }
+                            />
+                            <div className="flex items-center justify-between gap-2">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => onLogoFile(m, e.target.files && e.target.files[0])}
+                              />
+                              {hasLogo && (
+                                <img
+                                  alt=""
+                                  src={branding.logoDataUrl || branding.logoUrl}
+                                  className="h-10 w-20 object-contain bg-white rounded border"
+                                />
+                              )}
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid lg:grid-cols-[320px_1fr] gap-3 pt-2 border-t">
+                      <div className="space-y-2">
+                        <div className="text-xs uppercase text-slate-500">Forms</div>
+                        <div className="max-h-[260px] overflow-y-auto space-y-1 pr-1">
+                          {(cfg.settings?.printForms || []).map((f) => (
+                            <div
+                              key={f.id}
+                              className="border rounded-lg px-3 py-2 bg-white flex items-start justify-between gap-2"
+                            >
+                              <button className="text-left min-w-0" onClick={() => editPrintForm(f)}>
+                                <div className="text-sm font-semibold truncate">{f.name}</div>
+                                <div className="text-[11px] text-slate-500">
+                                  {String(f.module || "")} • {String(f.docType || "")} • {String(f.paperType || "")}
+                                </div>
+                              </button>
+                              <button className="text-xs text-red-600" onClick={() => deletePrintForm(f.id)} title="Delete">
+                                Delete
+                              </button>
+                            </div>
+                          ))}
+                          {(cfg.settings?.printForms || []).length === 0 && (
+                            <div className="text-sm text-slate-500">No forms yet.</div>
+                          )}
+                        </div>
+                      </div>
+
+                      <Card className="p-3 space-y-3 bg-slate-50">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs uppercase text-slate-500">Editor</div>
+                            <div className="font-semibold text-slate-900">Checklist per form</div>
+                          </div>
+                          <Button onClick={upsertPrintForm} variant="outline">
+                            Save form
+                          </Button>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-2">
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            placeholder="Form ID (optional)"
+                            value={formEditor.id}
+                            onChange={(e) => setFormEditor((p) => ({ ...p, id: e.target.value }))}
+                          />
+                          <input
+                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            placeholder="Form name"
+                            value={formEditor.name}
+                            onChange={(e) => setFormEditor((p) => ({ ...p, name: e.target.value }))}
+                          />
+                          <select
+                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            value={formEditor.module}
+                            onChange={(e) => setFormEditor((p) => ({ ...p, module: e.target.value }))}
+                          >
+                            <option value="restaurant">Restaurant</option>
+                            <option value="frontdesk">Front Desk</option>
+                          </select>
+                          <select
+                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            value={formEditor.docType}
+                            onChange={(e) => setFormEditor((p) => ({ ...p, docType: e.target.value }))}
+                          >
+                            <option value="COMANDA">Comanda</option>
+                            <option value="TE">TE (ticket)</option>
+                            <option value="FE">FE (invoice)</option>
+                            <option value="CLOSES">Closes</option>
+                            <option value="SALES_REPORT">Sales report</option>
+                            <option value="DOCUMENT">Document</option>
+                          </select>
+                          <select
+                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            value={formEditor.paperType}
+                            onChange={(e) => setFormEditor((p) => ({ ...p, paperType: e.target.value }))}
+                          >
+                            <option value="80mm">80mm</option>
+                            <option value="58mm">58mm</option>
+                            <option value="A4">A4</option>
+                          </select>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-2">
+                          {PRINT_FORM_FIELDS.map((ff) => (
+                            <label key={ff.key} className="flex items-center gap-2 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={Boolean(formEditor.fields?.[ff.key])}
+                                onChange={(e) =>
+                                  setFormEditor((p) => ({
+                                    ...p,
+                                    fields: { ...(p.fields || {}), [ff.key]: e.target.checked },
+                                  }))
+                                }
+                              />
+                              {ff.label}
+                            </label>
+                          ))}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          The actual data comes from each module configuration (e.g., Restaurant billing issuer data is not the same as Hotel/Front Desk).
+                        </div>
+                      </Card>
+                    </div>
+                    </Card>
+                  )}
+ 
+                  {generalTab === "smtp" && (
+                    <Card className="p-4 space-y-3">
                     <div className="font-semibold">Billing Email (SMTP) per module</div>
                     <div className="grid md:grid-cols-3 gap-3">
                       {["frontdesk", "restaurant", "accounting"].map((m) => {
@@ -1302,10 +1652,13 @@ export default function EInvoicingPage() {
                         );
                       })}
                     </div>
-                  </Card>
+                    </Card>
+                  )}
 
-                  <div className="grid lg:grid-cols-2 gap-3">
-                    <Card className="p-4 space-y-3">
+                  {(generalTab === "atv" || generalTab === "certificate") && (
+                    <div className="grid lg:grid-cols-2 gap-3">
+                      {generalTab === "atv" && (
+                        <Card className="p-4 space-y-3">
                       <div className="font-semibold">Hacienda (ATV)</div>
                       <div className="text-sm text-slate-600">
                         Manual mode or API credentials storage (for future automation).
@@ -1435,9 +1788,11 @@ export default function EInvoicingPage() {
                           }))
                         }
                       />
-                    </Card>
+                        </Card>
+                      )}
 
-                    <Card className="p-4 space-y-3">
+                      {generalTab === "certificate" && (
+                        <Card className="p-4 space-y-3">
                       <div className="font-semibold">Signing Certificate</div>
                       <div className="text-sm text-slate-600">
                         Upload the certificate (P12/PFX) used to sign documents. The file is stored as base64.
@@ -1466,8 +1821,10 @@ export default function EInvoicingPage() {
                       <div className="text-xs text-slate-500">
                         Recommended: use an app password for Gmail SMTP and keep certificate passwords secure.
                       </div>
-                    </Card>
-                  </div>
+                        </Card>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

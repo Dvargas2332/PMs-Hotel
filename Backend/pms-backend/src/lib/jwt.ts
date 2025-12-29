@@ -1,11 +1,15 @@
+import "dotenv/config";
 import jwt from "jsonwebtoken";
-import type { SignOptions, JwtPayload } from "jsonwebtoken";
+import type { JwtPayload, SignOptions } from "jsonwebtoken";
 
 const SECRET = process.env.JWT_SECRET ?? "";
-if (!SECRET) throw new Error("JWT_SECRET no está definido");
+if (!SECRET) {
+  throw new Error(
+    'JWT_SECRET no está definido. Configúralo como variable de entorno (Elastic Beanstalk -> Environment properties) o crea un archivo ".env" (puedes copiar ".env.example").'
+  );
+}
 
 const DEFAULT_OPTIONS: SignOptions = {
-  // jsonwebtoken acepta string | number aquí
   expiresIn: (process.env.JWT_EXPIRES ?? "7d") as any,
   algorithm: "HS256",
 };
@@ -21,3 +25,4 @@ export function verify<T = JwtPayload>(token: string): T {
 export function decode(token: string) {
   return jwt.decode(token);
 }
+

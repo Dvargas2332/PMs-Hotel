@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { X as XIcon } from "lucide-react";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -91,7 +92,7 @@ export default function RatePlans() {
   const windowLabel = useMemo(() => {
     const end = new Date(viewStart);
     end.setDate(end.getDate() + 14);
-    return `${viewStart.toLocaleDateString("es-CR")} → ${end.toLocaleDateString("es-CR")}`;
+    return `${viewStart.toLocaleDateString("en-CR")} - ${end.toLocaleDateString("en-CR")}`;
   }, [viewStart]);
 
   const windowDays = useMemo(() => {
@@ -108,14 +109,14 @@ export default function RatePlans() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Tarifarios</h2>
-        <Button onClick={() => setShowModal(true)}>Crear tarifario</Button>
+        <h2 className="text-lg font-semibold">Rate plans</h2>
+        <Button onClick={() => setShowModal(true)}>New rate plan</Button>
       </div>
 
-      {/* Calendario abierto por día (ventana 15 días) */}
+      {/* Rate calendar (15-day window) */}
       <Card className="space-y-3 p-4">
         <div className="flex items-center justify-between">
-          <h4 className="font-medium">Calendario de tarifas (15 días)</h4>
+          <h4 className="font-medium">Rate calendar (15 days)</h4>
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <Button
               variant="outline"
@@ -127,7 +128,7 @@ export default function RatePlans() {
                 })
               }
             >
-              ← Anterior 15
+              &lt; Prev 15
             </Button>
             <span className="font-semibold capitalize">{windowLabel}</span>
             <Button
@@ -140,7 +141,7 @@ export default function RatePlans() {
                 })
               }
             >
-              Siguiente 15 →
+              Next 15 &gt;
             </Button>
             <input
               type="date"
@@ -152,19 +153,19 @@ export default function RatePlans() {
         </div>
 
         <div className="overflow-x-auto pb-2 touch-pan-x">
-          {/* Cabecera días */}
+          {/* Day header */}
           <div className="grid grid-flow-col auto-cols-[minmax(100px,1fr)] min-w-full gap-1 text-[11px] text-slate-500 uppercase mb-2">
             <div className="sticky left-0 z-10 bg-white border rounded-lg px-3 py-2 text-slate-700 font-semibold">
-              Tarifario
+              Rate plan
             </div>
             {windowDays.map((day) => (
               <div key={day.toISOString()} className="py-1 text-center bg-white border rounded-lg">
-                <div className="capitalize">{day.toLocaleDateString("es-CR", { weekday: "short" })}</div>
+                <div className="capitalize">{day.toLocaleDateString("en-CR", { weekday: "short" })}</div>
                 <div className="font-semibold text-slate-700 text-xs">{day.getDate()}</div>
               </div>
             ))}
           </div>
-          {/* Filas por tarifario */}
+          {/* Rows per plan */}
           <div className="space-y-2 min-w-full">
             {items.map((plan, idx) => {
               const colors = PLAN_COLORS[idx % PLAN_COLORS.length];
@@ -209,21 +210,21 @@ export default function RatePlans() {
         </div>
       </Card>
 
-      {/* Aplicar precio por rango */}
+      {/* Apply price range */}
       <Card className="space-y-3 p-4">
         <div className="flex items-center justify-between">
-          <h4 className="font-medium">Aplicar precio por rango</h4>
-          <div className="text-xs text-slate-500">Define un rango de fechas y el precio se marcará en el calendario.</div>
+          <h4 className="font-medium">Apply price for date range</h4>
+          <div className="text-xs text-slate-500">Define a date range and the price will be applied on the calendar.</div>
         </div>
         <div className="grid md:grid-cols-5 gap-2 items-end">
-          <Input placeholder="Nombre (opcional)" value={daily.name} onChange={(e)=>setDaily((f)=>({...f,name:e.target.value}))}/>
-          <Input placeholder="Precio" type="number" value={daily.price} onChange={(e)=>setDaily((f)=>({...f,price:e.target.value}))}/>
-          <Input placeholder="Moneda" value={daily.currency} onChange={(e)=>setDaily((f)=>({...f,currency:e.target.value}))}/>
+          <Input placeholder="Name (optional)" value={daily.name} onChange={(e)=>setDaily((f)=>({...f,name:e.target.value}))}/>
+          <Input placeholder="Price" type="number" value={daily.price} onChange={(e)=>setDaily((f)=>({...f,price:e.target.value}))}/>
+          <Input placeholder="Currency" value={daily.currency} onChange={(e)=>setDaily((f)=>({...f,currency:e.target.value}))}/>
           <div className="grid grid-cols-2 gap-2">
             <Input type="date" value={daily.from} onChange={(e)=>setDaily((f)=>({...f,from:e.target.value}))}/>
             <Input type="date" value={daily.to} onChange={(e)=>setDaily((f)=>({...f,to:e.target.value}))}/>
           </div>
-          <Button onClick={onApplyDaily} disabled={!daily.price || !daily.from || !daily.to}>Aplicar</Button>
+          <Button onClick={onApplyDaily} disabled={!daily.price || !daily.from || !daily.to}>Apply</Button>
         </div>
       </Card>
 
@@ -233,21 +234,21 @@ export default function RatePlans() {
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <Card className="w-full max-w-4xl space-y-4 p-5">
               <div className="flex items-center justify-between">
-                <h3 className="font-medium">Nuevo tarifario</h3>
+                <h3 className="font-medium">New rate plan</h3>
                 <button className="text-sm text-slate-500 hover:text-slate-700" onClick={() => setShowModal(false)}>
-                  ✕
+                  <XIcon className="h-4 w-4" />
                 </button>
               </div>
 
               <div className="grid md:grid-cols-2 gap-3">
                 <Input placeholder="ID" value={form.id} onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))} />
-                <Input placeholder="Nombre" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-                <Input placeholder="Moneda" value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} />
-                <Input placeholder="Precio base" type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
-                <Input placeholder="Desde" type="date" value={form.dateFrom} onChange={(e) => setForm((f) => ({ ...f, dateFrom: e.target.value }))} />
-                <Input placeholder="Hasta" type="date" value={form.dateTo} onChange={(e) => setForm((f) => ({ ...f, dateTo: e.target.value }))} />
+                <Input placeholder="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                <Input placeholder="Currency" value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} />
+                <Input placeholder="Base price" type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
+                <Input placeholder="From" type="date" value={form.dateFrom} onChange={(e) => setForm((f) => ({ ...f, dateFrom: e.target.value }))} />
+                <Input placeholder="To" type="date" value={form.dateTo} onChange={(e) => setForm((f) => ({ ...f, dateTo: e.target.value }))} />
                 <div className="flex items-center gap-2">
-                  <Checkbox checked={form.derived} onChange={(v) => setForm((f) => ({ ...f, derived: v }))} label="Derivado" />
+                  <Checkbox checked={form.derived} onChange={(v) => setForm((f) => ({ ...f, derived: v }))} label="Derived" />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
@@ -267,13 +268,13 @@ export default function RatePlans() {
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setShowModal(false)}>
-                  Cancelar
+                  Cancel
                 </Button>
-                <Button onClick={onCreate}>Guardar</Button>
+                <Button onClick={onCreate}>Save</Button>
               </div>
 
               <div className="text-xs text-slate-500">
-                Selecciona el rango de fechas en el que se activará el tarifario. Al guardar, aparecerá en el calendario/listado de tarifas.
+                Select the date range where this rate plan is active. After saving, it will appear in the rate calendar/list.
               </div>
             </Card>
           </div>

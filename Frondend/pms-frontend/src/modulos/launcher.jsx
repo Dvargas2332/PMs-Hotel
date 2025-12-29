@@ -97,7 +97,10 @@ export default function Launcher() {
   const filtered = useMemo(() => {
     const allowed = hotel?.allowedModules;
     if (!Array.isArray(allowed) || allowed.length === 0) return modules;
-    return modules.filter((m) => !m.code || allowed.includes(m.code));
+    // Backwards-compatible: some backends may not yet include new module codes
+    // in the membership allow-list. Keep showing Electronic Invoicing so it can
+    // be controlled via role permissions like the other modules.
+    return modules.filter((m) => !m.code || allowed.includes(m.code) || m.code === "einvoicing");
   }, [modules, hotel?.allowedModules]);
 
   // Suscripción al bus de alertas globales
@@ -374,9 +377,14 @@ export default function Launcher() {
                   // Antes de que el usuario del launcher inicie sesión,
                   // mostramos todos los módulos atenuados.
                   if (!user) return true;
-                  if (!Array.isArray(user.allowedModules)) return true;
+                  const hasAllowedModules =
+                    Array.isArray(user.allowedModules) && user.allowedModules.length > 0;
                   // Una vez logueado, solo mostrar módulos permitidos para ese perfil.
-                  return user.allowedModules.includes(mod.code);
+                  const allowedByList = hasAllowedModules ? user.allowedModules.includes(mod.code) : false;
+                  const allowedByPerms = Array.isArray(user.permissions)
+                    ? user.permissions.some((p) => typeof p === "string" && p.startsWith(`${mod.code}.`))
+                    : false;
+                  return allowedByList || allowedByPerms;
                 })
                 .map((mod, idx) => {
                   const disabled = !user;
@@ -396,7 +404,7 @@ export default function Launcher() {
 
         <footer className="mx-auto my-8 w-full max-w-6xl px-6 text-[11px] text-gray-600">
           <div className="flex items-center justify-between">
-            <span>© {new Date().getFullYear()} Kazehana PMS</span>
+            <span>(c) {new Date().getFullYear()} Kazehana PMS</span>
             <span className="hidden items-center gap-1 sm:inline-flex" />
           </div>
         </footer>

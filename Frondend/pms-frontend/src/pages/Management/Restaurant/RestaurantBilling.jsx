@@ -27,8 +27,8 @@ export default function RestaurantBilling() {
     <div className="space-y-4">
       <Card className="p-5 space-y-3">
         <div>
-          <h3 className="font-semibold text-lg">Facturacion</h3>
-          <p className="text-sm text-gray-600">Margenes, tipo de comprobante y politicas.</p>
+          <h3 className="font-semibold text-lg">Billing</h3>
+          <p className="text-sm text-gray-600">Margins, receipt type and policies.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {["factura", "tiquete", "nota"].map((tipo) => (
@@ -43,8 +43,8 @@ export default function RestaurantBilling() {
           ))}
         </div>
         <div className="grid md:grid-cols-2 gap-3">
-          <Input placeholder="Margen (%)" type="number" value={billingCfg.margen} onChange={(e) => setBillingCfg((f) => ({ ...f, margen: e.target.value }))} />
-          <Input placeholder="Propina sugerida (%)" type="number" value={billingCfg.propina} onChange={(e) => setBillingCfg((f) => ({ ...f, propina: e.target.value }))} />
+          <Input placeholder="Margin (%)" type="number" value={billingCfg.margen} onChange={(e) => setBillingCfg((f) => ({ ...f, margen: e.target.value }))} />
+          <Input placeholder="Suggested tip (%)" type="number" value={billingCfg.propina} onChange={(e) => setBillingCfg((f) => ({ ...f, propina: e.target.value }))} />
         </div>
         <div className="flex items-center gap-2">
           <Checkbox
@@ -52,7 +52,7 @@ export default function RestaurantBilling() {
             checked={billingCfg.autoFactura}
             onCheckedChange={(v) => setBillingCfg((f) => ({ ...f, autoFactura: Boolean(v) }))}
           />
-          <label htmlFor="auto-factura" className="text-sm">Autogenerar factura/tiquete al cerrar</label>
+          <label htmlFor="auto-factura" className="text-sm">Auto-generate invoice/receipt on close</label>
         </div>
         <div className="flex justify-end">
           <Button
@@ -62,13 +62,13 @@ export default function RestaurantBilling() {
               try {
                 setSaving(true);
                 await api.put("/restaurant/billing", billingCfg);
-                window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurante", desc: "Facturacion guardada" } }));
+                window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Billing saved" } }));
               } finally {
                 setSaving(false);
               }
             }}
           >
-            {saving ? "Guardando..." : "Guardar facturacion"}
+            {saving ? "Saving..." : "Save billing"}
           </Button>
         </div>
       </Card>

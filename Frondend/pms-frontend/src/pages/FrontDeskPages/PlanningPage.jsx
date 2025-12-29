@@ -1,7 +1,7 @@
 import React from "react";
 import Planning from "../../components/Planning";
 
-// Página contenedora del planning de habitaciones del Frontdesk
+// Container page for Front Desk room planner
 export default function PlanningPage() {
   return (
     <div className="h-screen bg-gray-50">

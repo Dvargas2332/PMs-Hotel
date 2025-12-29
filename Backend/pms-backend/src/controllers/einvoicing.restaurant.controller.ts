@@ -81,7 +81,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     receiver?: any;
   };
   if (!restaurantOrderId) return res.status(400).json({ message: "restaurantOrderId requerido" });
-  if (docType !== "FE" && docType !== "TE") return res.status(400).json({ message: "docType invalido (FE/TE)" });
+  if (docType !== "FE" && docType !== "TE") return res.status(400).json({ message: "docType inválido (FE/TE)" });
 
   const cfg = await prisma.eInvoicingConfig.findUnique({
     where: { hotelId },
@@ -92,7 +92,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
   const settings = (cfg.settings || {}) as any;
   const connections = (settings.moduleConnections || {}) as any;
   if (connections.restaurant === false) {
-    return res.status(400).json({ message: "Restaurant no está habilitado para facturación electrónica" });
+    return res.status(400).json({ message: "Restaurante no está habilitado para facturación electrónica" });
   }
 
   const issuer = (settings.issuer || {}) as any;
@@ -104,7 +104,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
   const situation = String(rs.situation || "1");
   if (!issuerIdNumber.trim()) {
     return res.status(400).json({
-      message: "Configure el emisor en Facturación Electrónica (Issuer ID number) antes de emitir FE/TE.",
+      message: "Configure el emisor en Facturación Electrónica (número de identificación del emisor) antes de emitir FE/TE.",
     });
   }
 
@@ -173,4 +173,3 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
 
   return res.json(doc);
 }
-

@@ -14,6 +14,14 @@ export default function RestaurantPayments() {
     cargoHabitacion: false,
   });
   const [saving, setSaving] = useState(false);
+  const methodLabel = (method) =>
+    ({
+      Efectivo: "Cash",
+      Tarjeta: "Card",
+      SINPE: "SINPE",
+      Transferencia: "Bank transfer",
+      Habitacion: "Room charge",
+    })[method] || method;
 
   const toggleCobro = (method) => {
     setPaymentsCfg((prev) => {
@@ -36,22 +44,22 @@ export default function RestaurantPayments() {
     <div className="space-y-4">
       <Card className="p-5 space-y-3">
         <div>
-          <h3 className="font-semibold text-lg">Pagos y divisa</h3>
-          <p className="text-sm text-gray-600">Monedas, tipo de cambio y cobros aceptados.</p>
+          <h3 className="font-semibold text-lg">Payments and currency</h3>
+          <p className="text-sm text-gray-600">Currencies, exchange rate, and accepted payment methods.</p>
         </div>
         <div className="grid md:grid-cols-3 gap-3">
-          <Input placeholder="Moneda base" value={paymentsCfg.monedaBase} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaBase: e.target.value }))} />
-          <Input placeholder="Moneda secundaria" value={paymentsCfg.monedaSec} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaSec: e.target.value }))} />
-          <Input placeholder="Tipo de cambio" type="number" value={paymentsCfg.tipoCambio} onChange={(e) => setPaymentsCfg((f) => ({ ...f, tipoCambio: e.target.value }))} />
+          <Input placeholder="Base currency" value={paymentsCfg.monedaBase} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaBase: e.target.value }))} />
+          <Input placeholder="Secondary currency" value={paymentsCfg.monedaSec} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaSec: e.target.value }))} />
+          <Input placeholder="Exchange rate" type="number" value={paymentsCfg.tipoCambio} onChange={(e) => setPaymentsCfg((f) => ({ ...f, tipoCambio: e.target.value }))} />
         </div>
         <div className="space-y-2">
-          <div className="text-sm font-medium">Cobros disponibles</div>
+          <div className="text-sm font-medium">Available methods</div>
           <div className="flex flex-wrap gap-2">
             {["Efectivo", "Tarjeta", "SINPE", "Transferencia", "Habitacion"].map((m) => {
               const active = paymentsCfg.cobros.includes(m);
               return (
                 <Button key={m} size="sm" variant={active ? "default" : "outline"} onClick={() => toggleCobro(m)}>
-                  {m}
+                  {methodLabel(m)}
                 </Button>
               );
             })}
@@ -61,11 +69,11 @@ export default function RestaurantPayments() {
               checked={paymentsCfg.cargoHabitacion}
               onCheckedChange={(v) => setPaymentsCfg((f) => ({ ...f, cargoHabitacion: Boolean(v) }))}
             />
-            Habilitar cargos a habitacion (consulta Front Desk)
+            Enable room charges (Front Desk lookup)
           </label>
           {paymentsCfg.cargoHabitacion && (
-            <Button size="sm" variant="outline" onClick={() => window.alert("Consulta de habitaciones (mock)")}>
-              Probar consulta de habitaciones
+            <Button size="sm" variant="outline" onClick={() => window.alert("Room lookup (mock)")}>
+              Test room lookup
             </Button>
           )}
           <div className="flex justify-end pt-2">
@@ -76,13 +84,13 @@ export default function RestaurantPayments() {
                 try {
                   setSaving(true);
                   await api.put("/restaurant/payments", paymentsCfg);
-                  window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurante", desc: "Pagos y divisa guardados" } }));
+                  window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Payments and currency saved" } }));
                 } finally {
                   setSaving(false);
                 }
               }}
             >
-              {saving ? "Guardando..." : "Guardar pagos/divisa"}
+              {saving ? "Saving..." : "Save payments/currency"}
             </Button>
           </div>
         </div>

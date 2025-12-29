@@ -23,32 +23,32 @@ import Invoicing from "./Invoicing/Invoicing";
 
 export default function Management() {
   const tabs = [
-    { value:"roles", label:"Perfiles & Permisos", content:<Roles/> },
-    { value:"audit", label:"Bitácora", content:<AuditLog/> },
+    { value:"roles", label:"Roles & permissions", content:<Roles/> },
+    { value:"audit", label:"Audit log", content:<AuditLog/> },
 
-    { value:"roomtypes", label:"Tipos de Habitación", content:<RoomTypes/> },
-    { value:"rooms", label:"Habitaciones", content:<Rooms/> },
-    { value:"rates", label:"Tarifarios", content:<RatePlans/> },
-    { value:"contracts", label:"Contratos/Canales", content:<Contracts/> },
-    { value:"meal", label:"Regímenes", content:<MealPlans/> },
+    { value:"roomtypes", label:"Room types", content:<RoomTypes/> },
+    { value:"rooms", label:"Rooms", content:<Rooms/> },
+    { value:"rates", label:"Rate plans", content:<RatePlans/> },
+    { value:"contracts", label:"Contracts / Channels", content:<Contracts/> },
+    { value:"meal", label:"Meal plans", content:<MealPlans/> },
 
-    { value:"payments", label:"Formas de Pago", content:<PaymentMethods/> },
-    { value:"discounts", label:"Descuentos", content:<Discounts/> },
-    { value:"taxes", label:"Impuestos", content:<Taxes/> },
-    { value:"printers", label:"Impresoras", content:<Printers/> },
-    { value:"currency", label:"Moneda", content:<Currency/> },
-    { value:"hotel", label:"Hotel/Idioma/Nacionalidades", content:<HotelInfo/> },
-    { value:"cashier", label:"Cierres de Caja", content:<Cashier/> },
+    { value:"payments", label:"Payment methods", content:<PaymentMethods/> },
+    { value:"discounts", label:"Discounts", content:<Discounts/> },
+    { value:"taxes", label:"Taxes", content:<Taxes/> },
+    { value:"printers", label:"Printers", content:<Printers/> },
+    { value:"currency", label:"Currency", content:<Currency/> },
+    { value:"hotel", label:"Hotel / Language / Nationalities", content:<HotelInfo/> },
+    { value:"cashier", label:"Cash closures", content:<Cashier/> },
 
-    { value:"usersfd", label:"Usuarios Front Desk", content:<UsersFD/> },
-    { value:"einvoice", label:"Sistema de Facturación", content:<Invoicing/> },
+    { value:"usersfd", label:"Front Desk users", content:<UsersFD/> },
+    { value:"einvoice", label:"Invoicing system", content:<Invoicing/> },
   ];
 
   return (
     <Card>
       <CardHeader>
         <h2 className="text-lg font-semibold">Management</h2>
-        <p className="text-sm text-neutral-600">Control central de configuraciones y seguridad.</p>
+        <p className="text-sm text-neutral-600">Central configuration and security control.</p>
       </CardHeader>
       <CardContent>
         <Tabs tabs={tabs} defaultTab="roles" />

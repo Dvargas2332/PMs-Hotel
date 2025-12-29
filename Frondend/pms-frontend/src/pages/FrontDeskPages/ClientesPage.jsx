@@ -131,15 +131,15 @@ export default function ClientesPage() {
       pushAlert({
         type: "system",
         title: "Datos incompletos",
-        desc: "Nombre y apellidos son obligatorios para crear un huesped.",
+        desc: "First and last name are required to create a guest.",
       });
       return;
     }
     if (form.isCompany && !form.company.trim()) {
       pushAlert({
         type: "system",
-        title: "Empresa sin nombre",
-        desc: "Para clientes empresariales debes indicar el nombre de la empresa.",
+        title: "Missing company name",
+        desc: "For corporate customers you must provide the company name.",
       });
       return;
     }
@@ -153,8 +153,8 @@ export default function ClientesPage() {
       setEditId(null);
       setSearch("");
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "No se pudo guardar el huesped";
-      pushAlert({ type: "system", title: "Error al guardar cliente", desc: msg });
+      const msg = err?.response?.data?.message || err?.message || "Could not save guest";
+      pushAlert({ type: "system", title: "Save error", desc: msg });
     }
   };
 
@@ -189,7 +189,7 @@ export default function ClientesPage() {
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Huespedes</h1>
+          <h1 className="text-2xl font-bold text-slate-900">Guests</h1>
           <p className="text-sm text-slate-600">Listado conectado al backend /guests.</p>
         </div>
         
@@ -197,9 +197,9 @@ export default function ClientesPage() {
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold">{editId ? "Editar cliente" : "Crear cliente"}</h2>
+          <h2 className="text-lg font-semibold">{editId ? "Edit guest" : "Create guest"}</h2>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500">Tipo:</span>
+            <span className="text-slate-500">Type:</span>
             <button
               type="button"
               className={`px-3 py-1 rounded-full border text-xs ${
@@ -209,7 +209,7 @@ export default function ClientesPage() {
               }`}
               onClick={() => setForm((f) => ({ ...f, isCompany: false }))}
             >
-              Cliente normal
+              Individual
             </button>
             <button
               type="button"
@@ -220,13 +220,13 @@ export default function ClientesPage() {
               }`}
               onClick={() => setForm((f) => ({ ...f, isCompany: true }))}
             >
-              Empresarial
+              Corporate
             </button>
           </div>
         </div>
         <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Nombre</label>
+            <label className="block text-xs text-slate-500 mb-1">First name</label>
             <input
               className="w-full max-w-[300px] border rounded px-3 py-2"
               value={form.firstName}
@@ -235,7 +235,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Apellidos</label>
+            <label className="block text-xs text-slate-500 mb-1">Last name</label>
             <input
               className="w-full max-w-[300px] border rounded px-3 py-2"
               value={form.lastName}
@@ -244,7 +244,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Email principal</label>
+            <label className="block text-xs text-slate-500 mb-1">Primary email</label>
             <input
               type="email"
               className="w-full max-w-[300px] border rounded px-3 py-2"
@@ -253,7 +253,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Telefono</label>
+            <label className="block text-xs text-slate-500 mb-1">Phone</label>
             <input
               className="w-full max-w-[220px] border rounded px-3 py-2"
               value={form.phone}
@@ -261,7 +261,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Tipo de documento</label>
+            <label className="block text-xs text-slate-500 mb-1">ID type</label>
             <select
               className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
               value={form.idType}
@@ -283,7 +283,7 @@ export default function ClientesPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Numero de documento</label>
+            <label className="block text-xs text-slate-500 mb-1">ID number</label>
             <input
               className="w-full max-w-[220px] border rounded px-3 py-2"
               value={form.idNumber}
@@ -359,7 +359,7 @@ export default function ClientesPage() {
             )}
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs text-slate-500 mb-1">Direccion</label>
+            <label className="block text-xs text-slate-500 mb-1">Address</label>
             <input
               className="w-full border rounded px-3 py-2"
               value={form.address}
@@ -368,19 +368,19 @@ export default function ClientesPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">
-              {form.isCompany ? "Nombre de la empresa" : "Empresa (opcional)"}
+              {form.isCompany ? "Company name" : "Company (optional)"}
             </label>
             <input
               className="w-full border rounded px-3 py-2"
               value={form.company}
               onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-              placeholder={form.isCompany ? "Ej. ACME Corp" : ""}
+              placeholder={form.isCompany ? "e.g. ACME Corp" : ""}
             />
           </div>
           {form.isCompany && (
             <>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Razón social</label>
+                <label className="block text-xs text-slate-500 mb-1">Legal name</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.legalName}
@@ -388,7 +388,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Nombre de gerente</label>
+                <label className="block text-xs text-slate-500 mb-1">Manager name</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.managerName}
@@ -396,7 +396,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Actividad económica</label>
+                <label className="block text-xs text-slate-500 mb-1">Business activity</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.economicActivity}
@@ -406,7 +406,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Correo alternativo 1</label>
+                <label className="block text-xs text-slate-500 mb-1">Alternate email 1</label>
                 <input
                   type="email"
                   className="w-full border rounded px-3 py-2"
@@ -415,7 +415,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Correo alternativo 2</label>
+                <label className="block text-xs text-slate-500 mb-1">Alternate email 2</label>
                 <input
                   type="email"
                   className="w-full border rounded px-3 py-2"
@@ -450,7 +450,7 @@ export default function ClientesPage() {
               disabled={loading.action}
               className="px-4 py-2 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-500"
             >
-              {editId ? "Actualizar" : "Crear"}
+              {editId ? "Update" : "Create"}
             </button>
           </div>
         </form>
@@ -458,10 +458,10 @@ export default function ClientesPage() {
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="text-lg font-semibold">Listas de clientes</h2>
+          <h2 className="text-lg font-semibold">Guest lists</h2>
           <input
             className="border rounded px-3 py-2 text-sm w-full md:w-64"
-            placeholder="Buscar por nombre, email, telefono o documento"
+            placeholder="Search by name, email, phone, or ID"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -475,17 +475,17 @@ export default function ClientesPage() {
               {/* Clientes normales */}
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  Clientes normales ({personas.length})
+                  Individual guests ({personas.length})
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">Nombre</th>
-                        <th className="p-2">Documento</th>
+                        <th className="p-2">Name</th>
+                        <th className="p-2">ID</th>
                         <th className="p-2">Email</th>
-                        <th className="p-2">Telefono</th>
-                        <th className="p-2 text-right">Acciones</th>
+                        <th className="p-2">Phone</th>
+                        <th className="p-2 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -502,20 +502,20 @@ export default function ClientesPage() {
                           <td className="p-2 text-xs">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">Sin documento</span>}
+                              : <span className="text-slate-400">No ID</span>}
                           </td>
                           <td className="p-2">
-                            {g.email || <span className="text-slate-400">Sin email</span>}
+                            {g.email || <span className="text-slate-400">No email</span>}
                           </td>
                           <td className="p-2">
-                            {g.phone || <span className="text-slate-400">Sin telefono</span>}
+                            {g.phone || <span className="text-slate-400">No phone</span>}
                           </td>
                           <td className="p-2 text-right">
                             <button
                               className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
                               onClick={() => onEdit(g)}
                             >
-                              Editar
+                              Edit
                             </button>
                           </td>
                         </tr>
@@ -523,7 +523,7 @@ export default function ClientesPage() {
                       {personas.length === 0 && (
                         <tr>
                           <td className="p-3 text-center text-slate-500" colSpan={5}>
-                            No hay clientes normales que coincidan con la busqueda.
+                            No matching individual guests.
                           </td>
                         </tr>
                       )}
@@ -535,44 +535,44 @@ export default function ClientesPage() {
               {/* Clientes empresariales */}
               <div className="space-y-2 mt-6">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  Clientes empresariales ({empresas.length})
+                  Corporate customers ({empresas.length})
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">Empresa</th>
-                        <th className="p-2">Contacto</th>
-                        <th className="p-2">Documento</th>
+                        <th className="p-2">Company</th>
+                        <th className="p-2">Contact</th>
+                        <th className="p-2">ID</th>
                         <th className="p-2">Email</th>
-                        <th className="p-2">Telefono</th>
-                        <th className="p-2 text-right">Acciones</th>
+                        <th className="p-2">Phone</th>
+                        <th className="p-2 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {empresas.map((g) => (
                         <tr key={g.id} className="border-t">
-                          <td className="p-2 font-medium">{g.company || "Empresa"}</td>
+                          <td className="p-2 font-medium">{g.company || "Company"}</td>
                           <td className="p-2 text-xs">
-                            {[g.firstName, g.lastName].filter(Boolean).join(" ") || "Sin contacto"}
+                            {[g.firstName, g.lastName].filter(Boolean).join(" ") || "No contact"}
                           </td>
                           <td className="p-2 text-xs">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">Sin documento</span>}
+                              : <span className="text-slate-400">No ID</span>}
                           </td>
                           <td className="p-2">
-                            {g.email || <span className="text-slate-400">Sin email</span>}
+                            {g.email || <span className="text-slate-400">No email</span>}
                           </td>
                           <td className="p-2">
-                            {g.phone || <span className="text-slate-400">Sin telefono</span>}
+                            {g.phone || <span className="text-slate-400">No phone</span>}
                           </td>
                           <td className="p-2 text-right">
                             <button
                               className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
                               onClick={() => onEdit(g)}
                             >
-                              Editar
+                              Edit
                             </button>
                           </td>
                         </tr>
@@ -580,7 +580,7 @@ export default function ClientesPage() {
                       {empresas.length === 0 && (
                         <tr>
                           <td className="p-3 text-center text-slate-500" colSpan={6}>
-                            No hay empresas que coincidan con la busqueda.
+                            No companies match the search.
                           </td>
                         </tr>
                       )}

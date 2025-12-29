@@ -14,7 +14,7 @@ export default function ChannelManager() {
         <Input placeholder="API Secret" />
         <Input placeholder="Hotel ID / Property Code" />
       </div>
-      <Button>Guardar</Button>
+      <Button>Save</Button>
     </Card>
   );
 }

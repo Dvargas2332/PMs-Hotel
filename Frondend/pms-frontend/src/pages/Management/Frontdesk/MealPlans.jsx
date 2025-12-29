@@ -24,18 +24,18 @@ export default function MealPlans() {
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      
+      <div className="grid md:grid-cols-2 gap-6">
+       
         <Card className="space-y-3 p-5">
-          <h3 className="font-medium">Nuevo Régimen</h3>
+          <h3 className="font-medium">New meal plan</h3>
           <Input placeholder="ID (RO/BB/HB/FB/AI)" value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))}/>
-          <Input placeholder="Nombre" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
-          <Button onClick={onCreate}>Crear</Button>
-        
+          <Input placeholder="Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+          <Button onClick={onCreate}>Create</Button>
+         
       </Card>
       <div>
         <SimpleTable
-          cols={[{key:"id",label:"ID"},{key:"name",label:"Nombre"}]}
+          cols={[{key:"id",label:"ID"},{key:"name",label:"Name"}]}
           rows={items}
         />
       </div>

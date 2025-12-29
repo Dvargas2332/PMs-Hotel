@@ -17,12 +17,14 @@ import hotelRoutes from "./routes/hotel.route.js";
 import rolesRoutes from "./routes/roles.route.js";
 import permissionsRoutes from "./routes/permissions.route.js";
 import restaurantRoutes from "./routes/restaurant.route.js";
+import taxesRoutes from "./routes/taxes.route.js";
 import reportRoutes from "./routes/report.route.js";
 import invoiceRoutes from "./routes/invoice.route.js";
 import geoRoutes from "./routes/geo.route.js";
 import cashAuditRoutes from "./routes/cashAudit.route.js";
 import usersRoutes from "./routes/users.route.js";
 import launcherRoutes from "./routes/launcher.route.js";
+import einvoicingRoutes from "./routes/einvoicing.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -33,7 +35,8 @@ import { logger } from "./lib/logger.js";
 
 const app = express();
 
-app.use(express.json());
+// e-invoicing configurations may include base64 certificates; allow larger JSON payloads.
+app.use(express.json({ limit: "15mb" }));
 app.use(
   cors({
     origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
@@ -61,8 +64,10 @@ api.use("/hotel", hotelRoutes);
 api.use("/roles", rolesRoutes);
 api.use("/permissions", permissionsRoutes);
 api.use("/restaurant", restaurantRoutes);
+api.use("/taxes", taxesRoutes);
 api.use("/reports", reportRoutes);
 api.use("/invoices", invoiceRoutes);
+api.use("/einvoicing", einvoicingRoutes);
 api.use("/geo", geoRoutes);
 api.use("/cash-audits", cashAuditRoutes);
 api.use("/users", usersRoutes);

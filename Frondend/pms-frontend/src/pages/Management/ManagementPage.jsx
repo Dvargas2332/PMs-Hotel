@@ -1,7 +1,7 @@
 // src/pages/Management/ManagementPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Bell, CircleUser, LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import Roles from "./Roles";
 import AuditLog from "./AuditLog";
@@ -129,18 +129,18 @@ function LauncherProfiles() {
 
   const handleDelete = async (id) => {
     if (!id) return;
-    if (!window.confirm("¿Eliminar este perfil de launcher?")) return;
+    if (!window.confirm("Delete this launcher profile?")) return;
     try {
       await api.delete(`/launcher/${encodeURIComponent(id)}`);
       setAccounts((list) => list.filter((a) => a.id !== id));
       if (editingId === id) resetForm();
     } catch (err) {
-      console.error("Error eliminando perfil de launcher", err);
+      console.error("Error deleting launcher profile", err);
     }
   };
 
   const roleOptions = [
-    { value: "", label: "Selecciona rol..." },
+    { value: "", label: "Select role..." },
     ...roles.map((r) => ({ value: r.id, label: r.name || r.id })),
   ];
 
@@ -156,30 +156,30 @@ function LauncherProfiles() {
   return (
     <div className="grid gap-6 md:grid-cols-2">
       <Card className="space-y-4 p-5">
-        <h3 className="font-medium">Perfiles para iniciar sesión</h3>
+        <h3 className="font-medium">Login profiles</h3>
         
 
         <div className="space-y-3">
           <div className="space-y-1">
-            <label className="text-xs text-slate-500">Usuario (ID de inicio de sesión)</label>
+            <label className="text-xs text-slate-500">User (login ID)</label>
             <Input
-              placeholder="Ej: recepcion1"
+              placeholder="e.g. frontdesk1"
               value={form.userId}
               onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-slate-500">Nombre y Apellido</label>
+            <label className="text-xs text-slate-500">Full name</label>
             <Input
-              placeholder="Nombre del usuario"
+              placeholder="User name"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-slate-500">Rol: </label>
+            <label className="text-xs text-slate-500">Role:</label>
             <Select
               value={form.roleId}
               onChange={(val) => setForm((f) => ({ ...f, roleId: val }))}
@@ -189,11 +189,11 @@ function LauncherProfiles() {
 
           <div className="space-y-1">
             <label className="text-xs text-slate-500">
-              Contraseña / PIN (mínimo 4 dígitos)
+              Password / PIN (min 4 digits)
             </label>
             <Input
               type="password"
-              placeholder={editingId ? "Deja en blanco para no cambiar" : "PIN numérico (ej. 1234)"}
+              placeholder={editingId ? "Leave blank to keep unchanged" : "Numeric PIN (e.g. 1234)"}
               value={form.password}
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             />
@@ -202,7 +202,7 @@ function LauncherProfiles() {
 
         <div className="flex gap-2 pt-2">
           <Button type="button" onClick={handleSave} disabled={saving || loading}>
-            {editingId ? "Guardar cambios" : "Crear perfil"}
+            {editingId ? "Save changes" : "Create profile"}
           </Button>
           {editingId && (
             <Button
@@ -211,7 +211,7 @@ function LauncherProfiles() {
               onClick={resetForm}
               disabled={saving}
             >
-              Cancelar
+              Cancel
             </Button>
           )}
         </div>
@@ -219,16 +219,16 @@ function LauncherProfiles() {
 
       <Card className="p-5">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium">Perfiles configurados</h3>
-          {loading && <span className="text-xs text-slate-400">Cargando...</span>}
+          <h3 className="font-medium">Configured profiles</h3>
+          {loading && <span className="text-xs text-slate-400">Loading...</span>}
         </div>
         <SimpleTable
           cols={[
-            { key: "userId", label: "ID de usuario" },
-            { key: "name", label: "Nombre" },
-            { key: "roleName", label: "Rol" },
-            { key: "createdAt", label: "Creado" },
-            { key: "actions", label: "Acciones" },
+            { key: "userId", label: "User ID" },
+            { key: "name", label: "Name" },
+            { key: "roleName", label: "Role" },
+            { key: "createdAt", label: "Created" },
+            { key: "actions", label: "Actions" },
           ]}
           rows={rows.map((r) => ({
             ...r,
@@ -240,7 +240,7 @@ function LauncherProfiles() {
                   type="button"
                   onClick={() => handleEdit(r)}
                 >
-                  Editar
+                  Edit
                 </Button>
                 <Button
                   size="xs"
@@ -248,7 +248,7 @@ function LauncherProfiles() {
                   type="button"
                   onClick={() => handleDelete(r.id)}
                 >
-                  Eliminar
+                  Delete
                 </Button>
               </div>
             ),
@@ -309,6 +309,7 @@ const VIEWS = {
 
 export default function ManagementPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [selected, setSelected] = useState("profiles");
   const [alerts, setAlerts] = useState([]);
@@ -388,55 +389,46 @@ export default function ManagementPage() {
         items: [{ id: "profiles", label: "Perfiles" }],
       },
       {
-        title: "Auditoria",
+        title: "Auditoría",
         key: "audit",
-        items: [{ id: "usageLog", label: "Bitacora de uso de modulos" }],
+        items: [{ id: "usageLog", label: "Registro de uso de módulos" }],
       },
       {
-        title: "Front Desk",
+        title: "Frontdesk",
         key: "frontdesk",
         items: [
-          { id: "roomTypes",      label: "1. Tipos de habitaciones y creacion de habitaciones" },
-          { id: "rates",          label: "2. Tarifarios" },
-          { id: "contracts",      label: "3. Contratos (Directos / OTAs)" },
-          { id: "paymentMethods", label: "4. Formas de pago" },
-          { id: "discounts",      label: "5. Descuentos" },
-          { id: "taxes",          label: "6. Impuestos" },
-          { id: "printers",       label: "7. Impresoras" },
-          { id: "currency",       label: "8. Tipo de moneda" },
-          { id: "hotelInfo",      label: "9. Parametros e informacion del hotel" },
-          { id: "cashClosures",   label: "10. Cierres de caja" },
-          { id: "mealPlans",      label: "11. Regimenes de alojamiento" },
-          { id: "billingSystem",  label: "12. Facturacion" },
+          { id: "roomTypes", label: "Tipos de habitación y habitaciones" },
+          { id: "rates", label: "Planes tarifarios" },
+          { id: "contracts", label: "Contratos (Directos / OTAs)" },
+          { id: "mealPlans", label: "Regímenes de alojamiento" },
+          { id: "billingSystem", label: "Facturación" },
+          { id: "paymentMethods", label: "Formas de pago" },
+          { id: "discounts", label: "Descuentos" },
+          { id: "taxes", label: "Impuestos" },
+          { id: "currency", label: "Monedas y tipo de cambio" },
+          { id: "printers", label: "Impresoras" },
+          { id: "cashClosures", label: "Cierres de caja" },
+          { id: "hotelInfo", label: "Información general del hotel" },
         ],
       },
       {
         title: "Restaurante",
         key: "restaurant",
         items: [
-          { id: "restaurantGeneral", label: "Informacion general" },
-          { id: "restaurantBilling", label: "Facturacion" },
-          { id: "restaurantTaxes", label: "Impuestos y descuentos" },
-          { id: "restaurantPayments", label: "Pagos y divisa" },
-          { id: "restaurantFamilies", label: "Grupos y familias" },
-          { id: "restaurantItems", label: "Articulos" },
-          { id: "restaurantRecipes", label: "Recetario" },
-          { id: "restaurantInventory", label: "Inventario" },
-          { id: "restaurantConfig", label: "Secciones, mesas y menu" },
+          { id: "restaurantConfig", label: "Configuración" },
         ],
       },
       {
         title: "Accounting",
         key: "accounting",
         items: [
-          { id: "accountingConfig", label: "Parametros contables" },
-          { id: "billingSystem", label: "Facturacion electronica" },
+          { id: "accountingConfig", label: "Parámetros contables" },
         ],
       },
       {
         title: "Channel Manager",
         key: "channel",
-        items: [{ id: "channelManager", label: "Conexion OTAs / Channel Manager" }],
+        items: [{ id: "channelManager", label: "Conexión OTAs / Channel Manager" }],
       },
     ],
     []
@@ -455,9 +447,25 @@ export default function ManagementPage() {
       return next;
     });
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || "");
+    const view = params.get("view");
+    if (!view) return;
+    if (!VIEWS[view]) return;
+
+    setSelected((cur) => (cur === view ? cur : view));
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const g of menu) {
+        if (g.items.some((i) => i.id === view)) next.add(g.key);
+      }
+      return next;
+    });
+  }, [location.search, menu]);
+
   const renderSection = () => {
     const Comp = VIEWS[selected];
-    return Comp ? <Comp /> : <div className="p-6 text-gray-500">Selecciona una opcion del menu.</div>;
+    return Comp ? <Comp /> : <div className="p-6 text-gray-500">Select an option from the menu.</div>;
   };
 
   return (
@@ -555,7 +563,7 @@ export default function ManagementPage() {
         <header className="flex items-center justify-between px-6 py-4 border-b bg-white/80">
           <div>
             <h1 className="text-xl font-semibold text-gray-800">Management</h1>
-            <p className="text-sm text-gray-500">Configuracion y seguridad del hotel</p>
+            <p className="text-sm text-gray-500">Hotel configuration and security</p>
           </div>
           <div className="flex items-center gap-3 relative" ref={menusRef}>
             <button
@@ -564,7 +572,7 @@ export default function ManagementPage() {
                 setAlertsOpen((v) => !v);
                 setUserMenuOpen(false);
               }}
-              aria-label="Alertas"
+              aria-label="Alerts"
             >
               <Bell className="w-4 h-4" />
               {alerts.length > 0 && (
@@ -572,23 +580,23 @@ export default function ManagementPage() {
                   {alerts.length}
                 </span>
               )}
-              <span className="hidden sm:inline">Alertas</span>
+              <span className="hidden sm:inline">Alerts</span>
             </button>
             {alertsOpen && (
               <div className="absolute right-0 top-12 w-80 bg-white border shadow-xl rounded-xl p-3 z-20 max-h-80 overflow-y-auto">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-semibold text-sm">Alertas</div>
+                  <div className="font-semibold text-sm">Alerts</div>
                   <button className="text-xs text-gray-500 hover:text-gray-700 underline" onClick={() => setAlerts([])}>
-                    Limpiar
+                    Clear
                   </button>
                 </div>
                 {alerts.length === 0 ? (
-                  <div className="text-sm text-gray-600">No hay alertas.</div>
+                  <div className="text-sm text-gray-600">No alerts.</div>
                 ) : (
                   <ul className="space-y-2">
                     {alerts.map((a) => (
                       <li key={a.id ?? a.title} className="border rounded-lg p-2 text-sm">
-                        <div className="font-medium text-gray-800">{a.title || "Alerta"}</div>
+                        <div className="font-medium text-gray-800">{a.title || "Alert"}</div>
                         {a.desc && <div className="text-gray-600 text-xs">{a.desc}</div>}
                         {a.at && <div className="text-gray-400 text-[11px] mt-1">{a.at}</div>}
                       </li>
@@ -610,14 +618,14 @@ export default function ManagementPage() {
               >
                 <CircleUser className="w-5 h-5 text-gray-600" />
                 <div className="text-left text-sm leading-tight">
-                  <div className="font-medium text-gray-800">{user?.name || user?.email || "Usuario"}</div>
+                  <div className="font-medium text-gray-800">{user?.name || user?.email || "User"}</div>
                   <div className="text-xs text-gray-500">{user?.role || "Hotel"}</div>
                 </div>
               </button>
               {userMenuOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-white border shadow-xl rounded-xl overflow-hidden z-30">
                   <div className="px-3 py-2 text-sm border-b">
-                    <div className="font-semibold text-gray-800">{user?.name || "Usuario"}</div>
+                    <div className="font-semibold text-gray-800">{user?.name || "User"}</div>
                     <div className="text-xs text-gray-500">{user?.email || user?.role || ""}</div>
                   </div>
                   <button
@@ -628,7 +636,7 @@ export default function ManagementPage() {
                     }}
                   >
                     <LogOut className="w-4 h-4 text-red-600" />
-                    <span>Salir</span>
+                    <span>Log out</span>
                   </button>
                 </div>
               )}

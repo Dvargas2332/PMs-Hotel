@@ -11,17 +11,17 @@ export default function RestaurantRecipes() {
   const [saving, setSaving] = useState(false);
 
   const UNIT_OPTIONS = [
-    { label: "Unidad (un)", value: "un" },
-    { label: "Gramos (g)", value: "g" },
-    { label: "Kilogramos (kg)", value: "kg" },
-    { label: "Libras (lb)", value: "lb" },
-    { label: "Mililitros (ml)", value: "ml" },
-    { label: "Litros (l)", value: "l" },
-    { label: "Onzas (oz)", value: "oz" },
+    { label: "Unit (un)", value: "un" },
+    { label: "Grams (g)", value: "g" },
+    { label: "Kilograms (kg)", value: "kg" },
+    { label: "Pounds (lb)", value: "lb" },
+    { label: "Milliliters (ml)", value: "ml" },
+    { label: "Liters (l)", value: "l" },
+    { label: "Ounces (oz)", value: "oz" },
   ];
 
   const itemOptions = useMemo(
-    () => items.map((i) => ({ code: i.code || i.id, label: `${i.code || i.id} - ${i.family || ""}`.trim() })),
+    () => items.map((i) => ({ code: i.code || i.id, label: `${i.code || i.id} - ${i.name || i.family || ""}`.trim() })),
     [items]
   );
 
@@ -54,14 +54,14 @@ export default function RestaurantRecipes() {
     <div className="space-y-4">
       <Card className="p-5 space-y-3">
         <div>
-          <h3 className="font-semibold text-lg">Recetario</h3>
-          <p className="text-sm text-gray-600">Insumos por articulo para control de costo.</p>
+          <h3 className="font-semibold text-lg">Recipes</h3>
+          <p className="text-sm text-gray-600">Ingredients per item for cost control.</p>
         </div>
         <div className="grid md:grid-cols-4 gap-3">
           <div>
             <Input
               list="rest-item-codes"
-              placeholder="Articulo / codigo"
+              placeholder="Item / code"
               value={recipeForm.codigo}
               onChange={(e) => setRecipeForm((f) => ({ ...f, codigo: e.target.value }))}
             />
@@ -71,14 +71,14 @@ export default function RestaurantRecipes() {
               ))}
             </datalist>
           </div>
-          <Input placeholder="Ingrediente" value={recipeForm.ingrediente} onChange={(e) => setRecipeForm((f) => ({ ...f, ingrediente: e.target.value }))} />
-          <Input placeholder="Cantidad" value={recipeForm.cantidad} onChange={(e) => setRecipeForm((f) => ({ ...f, cantidad: e.target.value }))} />
+          <Input placeholder="Ingredient" value={recipeForm.ingrediente} onChange={(e) => setRecipeForm((f) => ({ ...f, ingrediente: e.target.value }))} />
+          <Input placeholder="Quantity" value={recipeForm.cantidad} onChange={(e) => setRecipeForm((f) => ({ ...f, cantidad: e.target.value }))} />
           <select
             className="h-11 rounded-lg border px-3 text-sm bg-white"
             value={recipeForm.unidad}
             onChange={(e) => setRecipeForm((f) => ({ ...f, unidad: e.target.value }))}
           >
-            <option value="">Unidad</option>
+            <option value="">Unit</option>
             {UNIT_OPTIONS.map((u) => (
               <option key={u.value} value={u.value}>
                 {u.label}
@@ -87,7 +87,7 @@ export default function RestaurantRecipes() {
           </select>
         </div>
         <div className="flex justify-end">
-          <Button variant="secondary" onClick={addRecipe} disabled={saving}>{saving ? "Guardando..." : "Agregar ingrediente"}</Button>
+          <Button variant="secondary" onClick={addRecipe} disabled={saving}>{saving ? "Saving..." : "Add ingredient"}</Button>
         </div>
         {recipes.length > 0 && (
           <div className="space-y-2">
@@ -97,7 +97,7 @@ export default function RestaurantRecipes() {
                   <div className="font-semibold">{r.codigo} - {r.ingrediente}</div>
                   <div className="text-xs text-gray-600">{r.cantidad} {r.unidad}</div>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => removeRecipe(r.id)}>Quitar</Button>
+                <Button size="sm" variant="outline" onClick={() => removeRecipe(r.id)}>Remove</Button>
               </div>
             ))}
           </div>

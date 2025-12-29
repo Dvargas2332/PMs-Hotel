@@ -107,69 +107,68 @@ export default function Currency() {
 
   return (
     <Card className="space-y-4 p-5">
-      <h3 className="font-medium">Moneda y tipo de cambio (por hotel)</h3>
+      <h3 className="font-medium">Currency and exchange rates (per hotel)</h3>
       <p className="text-xs text-slate-500">
-        <strong>Moneda principal</strong> se usa para los precios de habitaciones, reservas y
-        facturación del hotel. La <strong>moneda secundaria</strong> es la que funcionará como
-        moneda de cambio para compra y venta (conversión automática de montos).
+        <strong>Base currency</strong> is used for room prices, reservations and hotel billing.
+        The <strong>secondary currency</strong> is used for buy/sell exchange (automatic amount conversion).
       </p>
 
       {/* Moneda principal / secundaria / redondeo, uno debajo del otro */}
       <div className="space-y-3">
         <div className="space-y-1 max-w-[240px]">
-          <label className="text-xs text-slate-500">Moneda principal (local)</label>
+          <label className="text-xs text-slate-500">Base currency (local)</label>
           <Select
             value={state.base || "CRC"}
             onChange={(val) => setState((s) => ({ ...s, base: val }))}
             options={[
-              { value: "CRC", label: "CRC – Colón costarricense" },
-              { value: "USD", label: "USD – Dólar estadounidense" },
+              { value: "CRC", label: "CRC - Costa Rican colon" },
+              { value: "USD", label: "USD - US dollar" },
               { value: "EUR", label: "EUR – Euro" },
-              { value: "GBP", label: "GBP – Libra esterlina" },
-              { value: "MXN", label: "MXN – Peso mexicano" },
-              { value: "COP", label: "COP – Peso colombiano" },
-              { value: "BRL", label: "BRL – Real brasileño" },
-              { value: "ARS", label: "ARS – Peso argentino" },
-              { value: "CLP", label: "CLP – Peso chileno" },
-              { value: "PEN", label: "PEN – Sol peruano" },
-              { value: "CAD", label: "CAD – Dólar canadiense" },
-              { value: "JPY", label: "JPY – Yen japonés" },
+              { value: "GBP", label: "GBP - Pound sterling" },
+              { value: "MXN", label: "MXN - Mexican peso" },
+              { value: "COP", label: "COP - Colombian peso" },
+              { value: "BRL", label: "BRL - Brazilian real" },
+              { value: "ARS", label: "ARS - Argentine peso" },
+              { value: "CLP", label: "CLP - Chilean peso" },
+              { value: "PEN", label: "PEN - Peruvian sol" },
+              { value: "CAD", label: "CAD - Canadian dollar" },
+              { value: "JPY", label: "JPY - Japanese yen" },
             ]}
           />
         </div>
 
         <div className="space-y-1 max-w-[240px]">
-          <label className="text-xs text-slate-500">Moneda secundaria (de cambio)</label>
+          <label className="text-xs text-slate-500">Secondary currency (exchange)</label>
           <Select
             value={secondary || "USD"}
             onChange={(val) => setSecondary(val)}
             options={[
-              { value: "USD", label: "USD – Dólar estadounidense" },
+              { value: "USD", label: "USD - US dollar" },
               { value: "EUR", label: "EUR – Euro" },
-              { value: "GBP", label: "GBP – Libra esterlina" },
-              { value: "CRC", label: "CRC – Colón costarricense" },
-              { value: "MXN", label: "MXN – Peso mexicano" },
-              { value: "COP", label: "COP – Peso colombiano" },
-              { value: "BRL", label: "BRL – Real brasileño" },
-              { value: "ARS", label: "ARS – Peso argentino" },
-              { value: "CLP", label: "CLP – Peso chileno" },
-              { value: "PEN", label: "PEN – Sol peruano" },
-              { value: "CAD", label: "CAD – Dólar canadiense" },
-              { value: "JPY", label: "JPY – Yen japonés" },
+              { value: "GBP", label: "GBP - Pound sterling" },
+              { value: "CRC", label: "CRC - Costa Rican colon" },
+              { value: "MXN", label: "MXN - Mexican peso" },
+              { value: "COP", label: "COP - Colombian peso" },
+              { value: "BRL", label: "BRL - Brazilian real" },
+              { value: "ARS", label: "ARS - Argentine peso" },
+              { value: "CLP", label: "CLP - Chilean peso" },
+              { value: "PEN", label: "PEN - Peruvian sol" },
+              { value: "CAD", label: "CAD - Canadian dollar" },
+              { value: "JPY", label: "JPY - Japanese yen" },
             ]}
           />
         </div>
 
         <div className="space-y-1 max-w-[180px]">
           <label className="text-xs text-slate-500">
-            Redondeo (cantidad de decimales a usar)
+            Rounding (number of decimals)
           </label>
           <Input
             className="h-9 text-sm"
             type="number"
             min={0}
             max={6}
-            placeholder="Ej: 0, 2, 4"
+            placeholder="e.g. 0, 2, 4"
             value={state.rounding ?? ""}
             onChange={(e) =>
               setState((s) => ({
@@ -200,7 +199,7 @@ export default function Currency() {
         />
         <Input
           className="h-9 text-sm"
-          placeholder={`Compra ${secondary || "USD"}`}
+          placeholder={`Buy ${secondary || "USD"}`}
           type="number"
           value={state.buy ?? 0}
           onChange={(e) =>
@@ -209,7 +208,7 @@ export default function Currency() {
         />
         <Input
           className="h-9 text-sm"
-          placeholder={`Venta ${secondary || "USD"}`}
+          placeholder={`Sell ${secondary || "USD"}`}
           type="number"
           value={state.sell ?? 0}
           onChange={(e) =>
@@ -229,28 +228,27 @@ export default function Currency() {
               setState((s) => ({ ...s, enabled: e.target.checked }))
             }
           />
-          <span>Activar conversión automática con esta configuración</span>
+          <span>Enable automatic conversion with this configuration</span>
         </label>
         <div>
-          Moneda principal: <strong>{state.base || "CRC"}</strong>
+          Base currency: <strong>{state.base || "CRC"}</strong>
         </div>
         <div>
-          Moneda secundaria: <strong>{secondary || "USD"}</strong> — Compra:{" "}
-          <strong>{formatAmount(state.buy)}</strong> · Venta:{" "}
-          <strong>{formatAmount(state.sell)}</strong> · Decimales:{" "}
+          Secondary currency: <strong>{secondary || "USD"}</strong> - Buy:{" "}
+          <strong>{formatAmount(state.buy)}</strong> · Sell:{" "}
+          <strong>{formatAmount(state.sell)}</strong> · Decimals:{" "}
           <strong>{decimals}</strong>
         </div>
       </div>
 
       <div className="flex gap-2 pt-1">
         <Button variant="outline" onClick={load} disabled={saving}>
-          Recargar
+          Reload
         </Button>
         <Button onClick={save} disabled={saving}>
-          {saving ? "Guardando..." : "Guardar"}
+          {saving ? "Saving..." : "Save"}
         </Button>
       </div>
     </Card>
   );
 }
-

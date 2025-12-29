@@ -44,24 +44,24 @@ export default function AuditLog() {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-        <Input placeholder="Buscar (módulo/acción/ID)" value={q} onChange={e=>setQ(e.target.value)} />
-        <Input placeholder="Usuario" value={user} onChange={e=>setUser(e.target.value)} />
+        <Input placeholder="Search (module/action/ID)" value={q} onChange={e=>setQ(e.target.value)} />
+        <Input placeholder="User" value={user} onChange={e=>setUser(e.target.value)} />
         <Input type="date" value={from} onChange={e=>setFrom(e.target.value)} />
         <Input type="date" value={to} onChange={e=>setTo(e.target.value)} />
         <div className="flex gap-2">
-          <Button variant="outline" className="w-full" onClick={load}>Buscar</Button>
-          <Button variant="ghost" className="w-full" onClick={()=>{ setQ(""); setUser(""); setFrom(""); setTo(""); }}>Limpiar</Button>
+          <Button variant="outline" className="w-full" onClick={load}>Search</Button>
+          <Button variant="ghost" className="w-full" onClick={()=>{ setQ(""); setUser(""); setFrom(""); setTo(""); }}>Clear</Button>
         </div>
       </div>
       <SimpleTable
         cols={[
-          {key:"timestamp", label:"Fecha"},
-          {key:"userId", label:"Usuario"},
-          {key:"module", label:"Módulo"},
-          {key:"action", label:"Acción / Tarea"},
-          {key:"entityType", label:"Entidad"},
+          {key:"timestamp", label:"Date"},
+          {key:"userId", label:"User"},
+          {key:"module", label:"Module"},
+          {key:"action", label:"Action / Task"},
+          {key:"entityType", label:"Entity"},
           {key:"entityId", label:"ID"},
-          {key:"reason", label:"Detalle"}
+          {key:"reason", label:"Details"}
         ]}
         rows={(filtered || []).map((r)=>({
           ...r,

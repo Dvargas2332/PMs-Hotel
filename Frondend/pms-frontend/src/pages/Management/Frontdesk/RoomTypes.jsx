@@ -110,7 +110,7 @@ export default function RoomTypes() {
       window.alert("No se puede eliminar el tipo porque tiene habitaciones asociadas. Cambia o elimina esas habitaciones primero.");
       return;
     }
-    const ok = window.confirm("¿Eliminar el tipo de habitación?");
+    const ok = window.confirm("Delete this room type?");
     if (!ok) return;
     setTypeSubmitting(true);
     try {
@@ -190,7 +190,7 @@ export default function RoomTypes() {
   const onRoomDelete = async (idFromRow) => {
     const id = idFromRow || roomSelectedId;
     if (!id || roomSubmitting) return;
-    const ok = window.confirm("¿Eliminar la habitación?");
+    const ok = window.confirm("Delete this room?");
     if (!ok) return;
     setRoomSubmitting(true);
     try {
@@ -213,22 +213,22 @@ export default function RoomTypes() {
       <div className="grid md:grid-cols-2 gap-6">
         <Card className="space-y-3 p-5">
           <h3 className="font-medium">
-            {typeSelectedId ? "Editar tipo de habitación" : "Nuevo tipo de habitación"}
+            {typeSelectedId ? "Edit room type" : "New room type"}
           </h3>
 
           <div className="grid grid-cols-[140px_1fr] gap-3">
             <div className="space-y-1">
-              <label className="text-xs text-slate-500">Código de tipo (ej. STD)</label>
+              <label className="text-xs text-slate-500">Type code (e.g. STD)</label>
               <Input
-                placeholder="Código (ej. STD)"
+                placeholder="Code (e.g. STD)"
                 value={typeForm.id}
                 onChange={(e) => setTypeForm((f) => ({ ...f, id: e.target.value }))}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs text-slate-500">Nombre del tipo</label>
+              <label className="text-xs text-slate-500">Type name</label>
               <Input
-                placeholder="Nombre del tipo"
+                placeholder="Type name"
                 value={typeForm.name}
                 onChange={(e) => setTypeForm((f) => ({ ...f, name: e.target.value }))}
               />
@@ -237,9 +237,9 @@ export default function RoomTypes() {
 
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <label className="text-xs text-slate-500">Camas</label>
+              <label className="text-xs text-slate-500">Beds</label>
               <Input
-                placeholder="Cantidad y tipo (ej. 1Q)"
+                placeholder="Count and type (e.g. 1Q)"
                 value={typeForm.beds}
                 onChange={(e) => setTypeForm((f) => ({ ...f, beds: e.target.value }))}
               />
@@ -249,12 +249,12 @@ export default function RoomTypes() {
           <div className="flex gap-2">
             {!typeSelectedId ? (
               <Button type="button" onClick={onTypeCreate} disabled={typeSubmitting}>
-                Crear
+                Create
               </Button>
             ) : (
               <>
                 <Button type="button" onClick={onTypeUpdate} disabled={typeSubmitting}>
-                  Guardar cambios
+                  Save changes
                 </Button>
                 <Button
                   type="button"
@@ -262,7 +262,7 @@ export default function RoomTypes() {
                   disabled={typeSubmitting}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
-                  Eliminar
+                  Delete
                 </Button>
                 <Button
                   type="button"
@@ -272,7 +272,7 @@ export default function RoomTypes() {
                   }}
                   className="bg-gray-200 text-gray-700 hover:bg-gray-300"
                 >
-                  Cancelar
+                  Cancel
                 </Button>
               </>
             )}
@@ -284,18 +284,18 @@ export default function RoomTypes() {
             <thead className="bg-gray-50 text-gray-600">
               <tr>
                 <th className="py-2 pl-4 text-left">ID</th>
-                <th className="text-left">Nombre</th>
+                <th className="text-left">Name</th>
                 <th className="text-left">Cap</th>
-                <th className="text-left">Camas</th>
+                <th className="text-left">Beds</th>
                 <th className="text-left">Amenities</th>
-                <th className="pr-4 text-right">Acciones</th>
+                <th className="pr-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {types.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-6 text-center text-gray-500">
-                    Sin tipos aún.
+                    No room types yet.
                   </td>
                 </tr>
               )}
@@ -315,7 +315,7 @@ export default function RoomTypes() {
                         onClick={() => onTypeRowSelect(x)}
                         disabled={typeSubmitting}
                       >
-                        Editar
+                        Edit
                       </button>
                       <button
                         type="button"
@@ -323,7 +323,7 @@ export default function RoomTypes() {
                         onClick={() => onTypeDelete(x.id)}
                         disabled={typeSubmitting}
                       >
-                        Eliminar
+                        Delete
                       </button>
                     </td>
                   </tr>
@@ -338,23 +338,23 @@ export default function RoomTypes() {
       <div className="grid md:grid-cols-2 gap-6">
         <Card className="space-y-3 p-5">
           <h3 className="font-medium">
-            {roomSelectedId ? "Editar habitación" : "Nueva habitación"}
+            {roomSelectedId ? "Edit room" : "New room"}
           </h3>
 
           <div className="grid grid-cols-3 gap-2">
             <Input
-              placeholder="Número"
+              placeholder="Number"
               value={roomForm.number}
               onChange={(e) => setRoomForm((f) => ({ ...f, number: e.target.value }))}
             />
             <Input
-              placeholder="Piso"
+              placeholder="Floor"
               type="number"
               value={roomForm.floor}
               onChange={(e) => setRoomForm((f) => ({ ...f, floor: e.target.value }))}
             />
             <Input
-              placeholder="Capacidad"
+              placeholder="Capacity"
               type="number"
               value={roomForm.capacity}
               onChange={(e) => setRoomForm((f) => ({ ...f, capacity: e.target.value }))}
@@ -362,16 +362,16 @@ export default function RoomTypes() {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            {/* Tipo de habitación */}
+            {/* Room type */}
             <div className="flex flex-col">
-              <label className="text-sm mb-1">Tipo</label>
+              <label className="text-sm mb-1">Type</label>
               <select
                 className="h-10 rounded-lg border px-3 text-sm"
                 value={roomForm.typeId}
                 onChange={(e) => setRoomForm((f) => ({ ...f, typeId: e.target.value }))}
                 disabled={types.length === 0}
               >
-                <option value="">— Selecciona tipo —</option>
+                <option value="">— Select type —</option>
                 {types.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.id} — {t.name}
@@ -380,23 +380,23 @@ export default function RoomTypes() {
               </select>
               {types.length === 0 && (
                 <span className="mt-1 text-xs text-red-500">
-                  Primero crea al menos un tipo de habitación.
+                  Create at least one room type first.
                 </span>
               )}
             </div>
 
-            {/* Estado */}
+            {/* Status */}
             <div className="flex flex-col">
-              <label className="text-sm mb-1">Estado</label>
+              <label className="text-sm mb-1">Status</label>
               <select
                 className="h-10 rounded-lg border px-3 text-sm"
                 value={roomForm.status}
                 onChange={(e) => setRoomForm((f) => ({ ...f, status: e.target.value }))}
               >
-                <option value="AVAILABLE">Disponible</option>
-                <option value="OCCUPIED">Ocupada</option>
-                <option value="OUT_OF_SERVICE">Fuera de servicio</option>
-                <option value="BLOCKED">Bloqueada</option>
+                <option value="AVAILABLE">Available</option>
+                <option value="OCCUPIED">Occupied</option>
+                <option value="OUT_OF_SERVICE">Out of service</option>
+                <option value="BLOCKED">Blocked</option>
               </select>
             </div>
           </div>
@@ -404,12 +404,12 @@ export default function RoomTypes() {
           <div className="flex gap-2">
             {!roomSelectedId ? (
               <Button type="button" onClick={onRoomCreate} disabled={roomSubmitting}>
-                Crear
+                Create
               </Button>
             ) : (
               <>
                 <Button type="button" onClick={onRoomUpdate} disabled={roomSubmitting}>
-                  Guardar cambios
+                  Save changes
                 </Button>
                 <Button
                   type="button"
@@ -417,7 +417,7 @@ export default function RoomTypes() {
                   disabled={roomSubmitting}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
-                  Eliminar
+                  Delete
                 </Button>
                 <Button
                   type="button"
@@ -427,7 +427,7 @@ export default function RoomTypes() {
                   }}
                   className="bg-gray-200 text-gray-700 hover:bg-gray-300"
                 >
-                  Cancelar
+                  Cancel
                 </Button>
               </>
             )}
@@ -438,19 +438,19 @@ export default function RoomTypes() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
-                <th className="py-2 pl-4 text-left">Número</th>
-                <th className="text-left">Tipo</th>
-                <th className="text-left">Piso</th>
+                <th className="py-2 pl-4 text-left">Number</th>
+                <th className="text-left">Type</th>
+                <th className="text-left">Floor</th>
                 <th className="text-left">Cap</th>
-                <th className="text-left">Estado</th>
-                <th className="pr-4 text-right">Acciones</th>
+                <th className="text-left">Status</th>
+                <th className="pr-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {rooms.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-6 text-center text-gray-500">
-                    Sin habitaciones aún.
+                    No rooms yet.
                   </td>
                 </tr>
               )}
@@ -466,12 +466,12 @@ export default function RoomTypes() {
                     <td>{r.capacity}</td>
                     <td>
                       {r.status === "AVAILABLE"
-                        ? "Disponible"
+                        ? "Available"
                         : r.status === "OCCUPIED"
-                        ? "Ocupada"
+                        ? "Occupied"
                         : r.status === "OUT_OF_SERVICE"
-                        ? "Fuera de servicio"
-                        : "Bloqueada"}
+                        ? "Out of service"
+                        : "Blocked"}
                     </td>
                     <td className="pr-4 py-2 text-right space-x-1">
                       <button
@@ -480,7 +480,7 @@ export default function RoomTypes() {
                         onClick={() => onRoomRowSelect(r)}
                         disabled={roomSubmitting}
                       >
-                        Editar
+                        Edit
                       </button>
                       <button
                         type="button"
@@ -488,7 +488,7 @@ export default function RoomTypes() {
                         onClick={() => onRoomDelete(r.id)}
                         disabled={roomSubmitting}
                       >
-                        Eliminar
+                        Delete
                       </button>
                     </td>
                   </tr>

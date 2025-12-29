@@ -1,11 +1,12 @@
 // src/middleware/tenant.ts
 
 import type { Request, Response, NextFunction } from "express";
+import { tenantStorage } from "../lib/tenant.js";
 
 export function tenantCtx(req: Request, _res: Response, next: NextFunction) {
-  // Preferimos el hotelId del usuario autenticado; fallback al header opcional
   const hotelIdFromUser = (req as any)?.user?.hotelId as string | undefined;
-  const headerHotel = req.headers["x-tenant-id"] as string | undefined;
-  (req as any).tenantId = hotelIdFromUser ?? headerHotel ?? "default";
-  next();
+  // No aceptamos hotelId por header para evitar escalamiento entre hoteles.
+  (req as any).tenantId = hotelIdFromUser;
+
+  tenantStorage.run({ hotelId: hotelIdFromUser }, () => next());
 }

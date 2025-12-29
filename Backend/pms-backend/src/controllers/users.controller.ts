@@ -22,11 +22,11 @@ export async function resetUserPassword(req: Request, res: Response) {
 
   const hash = await bcrypt.hash(password, ROUNDS);
 
-  await prisma.user.update({
-    where: { id: target.id },
+  const updated = await prisma.user.updateMany({
+    where: { id: target.id, hotelId: user.hotelId },
     data: { password: hash },
   });
+  if (updated.count === 0) return res.status(404).json({ message: "Usuario no encontrado" });
 
   return res.json({ ok: true });
 }
-

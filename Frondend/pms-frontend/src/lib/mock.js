@@ -182,6 +182,8 @@ let DB = {
     cargoHabitacion: false,
   },
   restaurantFamilies: [],
+  restaurantSubFamilies: [],
+  restaurantSubSubFamilies: [],
   restaurantItems: [],
   restaurantRecipes: [],
   restaurantInventory: [],
@@ -189,6 +191,8 @@ let DB = {
   restaurantSales: [],
   restaurantCloses: [],
   restaurantLastCloseAt: null,
+  restaurantKdsStatus: {},
+  reports: [],
 };
 
 const UNIT_MAP = {
@@ -256,10 +260,28 @@ export const mockApi = {
     await sleep();
     const raw = normalize(url);
     const [path, query] = raw.split("?");
+    if (path.startsWith("/permissions/role/")) {
+      const role = decodeURIComponent(path.split("/").pop() || "");
+      const permissions = DB.rolePermissions?.[role] || [];
+      return makeResp({ role, permissions });
+    }
     if (path === "/settings") return makeResp(SETTINGS);
     if (path === "/audit") return makeResp(DB.audit);
     if (path === "/hotel") return makeResp(DB.hotelInfo);
     if (path === "/restaurant/sections") return makeResp(DB.restaurantSections);
+    if (path.startsWith("/restaurant/sections/") && path.endsWith("/layout")) {
+      const parts = path.split("/");
+      const secId = parts[3];
+      const sec = DB.restaurantSections.find((s) => s.id === secId);
+      return makeResp({ tables: Array.isArray(sec?.tables) ? sec.tables.map((t) => ({ ...t })) : [] });
+    }
+    if (path.startsWith("/restaurant/sections/") && path.endsWith("/objects")) {
+      const parts = path.split("/");
+      const secId = parts[3];
+      if (!DB.restaurantSectionObjects) DB.restaurantSectionObjects = {};
+      const list = DB.restaurantSectionObjects[secId] || [];
+      return makeResp(list);
+    }
     if (path === "/restaurant/printers") return makeResp(DB.restaurantPrinters);
     if (path === "/restaurant/config") return makeResp(DB.restaurantConfig);
     if (path === "/restaurant/general") return makeResp(DB.restaurantGeneral);
@@ -267,12 +289,85 @@ export const mockApi = {
     if (path === "/restaurant/taxes") return makeResp(DB.restaurantTaxes);
     if (path === "/restaurant/payments") return makeResp(DB.restaurantPayments);
     if (path === "/restaurant/families") return makeResp(DB.restaurantFamilies);
+    if (path === "/restaurant/subfamilies") {
+      const params = new URLSearchParams(query || "");
+      const familyId = params.get("familyId");
+      const list = Array.isArray(DB.restaurantSubFamilies) ? DB.restaurantSubFamilies : [];
+      return makeResp(familyId ? list.filter((i) => i.familyId === familyId) : list);
+    }
+    if (path === "/restaurant/subsubfamilies") {
+      const params = new URLSearchParams(query || "");
+      const subFamilyId = params.get("subFamilyId");
+      const list = Array.isArray(DB.restaurantSubSubFamilies) ? DB.restaurantSubSubFamilies : [];
+      return makeResp(subFamilyId ? list.filter((i) => i.subFamilyId === subFamilyId) : list);
+    }
     if (path === "/restaurant/items") return makeResp(DB.restaurantItems);
     if (path === "/restaurant/recipes") return makeResp(DB.restaurantRecipes);
     if (path === "/restaurant/inventory") return makeResp(DB.restaurantInventory);
-    if (path === "/restaurant/orders") return makeResp(DB.restaurantOrders);
+    if (path === "/restaurant/orders") {
+      const params = new URLSearchParams(query || "");
+      const status = String(params.get("status") || "OPEN").toUpperCase();
+      if (status === "PAID") {
+        const list = (DB.restaurantSales || []).map((s) => ({
+          id: s.id,
+          tableId: s.tableId,
+          sectionId: s.sectionId,
+          items: s.items || [],
+          total: asNumber(s?.totals?.total ?? s?.totals?.system ?? 0),
+          note: s.note || "",
+          covers: s.covers || 0,
+          status: "PAID",
+          serviceType: s.serviceType || "DINE_IN",
+          roomId: s.roomId || "",
+          updatedAt: s.closedAt || new Date().toISOString(),
+        }));
+        return makeResp(list);
+      }
+      return makeResp(DB.restaurantOrders);
+    }
     if (path === "/restaurant/stats") return makeResp(restaurantStats());
     if (path === "/restaurant/close") return makeResp(DB.restaurantCloses);
+    if (path === "/reports") {
+      const params = new URLSearchParams(query || "");
+      const category = params.get("category");
+      const list = Array.isArray(DB.reports) ? DB.reports : [];
+      return makeResp(category ? list.filter((r) => r.category === category) : list);
+    }
+    if (path === "/restaurant/kds") {
+      const params = new URLSearchParams(query || "");
+      const area = String(params.get("area") || "KITCHEN").toUpperCase();
+      const list = [];
+      for (const o of DB.restaurantOrders || []) {
+        for (const it of o.items || []) {
+          const cat = String(it.category || "").toLowerCase();
+          const isBar = cat.includes("bebida") || cat.includes("bar");
+          const itemArea = isBar ? "BAR" : "KITCHEN";
+          if (itemArea !== area) continue;
+          const key = `${o.id || o.tableId}-${it.id}`;
+          const status = String(DB.restaurantKdsStatus[key] || "NEW").toUpperCase();
+          if (status === "SERVED") continue;
+          list.push({
+            id: key,
+            status,
+            area: itemArea,
+            itemId: it.id,
+            name: it.name,
+            category: it.category,
+            price: it.price,
+            qty: it.qty,
+            order: {
+              id: o.id || o.tableId,
+              tableId: o.tableId,
+              sectionId: o.sectionId || null,
+              note: o.note || "",
+              covers: o.covers || 0,
+              updatedAt: o.updatedAt || new Date().toISOString(),
+            },
+          });
+        }
+      }
+      return makeResp(list);
+    }
     if (path === "/restaurant/menu") {
       let sectionId = null;
       if (query) {
@@ -293,6 +388,12 @@ export const mockApi = {
     if (path === "/settings") {
       SETTINGS = { ...SETTINGS, ...payload };
       return makeResp(SETTINGS);
+    }
+    if (path.startsWith("/permissions/role/")) {
+      const role = decodeURIComponent(path.split("/").pop() || "");
+      const next = Array.isArray(payload?.permissions) ? payload.permissions : [];
+      DB.rolePermissions[role] = next;
+      return makeResp({ role, permissions: DB.rolePermissions[role] });
     }
     if (path.startsWith("/role-permissions/")) {
       const role = path.split("/").pop();
@@ -331,10 +432,93 @@ export const mockApi = {
       DB.restaurantPayments = { ...DB.restaurantPayments, ...payload };
       return makeResp(DB.restaurantPayments);
     }
+    if (path.startsWith("/restaurant/sections/") && path.endsWith("/layout")) {
+      const parts = path.split("/");
+      const secId = parts[3];
+      const sec = DB.restaurantSections.find((s) => s.id === secId);
+      if (sec) {
+        const tables = Array.isArray(payload?.tables) ? payload.tables : [];
+        sec.tables = (sec.tables || []).map((t) => {
+          const p = tables.find((x) => String(x?.id) === String(t.id));
+          if (!p) return t;
+          const x = Number(p.x);
+          const y = Number(p.y);
+          const rotation = Number(p.rotation);
+          const size = Number(p.size);
+          const color = typeof p.color === "string" ? p.color : undefined;
+          const kind = p.kind ? String(p.kind) : undefined;
+          return {
+            ...t,
+            kind: kind || t.kind,
+            x: Number.isFinite(x) ? x : t.x,
+            y: Number.isFinite(y) ? y : t.y,
+            rotation: Number.isFinite(rotation) ? rotation : t.rotation,
+            size: Number.isFinite(size) ? size : t.size,
+            color: color !== undefined ? color : t.color,
+          };
+        });
+      }
+      if (!DB.restaurantSectionObjects) DB.restaurantSectionObjects = {};
+      if (Array.isArray(payload?.objects)) {
+        // overwrite objects for section
+        DB.restaurantSectionObjects[secId] = payload.objects.map((o) => ({ ...o }));
+      }
+      return makeResp({ ok: true });
+    }
     if (path.startsWith("/restaurant/sections/") && !path.endsWith("/tables")) {
       const id = path.split("/").pop();
       DB.restaurantSections = DB.restaurantSections.map((s) => (s.id === id ? { ...s, ...payload } : s));
       return makeResp(DB.restaurantSections.find((s) => s.id === id));
+    }
+    return makeResp(payload);
+  },
+  patch: async (url, payload) => {
+    await sleep();
+    const path = normalize(url);
+    if (path.startsWith("/restaurant/sections/") && path.includes("/tables/") && path.endsWith("/position")) {
+      const parts = path.split("/");
+      const secId = parts[3];
+      const tableId = parts[5];
+      const sec = DB.restaurantSections.find((s) => s.id === secId);
+      if (sec) {
+        const x = Number(payload?.x);
+        const y = Number(payload?.y);
+        const rotation = Number(payload?.rotation);
+        const size = Number(payload?.size);
+        const color = typeof payload?.color === "string" ? payload.color : undefined;
+        const kind = payload?.kind ? String(payload.kind) : undefined;
+        sec.tables = (sec.tables || []).map((t) =>
+          t.id === tableId
+            ? {
+                ...t,
+                kind: kind || t.kind,
+                x: Number.isFinite(x) ? x : t.x,
+                y: Number.isFinite(y) ? y : t.y,
+                rotation: Number.isFinite(rotation) ? rotation : t.rotation,
+                size: Number.isFinite(size) ? size : t.size,
+                color: color !== undefined ? color : t.color,
+              }
+            : t
+        );
+      }
+      const updated = sec?.tables?.find((t) => t.id === tableId);
+      return makeResp({ ok: true, table: updated || { id: tableId, ...payload } });
+    }
+    if (path.startsWith("/restaurant/sections/") && path.includes("/objects/")) {
+      const parts = path.split("/");
+      const secId = parts[3];
+      const objectId = parts[5];
+      if (!DB.restaurantSectionObjects) DB.restaurantSectionObjects = {};
+      const list = DB.restaurantSectionObjects[secId] || [];
+      DB.restaurantSectionObjects[secId] = list.map((o) => (o.id === objectId ? { ...o, ...payload } : o));
+      const updated = DB.restaurantSectionObjects[secId].find((o) => o.id === objectId);
+      return makeResp(updated || { id: objectId, ...payload });
+    }
+    if (path.startsWith("/restaurant/kds/")) {
+      const id = path.split("/").pop();
+      const status = String(payload?.status || "").toUpperCase();
+      if (id) DB.restaurantKdsStatus[id] = status || "NEW";
+      return makeResp({ ok: true });
     }
     return makeResp(payload);
   },
@@ -352,7 +536,7 @@ export const mockApi = {
           hotelId: "HOTEL-DEMO-1",
           membership: "PLATINUM",
           // Códigos de módulos habilitados para esta membresía
-          allowedModules: ["frontdesk", "restaurant", "accounting", "management"],
+          allowedModules: ["frontdesk", "restaurant", "accounting", "einvoicing", "management"],
         },
       });
     }
@@ -508,6 +692,10 @@ export const mockApi = {
         const tbl = {
           id: payload.id,
           name: payload.name,
+          kind: payload.kind || "mesa",
+          size: Number.isFinite(Number(payload.size)) ? Number(payload.size) : 56,
+          rotation: Number.isFinite(Number(payload.rotation)) ? Number(payload.rotation) : 0,
+          color: typeof payload.color === "string" ? payload.color : "",
           seats: payload.seats || 2,
           x: typeof payload.x === "number" && !Number.isNaN(payload.x) ? payload.x : undefined,
           y: typeof payload.y === "number" && !Number.isNaN(payload.y) ? payload.y : undefined,
@@ -520,6 +708,19 @@ export const mockApi = {
       const job = { id: Math.random().toString(36).slice(2, 7), ...payload, at: new Date().toISOString() };
       DB.audit.unshift({ timestamp: job.at, module: "restaurant", action: "print", detail: job });
       return makeResp({ ok: true, job });
+    }
+    if (path === "/reports") {
+      const item = {
+        id: Math.random().toString(36).slice(2, 10),
+        createdAt: new Date().toISOString(),
+        title: payload?.title || "Reporte",
+        category: payload?.category || "general",
+        type: payload?.type || "snapshot",
+        filters: payload?.filters || {},
+        payload: payload?.payload || {},
+      };
+      DB.reports.unshift(item);
+      return makeResp(item);
     }
     if (path.startsWith("/restaurant/menu/")) {
       const secId = path.split("/").pop();
@@ -547,8 +748,29 @@ export const mockApi = {
       return makeResp(saved.length === 1 ? saved[0] : saved);
     }
     if (path === "/restaurant/families") {
-      const item = { ...payload, id: payload.id || Math.random().toString(36).slice(2, 7) };
+      const item = {
+        id: payload.id || Math.random().toString(36).slice(2, 7),
+        name: payload?.name || payload?.familia || payload?.grupo || "",
+      };
       DB.restaurantFamilies.push(item);
+      return makeResp(item);
+    }
+    if (path === "/restaurant/subfamilies") {
+      const item = {
+        id: payload.id || Math.random().toString(36).slice(2, 7),
+        familyId: payload.familyId,
+        name: payload.name || "",
+      };
+      DB.restaurantSubFamilies.push(item);
+      return makeResp(item);
+    }
+    if (path === "/restaurant/subsubfamilies") {
+      const item = {
+        id: payload.id || Math.random().toString(36).slice(2, 7),
+        subFamilyId: payload.subFamilyId,
+        name: payload.name || "",
+      };
+      DB.restaurantSubSubFamilies.push(item);
       return makeResp(item);
     }
     if (path === "/restaurant/recipes") {
@@ -614,6 +836,17 @@ export const mockApi = {
     if (path.startsWith("restaurant/families/")) {
       const id = path.split("/").pop();
       DB.restaurantFamilies = DB.restaurantFamilies.filter((i) => i.id !== id);
+      return makeResp({ ok: true });
+    }
+    if (path.startsWith("restaurant/subfamilies/")) {
+      const id = path.split("/").pop();
+      DB.restaurantSubFamilies = DB.restaurantSubFamilies.filter((i) => i.id !== id);
+      DB.restaurantSubSubFamilies = DB.restaurantSubSubFamilies.filter((i) => i.subFamilyId !== id);
+      return makeResp({ ok: true });
+    }
+    if (path.startsWith("restaurant/subsubfamilies/")) {
+      const id = path.split("/").pop();
+      DB.restaurantSubSubFamilies = DB.restaurantSubSubFamilies.filter((i) => i.id !== id);
       return makeResp({ ok: true });
     }
     if (path.startsWith("restaurant/recipes/")) {

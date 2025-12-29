@@ -51,6 +51,9 @@ export function requirePermission(...permissions: string[]) {
     const user = req.user as AuthUser | undefined;
     if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
 
+    // ADMIN siempre tiene todos los permisos (regla de negocio)
+    if (user.role === "ADMIN") return next();
+
     try {
       const granted = await prisma.rolePermission.findMany({
         where: { hotelId: user.hotelId, roleId: user.role, permissionId: { in: permissions } },

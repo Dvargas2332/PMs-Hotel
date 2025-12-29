@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Circle, CircleDot, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
+import { Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
@@ -26,6 +26,81 @@ function getFloorObjectMeta(kind) {
   return map[k] || map.OTHER;
 }
 
+function MesaFreeIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 512 512" className={className} aria-hidden="true" focusable="false">
+      <rect x="150" y="148" width="212" height="212" rx="22" fill="currentColor" />
+      <rect x="164" y="162" width="184" height="184" rx="18" fill="currentColor" opacity="0.22" />
+
+      <rect x="210" y="70" width="92" height="70" rx="30" fill="#374151" opacity="0.95" />
+      <path d="M202 92c18-16 90-16 108 0" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+      {Array.from({ length: 9 }).map((_, i) => {
+        const x = 210 + i * 10;
+        return <line key={`t-${i}`} x1={x} y1="88" x2={x + 6} y2="128" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
+      })}
+
+      <rect x="210" y="372" width="92" height="70" rx="30" fill="#374151" opacity="0.95" />
+      <path d="M202 420c18 16 90 16 108 0" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+      {Array.from({ length: 9 }).map((_, i) => {
+        const x = 210 + i * 10;
+        return <line key={`b-${i}`} x1={x} y1="384" x2={x + 6} y2="424" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
+      })}
+
+      <rect x="70" y="210" width="70" height="92" rx="30" fill="#374151" opacity="0.95" />
+      <path d="M92 202c-16 18-16 90 0 108" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+      {Array.from({ length: 9 }).map((_, i) => {
+        const y = 210 + i * 10;
+        return <line key={`l-${i}`} x1="88" y1={y} x2="128" y2={y + 6} stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
+      })}
+
+      <rect x="372" y="210" width="70" height="92" rx="30" fill="#374151" opacity="0.95" />
+      <path d="M420 202c16 18 16 90 0 108" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
+      {Array.from({ length: 9 }).map((_, i) => {
+        const y = 210 + i * 10;
+        return <line key={`r-${i}`} x1="384" y1={y} x2="424" y2={y + 6} stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
+      })}
+    </svg>
+  );
+}
+
+function MesaOccupiedIcon({ className = "" }) {
+  return (
+    <svg viewBox="0 0 512 512" className={className} aria-hidden="true" focusable="false">
+      <circle cx="108" cy="150" r="44" fill="#6B7280" />
+      <path d="M68 214c0-28 18-50 40-50h0c22 0 40 22 40 50v124H68V214z" fill="#6B7280" />
+      <path d="M58 254c0-12 10-22 22-22h56c12 0 22 10 22 22v42H58v-42z" fill="#4B5563" opacity="0.9" />
+      <path d="M84 338h12l-18 142c-2 14-20 14-18 0l24-142z" fill="#4B5563" />
+      <path d="M132 338h12l24 142c2 14-16 14-18 0l-18-142z" fill="#4B5563" />
+
+      <circle cx="404" cy="150" r="44" fill="#6B7280" />
+      <path d="M364 214c0-28 18-50 40-50h0c22 0 40 22 40 50v124h-80V214z" fill="#6B7280" />
+      <path d="M354 254c0-12 10-22 22-22h56c12 0 22 10 22 22v42h-100v-42z" fill="#4B5563" opacity="0.9" />
+      <path d="M380 338h12l-18 142c-2 14-20 14-18 0l24-142z" fill="#4B5563" />
+      <path d="M428 338h12l24 142c2 14-16 14-18 0l-18-142z" fill="#4B5563" />
+
+      <path d="M150 252c0-26 20-46 46-46h120c26 0 46 20 46 46v30H150v-30z" fill="currentColor" />
+      <rect x="238" y="282" width="36" height="132" rx="10" fill="currentColor" opacity="0.85" />
+      <path d="M178 414h156c0 32-26 58-58 58H236c-32 0-58-26-58-58z" fill="currentColor" opacity="0.95" />
+
+      <path d="M206 234c18 0 32 10 32 22s-14 22-32 22-32-10-32-22 14-22 32-22z" fill="#60A5FA" />
+      <path d="M306 234c18 0 32 10 32 22s-14 22-32 22-32-10-32-22 14-22 32-22z" fill="#60A5FA" />
+      <path d="M192 250c0-8 6-14 14-14h0c8 0 14 6 14 14v4h-28v-4z" fill="#2563EB" opacity="0.6" />
+      <path d="M292 250c0-8 6-14 14-14h0c8 0 14 6 14 14v4h-28v-4z" fill="#2563EB" opacity="0.6" />
+
+      <path d="M246 210h20c4 0 8 4 8 8v20c0 4-4 8-8 8h-20c-4 0-8-4-8-8v-20c0-4 4-8 8-8z" fill="currentColor" opacity="0.95" />
+      <path d="M286 210h20c4 0 8 4 8 8v20c0 4-4 8-8 8h-20c-4 0-8-4-8-8v-20c0-4 4-8 8-8z" fill="currentColor" opacity="0.95" />
+      <rect x="250" y="214" width="12" height="5" rx="2.5" fill="currentColor" opacity="0.35" />
+      <rect x="290" y="214" width="12" height="5" rx="2.5" fill="currentColor" opacity="0.35" />
+    </svg>
+  );
+}
+
+function getTableIcons(kind) {
+  const k = String(kind || "mesa").toLowerCase();
+  if (k === "mesa") return { Free: MesaFreeIcon, Occupied: MesaOccupiedIcon };
+  return { Free: MesaFreeIcon, Occupied: MesaOccupiedIcon };
+}
+
 const sumNumbers = (obj = {}) => Object.values(obj).reduce((acc, v) => acc + (Number(v) || 0), 0);
 
 export default function RestaurantPage() {
@@ -48,7 +123,18 @@ export default function RestaurantPage() {
   const [menuItems, setMenuItems] = useState([]);
   const [ordersByTable, setOrdersByTable] = useState({});
   const [now, setNow] = useState(new Date());
-  const [printerCfg, setPrinterCfg] = useState({ kitchenPrinter: "", barPrinter: "" });
+  const [printerCfg, setPrinterCfg] = useState({ kitchenPrinter: "", barPrinter: "", cashierPrinter: "" });
+  const [printSettings, setPrintSettings] = useState({
+    paperType: "80mm",
+    defaultDocType: "TE",
+    types: {
+      ticket: { enabled: true, printerId: "", copies: 1 },
+      electronicInvoice: { enabled: true, printerId: "", copies: 1 },
+      closes: { enabled: true, printerId: "", copies: 1 },
+      salesReport: { enabled: true, printerId: "", copies: 1 },
+      document: { enabled: true, printerId: "", copies: 1 },
+    },
+  });
 
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeForm, setCloseForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
@@ -56,8 +142,14 @@ export default function RestaurantPage() {
   const [closeModalOpen, setCloseModalOpen] = useState(false);
 
   const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cashier" }));
-  const [taxesCfg, setTaxesCfg] = useState({ iva: 13, servicio: 10 });
-  const [paymentsCfg, setPaymentsCfg] = useState({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [] });
+  const [taxesCfg, setTaxesCfg] = useState({
+    iva: 13,
+    servicio: 10,
+    descuentoMax: 15,
+    permitirDescuentos: true,
+    impuestoIncluido: true,
+  });
+  const [paymentsCfg, setPaymentsCfg] = useState({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false });
   const [stats, setStats] = useState({ systemTotal: 0, openOrders: 0, salesCount: 0, openOrderValue: 0, lastCloseAt: null, byMethod: {} });
 
   const [paymentsModalOpen, setPaymentsModalOpen] = useState(false);
@@ -141,6 +233,21 @@ export default function RestaurantPage() {
 
   const paymentTotal = useMemo(() => sumNumbers(paymentForm), [paymentForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
+
+  const enabledPaymentInputs = useMemo(() => {
+    const list = Array.isArray(paymentsCfg?.cobros) ? paymentsCfg.cobros : [];
+    const normalized = list.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean);
+    const anyConfigured = normalized.length > 0;
+    const has = (...names) => names.some((n) => normalized.includes(String(n).toLowerCase()));
+
+    const cash = !anyConfigured || has("efectivo", "cash");
+    const card = !anyConfigured || has("tarjeta", "card");
+    const sinpe = !anyConfigured || has("sinpe");
+    const transfer = !anyConfigured || has("transferencia", "transfer", "bank transfer");
+    const room = Boolean(paymentsCfg?.cargoHabitacion) || !anyConfigured || has("habitacion", "habitación", "room", "cargo habitacion", "cargo habitación");
+
+    return { cash, card, sinpe, transfer, room };
+  }, [paymentsCfg?.cobros, paymentsCfg?.cargoHabitacion]);
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
@@ -159,8 +266,48 @@ export default function RestaurantPage() {
     setSectionsError("");
     try {
       const { data } = await api.get("/restaurant/sections");
-      setSections(Array.isArray(data) ? data : []);
-      if (!Array.isArray(data) || data.length === 0) {
+      const baseSections = Array.isArray(data) ? data : [];
+      setSections(baseSections);
+
+      // Some backends store floorplan/layout separately per section.
+      // Merge `/layout` into section tables (x/y/size/rotation/color/kind) when available.
+      try {
+        const layoutResults = await Promise.allSettled(
+          baseSections.map(async (s) => {
+            const id = String(s?.id || "");
+            if (!id) return null;
+            const res = await api.get(`/restaurant/sections/${encodeURIComponent(id)}/layout`);
+            const tables = Array.isArray(res?.data?.tables) ? res.data.tables : Array.isArray(res?.data) ? res.data : [];
+            return { id, tables };
+          })
+        );
+        const layouts = new Map();
+        for (const r of layoutResults) {
+          if (r.status !== "fulfilled" || !r.value?.id) continue;
+          layouts.set(String(r.value.id), Array.isArray(r.value.tables) ? r.value.tables : []);
+        }
+        if (layouts.size > 0) {
+          setSections((prev) =>
+            (prev || []).map((sec) => {
+              const layoutTables = layouts.get(String(sec?.id || ""));
+              if (!Array.isArray(layoutTables) || layoutTables.length === 0) return sec;
+              const byId = new Map(layoutTables.map((t) => [String(t?.id), t]));
+              return {
+                ...sec,
+                tables: (sec.tables || []).map((t) => {
+                  const p = byId.get(String(t?.id));
+                  if (!p) return t;
+                  return { ...t, ...p, id: t.id };
+                }),
+              };
+            })
+          );
+        }
+      } catch {
+        // ignore: layout endpoint may not exist
+      }
+
+      if (baseSections.length === 0) {
         setSectionsError("No sections/tables configured. Create them from Management.");
       }
     } catch {
@@ -174,18 +321,32 @@ export default function RestaurantPage() {
   const loadPrinters = useCallback(async () => {
     try {
       const { data } = await api.get("/restaurant/config");
-      setPrinterCfg({ kitchenPrinter: data?.kitchenPrinter || "", barPrinter: data?.barPrinter || "" });
+      setPrinterCfg({
+        kitchenPrinter: data?.kitchenPrinter || "",
+        barPrinter: data?.barPrinter || "",
+        cashierPrinter: data?.cashierPrinter || "",
+      });
+      const p = data?.printing && typeof data.printing === "object" ? data.printing : null;
+      if (p) setPrintSettings((prev) => ({ ...prev, ...p, types: { ...prev.types, ...(p.types || {}) } }));
     } catch {
-      setPrinterCfg({ kitchenPrinter: "", barPrinter: "" });
+      setPrinterCfg({ kitchenPrinter: "", barPrinter: "", cashierPrinter: "" });
     }
   }, []);
 
   const loadSettings = useCallback(async () => {
     try {
       const { data } = await api.get("/restaurant/taxes");
-      if (data && typeof data === "object") setTaxesCfg({ iva: data.iva ?? 13, servicio: data.servicio ?? 10 });
+      if (data && typeof data === "object") {
+        setTaxesCfg({
+          iva: data.iva ?? 13,
+          servicio: data.servicio ?? 10,
+          descuentoMax: data.descuentoMax ?? 15,
+          permitirDescuentos: data.permitirDescuentos ?? true,
+          impuestoIncluido: data.impuestoIncluido ?? true,
+        });
+      }
     } catch {
-      setTaxesCfg({ iva: 13, servicio: 10 });
+      setTaxesCfg({ iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true });
     }
     try {
       const { data } = await api.get("/restaurant/payments");
@@ -195,10 +356,11 @@ export default function RestaurantPage() {
           monedaSec: data.monedaSec || "USD",
           tipoCambio: Number(data.tipoCambio || 0) || 530,
           cobros: Array.isArray(data.cobros) ? data.cobros : [],
+          cargoHabitacion: Boolean(data.cargoHabitacion),
         });
       }
     } catch {
-      setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [] });
+      setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false });
     }
   }, []);
 
@@ -327,9 +489,28 @@ export default function RestaurantPage() {
 
   const reprintCurrent = async () => {
     if (!selectedTable?.id) return;
+    const order = ordersByTable?.[selectedTable.id] || {};
+    const isPaid = String(order?.status || "").toUpperCase() === "PAID";
+    if (!isPaid) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "No paid invoice yet. Use 'Reprint comanda' from the table." },
+        })
+      );
+      return;
+    }
     try {
-      await api.post("/restaurant/order/reprint", { tableId: selectedTable.id });
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reprint sent." } }));
+      const payload = {
+        sectionId: order?.sectionId || selectedSection?.id,
+        tableId: selectedTable.id,
+        items: Array.isArray(order?.items) ? order.items : [],
+        note: order?.note || orderNote || "",
+        covers: order?.covers || covers,
+        type: "DOCUMENT",
+        printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+      };
+      await api.post("/restaurant/print", payload);
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Invoice reprint sent." } }));
     } catch (err) {
       const msg = err?.response?.data?.message || "Could not reprint.";
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
@@ -425,7 +606,7 @@ export default function RestaurantPage() {
     if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
   };
 
-  const sendToKitchen = async () => {
+  const sendComanda = async ({ markAsSent = true, silent = false } = {}) => {
     if (!selectedTable?.id || !hasItems) return;
     const payload = {
       sectionId: selectedSection?.id,
@@ -433,20 +614,48 @@ export default function RestaurantPage() {
       items: currentOrder.items || [],
       note: orderNote || "",
       covers: currentOrder.covers || covers,
-      printers: printerCfg,
-      status: "ENVIADO",
+      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+      type: "KITCHEN_BAR",
+      status: markAsSent ? "ENVIADO" : undefined,
       serviceType: currentOrder.serviceType || serviceType,
       roomId: currentOrder.roomId || roomCharge,
     };
     try {
-      await api.post("/restaurant/order", payload);
+      if (markAsSent) {
+        await api.post("/restaurant/order", payload);
+      }
       await api.post("/restaurant/print", payload);
-      updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
-      refreshStats();
-      window.alert("Pedido enviado a cocina.");
-    } catch {
-      window.alert("Could not send to printers.");
+      if (markAsSent) {
+        updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
+        refreshStats();
+      }
+      if (!silent) {
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", {
+            detail: { title: "Restaurant", desc: markAsSent ? "Comanda enviada." : "Comanda reimpresa." },
+          })
+        );
+      }
+    } catch (err) {
+      if (!silent) {
+        const msg = err?.response?.data?.message || "Could not send to printers.";
+        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+      }
     }
+  };
+
+  const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: false });
+
+  const reprintComanda = async () => sendComanda({ markAsSent: false, silent: false });
+
+  const backToSection = async () => {
+    if (!selectedTable?.id) return;
+    const currentStatus = String(ordersByTable?.[selectedTable.id]?.status || currentOrder.status || "").toUpperCase();
+    if (hasItems && currentStatus !== "ENVIADO") {
+      await sendComanda({ markAsSent: true, silent: true });
+    }
+    setSelectedTable(null);
+    setSectionLauncher(false);
   };
 
   const openPayments = () => {
@@ -515,7 +724,7 @@ export default function RestaurantPage() {
           <span className="text-lg font-semibold">Restaurant</span>
           <span className="text-sm text-amber-200">Welcome</span>
         </div>
-        <div className="flex items-center gap-4 relative">
+          <div className="flex items-center gap-4 relative">
           <div className="hidden md:flex items-center gap-3 text-xs">
             <div className="px-3 py-1 rounded-lg bg-white/10 text-white">
               {now.toLocaleDateString()}  {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -705,11 +914,21 @@ export default function RestaurantPage() {
               <div className="text-xs text-slate-500">Subtotal {formatMoney(totals.subtotal)}  Service {formatMoney(totals.service)}  Taxes {formatMoney(totals.tax)}</div>
             </div>
             <div className="grid md:grid-cols-2 gap-3">
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Cash" type="number" value={paymentForm.cash} onChange={(e) => setPaymentForm((f) => ({ ...f, cash: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Card" type="number" value={paymentForm.card} onChange={(e) => setPaymentForm((f) => ({ ...f, card: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="SINPE" type="number" value={paymentForm.sinpe} onChange={(e) => setPaymentForm((f) => ({ ...f, sinpe: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Bank transfer" type="number" value={paymentForm.transfer} onChange={(e) => setPaymentForm((f) => ({ ...f, transfer: e.target.value }))} />
-              <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Room charge" type="number" value={paymentForm.room} onChange={(e) => setPaymentForm((f) => ({ ...f, room: e.target.value }))} />
+              {enabledPaymentInputs.cash && (
+                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Cash" type="number" value={paymentForm.cash} onChange={(e) => setPaymentForm((f) => ({ ...f, cash: e.target.value }))} />
+              )}
+              {enabledPaymentInputs.card && (
+                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Card" type="number" value={paymentForm.card} onChange={(e) => setPaymentForm((f) => ({ ...f, card: e.target.value }))} />
+              )}
+              {enabledPaymentInputs.sinpe && (
+                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="SINPE" type="number" value={paymentForm.sinpe} onChange={(e) => setPaymentForm((f) => ({ ...f, sinpe: e.target.value }))} />
+              )}
+              {enabledPaymentInputs.transfer && (
+                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Bank transfer" type="number" value={paymentForm.transfer} onChange={(e) => setPaymentForm((f) => ({ ...f, transfer: e.target.value }))} />
+              )}
+              {enabledPaymentInputs.room && (
+                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Room charge" type="number" value={paymentForm.room} onChange={(e) => setPaymentForm((f) => ({ ...f, room: e.target.value }))} />
+              )}
             </div>
             <div className="text-sm text-slate-700 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
               Paid: {formatMoney(paymentTotal)}  Change/Diff: {formatMoney(paymentDiff)}
@@ -765,62 +984,68 @@ export default function RestaurantPage() {
          <div className="flex-1 flex flex-col">
             <header className="px-4 py-3 bg-white border-b flex items-center gap-3 shadow-sm">
               <div className="flex items-center justify-between w-full">
-               <div className="flex items-center gap-3">
-                 <div className="text-lg font-semibold text-amber-900">
-                  {selectedTable
-                    ? `${selectedSection?.name || ""}${selectedSection ? " - " : ""}${selectedTable?.name}`
-                    : sectionLauncher
-                      ? "Elige una seccion"
-                      : selectedSection
-                        ? selectedSection.name
-                        : "Elige una seccion"}
-                 </div>
-                 <button
-                   className="px-3 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-sm font-semibold"
-                   onClick={openNewOrderPicker}
-                 >
-                   New order
-                 </button>
-                 <button
-                   className="px-3 py-2 rounded-lg bg-amber-100 hover:bg-amber-200 text-sm font-semibold text-amber-900 disabled:opacity-50"
-                   onClick={openMoveTablePicker}
-                   disabled={!selectedTable?.id || !(ordersByTable[selectedTable.id]?.items?.length)}
-                 >
-                   Change table
-                 </button>
-                 <button
-                   className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
-                   onClick={reprintCurrent}
-                   disabled={!selectedTable?.id}
-                 >
-                   Reprint
-                 </button>
-                 <button
-                   className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
-                   onClick={voidInvoice}
-                   disabled={!selectedTable?.id || String(ordersByTable[selectedTable.id]?.status || "").toUpperCase() !== "PAID"}
-                 >
-                   Void invoice
-                 </button>
-                 <button
-                   className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white disabled:opacity-50"
-                   onClick={openPayments}
-                   disabled={!selectedTable?.id || !(ordersByTable[selectedTable.id]?.items?.length)}
-                 >
-                   Charge
-                 </button>
-               </div>
-              {!selectedTable && !sectionLauncher && (
-                 <button
-                   className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold hover:bg-amber-200"
-                   onClick={() => {
-                     if (!guardSwitch()) return;
-                     resetToLobby();
-                   }}
+                 <div className="flex items-center gap-3">
+                  <div className="text-lg font-semibold text-amber-900">
+                   {selectedTable
+                     ? `${selectedSection?.name || ""}${selectedSection ? " - " : ""}${selectedTable?.name}`
+                     : sectionLauncher
+                       ? "Elige una seccion"
+                       : selectedSection
+                         ? selectedSection.name
+                         : "Elige una seccion"}
+                  </div>
+                  {selectedTable?.id && (
+                    <>
+                      <button
+                        className="px-3 py-2 rounded-lg bg-amber-700 hover:bg-amber-600 text-sm font-semibold"
+                        onClick={openNewOrderPicker}
+                      >
+                        New order
+                      </button>
+                      <button
+                        className="px-3 py-2 rounded-lg bg-amber-100 hover:bg-amber-200 text-sm font-semibold text-amber-900 disabled:opacity-50"
+                        onClick={openMoveTablePicker}
+                        disabled={!(ordersByTable[selectedTable.id]?.items?.length)}
+                      >
+                        Change table
+                      </button>
+                      <button
+                        className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
+                        onClick={reprintCurrent}
+                        disabled={String(ordersByTable[selectedTable.id]?.status || "").toUpperCase() !== "PAID"}
+                        title="Reprint paid invoice/document"
+                      >
+                        Reprint invoice
+                      </button>
+                      <button
+                        className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
+                        onClick={voidInvoice}
+                        disabled={String(ordersByTable[selectedTable.id]?.status || "").toUpperCase() !== "PAID"}
+                      >
+                        Void invoice
+                      </button>
+                    </>
+                  )}
+                </div>
+               {selectedTable?.id ? (
+                  <button
+                    className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold hover:bg-amber-200"
+                    onClick={backToSection}
+                    title="Back to section"
                   >
                     Back
                   </button>
-                )}
+               ) : (!sectionLauncher && (
+                  <button
+                    className="h-11 px-4 rounded-xl bg-amber-100 text-amber-800 text-sm font-semibold hover:bg-amber-200"
+                    onClick={() => {
+                      if (!guardSwitch()) return;
+                      resetToLobby();
+                    }}
+                   >
+                     Back
+                   </button>
+                 ))}
               </div>
             </header>
 
@@ -939,30 +1164,53 @@ export default function RestaurantPage() {
                           const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
                           const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
                           const hasOrder = Boolean(ordersByTable[t.id]?.items?.length);
-                          const TableIcon = hasOrder ? CircleDot : Circle;
+                          const iconSize = Number(t.size ?? 56) || 56;
+                          const rotation = Number(t.rotation ?? 0) || 0;
+                          const color = String(t.color || t.colorHex || t.iconColor || "").trim();
                           const tableKey = String(t.id || t.name || `table-${idx}`);
                           return (
                             <button
                               key={tableKey}
-                              className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-xl px-3 py-2 shadow text-left text-xs md:text-sm transition border ${
-                                hasOrder
-                                  ? "bg-emerald-600/90 border-emerald-500 text-white"
-                                  : "bg-white border-amber-200 text-amber-900"
-                              }`}
+                              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none group"
                               style={{ left: `${x}%`, top: `${y}%` }}
                               onClick={() => {
                                 if (!guardSwitch() && selectedTable?.id !== t.id) return;
                                 handleSelectTable(t, selectedSection);
                               }}
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="font-semibold leading-tight">{t.name}</div>
-                                <span className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-black/10" title={hasOrder ? "Occupied" : "Free"}>
-                                  <TableIcon size={16} />
-                                </span>
+                              <div
+                                className={`rounded-2xl border shadow-sm transition px-2 py-2 ${
+                                  hasOrder
+                                    ? "bg-emerald-600/90 border-emerald-500 group-hover:bg-emerald-500/90"
+                                    : "bg-white/90 border-amber-200 group-hover:border-amber-300"
+                                }`}
+                              >
+                                {(() => {
+                                  const { Free, Occupied } = getTableIcons(t.kind);
+                                  const Icon = hasOrder ? Occupied : Free;
+                                  return (
+                                    <div
+                                      style={{
+                                        width: iconSize,
+                                        height: iconSize,
+                                        transform: `rotate(${rotation}deg)`,
+                                        color: color || undefined,
+                                      }}
+                                    >
+                                      <Icon className="w-full h-full" />
+                                    </div>
+                                  );
+                                })()}
                               </div>
-                              <div className="text-[11px] opacity-80">{t.seats} seats</div>
-                              {hasOrder && <div className="text-[10px] mt-0.5">Active order</div>}
+                              <div
+                                className={`text-sm font-bold rounded-lg px-2 py-0.5 border shadow-sm transition ${
+                                  hasOrder
+                                    ? "bg-emerald-600/90 border-emerald-500 text-white group-hover:bg-emerald-500/90"
+                                    : "bg-white/90 border-amber-200 text-amber-900 group-hover:border-amber-300"
+                                }`}
+                              >
+                                {t.id || t.name}
+                              </div>
                             </button>
                           );
                         })}
@@ -1161,6 +1409,12 @@ export default function RestaurantPage() {
                       <span>{formatMoney(totals.total)}</span>
                     </div>
                   </div>
+                  <div className="mt-2 text-[11px] text-slate-600">
+                    <div>Tax included in prices: {taxesCfg.impuestoIncluido ? "Yes" : "No"}</div>
+                    <div>
+                      Discounts: {taxesCfg.permitirDescuentos ? "Enabled" : "Disabled"} • Max {taxesCfg.descuentoMax ?? 0}%
+                    </div>
+                  </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
@@ -1168,7 +1422,15 @@ export default function RestaurantPage() {
                       onClick={sendToKitchen}
                       disabled={!hasItems}
                     >
-                      Send to kitchen
+                      Comanda
+                    </button>
+                    <button
+                      className="h-12 rounded-xl bg-white border text-slate-700 font-semibold hover:bg-slate-50 disabled:opacity-60"
+                      onClick={reprintComanda}
+                      disabled={!hasItems}
+                      title="Reprint comanda without re-sending to kitchen/KDS"
+                    >
+                      Reprint comanda
                     </button>
                     <button
                       className="h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:bg-emerald-300"
