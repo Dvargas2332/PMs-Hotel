@@ -1,8 +1,12 @@
-import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import { JobQueue } from "./jobQueue.js";
-import { listPrinters, printFile, printText } from "./print.js";
+const path = require("node:path");
+const dotenv = require("dotenv");
+const express = require("express");
+const cors = require("cors");
+const { JobQueue } = require("./jobQueue.js");
+const { listPrinters, printFile, printText } = require("./print.js");
+
+const baseDir = process.pkg ? path.dirname(process.execPath) : process.cwd();
+dotenv.config({ path: path.join(baseDir, ".env") });
 
 const HOST = process.env.PRINT_AGENT_HOST || "127.0.0.1";
 const PORT = Number(process.env.PRINT_AGENT_PORT || 8787);

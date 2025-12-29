@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
 
 const execFileAsync = promisify(execFile);
 
-export async function runPowerShell(command, { timeoutMs = 30000 } = {}) {
+async function runPowerShell(command, { timeoutMs = 30000 } = {}) {
   const isWindows = process.platform === "win32";
   if (!isWindows) {
     const err = new Error("PowerShell printing is only supported on Windows.");
@@ -19,3 +19,4 @@ export async function runPowerShell(command, { timeoutMs = 30000 } = {}) {
   return String(stdout || "");
 }
 
+module.exports = { runPowerShell };

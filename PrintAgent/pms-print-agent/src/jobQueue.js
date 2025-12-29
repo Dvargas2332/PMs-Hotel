@@ -1,4 +1,4 @@
-export class JobQueue {
+class JobQueue {
   constructor() {
     this._chain = Promise.resolve();
     this._jobs = new Map();
@@ -45,3 +45,4 @@ export class JobQueue {
   }
 }
 
+module.exports = { JobQueue };

@@ -1,13 +1,13 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { runPowerShell } from "./powershell.js";
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
+const { runPowerShell } = require("./powershell.js");
 
 function psEscapeSingleQuotes(s) {
   return String(s).replace(/'/g, "''");
 }
 
-export async function listPrinters() {
+async function listPrinters() {
   const cmd = `Get-Printer | Select-Object Name,DriverName,PortName,Shared,Published | ConvertTo-Json -Depth 3`;
   const out = await runPowerShell(cmd, { timeoutMs: 30000 });
   const trimmed = out.trim();
@@ -16,7 +16,7 @@ export async function listPrinters() {
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
-export async function printText({ printerName, text, copies = 1 }) {
+async function printText({ printerName, text, copies = 1 }) {
   const safePrinter = psEscapeSingleQuotes(printerName);
   const safeText = psEscapeSingleQuotes(text);
   const n = Math.max(1, Math.min(50, Number(copies) || 1));
@@ -29,7 +29,7 @@ for ($i=0; $i -lt ${n}; $i++) { $t | Out-Printer -Name $p }
   await runPowerShell(cmd, { timeoutMs: 60000 });
 }
 
-export async function printFile({ printerName, filename, dataBase64, copies = 1 }) {
+async function printFile({ printerName, filename, dataBase64, copies = 1 }) {
   const safePrinter = psEscapeSingleQuotes(printerName);
   const buf = Buffer.from(String(dataBase64 || ""), "base64");
   if (!buf.length) throw new Error("Empty file payload");
@@ -55,3 +55,4 @@ for ($i=0; $i -lt ${n}; $i++) {
   }
 }
 
+module.exports = { listPrinters, printText, printFile };
