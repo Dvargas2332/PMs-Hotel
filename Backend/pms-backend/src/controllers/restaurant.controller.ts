@@ -151,9 +151,55 @@ export async function listSections(req: Request, res: Response) {
     orderBy: { name: "asc" },
   });
 
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun..6=Sat
+  const minutesNow = now.getHours() * 60 + now.getMinutes();
+  const isActiveInWindow = (startTime?: string | null, endTime?: string | null) => {
+    const parse = (t?: string | null) => {
+      if (!t) return null;
+      const m = /^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
+      if (!m) return null;
+      const hh = Number(m[1]);
+      const mm = Number(m[2]);
+      if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+      return hh * 60 + mm;
+    };
+    const start = parse(startTime);
+    const end = parse(endTime);
+    if (start == null && end == null) return true;
+    if (start != null && end == null) return minutesNow >= start;
+    if (start == null && end != null) return minutesNow < end;
+    if (start == null || end == null) return true;
+    if (start === end) return true;
+    if (start < end) return minutesNow >= start && minutesNow < end;
+    return minutesNow >= start || minutesNow < end;
+  };
+
+  const assignments = await prisma.restaurantMenuAssignment.findMany({
+    where: { hotelId, active: true, sectionId: { in: sections.map((s) => s.id) } },
+    include: { menu: { select: { id: true, name: true, active: true } } },
+    orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+  });
+  const assignmentsBySection = new Map<string, any[]>();
+  assignments.forEach((a) => {
+    const list = assignmentsBySection.get(a.sectionId) || [];
+    list.push(a);
+    assignmentsBySection.set(a.sectionId, list);
+  });
+
   const mapped = sections.map((s) => ({
     ...s,
     id: fromInternalId(hotelId, s.id),
+    activeMenu: (() => {
+      const list = assignmentsBySection.get(s.id) || [];
+      const activeAssignment = list.find((a) => {
+        const dayOk = (Number(a.daysMask || 0) & (1 << day)) !== 0;
+        if (!dayOk) return false;
+        return isActiveInWindow(a.startTime, a.endTime);
+      });
+      if (!activeAssignment?.menu || activeAssignment.menu.active === false) return null;
+      return { id: activeAssignment.menu.id, name: activeAssignment.menu.name };
+    })(),
     tables: (s.tables || []).map((t) => ({
       ...t,
       id: fromInternalId(hotelId, t.id),
@@ -320,6 +366,70 @@ export async function updateTablePosition(req: Request, res: Response) {
   await prisma.restaurantTable.updateMany({
     where: { id: table.id, hotelId },
     data: { x: nx, y: ny },
+  });
+
+  const updated = await prisma.restaurantTable.findFirst({
+    where: { id: table.id, hotelId },
+  });
+  if (!updated) return res.status(404).json({ message: "Mesa no encontrada" });
+  res.json({ ...updated, id: fromInternalId(hotelId, updated.id), sectionId });
+}
+
+export async function updateTableStyle(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
+  const { sectionId, tableId } = req.params as { sectionId?: string; tableId?: string };
+  if (!sectionId || !tableId) return res.status(400).json({ message: "sectionId y tableId requeridos" });
+
+  const internalSectionId = toInternalId(hotelId, sectionId);
+  const section = await prisma.restaurantSection.findFirst({
+    where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
+    select: { id: true },
+  });
+  if (!section) return res.status(404).json({ message: "Sección no encontrada" });
+
+  const internalTableId = toInternalId(hotelId, tableId);
+  const table = await prisma.restaurantTable.findFirst({
+    where: { hotelId, sectionId: section.id, OR: [{ id: internalTableId }, { id: tableId }] },
+  });
+  if (!table) return res.status(404).json({ message: "Mesa no encontrada" });
+
+  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
+  const data: any = {};
+
+  if ("name" in body) data.name = body.name ? String(body.name) : null;
+  if ("kind" in body) data.kind = body.kind ? String(body.kind) : null;
+  if ("color" in body) data.color = body.color ? String(body.color) : null;
+
+  const toNum = (v: any) => (typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN);
+  if ("size" in body) {
+    const n = toNum(body.size);
+    if (Number.isFinite(n)) data.size = n;
+  }
+  if ("rotation" in body) {
+    const n = toNum(body.rotation);
+    if (Number.isFinite(n)) data.rotation = n;
+  }
+  if ("seats" in body) {
+    const n = toNum(body.seats);
+    if (Number.isFinite(n)) data.seats = Math.trunc(n);
+  }
+  if ("x" in body) {
+    const n = toNum(body.x);
+    if (Number.isFinite(n)) data.x = n;
+  }
+  if ("y" in body) {
+    const n = toNum(body.y);
+    if (Number.isFinite(n)) data.y = n;
+  }
+
+  if (Object.keys(data).length === 0) return res.status(400).json({ message: "No hay campos para actualizar" });
+
+  await prisma.restaurantTable.updateMany({
+    where: { id: table.id, hotelId },
+    data,
   });
 
   const updated = await prisma.restaurantTable.findFirst({
@@ -598,6 +708,9 @@ export async function listMenu(req: Request, res: Response) {
           itemId: e.itemId,
           name: e.item?.name,
           code: e.item?.code,
+          color: (e.item as any)?.color || "",
+          imageUrl: (e.item as any)?.imageUrl || "",
+          priceIncludesTaxesAndService: (e.item as any)?.priceIncludesTaxesAndService !== false,
           category: e.category || deriveMenuCategoryFromItem(e.item),
           price: e.price ?? e.item?.price ?? 0,
           tax: e.item?.tax ?? 0,
@@ -669,14 +782,47 @@ export async function createMenu(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
 
-  const { name, active } = req.body || {};
+  const { name, active, sectionIds } = req.body || {};
   const nm = String(name || "").trim();
   if (!nm) return res.status(400).json({ message: "name requerido" });
 
   const created = await prisma.restaurantMenu.create({
-    data: { hotelId: user.hotelId, name: nm, active: active !== false },
+    data: { hotelId, name: nm, active: active !== false },
   });
+
+  // Optional: immediately make this menu visible in selected sections (always active schedule).
+  const rawSectionIds = Array.isArray(sectionIds) ? sectionIds : [];
+  const sectionIdList = rawSectionIds.map((x: any) => String(x || "").trim()).filter(Boolean);
+  if (sectionIdList.length) {
+    const sections = await Promise.all(
+      sectionIdList.map(async (sid: string) => {
+        const internalSectionId = toInternalId(hotelId, sid);
+        return prisma.restaurantSection.findFirst({
+          where: { hotelId, OR: [{ id: internalSectionId }, { id: sid }] },
+          select: { id: true },
+        });
+      })
+    );
+    const sectionInternalIds = sections.filter(Boolean).map((s: any) => s.id);
+    if (!sectionInternalIds.length) return res.json(created);
+    await prisma.restaurantMenuAssignment.createMany({
+      data: sectionInternalIds.map((internalId: string) => ({
+        hotelId,
+        sectionId: internalId,
+        menuId: created.id,
+        daysMask: 127,
+        startTime: null,
+        endTime: null,
+        timezone: "America/Costa_Rica",
+        priority: 0,
+        active: true,
+      })),
+      skipDuplicates: true,
+    });
+  }
+
   res.json(created);
 }
 
@@ -818,6 +964,9 @@ export async function listMenuEntries(req: Request, res: Response) {
           price: e.item.price,
           tax: e.item.tax,
           active: e.item.active,
+          color: (e.item as any).color || "",
+          imageUrl: (e.item as any).imageUrl || "",
+          priceIncludesTaxesAndService: (e.item as any).priceIncludesTaxesAndService !== false,
           familyId: e.item.familyId,
           subFamilyId: e.item.subFamilyId,
           subSubFamilyId: e.item.subSubFamilyId,
@@ -1233,6 +1382,9 @@ export async function listItems(req: Request, res: Response) {
       code: i.code,
       name: i.name,
       cabys: i.cabys,
+      color: (i as any).color || "",
+      imageUrl: (i as any).imageUrl || "",
+      priceIncludesTaxesAndService: (i as any).priceIncludesTaxesAndService !== false,
       price: i.price,
       tax: i.tax,
       taxIds: (i.taxes || []).map((t) => t.taxId),
@@ -1271,6 +1423,7 @@ export async function createItems(req: Request, res: Response) {
     const subFamilyId = raw?.subFamilyId ? String(raw.subFamilyId).trim() : null;
     const subSubFamilyId = raw?.subSubFamilyId ? String(raw.subSubFamilyId).trim() : null;
     const taxIds = Array.isArray(raw?.taxIds) ? raw.taxIds.map((x: any) => String(x)) : [];
+    const priceIncludesTaxesAndService = raw?.priceIncludesTaxesAndService !== false;
 
     if (!name || !familyId) {
     return res.status(400).json({ message: "name y familyId requeridos" });
@@ -1309,6 +1462,9 @@ export async function createItems(req: Request, res: Response) {
         code,
         name,
         cabys: family.cabys,
+        color: raw?.color ? String(raw.color).trim() : null,
+        imageUrl: raw?.imageUrl ? String(raw.imageUrl).trim() : null,
+        priceIncludesTaxesAndService,
         price: Number(raw?.price || 0),
         tax: taxPercent,
         notes: raw?.notes ? String(raw.notes) : null,
@@ -1331,6 +1487,9 @@ export async function createItems(req: Request, res: Response) {
       code: item.code,
       name: item.name,
       cabys: item.cabys,
+      color: (item as any).color || "",
+      imageUrl: (item as any).imageUrl || "",
+      priceIncludesTaxesAndService: (item as any).priceIncludesTaxesAndService !== false,
       price: item.price,
       tax: item.tax,
       taxIds: (item.taxes || []).map((t) => t.taxId),
@@ -1431,6 +1590,9 @@ export async function updateItem(req: Request, res: Response) {
       if ("price" in body) data.price = Number(body.price || 0);
       if ("notes" in body) data.notes = body.notes ? String(body.notes) : null;
       if ("active" in body) data.active = body.active !== false;
+      if ("color" in body) data.color = body.color ? String(body.color).trim() : null;
+      if ("imageUrl" in body) data.imageUrl = body.imageUrl ? String(body.imageUrl).trim() : null;
+      if ("priceIncludesTaxesAndService" in body) data.priceIncludesTaxesAndService = body.priceIncludesTaxesAndService !== false;
 
       data.familyId = family.id;
       data.subFamilyId = sf?.id || null;
@@ -1446,27 +1608,32 @@ export async function updateItem(req: Request, res: Response) {
       }
 
       try {
-        updated = await prisma.$transaction(async (tx) => {
-          if (nextTaxIds) {
-            await tx.restaurantItemTax.deleteMany({ where: { hotelId: user.hotelId, itemId: existing.id } });
-            if (nextTaxIds.length) {
-              await tx.restaurantItemTax.createMany({
-                data: nextTaxIds.map((taxId: string) => ({ hotelId: user.hotelId, itemId: existing.id, taxId })),
-                skipDuplicates: true,
-              });
+          updated = await prisma.$transaction(async (tx) => {
+            if (nextTaxIds) {
+              await tx.restaurantItemTax.deleteMany({ where: { hotelId: user.hotelId, itemId: existing.id } });
+              if (nextTaxIds.length) {
+                await tx.restaurantItemTax.createMany({
+                  data: nextTaxIds.map((taxId: string) => ({ hotelId: user.hotelId, itemId: existing.id, taxId })),
+                  skipDuplicates: true,
+                });
+              }
             }
-          }
-          return tx.restaurantItem.update({
-            where: { id: existing.id },
-            data,
-            include: { family: true, subFamily: true, subSubFamily: true, taxes: { include: { tax: true } } },
+            const { count } = await tx.restaurantItem.updateMany({
+              where: { id: existing.id, hotelId: user.hotelId },
+              data,
+            });
+            if (!count) return null;
+            return tx.restaurantItem.findFirst({
+              where: { id: existing.id, hotelId: user.hotelId },
+              include: { family: true, subFamily: true, subSubFamily: true, taxes: { include: { tax: true } } },
+            });
           });
-        });
-        break;
-      } catch (err: any) {
-        if (err?.code === "P2002" && attempt < 5) continue;
-        throw err;
-      }
+          if (!updated) return res.status(404).json({ message: "Artículo no encontrado" });
+          break;
+        } catch (err: any) {
+          if (err?.code === "P2002" && attempt < 5) continue;
+          throw err;
+        }
     }
 
     res.json({
@@ -1475,6 +1642,9 @@ export async function updateItem(req: Request, res: Response) {
       code: updated.code,
       name: updated.name,
       cabys: updated.cabys,
+      color: (updated as any).color || "",
+      imageUrl: (updated as any).imageUrl || "",
+      priceIncludesTaxesAndService: (updated as any).priceIncludesTaxesAndService !== false,
       price: updated.price,
       tax: updated.tax,
       taxIds: (updated.taxes || []).map((t: any) => t.taxId),
@@ -1572,11 +1742,44 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     include: { items: true },
   });
 
-  const subtotal = items.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.qty || 0), 0);
   const taxes = await getRestaurantTaxesForHotel(hotelId);
-  const service = subtotal * (taxes.servicio / 100);
-  const tax = (subtotal + service) * (taxes.iva / 100);
-  const total = subtotal + service + tax;
+  const serviceRate = Number(taxes.servicio || 0) / 100;
+  const taxRate = Number(taxes.iva || 0) / 100;
+
+  const itemIds = items.map((i) => String(i.id));
+  const itemRules = await prisma.restaurantItem.findMany({
+    where: { hotelId, id: { in: itemIds } },
+    select: { id: true, priceIncludesTaxesAndService: true },
+  });
+  const includesById = new Map(itemRules.map((r) => [r.id, r.priceIncludesTaxesAndService !== false]));
+
+  const sums = items.reduce(
+    (acc, i) => {
+      const qty = Number(i.qty || 0);
+      const price = Number(i.price || 0);
+      const gross = price * qty;
+      const includes = includesById.get(String(i.id)) ?? true;
+      if (includes) {
+        const denom = 1 + serviceRate + taxRate;
+        const net = denom > 0 ? gross / denom : gross;
+        acc.subtotal += net;
+        acc.service += net * serviceRate;
+        acc.tax += net * taxRate;
+        acc.total += gross;
+      } else {
+        const net = gross;
+        acc.subtotal += net;
+        acc.service += net * serviceRate;
+        acc.tax += net * taxRate;
+        acc.total += net + net * serviceRate + net * taxRate;
+      }
+      return acc;
+    },
+    { subtotal: 0, service: 0, tax: 0, total: 0 }
+  );
+
+  const total = sums.total;
+  const service = sums.service;
   const inferredServiceType = String(serviceType || existing?.serviceType || "DINE_IN");
 
   const resolvedSectionId = internalSectionId
@@ -1618,6 +1821,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
           const prev = existingMap.get(String(i.id));
           const cat = (i.category || "").toLowerCase();
           const isBar = cat.includes("bebida") || cat.includes("bar");
+          const includes = includesById.get(String(i.id)) ?? true;
           await tx.restaurantOrderItem.upsert({
             where: { hotelId_orderId_itemId: { hotelId, orderId: existing.id, itemId: String(i.id) } },
             update: {
@@ -1625,6 +1829,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
               category: i.category || "",
               price: i.price,
               qty: i.qty,
+              priceIncludesTaxesAndService: includes,
               area: prev?.area ?? (isBar ? "BAR" : "KITCHEN"),
               status: prev?.status ?? "NEW",
             },
@@ -1636,6 +1841,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
               category: i.category || "",
               price: i.price,
               qty: i.qty,
+              priceIncludesTaxesAndService: includes,
               area: isBar ? "BAR" : "KITCHEN",
               status: "NEW",
             },
@@ -1661,6 +1867,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             create: items.map((i) => {
               const cat = (i.category || "").toLowerCase();
               const isBar = cat.includes("bebida") || cat.includes("bar");
+              const includes = includesById.get(String(i.id)) ?? true;
               return {
                 hotelId,
                 itemId: String(i.id),
@@ -1668,6 +1875,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
                 category: i.category || "",
                 price: i.price,
                 qty: i.qty,
+                priceIncludesTaxesAndService: includes,
                 area: isBar ? "BAR" : "KITCHEN",
                 status: "NEW",
               };

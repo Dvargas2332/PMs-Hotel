@@ -27,10 +27,82 @@ const TOP_TABS = [
   { id: "menus", label: "Menús" },
 ];
 
+const applyTableStylesToSections = (sectionsList, tableStyles) => {
+  const styles = tableStyles && typeof tableStyles === "object" ? tableStyles : null;
+  if (!styles) return sectionsList;
+  return (sectionsList || []).map((sec) => {
+    const secId = String(sec?.id || "");
+    const byTable = secId && styles[secId] && typeof styles[secId] === "object" ? styles[secId] : null;
+    if (!byTable) return sec;
+    return {
+      ...sec,
+      tables: (sec.tables || []).map((t) => {
+        const tableId = String(t?.id || "");
+        const st = tableId && byTable[tableId] && typeof byTable[tableId] === "object" ? byTable[tableId] : null;
+        if (!st) return t;
+        const next = { ...t };
+        const size = Number(st.size ?? st.iconSize);
+        const rotation = Number(st.rotation ?? st.angle);
+        const color = String(st.color || st.colorHex || st.iconColor || "").trim();
+        const kind = st.kind;
+        if (Number.isFinite(size)) next.size = size;
+        if (Number.isFinite(rotation)) next.rotation = rotation;
+        if (color) next.color = color;
+        if (kind) next.kind = kind;
+        return next;
+      }),
+    };
+  });
+};
+
 export default function RestaurantConfig() {
   const location = useLocation();
   const [active, setActive] = useState("sections");
   const [subTab, setSubTab] = useState("sections");
+
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const resizeImageDataUrl = async (dataUrl, maxDim = 512, quality = 0.86) => {
+    if (!dataUrl || typeof dataUrl !== "string") return "";
+    if (dataUrl.startsWith("data:image/svg+xml")) return dataUrl;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w0 = Number(img.naturalWidth || img.width || 0) || 0;
+        const h0 = Number(img.naturalHeight || img.height || 0) || 0;
+        if (!w0 || !h0) return resolve(dataUrl);
+
+        const scale = Math.min(1, maxDim / Math.max(w0, h0));
+        const w = Math.max(1, Math.round(w0 * scale));
+        const h = Math.max(1, Math.round(h0 * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        try {
+          resolve(canvas.toDataURL("image/webp", quality));
+        } catch {
+          try {
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          } catch {
+            resolve(dataUrl);
+          }
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
 
   const [sections, setSections] = useState([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
@@ -39,7 +111,9 @@ export default function RestaurantConfig() {
   const [menu, setMenu] = useState([]);
   const [menus, setMenus] = useState([]);
   const [menuName, setMenuName] = useState("");
+  const [menuCreateSectionIds, setMenuCreateSectionIds] = useState([]);
   const [selectedMenuId, setSelectedMenuId] = useState("");
+  const [menuEditForm, setMenuEditForm] = useState({ name: "", active: true });
   const [menuEntries, setMenuEntries] = useState([]);
   const [sectionMenuAssignments, setSectionMenuAssignments] = useState([]);
   const [menuAssignForm, setMenuAssignForm] = useState({
@@ -53,21 +127,32 @@ export default function RestaurantConfig() {
   const [menuPickerOpen, setMenuPickerOpen] = useState(false);
   const [menuPickerCategory, setMenuPickerCategory] = useState("");
   const [menuPickerSearch, setMenuPickerSearch] = useState("");
+  const [menuEntrySearch, setMenuEntrySearch] = useState("");
   const [drag, setDrag] = useState(null); // { type: 'table', mode: 'move', id, rect, startX, startY, baseX, baseY }
   const dragLatestRef = useRef(null);
   const [selectedTableId, setSelectedTableId] = useState("");
   const [tableEdit, setTableEdit] = useState(null);
   const [rotationSnap, setRotationSnap] = useState(15); // 0 = off
   const [floorplanSaving, setFloorplanSaving] = useState(false);
-  const [dirtyTableIds, setDirtyTableIds] = useState([]);
-  const floorplanDirty = (dirtyTableIds || []).length > 0;
-  const markTableDirty = (tableId) => {
+  const [dirtyPosTableIds, setDirtyPosTableIds] = useState([]); // X/Y moved on floorplan
+  const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation/color changed
+
+  const floorplanDirty = (dirtyPosTableIds || []).length > 0;
+  const markPosDirty = (tableId) => {
     if (!tableId) return;
-    setDirtyTableIds((prev) => (prev.includes(tableId) ? prev : [...prev, tableId]));
+    setDirtyPosTableIds((prev) => (prev.includes(tableId) ? prev : [...prev, tableId]));
   };
-  const clearTableDirty = (tableId) => {
+  const clearPosDirty = (tableId) => {
     if (!tableId) return;
-    setDirtyTableIds((prev) => prev.filter((id) => id !== tableId));
+    setDirtyPosTableIds((prev) => prev.filter((id) => id !== tableId));
+  };
+  const markStyleDirty = (tableId) => {
+    if (!tableId) return;
+    setDirtyStyleTableIds((prev) => (prev.includes(tableId) ? prev : [...prev, tableId]));
+  };
+  const clearStyleDirty = (tableId) => {
+    if (!tableId) return;
+    setDirtyStyleTableIds((prev) => prev.filter((id) => id !== tableId));
   };
 
   const [printers, setPrinters] = useState({ kitchenPrinter: "", barPrinter: "", cashierPrinter: "" });
@@ -130,11 +215,14 @@ export default function RestaurantConfig() {
     subFamilyId: "",
     subSubFamilyId: "",
     price: "",
+    imageUrl: "",
+    priceIncludesTaxesAndService: true,
     taxIds: [],
     notes: "",
   });
   const [editingItemId, setEditingItemId] = useState("");
   const [editItem, setEditItem] = useState(null);
+  const [itemImageBusy, setItemImageBusy] = useState(false);
   const [itemFilters, setItemFilters] = useState({
     q: "",
     familyId: "",
@@ -322,7 +410,10 @@ export default function RestaurantConfig() {
       }
       try {
         const { data } = await api.get("/restaurant/general");
-        if (data) setGeneral((prev) => ({ ...prev, ...data }));
+        if (data) {
+          setGeneral((prev) => ({ ...prev, ...data }));
+          if (data?.tableStyles) setSections((prev) => applyTableStylesToSections(prev, data.tableStyles));
+        }
       } catch {
         /* ignore */
       }
@@ -537,7 +628,8 @@ export default function RestaurantConfig() {
 
   // Floorplan objects removed (tables only)
   useEffect(() => {
-    setDirtyTableIds([]);
+    setDirtyPosTableIds([]);
+    setDirtyStyleTableIds([]);
   }, [selectedSectionId]);
 
   useEffect(() => {
@@ -651,20 +743,20 @@ export default function RestaurantConfig() {
           s.id === selectedSectionId ? { ...s, tables: (s.tables || []).filter((t) => t.id !== tableId) } : s
         )
       );
-      clearTableDirty(tableId);
+      clearPosDirty(tableId);
+      clearStyleDirty(tableId);
     } catch (err) {
       alert("Restaurant", getApiError(err, "Could not delete table."));
     }
   };
 
-  const saveSectionLayout = async (idsToClear = null) => {
+  const saveLayoutPositions = async () => {
     if (!selectedSectionId) return;
+    if ((dirtyPosTableIds || []).length === 0) return;
     const tables = (selectedSection?.tables || [])
       .map((t) => {
-        const rawX = typeof t.x === "number" ? t.x : Number(t.x);
-        const rawY = typeof t.y === "number" ? t.y : Number(t.y);
-        const x = Number.isFinite(rawX) ? rawX : 50;
-        const y = Number.isFinite(rawY) ? rawY : 50;
+        const x = typeof t.x === "number" ? t.x : Number(t.x);
+        const y = typeof t.y === "number" ? t.y : Number(t.y);
         const color = String(t.color || t.colorHex || t.iconColor || "").trim();
         return {
           id: t.id,
@@ -677,23 +769,166 @@ export default function RestaurantConfig() {
           colorHex: color,
           iconColor: color,
         };
-      });
+      })
+      .filter((t) => Number.isFinite(t.x) && Number.isFinite(t.y));
 
-    await api.put(`/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/layout`, { tables });
+    const moved = new Set((dirtyPosTableIds || []).map(String));
+    const movedTables = tables.filter((t) => moved.has(String(t.id)));
 
-    if (idsToClear === null) {
-      setDirtyTableIds([]);
-      return;
+    const results = await Promise.allSettled(
+      movedTables.map((t) =>
+        api.patch(
+          `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(t.id))}/position`,
+          { x: t.x, y: t.y }
+        )
+      )
+    );
+    const patchOk = results.every((r) => r.status === "fulfilled");
+    if (!patchOk) throw new Error("No se pudo guardar posiciones (backend rechazó la solicitud).");
+    setDirtyPosTableIds([]);
+  };
+
+  // eslint-disable-next-line no-unused-vars
+  const saveTableStyleLegacy = async (tableId, style) => {
+    if (!selectedSectionId || !tableId) return;
+    const base = (selectedSection?.tables || []).find((t) => String(t.id) === String(tableId)) || null;
+    const x = typeof base?.x === "number" ? base.x : Number(base?.x);
+    const y = typeof base?.y === "number" ? base.y : Number(base?.y);
+    const color = String(style?.color || base?.color || base?.colorHex || base?.iconColor || "").trim();
+    const payload = {
+      id: String(tableId),
+      kind: style?.kind ?? base?.kind,
+      size: Number(style?.size ?? base?.size ?? 56) || 56,
+      rotation: Number(style?.rotation ?? base?.rotation ?? 0) || 0,
+      color,
+      colorHex: color,
+      iconColor: color,
+      x: Number.isFinite(x) ? x : 50,
+      y: Number.isFinite(y) ? y : 50,
+    };
+
+    const stylePayload = {
+      kind: payload.kind,
+      size: payload.size,
+      rotation: payload.rotation,
+      color: payload.color,
+      colorHex: payload.color,
+      iconColor: payload.color,
+      iconSize: payload.size,
+      angle: payload.rotation,
+    };
+
+    const isStylePersisted = (sectionsData) => {
+      const sec = Array.isArray(sectionsData) ? sectionsData.find((s) => String(s?.id) === String(selectedSectionId)) : null;
+      const t = sec?.tables ? sec.tables.find((tt) => String(tt?.id) === String(tableId)) : null;
+      if (!t) return false;
+      const savedColor = String(t.color || t.colorHex || t.iconColor || "").trim();
+      const savedSize = Number(t.size ?? t.iconSize);
+      const savedRotation = Number(t.rotation ?? t.angle);
+      const wantColor = String(stylePayload.color || "").trim();
+      const wantSize = Number(stylePayload.size);
+      const wantRotation = Number(stylePayload.rotation);
+      const colorOk = wantColor ? savedColor === wantColor : true;
+      const sizeOk = Number.isFinite(wantSize) ? Number.isFinite(savedSize) && savedSize === wantSize : true;
+      const rotationOk = Number.isFinite(wantRotation) ? Number.isFinite(savedRotation) && savedRotation === wantRotation : true;
+      return colorOk && sizeOk && rotationOk;
+    };
+
+    const candidates = [
+      { method: "patch", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
+      { method: "put", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
+      { method: "patch", url: `/restaurant/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
+      { method: "put", url: `/restaurant/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
+      // last resort: some backends accept style on /position
+      { method: "patch", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}/position`, data: stylePayload },
+    ];
+
+    const formatErr = (err) => {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || err?.message || "Error";
+      if (status) return `${status}: ${msg}`;
+      const baseURL = err?.config?.baseURL;
+      const url = err?.config?.url;
+      const full = baseURL && url ? `${String(baseURL).replace(/\/+$/, "")}${String(url).startsWith("/") ? "" : "/"}${String(url)}` : "";
+      return full ? `${msg} (${full})` : msg;
+    };
+
+    let lastErr = null;
+    for (const c of candidates) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await api[c.method](c.url, c.data);
+
+        // Verify persistence from backend (avoid false positives when backend ignores style fields).
+        // eslint-disable-next-line no-await-in-loop
+        const { data: secData } = await api.get("/restaurant/sections");
+        if (Array.isArray(secData) && isStylePersisted(secData)) {
+          setSections(secData);
+          clearStyleDirty(tableId);
+          return;
+        }
+
+        lastErr = `${c.method.toUpperCase()} ${c.url} -> 200 pero el backend no persistió (o no devuelve) color/tamaño/rotación.`;
+      } catch (err) {
+        lastErr = `${c.method.toUpperCase()} ${c.url} -> ${formatErr(err)}`;
+      }
     }
-    const clear = new Set((idsToClear || []).map(String));
-    setDirtyTableIds((prev) => prev.filter((id) => !clear.has(String(id))));
+
+    throw new Error(lastErr || "No se pudo guardar estilo.");
+  };
+
+  const saveTableStyle = async (tableId, style) => {
+    if (!selectedSectionId || !tableId) return;
+    const base = (selectedSection?.tables || []).find((t) => String(t.id) === String(tableId)) || null;
+    const color = String(style?.color || base?.color || "").trim();
+    const nextStyle = {
+      kind: style?.kind ?? base?.kind ?? "mesa",
+      size: Number(style?.size ?? base?.size ?? 56) || 56,
+      rotation: Number(style?.rotation ?? base?.rotation ?? 0) || 0,
+      color: color || "",
+    };
+
+    try {
+      await api.patch(
+        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`,
+        nextStyle
+      );
+      const { data: secData } = await api.get("/restaurant/sections");
+      if (Array.isArray(secData)) setSections(secData);
+      clearStyleDirty(tableId);
+    } catch (err) {
+      // Backward compatibility: if backend doesn't have the endpoint yet, keep the old fallback.
+      if (err?.response?.status !== 404) throw err;
+      const { data: gen } = await api.get("/restaurant/general");
+      const existing = gen && typeof gen === "object" ? gen : {};
+      const prevStyles = existing.tableStyles && typeof existing.tableStyles === "object" ? existing.tableStyles : {};
+      const secKey = String(selectedSectionId);
+      const tableKey = String(tableId);
+      const nextStyles = {
+        ...prevStyles,
+        [secKey]: {
+          ...(prevStyles?.[secKey] && typeof prevStyles[secKey] === "object" ? prevStyles[secKey] : {}),
+          [tableKey]: {
+            ...((prevStyles?.[secKey]?.[tableKey] && typeof prevStyles[secKey][tableKey] === "object")
+              ? prevStyles[secKey][tableKey]
+              : {}),
+            ...nextStyle,
+          },
+        },
+      };
+      const nextGeneral = { ...existing, tableStyles: nextStyles };
+      await api.put("/restaurant/general", nextGeneral);
+      setGeneral((prev) => ({ ...prev, ...nextGeneral }));
+      setSections((prev) => applyTableStylesToSections(prev, nextStyles));
+      clearStyleDirty(tableId);
+    }
   };
 
   const saveFloorplan = async () => {
     if (!selectedSectionId || floorplanSaving) return;
     setFloorplanSaving(true);
     try {
-      await saveSectionLayout(null);
+      await saveLayoutPositions();
       alert("Restaurant", "Floorplan guardado.");
     } catch (err) {
       alert("Restaurant", getApiError(err, "No se pudo guardar el floorplan."));
@@ -752,7 +987,7 @@ export default function RestaurantConfig() {
         const nx = clamp(drag.baseX + toPct(dx, drag.rect.width), 2, 98);
         const ny = clamp(drag.baseY + toPct(dy, drag.rect.height), 5, 95);
         dragLatestRef.current = { ...dragLatestRef.current, x: nx, y: ny };
-        markTableDirty(drag.id);
+        markPosDirty(drag.id);
         if (drag.id === selectedTableId) setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
         setSections((prev) =>
           prev.map((s) =>
@@ -784,6 +1019,50 @@ export default function RestaurantConfig() {
     [selectedSection, selectedTableId]
   );
 
+  const filteredMenuEntries = useMemo(() => {
+    const q = String(menuEntrySearch || "").trim().toLowerCase();
+    if (!q) return menuEntries || [];
+    return (menuEntries || []).filter((e) => {
+      const it = e?.item || {};
+      const hay = [it.familyName, it.subFamilyName, it.subSubFamilyName, it.code, it.name].filter(Boolean).join(" ").toLowerCase();
+      return hay.includes(q);
+    });
+  }, [menuEntries, menuEntrySearch]);
+
+  const menuPreviewGroups = useMemo(() => {
+    const groups = new Map();
+    (menu || []).forEach((m) => {
+      const key = String(m?.category || "General").trim() || "General";
+      const list = groups.get(key) || [];
+      list.push(m);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries())
+      .map(([category, items]) => ({ category, items }))
+      .sort((a, b) => a.category.localeCompare(b.category));
+  }, [menu]);
+
+  const isDarkHex = (hex) => {
+    if (!hex) return false;
+    const c = String(hex).trim().replace("#", "");
+    if (!/^[0-9a-fA-F]{6}$/.test(c)) return false;
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance < 0.45;
+  };
+
+  useEffect(() => {
+    if (!selectedMenuId) {
+      setMenuEditForm({ name: "", active: true });
+      return;
+    }
+    const m = (menus || []).find((x) => x.id === selectedMenuId);
+    if (!m) return;
+    setMenuEditForm({ name: String(m.name || ""), active: m.active !== false });
+  }, [selectedMenuId, menus]);
+
   useEffect(() => {
     if (!selectedTable) {
       setTableEdit(null);
@@ -802,7 +1081,17 @@ export default function RestaurantConfig() {
 
   const patchTableLocal = (tableId, patch) => {
     if (!tableId || !selectedSectionId) return;
-    markTableDirty(tableId);
+    if (Object.prototype.hasOwnProperty.call(patch, "x") || Object.prototype.hasOwnProperty.call(patch, "y")) {
+      markPosDirty(tableId);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(patch, "size") ||
+      Object.prototype.hasOwnProperty.call(patch, "rotation") ||
+      Object.prototype.hasOwnProperty.call(patch, "color") ||
+      Object.prototype.hasOwnProperty.call(patch, "kind")
+    ) {
+      markStyleDirty(tableId);
+    }
     setSections((prev) =>
       prev.map((s) =>
         s.id === selectedSectionId
@@ -822,13 +1111,48 @@ export default function RestaurantConfig() {
     const nm = String(menuName || "").trim();
     if (!nm) return alert("Restaurant", "Menu name is required.");
     try {
-      const { data } = await api.post("/restaurant/menus", { name: nm });
+      const { data } = await api.post("/restaurant/menus", { name: nm, sectionIds: menuCreateSectionIds });
       setMenus((prev) => [...prev, data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
       setMenuName("");
+      setMenuCreateSectionIds([]);
       if (!selectedMenuId) setSelectedMenuId(data.id);
       alert("Restaurant", "Menu created.");
     } catch (err) {
       alert("Restaurant", getApiError(err, "Could not create menu."));
+    }
+  };
+
+  const saveSelectedMenu = async () => {
+    if (!selectedMenuId) return;
+    const payload = {
+      name: String(menuEditForm.name || "").trim(),
+      active: menuEditForm.active !== false,
+    };
+    if (!payload.name) return alert("Restaurant", "Menu name is required.");
+    try {
+      const { data } = await api.patch(`/restaurant/menus/${encodeURIComponent(String(selectedMenuId))}`, payload);
+      setMenus((prev) =>
+        (prev || [])
+          .map((m) => (m.id === selectedMenuId ? { ...m, ...data } : m))
+          .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")))
+      );
+      alert("Restaurant", "Menu updated.");
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "Could not update menu."));
+    }
+  };
+
+  const deleteSelectedMenu = async () => {
+    if (!selectedMenuId) return;
+    if (!window.confirm("Delete this menu? This will remove its entries and schedules.")) return;
+    try {
+      await api.delete(`/restaurant/menus/${encodeURIComponent(String(selectedMenuId))}`);
+      setMenus((prev) => (prev || []).filter((m) => m.id !== selectedMenuId));
+      setSelectedMenuId("");
+      setMenuEntries([]);
+      alert("Restaurant", "Menu deleted.");
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "Could not delete menu."));
     }
   };
 
@@ -869,6 +1193,20 @@ export default function RestaurantConfig() {
       alert("Restaurant", getApiError(err, "Could not delete menu entry."));
     } finally {
       setSaving((s) => ({ ...s, menuEntries: false }));
+    }
+  };
+
+  const patchItemQuick = async (itemId, patch) => {
+    if (!itemId) return;
+    try {
+      const { data } = await api.patch(`/restaurant/items/${encodeURIComponent(String(itemId))}`, patch);
+      setItems((prev) => (prev || []).map((it) => (it.id === itemId ? { ...it, ...data } : it)));
+      setMenuEntries((prev) =>
+        (prev || []).map((e) => (e.itemId === itemId && e.item ? { ...e, item: { ...e.item, ...data } } : e))
+      );
+      setMenu((prev) => (prev || []).map((m) => (m.id === itemId ? { ...m, ...data } : m)));
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "Could not update item."));
     }
   };
 
@@ -1069,9 +1407,26 @@ export default function RestaurantConfig() {
     );
   };
 
+  const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
+
+  const CamastroFreeIcon = ({ className = "" }) => {
+    const [ok, setOk] = React.useState(true);
+    if (!ok) return <MesaFreeIcon className={className} />;
+    return (
+      <img
+        alt="Camastro"
+        src={CAMASTRO_FREE_ICON_URL}
+        className={className}
+        style={{ width: "1.5rem", height: "1.5rem", objectFit: "contain" }}
+        onError={() => setOk(false)}
+      />
+    );
+  };
+
   const getTableFreeIcon = (kind) => {
     const k = String(kind || "mesa").toLowerCase();
     if (k === "mesa") return MesaFreeIcon;
+    if (k === "camastro") return CamastroFreeIcon;
     return MesaFreeIcon;
   };
 
@@ -1098,7 +1453,7 @@ export default function RestaurantConfig() {
               <div className="flex items-center gap-2 text-xs text-slate-600">
                 {floorplanDirty ? (
                   <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-                    Cambios sin guardar
+                    Posición sin guardar
                   </span>
                 ) : (
                   <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
@@ -1106,7 +1461,7 @@ export default function RestaurantConfig() {
                   </span>
                 )}
                 <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || !floorplanDirty}>
-                  {floorplanSaving ? "Guardando..." : "Guardar layout"}
+                  {floorplanSaving ? "Guardando..." : "Guardar posiciones"}
                 </Button>
               </div>
             )}
@@ -1304,24 +1659,24 @@ export default function RestaurantConfig() {
 
                     <div className="flex items-center justify-between gap-2 pt-1">
                       <div className="text-xs text-slate-500">
-                        {dirtyTableIds.includes(selectedTable.id) ? "Cambios sin guardar" : "Guardado"}
+                        {dirtyStyleTableIds.includes(selectedTable.id) ? "Estilo sin guardar" : "Estilo guardado"}
                       </div>
                       <Button
                         type="button"
-                        disabled={floorplanSaving || !dirtyTableIds.includes(selectedTable.id)}
+                        disabled={floorplanSaving || !dirtyStyleTableIds.includes(selectedTable.id)}
                         onClick={async () => {
                           if (!tableEdit?.id) return;
                           setFloorplanSaving(true);
                           try {
-                            await saveSectionLayout([String(tableEdit.id)]);
+                            await saveTableStyle(String(tableEdit.id), tableEdit);
                           } catch (err) {
-                            alert("Restaurant", getApiError(err, "No se pudo guardar la mesa."));
+                            alert("Restaurant", getApiError(err, "No se pudo guardar el estilo de la mesa."));
                           } finally {
                             setFloorplanSaving(false);
                           }
                         }}
                       >
-                        {floorplanSaving ? "Guardando..." : "Guardar"}
+                        {floorplanSaving ? "Guardando..." : "Guardar estilo"}
                       </Button>
                     </div>
                   </>
@@ -1679,13 +2034,25 @@ export default function RestaurantConfig() {
         subFamilyId: quickItem.subFamilyId || undefined,
         subSubFamilyId: quickItem.subSubFamilyId || undefined,
         price: Number(quickItem.price || 0),
+        imageUrl: String(quickItem.imageUrl || "").trim() || "",
+        priceIncludesTaxesAndService: quickItem.priceIncludesTaxesAndService !== false,
         taxIds: Array.isArray(quickItem.taxIds) ? quickItem.taxIds : [],
         notes: quickItem.notes || undefined,
       };
       const { data } = await api.post("/restaurant/items", payload);
       const saved = Array.isArray(data) ? data : [data];
       setItems((prev) => [...prev, ...saved]);
-      setQuickItem({ name: "", familyId: "", subFamilyId: "", subSubFamilyId: "", price: "", taxIds: [], notes: "" });
+      setQuickItem({
+        name: "",
+        familyId: "",
+        subFamilyId: "",
+        subSubFamilyId: "",
+        price: "",
+        imageUrl: "",
+        priceIncludesTaxesAndService: true,
+        taxIds: [],
+        notes: "",
+      });
     } finally {
       setSaving((s) => ({ ...s, item: false }));
     }
@@ -1699,17 +2066,19 @@ export default function RestaurantConfig() {
   const startEditItem = (it) => {
     if (!it?.id) return;
     setEditingItemId(it.id);
-    setEditItem({
-      code: String(it.code || ""),
-      name: String(it.name || ""),
-      familyId: String(it.familyId || ""),
-      subFamilyId: String(it.subFamilyId || ""),
-      subSubFamilyId: String(it.subSubFamilyId || ""),
-      price: String(it.price ?? ""),
-      notes: String(it.notes || ""),
-      active: it.active !== false,
-      taxIds: Array.isArray(it.taxIds) ? it.taxIds : Array.isArray(it.taxes) ? it.taxes.map((t) => t.id).filter(Boolean) : [],
-    });
+      setEditItem({
+        code: String(it.code || ""),
+        name: String(it.name || ""),
+        familyId: String(it.familyId || ""),
+        subFamilyId: String(it.subFamilyId || ""),
+        subSubFamilyId: String(it.subSubFamilyId || ""),
+        price: String(it.price ?? ""),
+        imageUrl: String(it.imageUrl || ""),
+        notes: String(it.notes || ""),
+        active: it.active !== false,
+        priceIncludesTaxesAndService: it.priceIncludesTaxesAndService !== false,
+        taxIds: Array.isArray(it.taxIds) ? it.taxIds : Array.isArray(it.taxes) ? it.taxes.map((t) => t.id).filter(Boolean) : [],
+      });
   };
 
   const cancelEditItem = () => {
@@ -1719,16 +2088,18 @@ export default function RestaurantConfig() {
 
   const saveEditItem = async () => {
     if (!editingItemId || !editItem) return;
-    const payload = {
-      name: editItem.name,
-      familyId: editItem.familyId,
-      subFamilyId: editItem.subFamilyId ? editItem.subFamilyId : null,
-      subSubFamilyId: editItem.subSubFamilyId ? editItem.subSubFamilyId : null,
-      price: Number(editItem.price || 0),
-      notes: editItem.notes || null,
-      active: editItem.active !== false,
-      taxIds: Array.isArray(editItem.taxIds) ? editItem.taxIds : [],
-    };
+      const payload = {
+        name: editItem.name,
+        familyId: editItem.familyId,
+        subFamilyId: editItem.subFamilyId ? editItem.subFamilyId : null,
+        subSubFamilyId: editItem.subSubFamilyId ? editItem.subSubFamilyId : null,
+        price: Number(editItem.price || 0),
+        imageUrl: String(editItem.imageUrl || "").trim() || "",
+        notes: editItem.notes || null,
+        active: editItem.active !== false,
+        priceIncludesTaxesAndService: editItem.priceIncludesTaxesAndService !== false,
+        taxIds: Array.isArray(editItem.taxIds) ? editItem.taxIds : [],
+      };
     try {
       const { data } = await api.patch(`/restaurant/items/${editingItemId}`, payload);
       setItems((prev) => prev.map((x) => (x.id === data.id ? data : x)));
@@ -1951,6 +2322,36 @@ export default function RestaurantConfig() {
               <Input placeholder="New menu name" value={menuName} onChange={(e) => setMenuName(e.target.value)} />
               <Button onClick={createMenu}>Create</Button>
             </div>
+            <div className="rounded-xl border bg-white p-3 space-y-2">
+              <div className="text-sm font-semibold">Visible in sections</div>
+              <div className="text-xs text-gray-500">
+                Select where this menu will be visible. A checkbox appears for every section you create.
+              </div>
+              <div className="grid gap-2">
+                {(sections || []).map((s) => (
+                  <label key={s.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={(menuCreateSectionIds || []).includes(s.id)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setMenuCreateSectionIds((prev) => {
+                          const list = Array.isArray(prev) ? [...prev] : [];
+                          if (checked) {
+                            if (!list.includes(s.id)) list.push(s.id);
+                          } else {
+                            return list.filter((x) => x !== s.id);
+                          }
+                          return list;
+                        });
+                      }}
+                    />
+                    {s.name || s.id}
+                  </label>
+                ))}
+                {(sections || []).length === 0 && <div className="text-sm text-gray-500">No sections yet.</div>}
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               {(menus || []).map((m) => (
                 <button
@@ -1964,7 +2365,35 @@ export default function RestaurantConfig() {
               ))}
               {menus.length === 0 && <div className="text-sm text-gray-500">No menus yet.</div>}
             </div>
-          </div>
+
+             {selectedMenuId && (
+               <div className="rounded-xl border bg-white p-3 space-y-2">
+                 <div className="text-sm font-semibold">Edit selected menu</div>
+                 <div className="grid grid-cols-2 gap-2">
+                   <Input
+                     className="col-span-2"
+                     placeholder="Menu name"
+                     value={menuEditForm.name}
+                     onChange={(e) => setMenuEditForm((p) => ({ ...p, name: e.target.value }))}
+                   />
+                   <label className="inline-flex items-center gap-2 text-sm">
+                     <input
+                       type="checkbox"
+                       checked={menuEditForm.active !== false}
+                       onChange={(e) => setMenuEditForm((p) => ({ ...p, active: e.target.checked }))}
+                     />
+                     Active
+                   </label>
+                   <div className="flex justify-end gap-2">
+                     <Button variant="outline" onClick={deleteSelectedMenu}>
+                       Delete
+                     </Button>
+                     <Button onClick={saveSelectedMenu}>Save</Button>
+                   </div>
+                 </div>
+               </div>
+             )}
+           </div>
 
           <div className="space-y-3">
             <div className="text-sm font-semibold">Assign to section (schedule)</div>
@@ -2072,10 +2501,127 @@ export default function RestaurantConfig() {
                   <div className="text-sm text-gray-600">
                     Items: <span className="font-semibold">{menuEntries.length}</span>
                   </div>
-                  <Button onClick={() => setMenuPickerOpen(true)}>Open menu picker</Button>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="Search assigned items..."
+                      value={menuEntrySearch}
+                      onChange={(e) => setMenuEntrySearch(e.target.value)}
+                    />
+                    <Button variant="outline" onClick={reloadMenuEntries} disabled={saving.menuEntries}>
+                      Reload
+                    </Button>
+                    <Button onClick={() => setMenuPickerOpen(true)}>Open menu picker</Button>
+                  </div>
                 </div>
                 <div className="text-xs text-gray-500">
                   Items are pulled from <span className="font-semibold">Artículos</span> and added to the menu.
+                </div>
+
+                <div className="rounded-xl border bg-white overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-xs text-slate-600">
+                        <th className="text-left px-3 py-2">Family</th>
+                        <th className="text-left px-3 py-2">Sub family</th>
+                        <th className="text-left px-3 py-2">Sub subfamily</th>
+                        <th className="text-left px-3 py-2">Article</th>
+                        <th className="text-center px-3 py-2">Active</th>
+                        <th className="text-center px-3 py-2">Color</th>
+                        <th className="text-left px-3 py-2">Thumbnail</th>
+                        <th className="text-right px-3 py-2">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(filteredMenuEntries || []).map((e) => {
+                        const it = e?.item || {};
+                        const colorVal =
+                          typeof it.color === "string" && /^#?[0-9a-fA-F]{6}$/.test(it.color)
+                            ? it.color.startsWith("#")
+                              ? it.color
+                              : `#${it.color}`
+                            : "#ffffff";
+                        return (
+                          <tr key={e.id} className="hover:bg-slate-50">
+                            <td className="px-3 py-2">{it.familyName || "-"}</td>
+                            <td className="px-3 py-2">{it.subFamilyName || "-"}</td>
+                            <td className="px-3 py-2">{it.subSubFamilyName || "-"}</td>
+                            <td className="px-3 py-2">
+                              <div className="font-medium">{it.name || e.itemId}</div>
+                              <div className="text-xs text-slate-500">{it.code || ""}</div>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={it.active !== false}
+                                onChange={(ev) => patchItemQuick(e.itemId, { active: ev.target.checked })}
+                                title="Enable/disable for sale"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="color"
+                                value={colorVal}
+                                onChange={(ev) => {
+                                  const v = ev.target.value;
+                                  setMenuEntries((prev) =>
+                                    (prev || []).map((x) =>
+                                      x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, color: v } } : x
+                                    )
+                                  );
+                                }}
+                                onBlur={(ev) => patchItemQuick(e.itemId, { color: ev.target.value })}
+                                title="Tile color"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  className="h-9 w-full rounded-lg border px-2 text-xs"
+                                  placeholder="Image URL (optional)"
+                                  value={it.imageUrl || ""}
+                                  onChange={(ev) => {
+                                    const v = ev.target.value;
+                                    setMenuEntries((prev) =>
+                                      (prev || []).map((x) =>
+                                        x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, imageUrl: v } } : x
+                                      )
+                                    );
+                                  }}
+                                  onBlur={(ev) => patchItemQuick(e.itemId, { imageUrl: ev.target.value })}
+                                />
+                                {it.imageUrl ? (
+                                  <img
+                                    src={it.imageUrl}
+                                    alt=""
+                                    className="h-9 w-9 rounded-lg object-cover border"
+                                    onError={(ev) => {
+                                      ev.currentTarget.style.display = "none";
+                                    }}
+                                  />
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                className="text-xs text-red-600 hover:underline"
+                                onClick={() => removeMenuEntry(e.id)}
+                                disabled={saving.menuEntries}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(filteredMenuEntries || []).length === 0 && (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-slate-500" colSpan={8}>
+                            No items assigned.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </>
             )}
@@ -2087,17 +2633,49 @@ export default function RestaurantConfig() {
           {!selectedSectionId ? (
             <div className="text-sm text-gray-500">Select a section to preview.</div>
           ) : (
-            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3 mt-2">
-              {menu.map((m) => (
-                <div key={m.id} className="border rounded-lg p-3 flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold text-sm">{m.name}</div>
-                    <div className="text-xs text-gray-500">{m.category}</div>
-                    <div className="text-xs text-gray-600">${Number(m.price || 0).toFixed(2)}</div>
+            <div className="space-y-4 mt-2">
+              {menuPreviewGroups.map((g) => (
+                <div key={g.category} className="space-y-2">
+                  <div className="text-xs uppercase tracking-wide text-slate-500">{g.category}</div>
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {(g.items || []).map((m) => {
+                      const bg = typeof m.color === "string" && m.color.trim() ? m.color.trim() : "#ffffff";
+                      const dark = isDarkHex(bg);
+                      return (
+                        <div
+                          key={m.id}
+                          className={`border rounded-lg p-3 flex justify-between items-start gap-3 ${dark ? "text-white" : "text-slate-900"}`}
+                          style={{ backgroundColor: bg }}
+                        >
+                          <div className="min-w-0 flex items-start gap-2">
+                            {m.imageUrl ? (
+                              <img
+                                src={m.imageUrl}
+                                alt=""
+                                className="h-12 w-12 rounded-lg object-cover border bg-white/60"
+                                onError={(ev) => {
+                                  ev.currentTarget.style.display = "none";
+                                }}
+                              />
+                            ) : null}
+                            <div className="min-w-0">
+                              <div className="font-semibold text-sm truncate">{m.name}</div>
+                              <div className={`text-xs ${dark ? "text-white/80" : "text-slate-600"}`}>
+                                ${Number(m.price || 0).toFixed(2)}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            className={`text-xs ${dark ? "text-white/90" : "text-red-600"} hover:underline`}
+                            onClick={() => removeActiveMenuPreviewItem(m)}
+                            title="Remove"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <button className="text-xs text-red-600" onClick={() => removeActiveMenuPreviewItem(m)} title="Delete">
-                    Delete
-                  </button>
                 </div>
               ))}
               {menu.length === 0 && <div className="text-sm text-gray-500">No active items for this section.</div>}
@@ -2521,6 +3099,54 @@ export default function RestaurantConfig() {
               <div className="text-xs text-slate-600 mb-1">Notas</div>
               <Textarea value={editItem.notes} onChange={(e) => setEditItem((p) => ({ ...p, notes: e.target.value }))} />
             </div>
+            <div className="md:col-span-3">
+              <div className="text-xs text-slate-600 mb-1">Imagen (miniatura en TPV)</div>
+              <div className="grid md:grid-cols-[1fr_200px] gap-3 items-start">
+                <div className="space-y-2">
+                  <Input
+                    placeholder="URL de imagen (https://... o data:image/...)"
+                    value={editItem.imageUrl || ""}
+                    onChange={(e) => setEditItem((p) => ({ ...p, imageUrl: e.target.value }))}
+                  />
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={itemImageBusy}
+                    onChange={async (e) => {
+                      const file = e.target.files && e.target.files[0];
+                      e.target.value = "";
+                      if (!file) return;
+                      setItemImageBusy(true);
+                      try {
+                        const raw = await readFileAsDataUrl(file);
+                        const resized = await resizeImageDataUrl(raw, 512, 0.86);
+                        setEditItem((p) => ({ ...p, imageUrl: resized }));
+                      } finally {
+                        setItemImageBusy(false);
+                      }
+                    }}
+                  />
+                  <div className="text-[11px] text-slate-500">Puedes subir una imagen o pegar una URL. Se guarda en `imageUrl`.</div>
+                  {editItem.imageUrl ? (
+                    <button
+                      type="button"
+                      className="text-xs px-2 py-1 rounded border hover:bg-white"
+                      onClick={() => setEditItem((p) => ({ ...p, imageUrl: "" }))}
+                    >
+                      Quitar imagen
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="rounded-xl border bg-white overflow-hidden h-[120px] flex items-center justify-center">
+                  {editItem.imageUrl ? (
+                    <img alt="" src={editItem.imageUrl} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="text-xs text-slate-400">Sin imagen</div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </Card>
       ) : null}
@@ -2582,6 +3208,60 @@ export default function RestaurantConfig() {
           disabled
         />
         <Input type="number" placeholder="Precio" value={quickItem.price} onChange={(e) => setQuickItem((f) => ({ ...f, price: e.target.value }))} />
+        <div className="md:col-span-3">
+          <div className="text-xs text-slate-600 mb-1">Imagen (opcional)</div>
+          <div className="grid md:grid-cols-[1fr_200px] gap-3 items-start">
+            <div className="space-y-2">
+              <Input
+                placeholder="URL de imagen (https://... o data:image/...)"
+                value={quickItem.imageUrl || ""}
+                onChange={(e) => setQuickItem((f) => ({ ...f, imageUrl: e.target.value }))}
+              />
+              <Input
+                type="file"
+                accept="image/*"
+                disabled={itemImageBusy}
+                onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  setItemImageBusy(true);
+                  try {
+                    const raw = await readFileAsDataUrl(file);
+                    const resized = await resizeImageDataUrl(raw, 512, 0.86);
+                    setQuickItem((f) => ({ ...f, imageUrl: resized }));
+                  } finally {
+                    setItemImageBusy(false);
+                  }
+                }}
+              />
+              {quickItem.imageUrl ? (
+                <button
+                  type="button"
+                  className="text-xs px-2 py-1 rounded border hover:bg-white"
+                  onClick={() => setQuickItem((p) => ({ ...p, imageUrl: "" }))}
+                >
+                  Quitar imagen
+                </button>
+              ) : null}
+            </div>
+            <div className="rounded-xl border bg-white overflow-hidden h-[120px] flex items-center justify-center">
+              {quickItem.imageUrl ? (
+                <img alt="" src={quickItem.imageUrl} className="h-full w-full object-cover" />
+              ) : (
+                <div className="text-xs text-slate-400">Sin imagen</div>
+              )}
+            </div>
+          </div>
+        </div>
+        <label className="md:col-span-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={quickItem.priceIncludesTaxesAndService !== false}
+            onChange={(e) => setQuickItem((f) => ({ ...f, priceIncludesTaxesAndService: e.target.checked }))}
+          />
+          Price includes taxes and service
+        </label>
         <div className="md:col-span-3">
           <div className="text-xs text-slate-600 mb-1">Impuestos</div>
           <div className="flex flex-wrap gap-2">
