@@ -64,6 +64,7 @@ async function main() {
     { id: "RECEPTION", name: "Recepción", description: "Recepción / Front Desk" },
     { id: "ACCOUNTING", name: "Contabilidad", description: "Contabilidad / Finanzas" },
     { id: "RESTAURANT", name: "Restaurante", description: "Operaciones de restaurante" },
+    { id: "EINVOICING", name: "Facturación electrónica", description: "Facturación electrónica" },
   ] as const;
 
   for (const r of predefinedRoles) {
@@ -120,6 +121,86 @@ async function main() {
     update: {},
     create: { firstName: "Huesped", lastName: "Demo", email: "demo@guest.local", phone: "7000-0000", hotelId: hotel.id },
   });
+
+  // ===== Restaurante (config + salones/mesas + menu demo) =====
+  await prisma.restaurantConfig.upsert({
+    where: { hotelId: hotel.id },
+    update: {
+      kitchenPrinter: "REST_KITCHEN",
+      barPrinter: "REST_BAR",
+      taxes: { iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true } as any,
+      payments: { monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: ["Efectivo", "Tarjeta", "SINPE", "Transferencia"], cargoHabitacion: true } as any,
+      general: { nombreComercial: "Rest Demo", telefono: "+506 0000 0000", email: "rest@demo.com" } as any,
+      billing: { comprobante: "factura", margen: "0", propina: "10", autoFactura: true } as any,
+    },
+    create: {
+      hotelId: hotel.id,
+      kitchenPrinter: "REST_KITCHEN",
+      barPrinter: "REST_BAR",
+      taxes: { iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true } as any,
+      payments: { monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: ["Efectivo", "Tarjeta", "SINPE", "Transferencia"], cargoHabitacion: true } as any,
+      general: { nombreComercial: "Rest Demo", telefono: "+506 0000 0000", email: "rest@demo.com" } as any,
+      billing: { comprobante: "factura", margen: "0", propina: "10", autoFactura: true } as any,
+    },
+  });
+
+  const restSections = [
+    {
+      id: `${hotel.id}:sec-salon`,
+      name: "Salon Principal",
+      tables: [
+        { id: `${hotel.id}:S01`, name: "Salon 1", seats: 4, x: 20, y: 40 },
+        { id: `${hotel.id}:S02`, name: "Salon 2", seats: 2, x: 50, y: 35 },
+        { id: `${hotel.id}:S03`, name: "Salon 3", seats: 4, x: 80, y: 45 },
+      ],
+    },
+    {
+      id: `${hotel.id}:sec-terraza`,
+      name: "Terraza",
+      tables: [
+        { id: `${hotel.id}:T01`, name: "Terraza 1", seats: 4, x: 30, y: 50 },
+        { id: `${hotel.id}:T02`, name: "Terraza 2", seats: 6, x: 70, y: 55 },
+      ],
+    },
+    {
+      id: `${hotel.id}:sec-barra`,
+      name: "Barra",
+      tables: [
+        { id: `${hotel.id}:B01`, name: "Barra 1", seats: 2, x: 40, y: 60 },
+        { id: `${hotel.id}:B02`, name: "Barra 2", seats: 2, x: 60, y: 65 },
+      ],
+    },
+  ];
+
+  for (const sec of restSections) {
+    await prisma.restaurantSection.upsert({
+      where: { id: sec.id },
+      update: { name: sec.name, hotelId: hotel.id },
+      create: { id: sec.id, name: sec.name, hotelId: hotel.id },
+    });
+    for (const t of sec.tables) {
+      await prisma.restaurantTable.upsert({
+        where: { id: t.id },
+        update: { name: t.name, seats: t.seats, x: t.x as any, y: t.y as any, sectionId: sec.id },
+        create: { id: t.id, name: t.name, seats: t.seats, x: t.x as any, y: t.y as any, sectionId: sec.id },
+      });
+    }
+  }
+
+  const hasMenu = await prisma.restaurantMenuItem.findFirst({ where: { hotelId: hotel.id }, select: { id: true } });
+  if (!hasMenu) {
+    const menuSeed = [
+      { sectionId: `${hotel.id}:sec-salon`, name: "Nachos", price: 8, category: "Entradas" },
+      { sectionId: `${hotel.id}:sec-salon`, name: "Hamburguesa", price: 11, category: "Platos" },
+      { sectionId: `${hotel.id}:sec-salon`, name: "Refresco", price: 3, category: "Bebidas" },
+      { sectionId: `${hotel.id}:sec-terraza`, name: "Ceviche", price: 9, category: "Entradas" },
+      { sectionId: `${hotel.id}:sec-terraza`, name: "Pasta Alfredo", price: 12, category: "Platos" },
+      { sectionId: `${hotel.id}:sec-barra`, name: "Cerveza", price: 4, category: "Bebidas" },
+    ];
+    await prisma.restaurantMenuItem.createMany({
+      data: menuSeed.map((m) => ({ ...m, hotelId: hotel.id })),
+    });
+  }
 
   // ===== Catálogo geográfico básico (paises / regiones / ciudades) =====
   try {

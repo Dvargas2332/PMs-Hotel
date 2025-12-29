@@ -24,7 +24,16 @@ export default function Roles() {
     ]);
     const rolesData = Array.isArray(r.data) ? r.data : [];
     setRoles(rolesData);
-    setPermissions((Array.isArray(p.data) ? p.data : []).map((x) => x.id || x));
+    const basePerms = (Array.isArray(p.data) ? p.data : []).map((x) => x.id || x);
+    const extraPerms = [
+      "frontdesk.read",
+      "restaurant.pos.open",
+      "accounting.read",
+      "einvoicing.access",
+      "management.settings.write",
+    ];
+    const merged = Array.from(new Set([...extraPerms, ...basePerms]));
+    setPermissions(merged);
     setProfiles(Array.isArray(acc.data) ? acc.data : []);
 
     const rp = {};
@@ -32,6 +41,7 @@ export default function Roles() {
       const { data } = await api.get(`/permissions/role/${rr.id}`);
       rp[rr.id] = data?.permissions || [];
     }
+    if (rolesData.some((r) => r.id === "ADMIN")) rp.ADMIN = ["*"];
     setRolePerms(rp);
   }, []);
 
@@ -66,6 +76,7 @@ export default function Roles() {
   };
 
   const deleteRole = async (id) => {
+    if (id === "ADMIN") return;
     setRoles((prev) => prev.filter((r) => r.id !== id));
     await api.delete(`/roles/${id}`);
     if (selectedRole === id) setSelectedRole("");
@@ -83,7 +94,7 @@ export default function Roles() {
 
   const savePerms = async () => {
     if (!selectedRole) return;
-    const perms = rolePerms[selectedRole] || [];
+    const perms = selectedRole === "ADMIN" ? ["*"] : (rolePerms[selectedRole] || []);
     await api.put(`/permissions/role/${selectedRole}`, { permissions: perms });
     // Al guardar permisos, volver a dejar el selector de perfil vacío
     setSelectedRole("");
@@ -96,50 +107,56 @@ export default function Roles() {
           <h3 className="font-medium">Roles</h3>
           <div className="flex gap-2">
             <Input
-              placeholder="ID (ej. FRONTDESK_AGENT)"
+              placeholder="ID (e.g. FRONTDESK_AGENT)"
               value={formRole.id}
               onChange={(e) => setFormRole((r) => ({ ...r, id: e.target.value }))}
             />
             <Input
-              placeholder="Nombre"
+              placeholder="Name"
               value={formRole.name}
               onChange={(e) => setFormRole((r) => ({ ...r, name: e.target.value }))}
             />
           </div>
           <Input
-            placeholder="Puesto"
+            placeholder="Job title"
             value={formRole.jobTitle}
             onChange={(e) => setFormRole((r) => ({ ...r, jobTitle: e.target.value }))}
           />
           <Input
-            placeholder="Descripción"
+            placeholder="Description"
             value={formRole.description}
             onChange={(e) => setFormRole((r) => ({ ...r, description: e.target.value }))}
           />
           <div className="flex gap-2">
-            <Button onClick={saveRole}>{editingId ? "Guardar cambios" : "Crear perfil"}</Button>
+            <Button onClick={saveRole}>{editingId ? "Save changes" : "Create role"}</Button>
             {editingId && (
               <Button variant="outline" onClick={resetForm}>
-                Cancelar
+                Cancel
               </Button>
             )}
           </div>
           <SimpleTable
             cols={[
               { key: "id", label: "ID" },
-              { key: "name", label: "Nombre" },
-              { key: "description", label: "Descripción" },
-              { key: "actions", label: "Acciones" },
+              { key: "name", label: "Name" },
+              { key: "description", label: "Description" },
+              { key: "actions", label: "Actions" },
             ]}
             rows={roles.map((r) => ({
               ...r,
               actions: (
                 <div className="flex gap-2">
                   <Button size="xs" variant="outline" onClick={() => startEdit(r)}>
-                    Editar
+                    Edit
                   </Button>
-                  <Button size="xs" variant="destructive" onClick={() => deleteRole(r.id)}>
-                    Eliminar
+                  <Button
+                    size="xs"
+                    variant="destructive"
+                    onClick={() => deleteRole(r.id)}
+                    disabled={r.id === "ADMIN"}
+                    title={r.id === "ADMIN" ? "ADMIN role cannot be deleted." : "Delete"}
+                  >
+                    Delete
                   </Button>
                 </div>
               ),
@@ -150,14 +167,14 @@ export default function Roles() {
 
       <Card>
         <Card className="space-y-3 p-5">
-          <h3 className="font-medium">Permisos por perfil</h3>
+          <h3 className="font-medium">Permissions by role</h3>
           <div className="flex items-center gap-2">
-            <span className="text-sm">Perfil:</span>
+            <span className="text-sm">Role:</span>
             <Select
               value={selectedRole}
               onChange={(val) => setSelectedRole(val)}
               options={[
-                { value: "", label: "Selecciona..." },
+                { value: "", label: "Select..." },
                 // Solo perfiles de launcher (UserLauncher)
                 ...profiles.map((acc) => ({
                   value: acc.roleId,
@@ -168,8 +185,15 @@ export default function Roles() {
           </div>
           {selectedRole && (
             <div className="space-y-2">
+              {selectedRole === "ADMIN" && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  ADMIN has full permissions and cannot be restricted.
+                </div>
+              )}
               <PermissionsByModule permissions={permissions} selectedRole={selectedRole} rolePerms={rolePerms} setRolePerms={setRolePerms} />
-              <Button onClick={savePerms}>Guardar permisos</Button>
+              <Button onClick={savePerms} disabled={selectedRole === "ADMIN"}>
+                Save permissions
+              </Button>
             </div>
           )}
         </Card>
@@ -183,14 +207,29 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
     const groups = {};
     (permissions || []).forEach((p) => {
       const [mod] = p.split(".");
-      const key = mod || "otros";
+      const key = mod || "other";
       groups[key] = groups[key] || [];
       groups[key].push(p);
+    });
+    // Keep "access" permissions first inside each group, then alphabetically.
+    Object.keys(groups).forEach((k) => {
+      groups[k] = groups[k].slice().sort((a, b) => {
+        const aIsAccess = a.endsWith(".access");
+        const bIsAccess = b.endsWith(".access");
+        if (aIsAccess !== bIsAccess) return aIsAccess ? -1 : 1;
+        return a.localeCompare(b);
+      });
     });
     return groups;
   }, [permissions]);
 
+  const prettyLabel = (perm) => {
+    if (perm.endsWith(".access")) return "Access module";
+    return perm;
+  };
+
   const toggle = (perm, checked) => {
+    if (selectedRole === "ADMIN") return;
     setRolePerms((prev) => {
       const cur = new Set(prev[selectedRole] || []);
       if (checked) cur.add(perm);
@@ -207,11 +246,16 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
           <div className="grid md:grid-cols-2 gap-2">
             {perms.map((p) => {
               const list = rolePerms[selectedRole] || [];
-              const checked = list.includes("*") || list.includes(p);
+              const checked = selectedRole === "ADMIN" || list.includes("*") || list.includes(p);
               return (
                 <label key={p} className="text-sm flex items-center gap-2">
-                  <input type="checkbox" checked={checked} onChange={(e) => toggle(p, e.target.checked)} />
-                  {p}
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    disabled={selectedRole === "ADMIN"}
+                    onChange={(e) => toggle(p, e.target.checked)}
+                  />
+                  {prettyLabel(p)}
                 </label>
               );
             })}

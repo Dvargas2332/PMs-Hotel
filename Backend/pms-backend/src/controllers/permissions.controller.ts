@@ -44,7 +44,10 @@ export async function setRolePermissions(req: Request, res: Response) {
   if (!role) return res.status(404).json({ message: "Rol no encontrado" });
 
   const validSet = new Set(ALL_PERMISSIONS);
-  const filtered = Array.from(new Set(permissions.filter((p) => validSet.has(p))));
+  const filtered =
+    roleId === "ADMIN"
+      ? ALL_PERMISSIONS.slice()
+      : Array.from(new Set(permissions.filter((p) => validSet.has(p))));
 
   await prisma.rolePermission.deleteMany({ where: { hotelId, roleId } });
   if (filtered.length > 0) {

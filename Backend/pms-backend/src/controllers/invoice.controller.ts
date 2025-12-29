@@ -88,6 +88,10 @@ export async function listInvoices(req: Request, res: Response) {
         },
       },
       payments: true,
+      eInvoicingDocuments: {
+        select: { id: true, docType: true, status: true, key: true, consecutive: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
     orderBy: { createdAt: "desc" },
     take: 500,

@@ -27,13 +27,13 @@ export default function RestaurantTaxes() {
     <div className="space-y-4">
       <Card className="p-5 space-y-3">
         <div>
-          <h3 className="font-semibold text-lg">Impuestos y descuentos</h3>
-          <p className="text-sm text-gray-600">IVA, servicio y control de descuentos.</p>
+          <h3 className="font-semibold text-lg">Taxes and discounts</h3>
+          <p className="text-sm text-gray-600">Tax, service charge, and discount control.</p>
         </div>
         <div className="grid md:grid-cols-3 gap-3">
           <Input placeholder="IVA (%)" type="number" value={taxDiscount.iva} onChange={(e) => setTaxDiscount((f) => ({ ...f, iva: e.target.value }))} />
-          <Input placeholder="Servicio (%)" type="number" value={taxDiscount.servicio} onChange={(e) => setTaxDiscount((f) => ({ ...f, servicio: e.target.value }))} />
-          <Input placeholder="Descuento max (%)" type="number" value={taxDiscount.descuentoMax} onChange={(e) => setTaxDiscount((f) => ({ ...f, descuentoMax: e.target.value }))} />
+          <Input placeholder="Service (%)" type="number" value={taxDiscount.servicio} onChange={(e) => setTaxDiscount((f) => ({ ...f, servicio: e.target.value }))} />
+          <Input placeholder="Max discount (%)" type="number" value={taxDiscount.descuentoMax} onChange={(e) => setTaxDiscount((f) => ({ ...f, descuentoMax: e.target.value }))} />
         </div>
         <div className="flex flex-col gap-2">
           <label className="flex items-center gap-2 text-sm">
@@ -41,14 +41,14 @@ export default function RestaurantTaxes() {
               checked={taxDiscount.permitirDescuentos}
               onCheckedChange={(v) => setTaxDiscount((f) => ({ ...f, permitirDescuentos: Boolean(v) }))}
             />
-            Permitir aplicar descuentos en POS
+            Allow discounts in POS
           </label>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox
               checked={taxDiscount.impuestoIncluido}
               onCheckedChange={(v) => setTaxDiscount((f) => ({ ...f, impuestoIncluido: Boolean(v) }))}
             />
-            Precios incluyen impuestos
+            Prices include taxes
           </label>
         </div>
         <div className="flex justify-end">
@@ -59,13 +59,13 @@ export default function RestaurantTaxes() {
               try {
                 setSaving(true);
                 await api.put("/restaurant/taxes", taxDiscount);
-                window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurante", desc: "Impuestos guardados" } }));
+                window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Taxes saved" } }));
               } finally {
                 setSaving(false);
               }
             }}
           >
-            {saving ? "Guardando..." : "Guardar"}
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </Card>

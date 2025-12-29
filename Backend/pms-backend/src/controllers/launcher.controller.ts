@@ -5,7 +5,7 @@ import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import { sign } from "../lib/jwt.js";
 import type { AuthUser } from "../middleware/auth.js";
-import { PERMISSION_MODULES } from "../config/permissions.js";
+import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 
@@ -40,11 +40,26 @@ export async function launcherLogin(req: Request, res: Response) {
   const roleId = account.roleId || "ADMIN";
 
   // Permisos del rol para habilitar módulos
-  const rolePerms = await prisma.rolePermission.findMany({
-    where: { hotelId: account.hotelId, roleId },
-    select: { permissionId: true },
+  await prisma.permission.createMany({
+    data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })),
+    skipDuplicates: true,
   });
-  const permissionIds = rolePerms.map((p) => p.permissionId);
+
+  let permissionIds: string[] = [];
+  if (roleId === "ADMIN") {
+    permissionIds = ALL_PERMISSIONS.slice();
+    await prisma.rolePermission.deleteMany({ where: { hotelId: account.hotelId, roleId: "ADMIN" } });
+    await prisma.rolePermission.createMany({
+      data: permissionIds.map((p) => ({ roleId: "ADMIN", permissionId: p, hotelId: account.hotelId })),
+      skipDuplicates: true,
+    });
+  } else {
+    const rolePerms = await prisma.rolePermission.findMany({
+      where: { hotelId: account.hotelId, roleId },
+      select: { permissionId: true },
+    });
+    permissionIds = rolePerms.map((p) => p.permissionId);
+  }
 
   const allowedModules = PERMISSION_MODULES.filter((m) =>
     permissionIds.includes(m.access.id)
@@ -150,8 +165,9 @@ export async function updateLauncherAccount(req: Request, res: Response) {
   const { id } = req.params;
   const { userId, name, password, roleId } = req.body as { userId?: string; name?: string; password?: string; roleId?: string };
 
+  const hotelId = user.hotelId;
   const existing = await prisma.launcherAccount.findFirst({
-    where: { id, hotelId: user.hotelId },
+    where: { id, hotelId },
   });
   if (!existing) return res.status(404).json({ message: "Cuenta de launcher no encontrada" });
 
@@ -163,7 +179,7 @@ export async function updateLauncherAccount(req: Request, res: Response) {
   }
   if (roleId) {
     const role = await prisma.appRole.findUnique({
-      where: { hotelId_id: { hotelId: user.hotelId, id: roleId } },
+      where: { hotelId_id: { hotelId, id: roleId } },
     });
     if (!role) return res.status(400).json({ message: "Rol no valido para este hotel" });
     data.roleId = role.id;
@@ -173,10 +189,12 @@ export async function updateLauncherAccount(req: Request, res: Response) {
     return res.json(existing);
   }
 
-  const updated = await prisma.launcherAccount.update({
-    where: { id: existing.id },
+  const written = await prisma.launcherAccount.updateMany({
+    where: { id: existing.id, hotelId },
     data,
   });
+  if (written.count === 0) return res.status(404).json({ message: "Cuenta de launcher no encontrada" });
+  const updated = await prisma.launcherAccount.findFirst({ where: { id: existing.id, hotelId } });
   return res.json(updated);
 }
 
@@ -186,12 +204,13 @@ export async function deleteLauncherAccount(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
 
   const { id } = req.params;
+  const hotelId = user.hotelId;
 
   const existing = await prisma.launcherAccount.findFirst({
-    where: { id, hotelId: user.hotelId },
+    where: { id, hotelId },
   });
   if (!existing) return res.status(404).json({ message: "Cuenta de launcher no encontrada" });
 
-  await prisma.launcherAccount.delete({ where: { id: existing.id } });
+  await prisma.launcherAccount.deleteMany({ where: { id: existing.id, hotelId } });
   return res.json({ ok: true });
 }

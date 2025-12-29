@@ -114,7 +114,7 @@ export default function Contracts() {
   const onDelete = async (idFromRow) => {
     const id = idFromRow || selectedId;
     if (!id || submitting) return;
-    const ok = window.confirm("¿Eliminar el contrato/canal?");
+    const ok = window.confirm("Delete this contract/channel?");
     if (!ok) return;
     setSubmitting(true);
     try {
@@ -135,7 +135,7 @@ export default function Contracts() {
       {/* Form */}
       <Card className="space-y-3 p-5">
         <h3 className="font-medium">
-          {selectedId ? "Editar Contrato/Canal" : "Nuevo Contrato/Canal"}
+          {selectedId ? "Edit contract/channel" : "New contract/channel"}
         </h3>
 
         <Input
@@ -144,14 +144,14 @@ export default function Contracts() {
           onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
         />
         <Input
-          placeholder="Canal (ej. Booking.com)"
+          placeholder="Channel (e.g. Booking.com)"
           value={form.channel}
           onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
         />
 
         <div className="grid grid-cols-2 gap-2">
           <Input
-            placeholder="Comisión (0.15 = 15%)"
+            placeholder="Commission (0.15 = 15%)"
             type="number"
             value={form.commission}
             onChange={(e) => setForm((f) => ({ ...f, commission: e.target.value }))}
@@ -159,13 +159,13 @@ export default function Contracts() {
 
           {/* Meal Plan (select simple) */}
           <div className="flex flex-col">
-            <label className="text-sm mb-1">Régimen (Meal Plan)</label>
+            <label className="text-sm mb-1">Meal plan</label>
             <select
               className="h-10 rounded-lg border px-3 text-sm"
               value={form.mealPlanId}
               onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}
             >
-              <option value="">— Sin régimen —</option>
+              <option value="">-- No meal plan --</option>
               {mealPlans.map((mp) => (
                 <option key={mp.id} value={mp.id}>
                   {mp.id} — {mp.name}
@@ -177,7 +177,7 @@ export default function Contracts() {
 
         {/* Rate Plans (multiselect) */}
         <div className="flex flex-col">
-          <label className="text-sm mb-1">Tarifarios (selección múltiple)</label>
+          <label className="text-sm mb-1">Rate plans (multi-select)</label>
           <select
             multiple
             className="min-h-[120px] rounded-lg border px-3 py-2 text-sm"
@@ -194,19 +194,19 @@ export default function Contracts() {
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            Sostén Ctrl/Cmd para seleccionar múltiples.
+            Hold Ctrl/Cmd to select multiple.
           </p>
         </div>
 
         <div className="flex gap-2">
           {!selectedId ? (
             <Button type="button" onClick={onCreate} disabled={submitting}>
-              Crear
+              Create
             </Button>
           ) : (
             <>
               <Button type="button" onClick={onUpdate} disabled={submitting}>
-                Guardar cambios
+                Save changes
               </Button>
               <Button
                 type="button"
@@ -214,7 +214,7 @@ export default function Contracts() {
                 disabled={submitting}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                Eliminar
+                Delete
               </Button>
               <Button
                 type="button"
@@ -224,7 +224,7 @@ export default function Contracts() {
                 }}
                 className="bg-gray-200 text-gray-700 hover:bg-gray-300"
               >
-                Cancelar
+                Cancel
               </Button>
             </>
           )}
@@ -237,18 +237,18 @@ export default function Contracts() {
           <thead className="bg-gray-50 text-gray-600">
             <tr>
               <th className="py-2 pl-4 text-left">ID</th>
-              <th className="text-left">Canal</th>
-              <th className="text-left">Comisión</th>
-              <th className="text-left">Tarifarios</th>
-              <th className="text-left">Régimen</th>
-              <th className="pr-4 text-right">Acciones</th>
+              <th className="text-left">Channel</th>
+              <th className="text-left">Commission</th>
+              <th className="text-left">Rate plans</th>
+              <th className="text-left">Meal plan</th>
+              <th className="pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-6 text-center text-gray-500">
-                  Sin contratos aún.
+                  No contracts yet.
                 </td>
               </tr>
             )}
@@ -272,7 +272,7 @@ export default function Contracts() {
                       onClick={() => onRowSelect(x)}
                       disabled={submitting}
                     >
-                      Editar
+                      Edit
                     </button>
                     <button
                       type="button"
@@ -280,7 +280,7 @@ export default function Contracts() {
                       onClick={() => onDelete(x.id)}
                       disabled={submitting}
                     >
-                      Eliminar
+                      Delete
                     </button>
                   </td>
                 </tr>

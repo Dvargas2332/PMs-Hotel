@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect } from "react";
 import Timeline, { TimelineHeaders, DateHeader } from "react-calendar-timeline";
 import moment from "moment";
 import "moment/locale/es";
+import { X as XIcon } from "lucide-react";
 import { useHotelData } from "../context/HotelDataContext";
 import "react-calendar-timeline/style.css";
 import "./Planning.css";
@@ -91,7 +92,7 @@ export default function Planning() {
   const groups = useMemo(() => {
     const byType = new Map();
     (roomsData || []).forEach((r) => {
-      const type = r.type || "Sin tipo";
+      const type = r.type || "No type";
       if (!byType.has(type)) byType.set(type, []);
       byType.get(type).push(r);
     });
@@ -119,7 +120,7 @@ export default function Planning() {
     return map;
   }, [roomsData]);
 
-  // Items (reservas)
+  // Items (reservations)
   const items = useMemo(() => {
     const today = moment().format("YYYY-MM-DD");
     const colorByType = {
@@ -151,7 +152,7 @@ export default function Planning() {
     };
 
     return (reservationsData || [])
-      // Solo reservas con habitación asignada; las demás irán a lista de espera
+      // Only reservations with an assigned room; the rest go to the waitlist
       .filter((r) => r.roomId)
       .filter((r) => (r.rawStatus || r.status || "").toUpperCase() !== "CANCELED")
       .map((r) => {
@@ -197,7 +198,7 @@ export default function Planning() {
   const [active, setActive] = useState(null); // { type, data }
   const [waitlistOpen, setWaitlistOpen] = useState(false);
 
-  // Reservas sin habitación => lista de espera
+  // Reservations without a room => waitlist
   const waitlist = useMemo(
     () => (reservationsData || []).filter((r) => !r.roomId),
     [reservationsData]
@@ -261,14 +262,14 @@ export default function Planning() {
           <div className="flex items-center gap-3">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">Planner</h1>
-              <p className="text-sm text-slate-600">Vista de ocupación por habitación.</p>
+              <p className="text-sm text-slate-600">Room occupancy overview.</p>
             </div>
             <button
               type="button"
               onClick={() => setWaitlistOpen(true)}
               className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
             >
-              Lista de espera
+              Waitlist
               {waitlist.length > 0 && (
                 <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[11px] text-white">
                   {waitlist.length}
@@ -279,7 +280,7 @@ export default function Planning() {
           <div className="flex flex-col items-end gap-2 text-xs">
               <div className="flex flex-wrap items-center gap-2 justify-end">
                 <LegendDot color="#10b981" label="Check-in" />
-                <LegendDot color="#3f3f46" label="Estadia" />
+                <LegendDot color="#3f3f46" label="Stay" />
                 <LegendDot color="#f59e0b" label="Check-out" />
               </div>
               <div className="flex flex-wrap items-center gap-1 justify-end">
@@ -288,7 +289,7 @@ export default function Planning() {
                 <LegendDot color="#0ea5e9" label="Check-in hoy" />
                 <LegendDot color="#f97316" label="Check-out hoy" />
                 <LegendDot color="#94a3b8" label="Finalizó estancia" />
-                <LegendDot color="#c084fc" label="Lista de espera" />
+                <LegendDot color="#c084fc" label="Waitlist" />
               </div>
             </div>
 	        </div>
@@ -389,11 +390,11 @@ export default function Planning() {
         </div>
       </div>
 
-      {/* Lista de espera (reservas sin habitación) */}
+      {/* Waitlist (reservations without a room) */}
       {waitlistOpen && (
-        <Modal onClose={() => setWaitlistOpen(false)} title="Lista de espera">
+        <Modal onClose={() => setWaitlistOpen(false)} title="Waitlist">
           {waitlist.length === 0 ? (
-            <div className="text-sm text-gray-500">No hay reservas en lista de espera.</div>
+            <div className="text-sm text-gray-500">No reservations in the waitlist.</div>
           ) : (
             <div className="space-y-2 text-sm">
               {waitlist.map((r) => (
@@ -402,7 +403,7 @@ export default function Planning() {
                   className="flex items-center justify-between rounded-lg border px-3 py-2 bg-white"
                 >
                   <div>
-                    <div className="font-medium text-gray-900">{r.guestName || "Sin nombre"}</div>
+                    <div className="font-medium text-gray-900">{r.guestName || "No name"}</div>
                     <div className="text-xs text-gray-500">
                       {r.checkInDate} → {r.checkOutDate} {r.code ? `• ${r.code}` : ""}
                     </div>
@@ -414,7 +415,7 @@ export default function Planning() {
                       window.location.href = "/frontdesk/reservas";
                     }}
                   >
-                    Ver en reservas
+                    Open in reservations
                   </button>
                 </div>
               ))}
@@ -425,23 +426,23 @@ export default function Planning() {
 
       {/* Modales */}
       {active?.type === "checkin" && (
-        <Modal onClose={closeModal} title="Realizar Check-in">
+        <Modal onClose={closeModal} title="Perform check-in">
           <div className="space-y-3">
-            <Row label="Huesped" value={active.data.guestName} />
-            <Row label="Habitacion" value={active.data.roomTitle || active.data.roomId} />
-            <Row label="Estadia" value={`${active.data.checkInDate} -> ${active.data.checkOutDate}`} />
+            <Row label="Guest" value={active.data.guestName} />
+            <Row label="Room" value={active.data.roomTitle || active.data.roomId} />
+            <Row label="Stay" value={`${active.data.checkInDate} to ${active.data.checkOutDate}`} />
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-2 rounded bg-gray-100" onClick={closeModal}>
-                Cancelar
+                Cancel
               </button>
               <button
                 className="px-3 py-2 rounded bg-emerald-600 text-white"
                 onClick={() => {
-                  alert("Check-in realizado");
+                  alert("Check-in completed");
                   closeModal();
                 }}
               >
-                Confirmar check-in
+                Confirm check-in
               </button>
             </div>
           </div>
@@ -449,35 +450,35 @@ export default function Planning() {
       )}
 
       {active?.type === "checkout" && (
-        <Modal onClose={closeModal} title="Checkout / Factura">
+        <Modal onClose={closeModal} title="Checkout / Invoice">
           <div className="space-y-3">
-            <Row label="Huesped" value={active.data.guestName} />
-            <Row label="Habitacion" value={active.data.roomId} />
-            <Row label="Salida" value={active.data.checkOutDate} />
+            <Row label="Guest" value={active.data.guestName} />
+            <Row label="Room" value={active.data.roomId} />
+            <Row label="Check-out" value={active.data.checkOutDate} />
             <div className="rounded-lg border p-3 bg-white">
-              <div className="text-sm text-gray-600">Resumen de cargos</div>
+              <div className="text-sm text-gray-600">Charges summary</div>
               <ul className="mt-2 text-sm text-gray-700 list-disc ml-5 space-y-1">
                 <li>
-                  Estadía: {checkoutSummary?.nights || 1} noche(s) ({active.data.checkInDate} al {active.data.checkOutDate})
+                  Stay: {checkoutSummary?.nights || 1} night(s) ({active.data.checkInDate} to {active.data.checkOutDate})
                 </li>
-                <li>Impuestos y fees: se calculan al facturar segun configuracion del hotel</li>
-                <li>Consumos: integrar consumos de POS / minibar si aplican</li>
-                <li>Pagos y depositos: {checkoutSummary?.hasPayments ? "registrados" : "sin registrar"}</li>
+                <li>Taxes and fees: calculated at invoicing based on hotel configuration</li>
+                <li>Charges: integrate POS / minibar charges if applicable</li>
+                <li>Payments and deposits: {checkoutSummary?.hasPayments ? "recorded" : "not recorded"}</li>
               </ul>
-              <div className="mt-2 font-semibold">Total a pagar: se calcula al generar la factura</div>
+              <div className="mt-2 font-semibold">Total due: calculated when generating the invoice</div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button className="px-3 py-2 rounded bg-gray-100" onClick={closeModal}>
-                Cancelar
+                Cancel
               </button>
               <button
                 className="px-3 py-2 rounded bg-indigo-600 text-white"
                 onClick={() => {
-                  alert("Factura generada y Checkout realizado");
+                  alert("Invoice generated and checkout completed");
                   closeModal();
                 }}
               >
-                Generar factura y checkout
+                Generate invoice and checkout
               </button>
             </div>
           </div>
@@ -496,8 +497,8 @@ function Modal({ title, onClose, children }) {
         <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b">
             <h3 className="text-lg font-semibold">{title}</h3>
-            <button onClick={onClose} className="px-3 py-1 rounded hover:bg-gray-100" aria-label="Cerrar modal">
-              X
+            <button onClick={onClose} className="px-3 py-1 rounded hover:bg-gray-100" aria-label="Close modal">
+              <XIcon className="h-4 w-4 text-slate-700" />
             </button>
           </div>
           <div className="p-6 max-h-[80vh] overflow-y-auto">{children}</div>

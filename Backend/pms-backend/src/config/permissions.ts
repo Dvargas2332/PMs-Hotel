@@ -40,7 +40,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
   {
     id: "restaurant",
     name: "Restaurante",
-    access: { id: "restaurant.pos.open", name: "Acceso a POS Restaurante" },
+    access: { id: "restaurant.pos.open", name: "Acceso al POS de Restaurante" },
     permissions: [
       { id: "restaurant.menu.write", name: "Gestionar menú" },
       { id: "restaurant.sections.write", name: "Gestionar secciones/mesas" },

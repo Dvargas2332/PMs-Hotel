@@ -25,6 +25,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
     "express": "^5.0.0",
+    "fast-xml-parser": "^4.5.3",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^3.0.3",
     "pino": "^9.3.2",

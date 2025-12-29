@@ -1,8 +1,8 @@
 // src/controllers/rooms.controller.ts
 import type { Request, Response } from "express";
 import { Prisma } from "@prisma/client";
-import { prisma } from "../lib/prisma";
-import type { AuthUser } from "../middleware/auth";
+import { prisma } from "../lib/prisma.js";
+import type { AuthUser } from "../middleware/auth.js";
 
 export async function listRooms(req: Request, res: Response) {
   // @ts-ignore
@@ -47,12 +47,15 @@ export async function archiveRoom(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
 
-  const exists = await prisma.room.findFirst({ where: { id, hotelId: user.hotelId } });
+  const hotelId = user.hotelId;
+  const exists = await prisma.room.findFirst({ where: { id, hotelId } });
   if (!exists) return res.status(404).json({ message: "Habitacion no encontrada" });
 
-  const room = await prisma.room.update({
-    where: { id },
+  const updated = await prisma.room.updateMany({
+    where: { id, hotelId },
     data: { archived: true, status: "BLOCKED" },
   });
+  if (updated.count === 0) return res.status(404).json({ message: "Habitacion no encontrada" });
+  const room = await prisma.room.findFirst({ where: { id, hotelId } });
   res.json(room);
 }

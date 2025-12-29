@@ -80,12 +80,12 @@ export default function Rooms() {
         <CardContent className="space-y-3 p-5">
           <h3 className="font-medium">Nueva habitacion</h3>
           <Input
-            placeholder="Numero (obligatorio)"
+            placeholder="Number (required)"
             value={form.number}
             onChange={handleChange("number")}
           />
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Tipo (ej. STD)" value={form.type} onChange={handleChange("type")} />
+            <Input placeholder="Type (e.g. STD)" value={form.type} onChange={handleChange("type")} />
             <select
               className="border rounded px-3 py-2 text-sm h-10"
               value={form.status}
@@ -100,7 +100,7 @@ export default function Rooms() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Input
-              placeholder="Tarifa base"
+              placeholder="Base rate"
               type="number"
               min="0"
               step="0.01"
@@ -108,29 +108,29 @@ export default function Rooms() {
               onChange={handleChange("baseRate")}
             />
             <Input
-              placeholder="Moneda (ej. CRC, USD)"
+              placeholder="Currency (e.g. CRC, USD)"
               value={form.currency}
               onChange={handleChange("currency")}
             />
           </div>
           <Input
-            placeholder="Notas / descripcion"
+            placeholder="Notes / description"
             value={form.notes}
             onChange={handleChange("notes")}
           />
           <Button onClick={onCreate} disabled={saving || !form.number.trim()}>
-            {saving ? "Guardando..." : "Crear"}
+            {saving ? "Saving..." : "Create"}
           </Button>
         </CardContent>
       </Card>
       <div>
         <SimpleTable
           cols={[
-            { key: "number", label: "Numero" },
-            { key: "type", label: "Tipo" },
-            { key: "status", label: "Estado" },
-            { key: "baseRate", label: "Tarifa" },
-            { key: "currency", label: "Moneda" },
+            { key: "number", label: "Number" },
+            { key: "type", label: "Type" },
+            { key: "status", label: "Status" },
+            { key: "baseRate", label: "Rate" },
+            { key: "currency", label: "Currency" },
           ]}
           rows={rows}
           actions={(row) => (
@@ -140,7 +140,7 @@ export default function Rooms() {
               className="text-red-600"
               onClick={() => onDelete(row.id)}
             >
-              Eliminar
+              Delete
             </Button>
           )}
         />

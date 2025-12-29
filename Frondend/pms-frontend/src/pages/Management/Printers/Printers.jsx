@@ -24,21 +24,21 @@ export default function Printers() {
   };
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      
+      <div className="grid md:grid-cols-2 gap-6">
+       
         <Card>
-          <h3 className="font-medium">Nueva Impresora</h3>
+          <h3 className="font-medium">New printer</h3>
           <Input placeholder="ID" value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))}/>
-          <Input placeholder="Nombre" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+          <Input placeholder="Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
           <div className="grid grid-cols-2 gap-2">
-            <Input placeholder="Tipo (a4/ticket80/ticket58)" value={form.kind} onChange={e=>setForm(f=>({...f,kind:e.target.value}))}/>
-            <Input placeholder="Módulo (frontdesk/accounting/restaurant)" value={form.module} onChange={e=>setForm(f=>({...f,module:e.target.value}))}/>
+            <Input placeholder="Type (a4/ticket80/ticket58)" value={form.kind} onChange={e=>setForm(f=>({...f,kind:e.target.value}))}/>
+            <Input placeholder="Module (frontdesk/accounting/restaurant)" value={form.module} onChange={e=>setForm(f=>({...f,module:e.target.value}))}/>
           </div>
-          <Button onClick={onCreate}>Crear</Button>
+          <Button onClick={onCreate}>Create</Button>
       </Card>
       <div>
         <SimpleTable
-          cols={[{key:"id",label:"ID"},{key:"name",label:"Nombre"},{key:"kind",label:"Tipo"},{key:"module",label:"Módulo"}]}
+          cols={[{key:"id",label:"ID"},{key:"name",label:"Name"},{key:"kind",label:"Type"},{key:"module",label:"Module"}]}
           rows={items}
         />
       </div>

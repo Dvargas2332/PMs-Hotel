@@ -10,7 +10,7 @@ import { api } from "../../../lib/api";
 export default function HotelInfo() {
   const [info, setInfo] = useState({
     name:"", legalName:"", phone:"", email:"", languages:"es,en",
-    nationalities:"Costa Rica,Estados Unidos", address:""
+    nationalities:"Costa Rica,United States", address:""
   });
 
   const load = async () => {
@@ -43,19 +43,19 @@ export default function HotelInfo() {
   return (
     
       <Card className="space-y-3 p-5">
-        <h3 className="font-medium">Parámetros del Hotel</h3>
+        <h3 className="font-medium">Hotel settings</h3>
         <div className="grid md:grid-cols-2 gap-2">
-          <Input placeholder="Nombre comercial" value={info.name} onChange={e=>setInfo(s=>({...s,name:e.target.value}))}/>
-          <Input placeholder="Razón social" value={info.legalName} onChange={e=>setInfo(s=>({...s,legalName:e.target.value}))}/>
+          <Input placeholder="Trade name" value={info.name} onChange={e=>setInfo(s=>({...s,name:e.target.value}))}/>
+          <Input placeholder="Legal name" value={info.legalName} onChange={e=>setInfo(s=>({...s,legalName:e.target.value}))}/>
         </div>
         <div className="grid md:grid-cols-2 gap-2">
-          <Input placeholder="Teléfono" value={info.phone} onChange={e=>setInfo(s=>({...s,phone:e.target.value}))}/>
+          <Input placeholder="Phone" value={info.phone} onChange={e=>setInfo(s=>({...s,phone:e.target.value}))}/>
           <Input placeholder="Email" value={info.email} onChange={e=>setInfo(s=>({...s,email:e.target.value}))}/>
         </div>
-        <Input placeholder="Idiomas (coma)" value={info.languages} onChange={e=>setInfo(s=>({...s,languages:e.target.value}))}/>
-        <Textarea placeholder="Nacionalidades (coma)" value={info.nationalities} onChange={v=>setInfo(s=>({...s,nationalities:v}))}/>
-        <Textarea placeholder="Dirección" value={info.address} onChange={v=>setInfo(s=>({...s,address:v}))}/>
-        <Button onClick={save}>Guardar</Button>
+        <Input placeholder="Languages (comma-separated)" value={info.languages} onChange={e=>setInfo(s=>({...s,languages:e.target.value}))}/>
+        <Textarea placeholder="Nationalities (comma-separated)" value={info.nationalities} onChange={v=>setInfo(s=>({...s,nationalities:v}))}/>
+        <Textarea placeholder="Address" value={info.address} onChange={v=>setInfo(s=>({...s,address:v}))}/>
+        <Button onClick={save}>Save</Button>
     </Card>
   );
 }

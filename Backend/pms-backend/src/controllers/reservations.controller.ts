@@ -1,9 +1,9 @@
 // reservations.controller.ts
 
 import type { Request, Response } from "express";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/prisma.js";
 import { Prisma, ReservationStatus } from "@prisma/client";
-import type { AuthUser } from "../middleware/auth";
+import type { AuthUser } from "../middleware/auth.js";
 
 async function nextReservationCode(hotelId: string): Promise<string> {
   const seq = await prisma.reservationSequence.upsert({
@@ -114,14 +114,21 @@ export async function checkIn(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const existing = await prisma.reservation.findFirst({ where: { id, hotelId: user.hotelId } });
+  const hotelId = user.hotelId;
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
-  const r = await prisma.reservation.update({
-    where: { id },
+  const updated = await prisma.reservation.updateMany({
+    where: { id, hotelId },
     data: { status: ReservationStatus.CHECKED_IN },
-    include: { room: true },
   });
-  await prisma.room.update({ where: { id: r.roomId }, data: { status: "OCCUPIED" } });
+  if (updated.count === 0) return res.status(404).json({ message: "Reserva no encontrada" });
+  const r = await prisma.reservation.findFirst({
+    where: { id, hotelId },
+    include: { room: true, guest: true },
+  });
+  if (r?.roomId) {
+    await prisma.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "OCCUPIED" } });
+  }
   res.json(r);
 }
 
@@ -130,13 +137,18 @@ export async function checkOut(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const existing = await prisma.reservation.findFirst({ where: { id, hotelId: user.hotelId } });
+  const hotelId = user.hotelId;
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
-  const r = await prisma.reservation.update({
-    where: { id },
+  const updated = await prisma.reservation.updateMany({
+    where: { id, hotelId },
     data: { status: ReservationStatus.CHECKED_OUT },
   });
-  await prisma.room.update({ where: { id: r.roomId }, data: { status: "CLEANING" } });
+  if (updated.count === 0) return res.status(404).json({ message: "Reserva no encontrada" });
+  const r = await prisma.reservation.findFirst({ where: { id, hotelId } });
+  if (r?.roomId) {
+    await prisma.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "CLEANING" } });
+  }
   res.json(r);
 }
 
@@ -145,8 +157,9 @@ export async function cancelReservation(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const hotelId = user.hotelId;
   const existing = await prisma.reservation.findFirst({
-    where: { id, hotelId: user.hotelId },
+    where: { id, hotelId },
     include: { room: true, guest: true },
   });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
@@ -163,7 +176,7 @@ export async function cancelReservation(req: Request, res: Response) {
         entityId: existing.id,
         reason: reason || null,
         payload: existing as any,
-        hotelId: user.hotelId,
+        hotelId,
       },
     });
   } catch (err) {
@@ -172,9 +185,9 @@ export async function cancelReservation(req: Request, res: Response) {
 
   // Liberar habitación (si aplica) y eliminar la reserva
   if (existing.roomId) {
-    await prisma.room.update({ where: { id: existing.roomId }, data: { status: "AVAILABLE" } });
+    await prisma.room.updateMany({ where: { id: existing.roomId, hotelId }, data: { status: "AVAILABLE" } });
   }
 
-  await prisma.reservation.delete({ where: { id } });
+  await prisma.reservation.deleteMany({ where: { id, hotelId } });
   res.json({ ok: true });
 }

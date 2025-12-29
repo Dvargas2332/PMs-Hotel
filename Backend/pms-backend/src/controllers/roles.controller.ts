@@ -21,6 +21,7 @@ export async function createRole(req: Request, res: Response) {
   const hotelId = user.hotelId;
   const { id, name, description, permissions } = req.body as { id: string; name: string; description?: string; permissions?: string[] };
   if (!id || !name) return res.status(400).json({ message: "id y name son requeridos" });
+  if (id === "ADMIN") return res.status(400).json({ message: "El rol ADMIN ya existe y no se puede recrear" });
 
   const role = await prisma.appRole.create({
     data: { id, name, description, hotelId },
@@ -55,7 +56,7 @@ export async function updateRole(req: Request, res: Response) {
 
   if (Array.isArray(permissions)) {
     const validSet = new Set(ALL_PERMISSIONS);
-    const filtered = Array.from(new Set(permissions.filter((p) => validSet.has(p))));
+    const filtered = id === "ADMIN" ? ALL_PERMISSIONS.slice() : Array.from(new Set(permissions.filter((p) => validSet.has(p))));
     await prisma.rolePermission.deleteMany({ where: { hotelId, roleId: id } });
     if (filtered.length > 0) {
       await prisma.rolePermission.createMany({
@@ -73,6 +74,7 @@ export async function deleteRole(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const { id } = req.params;
+  if (id === "ADMIN") return res.status(400).json({ message: "No se puede eliminar el rol ADMIN" });
   await prisma.rolePermission.deleteMany({ where: { hotelId: user.hotelId, roleId: id } });
   await prisma.appRole.delete({ where: { hotelId_id: { hotelId: user.hotelId, id } } });
   res.json({ ok: true });

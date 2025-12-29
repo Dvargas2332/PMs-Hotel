@@ -134,13 +134,13 @@ export default function Dashboard() {
     [inHouseToday]
   );
 
-  // Reservas sin habitación asignada
+  // Reservations without an assigned room
   const waitlistReservations = useMemo(
     () => activeReservations.filter((r) => !r.roomId || !r.room),
     [activeReservations]
   );
 
-  // Reservas próximos 7 días (barras)
+  // Next 7 days reservations (bars)
   const reservationsBars = useMemo(() => {
     const data = [];
     for (let i = 0; i < 7; i++) {
@@ -205,14 +205,14 @@ export default function Dashboard() {
     const list = [];
     inHouseToday.forEach((r) =>
       list.push({
-        title: r.guestName || "Huésped",
+        title: r.guestName || "Guest",
         subtitle: "En casa",
       })
     );
     departuresToday.forEach((r) =>
       list.push({
-        title: r.guestName || "Huésped",
-        subtitle: "Salida hoy",
+        title: r.guestName || "Guest",
+        subtitle: "Departures today",
       })
     );
     return list.slice(0, 10);
@@ -242,9 +242,9 @@ export default function Dashboard() {
               <input
                 ref={searchRef}
                 className="pl-9 pr-3 py-2 rounded-lg border bg-white text-sm outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="Buscar por nombre o # de reserva"
+                placeholder="Search by name or reservation #"
                 onKeyDown={handleSearchKey}
-                aria-label="Buscar reservas"
+                aria-label="Search reservations"
               />
             </div>
           </div>
@@ -258,28 +258,28 @@ export default function Dashboard() {
               <div className="font-semibold mb-3">KPI</div>
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <KPI
-                  label="Ocupación (hoy)"
+                  label="Occupancy (today)"
                   value={`${Math.round(
                     (inHouseToday.length / Math.max(1, rooms.length)) * 100
                   )}%`}
                 />
                 <KPI
-                  label="Entradas hoy"
+                  label="Arrivals today"
                   value={arrivalsToday.length}
-                  sub="Toca para ver reservas"
+                  sub="Tap to view reservations"
                   onClick={() => navigate("/reservas")}
                 />
                 <KPI
-                  label="Salidas hoy"
+                  label="Departures today"
                   value={departuresToday.length}
-                  sub="Toca para ver reservas"
+                  sub="Tap to view reservations"
                   onClick={() => navigate("/reservas")}
                 />
-                <KPI label="Habitaciones" value={rooms.length} />
+                <KPI label="Rooms" value={rooms.length} />
                 <KPI
                   label="En lista de espera"
                   value={waitlistReservations.length}
-                  sub="Reservas sin habitación"
+                  sub="Reservations without a room"
                 />
                 <KPI
                   label="Ingresos 30d"
@@ -298,28 +298,28 @@ export default function Dashboard() {
                 <KPI label="In-house (hab)" value={inHouseToday.length} />
                 <KPI label="Pax en hotel" value={paxInHouse} sub="Adultos + niños" />
                 <KPI
-                  label="Ocupadas hoy"
+                  label="Occupied today"
                   value={inHouseToday.length}
-                  sub="Habitaciones con estancia activa"
+                  sub="Rooms with active stays"
                 />
                 <KPI
-                  label="Entradas hoy"
+                  label="Arrivals today"
                   value={arrivalsToday.length}
-                  sub="Habitaciones que llegan hoy"
+                  sub="Rooms arriving today"
                 />
                 <KPI
-                  label="Salidas hoy"
+                  label="Departures today"
                   value={departuresToday.length}
-                  sub="Habitaciones que salen hoy"
+                  sub="Rooms departing today"
                 />
               </div>
             </Card>
           </div>
 
-          {/* Reservas próximos 7 días */}
+          {/* Next 7 days reservations */}
           <div className="col-span-12 sm:col-span-6 lg:col-span-4">
             <Card className="p-4 h-56">
-              <div className="font-semibold mb-3">Reservas (entradas 7 días)</div>
+              <div className="font-semibold mb-3">Reservations (arrivals next 7 days)</div>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={reservationsBars} barSize={14}>
                   <XAxis dataKey="d" axisLine={false} tickLine={false} />
@@ -354,12 +354,12 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Huéspedes de hoy */}
+          {/* Guests today */}
           <div className="col-span-12 lg:col-span-4">
             <Card className="p-4 h-full">
-              <div className="font-semibold mb-3">Huéspedes de hoy</div>
+              <div className="font-semibold mb-3">Guests today</div>
               {todaysGuests.length === 0 && (
-                <div className="text-sm text-slate-500">No hay huéspedes hoy.</div>
+                <div className="text-sm text-slate-500">No guests today.</div>
               )}
               {todaysGuests.map((g, idx) => (
                 <ListItem key={idx} title={g.title} subtitle={g.subtitle} />
@@ -368,7 +368,7 @@ export default function Dashboard() {
                 className="text-sm text-sky-600 mt-2 hover:underline"
                 onClick={() => navigate("/reservas")}
               >
-                Ver en reservas
+                View in reservations
               </button>
             </Card>
           </div>

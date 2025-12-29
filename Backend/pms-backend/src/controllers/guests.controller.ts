@@ -140,7 +140,8 @@ export async function updateGuest(req: Request, res: Response) {
       notes,
     } = req.body;
 
-    const existing = await prisma.guest.findFirst({ where: { id, hotelId: user.hotelId } });
+    const hotelId = user.hotelId;
+    const existing = await prisma.guest.findFirst({ where: { id, hotelId } });
     if (!existing) return res.status(404).json({ message: "Huésped no encontrado" });
 
     // Validar que no exista OTRO perfil con mismos email/nombre completo/teléfono
@@ -172,8 +173,8 @@ export async function updateGuest(req: Request, res: Response) {
       }
     }
 
-    const guest = await prisma.guest.update({
-      where: { id },
+    const updated = await prisma.guest.updateMany({
+      where: { id, hotelId },
       data: {
         firstName,
         lastName,
@@ -194,6 +195,8 @@ export async function updateGuest(req: Request, res: Response) {
         notes,
       },
     });
+    if (updated.count === 0) return res.status(404).json({ message: "Huésped no encontrado" });
+    const guest = await prisma.guest.findFirst({ where: { id, hotelId } });
     res.json(guest);
   } catch (err: any) {
     if (err?.code === "P2002") {
@@ -202,4 +205,3 @@ export async function updateGuest(req: Request, res: Response) {
     throw err;
   }
 }
-

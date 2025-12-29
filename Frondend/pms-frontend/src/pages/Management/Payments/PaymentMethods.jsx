@@ -27,19 +27,19 @@ export default function PaymentMethods() {
   return (
     <div className="grid md:grid-cols-2 gap-6">
     
-        <Card className="space-y-3 p-5">
-          <h3 className="font-medium">Nueva Forma de Pago</h3>
-          <Input placeholder="ID (ID/...)" value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))}/>
-          <Input placeholder="Nombre" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
-          <Checkbox checked={form.active} onChange={v=>setForm(f=>({...f,active:v}))} label="Activa"/>
-          <Button onClick={onCreate}>Crear</Button>
+      <Card className="space-y-3 p-5">
+          <h3 className="font-medium">New payment method</h3>
+          <Input placeholder="ID" value={form.id} onChange={e=>setForm(f=>({...f,id:e.target.value}))}/>
+          <Input placeholder="Name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+          <Checkbox checked={form.active} onChange={v=>setForm(f=>({...f,active:v}))} label="Active" />
+          <Button onClick={onCreate}>Create</Button>
            
         
       </Card>
       <div>
         <SimpleTable
-          cols={[{key:"id",label:"ID"},{key:"name",label:"Nombre"},{key:"active",label:"Activa"}]}
-          rows={items.map(x=>({...x, active: x.active?"Sí":"No"}))}
+          cols={[{key:"id",label:"ID"},{key:"name",label:"Name"},{key:"active",label:"Active"}]}
+          rows={items.map(x=>({...x, active: x.active?"Yes":"No"}))}
         />
       </div>
     </div>
