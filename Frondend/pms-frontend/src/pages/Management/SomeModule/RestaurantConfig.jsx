@@ -7,6 +7,20 @@ import { Textarea } from "../../../components/ui/textarea";
 import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
 
+const NAV_TABS = [
+  { id: "general", label: "Información general" },
+  { id: "sections", label: "Secciones y mesas" },
+  { id: "floorplan", label: "Plano de planta" },
+  { id: "groups", label: "Grupos / familias" },
+  { id: "items", label: "Artículos" },
+  { id: "recipes", label: "Recetas" },
+  { id: "inventory", label: "Inventario" },
+  { id: "printers", label: "Impresoras" },
+  { id: "taxes", label: "Impuestos y descuentos" },
+  { id: "payments", label: "Pagos y divisas" },
+  { id: "billing", label: "Facturación" },
+];
+
 const TABS = [
   { id: "sections", label: "Sections & tables" },
   { id: "floorplan", label: "Floorplan" },
@@ -4490,8 +4504,8 @@ export default function RestaurantConfig() {
   return (
     <div className="grid lg:grid-cols-[230px_1fr] gap-4">
       <Card className="p-3 space-y-2 h-max">
-        <div className="text-xs uppercase text-gray-500 px-2">Restaurant settings</div>
-        {TABS.map((tab) => (
+        <div className="text-m uppercase text-gray-700 px-2">Configuración del restaurante</div>
+        {NAV_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActive(tab.id)}
