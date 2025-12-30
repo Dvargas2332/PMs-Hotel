@@ -152,6 +152,11 @@ export default function Launcher() {
 
   // Navegación por teclado entre módulos
   useEffect(() => {
+    if (!user) {
+      setFocusedIndex(-1);
+      return;
+    }
+
     const onKey = (e) => {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
@@ -167,7 +172,7 @@ export default function Launcher() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filtered, focusedIndex, handleOpenModule]);
+  }, [filtered, focusedIndex, handleOpenModule, user]);
 
   const handleUserLoginSubmit = async (e) => {
     e?.preventDefault?.();
@@ -371,12 +376,20 @@ export default function Launcher() {
             )}
 
             {/* Módulos */}
+            {!user && (
+              <Card className="border-slate-200/80 p-10 shadow">
+                <div className="text-3xl font-semibold text-slate-900">Bienvenido</div>
+                <div className="mt-3 text-base text-slate-600">
+                  Inicia sesión con un perfil en la tarjeta de la izquierda para ver los módulos disponibles.
+                </div>
+              </Card>
+            )}
             <div className="grid auto-rows-fr grid-cols-1 gap-6">
               {filtered
                 .filter((mod) => {
                   // Antes de que el usuario del launcher inicie sesión,
                   // mostramos todos los módulos atenuados.
-                  if (!user) return true;
+                  if (!user) return false;
                   const hasAllowedModules =
                     Array.isArray(user.allowedModules) && user.allowedModules.length > 0;
                   // Una vez logueado, solo mostrar módulos permitidos para ese perfil.
