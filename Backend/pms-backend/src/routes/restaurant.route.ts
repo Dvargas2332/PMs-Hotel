@@ -21,6 +21,7 @@ import {
   updateKdsItem,
   createOrUpdateOrder,
   closeOrder,
+  cancelRestaurantOrder,
   moveOrderTable,
   reprintOrder,
   voidRestaurantInvoice,
@@ -99,9 +100,10 @@ router.get("/orders", requirePermission("restaurant.pos.open"), listOrders);
 router.post("/order", requirePermission("restaurant.orders.write"), createOrUpdateOrder);
 router.post("/order/close", requirePermission("restaurant.orders.close"), closeOrder);
 router.post("/order/charge", requirePermission("restaurant.orders.close"), closeOrder);
+router.post("/order/cancel", requirePermission("restaurant.pos.open"), cancelRestaurantOrder);
 router.post("/order/move", requirePermission("restaurant.orders.write"), moveOrderTable);
 router.post("/order/reprint", requirePermission("restaurant.print"), reprintOrder);
-router.post("/order/void-invoice", requirePermission("einvoicing.issue"), voidRestaurantInvoice);
+router.post("/order/void-invoice", requirePermission("restaurant.pos.open"), voidRestaurantInvoice);
 router.get("/kds", requirePermission("restaurant.pos.open"), listKds);
 router.patch("/kds/:orderItemId", requirePermission("restaurant.orders.write"), updateKdsItem);
 router.get("/sections", requirePermission("restaurant.pos.open", "restaurant.sections.write"), listSections);
