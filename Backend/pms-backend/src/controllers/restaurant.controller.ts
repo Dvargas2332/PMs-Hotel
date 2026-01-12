@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { nextHotelSequence, padNumber } from "../lib/sequences.js";
@@ -17,6 +18,41 @@ const fromInternalId = (hotelId: string, internalId: string) => {
 
 const deriveMenuCategoryFromItem = (item: any) =>
   String(item?.subSubFamily?.name || item?.subFamily?.name || item?.family?.name || item?.category || "General");
+
+async function verifyHotelAdminCode(hotelId: string, code: string) {
+  const pin = String(code || "").trim();
+  if (!pin) return false;
+
+  const launcherAdmins = await prisma.launcherAccount.findMany({
+    where: { hotelId, roleId: "ADMIN" },
+    select: { password: true },
+  });
+  for (const acc of launcherAdmins) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await bcrypt.compare(pin, acc.password)) return true;
+  }
+
+  // Fallback: management users with role ADMIN (if used in this hotel).
+  const mgmtAdmins = await prisma.user.findMany({
+    where: { hotelId, role: "ADMIN" },
+    select: { password: true },
+    take: 10,
+  });
+  for (const u of mgmtAdmins) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await bcrypt.compare(pin, u.password)) return true;
+  }
+
+  return false;
+}
+
+async function requireAdminOrAdminCode(user: AuthUser, hotelId: string, adminCode: unknown) {
+  const role = String(user?.role || "").toUpperCase();
+  if (role === "ADMIN") return true;
+  const code = String(adminCode || "").trim();
+  if (!code) return false;
+  return verifyHotelAdminCode(hotelId, code);
+}
 
 async function getOrCreateRestaurantConfig(hotelId: string) {
   return prisma.restaurantConfig.upsert({
@@ -2265,6 +2301,40 @@ export async function deleteRecipeLine(req: Request, res: Response) {
   return res.json({ ok: true });
 }
 
+export async function cancelRestaurantOrder(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
+
+  const { orderId, tableId, reason, adminCode } = req.body || {};
+  if (!orderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
+
+  const allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
+  if (!allowed) return res.status(401).json({ message: "Admin PIN requerido" });
+
+  const where: any = { hotelId, status: "OPEN" };
+  if (orderId) where.id = String(orderId);
+  if (tableId) where.tableId = { in: [toInternalId(hotelId, String(tableId)), String(tableId)] };
+
+  const order = await prisma.restaurantOrder.findFirst({
+    where,
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, note: true },
+  });
+  if (!order) return res.status(404).json({ message: "Orden abierta no encontrada" });
+
+  const cancelReason = String(reason || "").trim();
+  const nextNote = cancelReason ? `${order.note || ""}\n[CANCELED] ${cancelReason}`.trim() : order.note || "";
+
+  await prisma.restaurantOrder.updateMany({
+    where: { id: order.id, hotelId, status: "OPEN" },
+    data: { status: "CLOSED", note: nextNote },
+  });
+
+  return res.json({ ok: true, id: order.id });
+}
+
 export async function moveOrderTable(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -2378,8 +2448,11 @@ export async function voidRestaurantInvoice(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { restaurantOrderId, tableId, docType, reason } = req.body || {};
+  const { restaurantOrderId, tableId, docType, reason, adminCode } = req.body || {};
   if (!restaurantOrderId && !tableId) return res.status(400).json({ message: "restaurantOrderId o tableId requerido" });
+
+  const allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
+  if (!allowed) return res.status(401).json({ message: "Admin PIN requerido" });
 
   let orderId = restaurantOrderId ? String(restaurantOrderId) : "";
   if (!orderId && tableId) {

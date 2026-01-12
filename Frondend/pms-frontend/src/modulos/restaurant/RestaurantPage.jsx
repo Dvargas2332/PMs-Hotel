@@ -194,6 +194,9 @@ export default function RestaurantPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const orderSaveTimerRef = useRef(null);
+  const pendingOrderSaveRef = useRef(null);
+
   const pendingPrintRef = useRef(null);
   const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
   const [printConfirmTitle, setPrintConfirmTitle] = useState("");
@@ -254,6 +257,53 @@ export default function RestaurantPage() {
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
+
+  const persistOrderNow = useCallback(async (payload) => {
+    if (!payload?.tableId) return;
+    await api.post("/restaurant/order", payload);
+  }, []);
+
+  const queueOrderSave = useCallback(
+    (payload) => {
+      pendingOrderSaveRef.current = payload;
+      if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
+      orderSaveTimerRef.current = setTimeout(async () => {
+        const p = pendingOrderSaveRef.current;
+        pendingOrderSaveRef.current = null;
+        orderSaveTimerRef.current = null;
+        if (!p?.tableId) return;
+        try {
+          await persistOrderNow(p);
+        } catch (err) {
+          const msg = err?.response?.data?.message || err?.message || "Could not save order.";
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+        }
+      }, 650);
+    },
+    [persistOrderNow]
+  );
+
+  const flushOrderSave = useCallback(async () => {
+    if (orderSaveTimerRef.current) {
+      clearTimeout(orderSaveTimerRef.current);
+      orderSaveTimerRef.current = null;
+    }
+    const p = pendingOrderSaveRef.current;
+    pendingOrderSaveRef.current = null;
+    if (!p?.tableId) return;
+    try {
+      await persistOrderNow(p);
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Could not save order.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
+  }, [persistOrderNow]);
+
+  useEffect(() => {
+    return () => {
+      if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
+    };
+  }, []);
 
   const allTables = useMemo(() => {
     const list = [];
@@ -683,16 +733,72 @@ export default function RestaurantPage() {
     });
   };
 
+  const requireAdminCodeIfNeeded = () => {
+    if (role === "ADMIN") return { adminCode: undefined };
+    const code = (window.prompt("Admin PIN required:", "") || "").trim();
+    if (!code) return null;
+    return { adminCode: code };
+  };
+
+  const cancelCurrentOrder = async () => {
+    if (!selectedTable?.id) return;
+
+    const exists = Boolean(ordersByTable?.[selectedTable.id]?.id || ordersByTable?.[selectedTable.id]?.items?.length || hasItems);
+    if (!exists) {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No open order to cancel." } }));
+      return;
+    }
+
+    const ok = window.confirm("Cancel this order?");
+    if (!ok) return;
+
+    const reason = (window.prompt("Cancel reason (optional):", "") || "").trim();
+    const auth = requireAdminCodeIfNeeded();
+    if (!auth) return;
+
+    await flushOrderSave();
+
+    try {
+      await api.post("/restaurant/order/cancel", {
+        tableId: selectedTable.id,
+        reason: reason || undefined,
+        ...auth,
+      });
+
+      setOrdersByTable((prev) => {
+        const next = { ...prev };
+        delete next[selectedTable.id];
+        return next;
+      });
+
+      setOrderNote("");
+      setCovers(2);
+      setServiceType("DINE_IN");
+      setRoomCharge("");
+      setSelectedTable(null);
+      setSectionLauncher(false);
+
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Order canceled." } }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Could not cancel order.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
+  };
+
   const voidInvoice = async () => {
     const orderId = ordersByTable?.[selectedTable?.id]?.id;
     if (!orderId) {
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No paid order found." } }));
       return;
     }
+
+    const auth = requireAdminCodeIfNeeded();
+    if (!auth) return;
+
     const type = (window.prompt("Document type to void (FE/TE). Leave blank for latest:", "") || "").trim().toUpperCase();
     const reason = window.prompt("Void reason (optional):", "") || "";
     try {
-      await api.post("/restaurant/order/void-invoice", { restaurantOrderId: orderId, docType: type || undefined, reason });
+      await api.post("/restaurant/order/void-invoice", { restaurantOrderId: orderId, docType: type || undefined, reason, ...auth });
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Invoice voided." } }));
     } catch (err) {
       const msg = err?.response?.data?.message || "Could not void invoice.";
@@ -716,7 +822,20 @@ export default function RestaurantPage() {
     setOrdersByTable((prev) => {
       const cur = prev[tableId] || { items: [], covers, note: orderNote, status: "NUEVA", serviceType, roomId: roomCharge };
       const next = updater(cur);
-      return { ...prev, [tableId]: { ...next, serviceType, roomId: roomCharge } };
+      const merged = { ...next, serviceType, roomId: roomCharge };
+
+      // Persist open order so it stays on the table until paid or canceled.
+      queueOrderSave({
+        sectionId: selectedSection?.id || merged.sectionId || null,
+        tableId,
+        items: Array.isArray(merged.items) ? merged.items : [],
+        note: merged.note || "",
+        covers: merged.covers || 0,
+        serviceType: merged.serviceType || "DINE_IN",
+        roomId: merged.roomId || "",
+      });
+
+      return { ...prev, [tableId]: merged };
     });
   };
 
@@ -861,6 +980,7 @@ export default function RestaurantPage() {
   const confirmChargeOrder = async () => {
     if (!selectedTable?.id || !hasItems) return;
     try {
+      await flushOrderSave();
       await api.post("/restaurant/order/close", {
         tableId: selectedTable.id,
         sectionId: selectedSection?.id,
@@ -1254,6 +1374,14 @@ export default function RestaurantPage() {
                         disabled={!(ordersByTable[selectedTable.id]?.items?.length)}
                       >
                         Change table
+                      </button>
+                      <button
+                        className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
+                        onClick={cancelCurrentOrder}
+                        disabled={!(ordersByTable[selectedTable.id]?.items?.length || hasItems)}
+                        title="Cancel open order (Admin only)"
+                      >
+                        Cancel order
                       </button>
                       <button
                         className="px-3 py-2 rounded-lg bg-white border hover:bg-slate-50 text-sm font-semibold disabled:opacity-50"
