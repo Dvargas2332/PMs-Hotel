@@ -28,6 +28,7 @@ import RestaurantBillingHistoryPage from "./modulos/restaurant/RestaurantBilling
 import Managementpage from "./pages/Management/ManagementPage";
 import Login from "./pages/Login";
 import ProtectedRoute from "./components/ProtectedRoutes";
+import Launchergestor from "./modulos/launchergestor";
 import { useLanguage } from "./context/LanguageContext";
 
 export default function App() {
@@ -45,6 +46,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Launcher />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/launchergestor"
+          element={
+            <ProtectedRoute>
+              <Launchergestor />
             </ProtectedRoute>
           }
         />

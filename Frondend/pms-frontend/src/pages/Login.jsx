@@ -13,8 +13,8 @@ export default function Login({ onSuccess }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const [email, setEmail] = useState("admin@pms.local");
-  const [password, setPassword] = useState("Admin1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,9 +23,11 @@ export default function Login({ onSuccess }) {
     setErr("");
     if (loading) return;
     setLoading(true);
-    const next = searchParams.get("next") || "/launcher";
     try {
-      await login(email, password);
+      const payload = await login(email, password);
+      const isGestor = Boolean(payload?.isGestor);
+      let next = searchParams.get("next") || (isGestor ? "/launchergestor" : "/launcher");
+      if (isGestor && next.startsWith("/launcher")) next = "/launchergestor";
       onSuccess?.();
       navigate(next, { replace: true });
     } catch {
@@ -83,7 +85,7 @@ export default function Login({ onSuccess }) {
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">{t("login.email")}</label>
                 <Input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t("login.emailPlaceholder")}
@@ -116,7 +118,7 @@ export default function Login({ onSuccess }) {
                 {loading ? t("login.signingIn") : t("common.enter")}
               </Button>
 
-              <p className="text-xs text-center text-slate-500">{t("login.demo")}</p>
+              
             </form>
           </Card>
         </div>
@@ -124,4 +126,3 @@ export default function Login({ onSuccess }) {
     </div>
   );
 }
-

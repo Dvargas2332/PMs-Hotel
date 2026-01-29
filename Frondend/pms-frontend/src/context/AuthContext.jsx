@@ -62,20 +62,21 @@ export function AuthProvider({ children }) {
         email,
         password
       );
+      const payload = decodeToken(hotelToken);
+      const isGestor = Boolean(userResp?.isGestor ?? payload?.isGestor);
       setToken(hotelToken);
       // Nivel 1: sesion del hotel (para launcher + management).
       // Preferimos `hotel` real del backend si viene (incluye membership/allowedModules).
       if (hotelResp) {
-        setHotel({ ...hotelResp, email: userResp?.email ?? email });
+        setHotel({ ...hotelResp, email: userResp?.email ?? email, isGestor });
       } else if (userResp) {
-        setHotel(userResp);
+        setHotel({ ...userResp, isGestor });
       } else {
-        const payload = decodeToken(hotelToken);
-        setHotel({ email, hotelId: payload?.hotelId });
+        setHotel({ email, hotelId: payload?.hotelId, isGestor });
       }
       // Al cambiar de hotel, se limpia cualquier usuario de launcher
       setUser(null);
-      return hotelToken;
+      return payload ? { ...payload, isGestor } : { isGestor };
     },
     [] // setToken/setHotel/setUser son estables
   );

@@ -181,29 +181,29 @@ export default function RestaurantBillingHistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
-      <header className="h-14 flex items-center justify-between px-6 bg-gradient-to-r from-amber-700 to-slate-800 shadow">
+    <div className="min-h-screen bg-white text-black">
+      <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
         <div className="flex items-center gap-2">
           <button
-            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 flex items-center gap-2 text-sm"
+            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
             onClick={() => navigate("/restaurant")}
           >
             <ChevronLeft className="w-4 h-4" />
             Lobby
           </button>
           <div>
-            <div className="text-xs uppercase text-amber-200/80">Billing</div>
+            <div className="text-xs uppercase text-black/80">Billing</div>
             <div className="text-sm font-semibold">History</div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="hidden md:flex items-center gap-2 text-xs">
-            <div className="px-3 py-1 rounded-lg bg-white/10">Paper {printSettings.paperType || "80mm"}</div>
-            <div className="px-3 py-1 rounded-lg bg-white/10">Printer {printerCfg.cashierPrinter || "-"}</div>
+            <div className="px-3 py-1 rounded-lg bg-white">Paper {printSettings.paperType || "80mm"}</div>
+            <div className="px-3 py-1 rounded-lg bg-white">Printer {printerCfg.cashierPrinter || "-"}</div>
           </div>
           <button
-            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-sm flex items-center gap-2"
+            className="h-9 px-3 rounded-lg bg-white hover:bg-white text-sm flex items-center gap-2"
             onClick={refresh}
             disabled={loading}
           >
@@ -217,14 +217,14 @@ export default function RestaurantBillingHistoryPage() {
       <div className="max-w-6xl mx-auto p-6 space-y-4">
         {error && <div className="text-sm text-red-300">{error}</div>}
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-lg font-semibold">Paid orders</div>
-              <div className="text-xs text-amber-100/70">History for paid orders, reprints, and electronic documents.</div>
+              <div className="text-xs text-black">History for paid orders, reprints, and electronic documents.</div>
             </div>
             <input
-              className="h-10 w-full md:w-[360px] rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+              className="h-10 w-full md:w-[360px] rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
               placeholder="Search by table, note, room, item..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -233,7 +233,7 @@ export default function RestaurantBillingHistoryPage() {
         </div>
 
         {(filtered || []).length === 0 && !loading && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-amber-100/70">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-black">
             No paid orders to show.
           </div>
         )}
@@ -241,24 +241,24 @@ export default function RestaurantBillingHistoryPage() {
         {(filtered || []).length > 0 && (
           <div className="space-y-2">
             {filtered.map((o) => (
-              <div key={o.id} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div key={o.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-xs uppercase text-amber-200/70">
+                    <div className="text-xs uppercase text-black/70">
                       {o.createdAt ? new Date(o.createdAt).toLocaleString() : ""}
                     </div>
                     <div className="text-lg font-semibold">
                       {o.sectionId ? `${o.sectionId} / ` : ""}
                       {o.tableId ? `Table ${o.tableId}` : `Order ${String(o.id || "").slice(0, 8)}`}
                     </div>
-                    <div className="text-xs text-amber-100/70">
+                    <div className="text-xs text-black">
                       Total: <span className="font-semibold">{formatMoney(o.total)}</span>
                       {o.serviceType ? ` · ${o.serviceType}` : ""}
                       {o.roomId ? ` · Room ${o.roomId}` : ""}
                     </div>
-                    {o.note && <div className="text-xs text-amber-100/60 mt-1">Note: {o.note}</div>}
+                    {o.note && <div className="text-xs text-black mt-1">Note: {o.note}</div>}
                     {(o.items || []).length > 0 && (
-                      <div className="mt-2 text-xs text-amber-100/70">
+                      <div className="mt-2 text-xs text-black">
                         {(o.items || [])
                           .slice(0, 6)
                           .map((it) => `${asNumber(it.qty) || 1}x ${it.name}`)
@@ -270,21 +270,21 @@ export default function RestaurantBillingHistoryPage() {
 
                   <div className="flex flex-wrap gap-2 justify-end">
                     <button
-                      className="h-9 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold disabled:bg-violet-600/40"
+                      className="h-9 px-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-black text-sm font-semibold disabled:bg-violet-600/40"
                       onClick={() => openIssue(o, "TE")}
                       title="Issue Electronic Ticket (TE)"
                     >
                       TE
                     </button>
                     <button
-                      className="h-9 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold disabled:bg-indigo-600/40"
+                      className="h-9 px-3 rounded-xl bg-white hover:bg-lime-50 text-black text-sm font-semibold disabled:bg-white/40"
                       onClick={() => openIssue(o, "FE")}
                       title="Issue Electronic Invoice (FE)"
                     >
                       FE
                     </button>
                     <button
-                      className="h-9 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold flex items-center gap-2 disabled:bg-emerald-600/40"
+                      className="h-9 px-3 rounded-xl bg-white hover:bg-lime-50 text-black text-sm font-semibold flex items-center gap-2 disabled:bg-white/40"
                       onClick={() => reprint(o)}
                       disabled={actingId === o.id}
                       title="Reprint"
@@ -298,7 +298,7 @@ export default function RestaurantBillingHistoryPage() {
                 {(docsByOrder[o.id] || []).length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2 text-xs">
                     {(docsByOrder[o.id] || []).map((d) => (
-                      <span key={d.id} className="px-2 py-1 rounded-lg bg-white/10 border border-white/10">
+                      <span key={d.id} className="px-2 py-1 rounded-lg bg-white border border-slate-200">
                         {d.docType} - {d.status} - {d.consecutive || d.key || d.id}
                       </span>
                     ))}
@@ -312,12 +312,12 @@ export default function RestaurantBillingHistoryPage() {
 
       {issueOpen && (
         <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIssueOpen(false)} />
+          <div className="absolute inset-0 bg-white" onClick={() => setIssueOpen(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-xl rounded-2xl bg-white text-slate-900 border shadow-xl p-4 space-y-3">
+            <div className="w-full max-w-xl rounded-2xl bg-white text-black border shadow-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase text-slate-500">Electronic invoicing</div>
+                  <div className="text-xs uppercase text-black">Electronic invoicing</div>
                   <div className="text-lg font-semibold">
                     Issue {issueType} for order {issueOrder?.id?.slice?.(0, 8) || ""}
                   </div>
@@ -339,7 +339,7 @@ export default function RestaurantBillingHistoryPage() {
                     value={issueReceiver.email}
                     onChange={(e) => setIssueReceiver((p) => ({ ...p, email: e.target.value }))}
                   />
-                  <div className="text-xs text-slate-500">For TE you can issue without receiver details.</div>
+                  <div className="text-xs text-black">For TE you can issue without receiver details.</div>
                 </div>
               )}
 
@@ -348,7 +348,7 @@ export default function RestaurantBillingHistoryPage() {
                   Cancel
                 </button>
                 <button
-                  className="h-10 px-4 rounded-xl bg-violet-700 text-white hover:bg-violet-600 disabled:bg-violet-700/40"
+                  className="h-10 px-4 rounded-xl bg-violet-700 text-black hover:bg-violet-600 disabled:bg-violet-700/40"
                   onClick={doIssue}
                   disabled={issuing}
                 >
@@ -362,3 +362,9 @@ export default function RestaurantBillingHistoryPage() {
     </div>
   );
 }
+
+
+
+
+
+

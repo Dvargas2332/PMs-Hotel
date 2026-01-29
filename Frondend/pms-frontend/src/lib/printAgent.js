@@ -24,10 +24,7 @@ export function ensurePrintAgentConfigInteractive() {
   const current = getPrintAgentConfig();
   if (current.key) return current;
 
-  const nextKey = (window.prompt("Enter PMS Print Agent API key (see http://127.0.0.1:8787/ui):", "") || "").trim();
-  if (!nextKey) return null;
-  setPrintAgentConfig({ key: nextKey });
-  return { ...current, key: nextKey };
+  return current; // caller should trigger UI prompt in app
 }
 
 export async function printTextToAgent({ agentUrl, apiKey, printerName, text, copies = 1 }) {
@@ -65,4 +62,3 @@ export async function listPrintersFromAgent({ agentUrl, apiKey }) {
   }
   return res.json();
 }
-

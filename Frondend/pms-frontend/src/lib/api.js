@@ -28,6 +28,7 @@ const BASE = String(process.env.REACT_APP_API_URL || DEFAULT_BASE).replace(/\/+$
 const BACKEND_PREFIXES = [
   "/auth",
   "/launcher",
+  "/gestor",
   "/reservations",
   "/rooms",
   "/roomTypes",
@@ -59,11 +60,10 @@ export function clearToken() {
 // ===== Cliente HTTP (axios) =====
 const http = !USE_MOCK
   ? (() => {
-      const instance = axios.create({
-        baseURL: BASE,
-        headers: { "Content-Type": "application/json" },
-        timeout: 15000,
-      });
+       const instance = axios.create({
+         baseURL: BASE,
+         timeout: 15000,
+       });
 
       // Authorization: Bearer <token>
       instance.interceptors.request.use((cfg) => {
