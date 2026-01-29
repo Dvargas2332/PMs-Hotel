@@ -5,7 +5,7 @@ export default function RestaurantCloseXButton({ onClick, ariaLabel = "Close", c
   return (
     <button
       type="button"
-      className={`h-8 w-8 rounded-full bg-amber-100 text-amber-700 text-lg leading-none flex items-center justify-center hover:bg-amber-200 ${className}`}
+      className={`h-8 w-8 rounded-full bg-lime-100 text-black text-lg leading-none flex items-center justify-center hover:bg-lime-200 ${className}`}
       onClick={onClick}
       aria-label={ariaLabel}
     >
@@ -13,3 +13,9 @@ export default function RestaurantCloseXButton({ onClick, ariaLabel = "Close", c
     </button>
   );
 }
+
+
+
+
+
+

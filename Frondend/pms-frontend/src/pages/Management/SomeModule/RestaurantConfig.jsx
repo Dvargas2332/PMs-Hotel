@@ -120,7 +120,7 @@ export default function RestaurantConfig() {
 
   const [sections, setSections] = useState([]);
   const [selectedSectionId, setSelectedSectionId] = useState("");
-  const [formSection, setFormSection] = useState({ id: "", name: "" });
+  const [formSection, setFormSection] = useState({ id: "", name: "", imageUrl: "", quickCashEnabled: false });
   const [formTable, setFormTable] = useState({ id: "", name: "", kind: "mesa", seats: 2, x: "", y: "", size: 56, rotation: 0, color: "" });
   const [menu, setMenu] = useState([]);
   const [menus, setMenus] = useState([]);
@@ -147,9 +147,32 @@ export default function RestaurantConfig() {
   const [selectedTableId, setSelectedTableId] = useState("");
   const [tableEdit, setTableEdit] = useState(null);
   const [rotationSnap, setRotationSnap] = useState(15); // 0 = off
-  const [floorplanSaving, setFloorplanSaving] = useState(false);
+  const [floorplanSaving, setFloorplanSaving] = useState(false); // posiciones
+  const [styleSaving, setStyleSaving] = useState(false); // estilo
   const [dirtyPosTableIds, setDirtyPosTableIds] = useState([]); // X/Y moved on floorplan
   const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation/color changed
+  const [backgroundForm, setBackgroundForm] = useState({ color: "", image: "" });
+  const [general, setGeneral] = useState({
+    nombreComercial: "",
+    razonSocial: "",
+    cedula: "",
+    telefono: "",
+    email: "",
+    direccion: "",
+    horario: "",
+    resolucion: "",
+    notas: "",
+    backgrounds: {},
+  });
+
+  // eslint-disable-next-line no-use-before-define
+  useEffect(() => {
+    const bg = general?.backgrounds?.[selectedSectionId] || {};
+    setBackgroundForm({
+      color: bg.color || "",
+      image: bg.image || "",
+    });
+  }, [general?.backgrounds, selectedSectionId]);
 
   const floorplanDirty = (dirtyPosTableIds || []).length > 0;
   const markPosDirty = (tableId) => {
@@ -183,18 +206,6 @@ export default function RestaurantConfig() {
   });
 
   const [einvPrintForms, setEinvPrintForms] = useState([]);
-
-  const [general, setGeneral] = useState({
-    nombreComercial: "",
-    razonSocial: "",
-    cedula: "",
-    telefono: "",
-    email: "",
-    direccion: "",
-    horario: "",
-    resolucion: "",
-    notas: "",
-  });
   const [billing, setBilling] = useState({ comprobante: "factura", margen: "", propina: "", autoFactura: true });
   const [taxes, setTaxes] = useState({ iva: "", servicio: "", descuentoMax: "", permitirDescuentos: true, impuestoIncluido: true });
   const [payments, setPayments] = useState({
@@ -689,7 +700,12 @@ export default function RestaurantConfig() {
         return;
       }
 
-      const payload = { id, name };
+      const payload = {
+        id,
+        name,
+        quickCashEnabled: !!formSection.quickCashEnabled,
+        imageUrl: formSection.imageUrl?.trim() || undefined,
+      };
       const { data } = await api.post("/restaurant/sections", payload);
       setSections((prev) => {
         const idx = prev.findIndex((s) => s.id === data.id);
@@ -698,7 +714,7 @@ export default function RestaurantConfig() {
         next[idx] = { ...next[idx], ...data };
         return next;
       });
-      setFormSection({ id: "", name: "" });
+      setFormSection({ id: "", name: "", imageUrl: "", quickCashEnabled: false });
       setSelectedSectionId(data.id);
       alert("Restaurant", "Section created.");
     } catch (err) {
@@ -1462,6 +1478,48 @@ export default function RestaurantConfig() {
             <h3 className="font-semibold text-lg">Section layout editor</h3>
             <p className="text-sm text-gray-600">Drag tables to set X/Y. This is stored per hotel and rendered in the TPV.</p>
           </div>
+          {selectedSectionId && (
+            <div className="flex flex-col gap-1 text-xs text-slate-700">
+              <div className="font-semibold">Fondo de la secci\u00f3n</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={backgroundForm.color || "#eefce5"}
+                  onChange={(e) => setBackgroundForm((f) => ({ ...f, color: e.target.value }))}
+                  className="h-10 w-16 rounded border"
+                  title="Color de fondo"
+                />
+                <input
+                  type="text"
+                  value={backgroundForm.image || ""}
+                  onChange={(e) => setBackgroundForm((f) => ({ ...f, image: e.target.value }))}
+                  placeholder="URL de imagen opcional"
+                  className="h-10 w-64 rounded border px-3 text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={async () => {
+                    if (!selectedSectionId) return;
+                    const nextBackgrounds = {
+                      ...(general.backgrounds || {}),
+                      [selectedSectionId]: { color: backgroundForm.color || "", image: backgroundForm.image || "" },
+                    };
+                    const payload = { ...general, backgrounds: nextBackgrounds };
+                    try {
+                      await api.put("/restaurant/general", payload);
+                      setGeneral((prev) => ({ ...prev, backgrounds: nextBackgrounds }));
+                      alert("Restaurant", "Fondo guardado");
+                    } catch (err) {
+                      alert("Restaurant", getApiError(err, "No se pudo guardar el fondo."));
+                    }
+                  }}
+                >
+                  Guardar fondo
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             {selectedSectionId && (
               <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -1501,7 +1559,13 @@ export default function RestaurantConfig() {
             <div className="space-y-3">
               <div
                 data-canvas
-                className="relative w-full h-[420px] rounded-2xl border bg-gradient-to-br from-amber-50 to-slate-50 overflow-hidden"
+                className="relative w-full h-[420px] rounded-2xl border overflow-hidden"
+                style={{
+                  backgroundColor: backgroundForm.color || "#f3fce8",
+                  backgroundImage: backgroundForm.image ? `url(${backgroundForm.image})` : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
               >
                 <div className="absolute inset-x-4 top-3 flex justify-between text-[11px] text-amber-700">
                   <span>Entrance</span>
@@ -1677,20 +1741,20 @@ export default function RestaurantConfig() {
                       </div>
                       <Button
                         type="button"
-                        disabled={floorplanSaving || !dirtyStyleTableIds.includes(selectedTable.id)}
+                        disabled={styleSaving || !dirtyStyleTableIds.includes(selectedTable.id)}
                         onClick={async () => {
                           if (!tableEdit?.id) return;
-                          setFloorplanSaving(true);
+                          setStyleSaving(true);
                           try {
                             await saveTableStyle(String(tableEdit.id), tableEdit);
                           } catch (err) {
                             alert("Restaurant", getApiError(err, "No se pudo guardar el estilo de la mesa."));
                           } finally {
-                            setFloorplanSaving(false);
+                            setStyleSaving(false);
                           }
                         }}
                       >
-                        {floorplanSaving ? "Guardando..." : "Guardar estilo"}
+                        {styleSaving ? "Guardando..." : "Guardar estilo"}
                       </Button>
                     </div>
                   </>
@@ -2168,6 +2232,26 @@ export default function RestaurantConfig() {
     await api.delete(`/restaurant/inventory/${id}`);
     setInventory((prev) => prev.filter((i) => i.id !== id));
   };
+
+  const updateSectionMeta = async (sectionId, payload) => {
+    if (!sectionId) return;
+    try {
+      const { data } = await api.patch(`/restaurant/sections/${encodeURIComponent(String(sectionId))}`, payload);
+      setSections((prev) =>
+        prev.map((s) =>
+          String(s.id) === String(sectionId)
+            ? {
+                ...s,
+                ...data,
+                ...payload,
+              }
+            : s
+        )
+      );
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "Could not update section."));
+    }
+  };
   const renderSections = ({ showSections = true, showTables = true, showMenus = true } = {}) => (
     <div className="space-y-4">
       {showSections && (
@@ -2177,7 +2261,7 @@ export default function RestaurantConfig() {
             <div className="text-xs uppercase text-gray-500">Sections</div>
             <h3 className="font-semibold text-lg">Create or select a section</h3>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center flex-wrap">
             <Input
               placeholder="ID"
               value={formSection.id}
@@ -2190,23 +2274,108 @@ export default function RestaurantConfig() {
               onChange={(e) => setFormSection((f) => ({ ...f, name: e.target.value }))}
               className="w-56"
             />
+            <Input
+              placeholder="Image URL (opcional)"
+              value={formSection.imageUrl}
+              onChange={(e) => setFormSection((f) => ({ ...f, imageUrl: e.target.value }))}
+              className="w-64"
+            />
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-gray-600">o subir</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="text-xs"
+                onChange={async (e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file) return;
+                  try {
+                    const raw = await readFileAsDataUrl(file);
+                    const resized = await resizeImageDataUrl(raw, 512, 0.82);
+                    setFormSection((f) => ({ ...f, imageUrl: resized }));
+                  } catch (err) {
+                    console.error(err);
+                  }
+                }}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={formSection.quickCashEnabled}
+                onChange={(e) => setFormSection((f) => ({ ...f, quickCashEnabled: e.target.checked }))}
+              />
+              Caja rápida
+            </label>
             <Button onClick={addSection} disabled={saving.section}>
               {saving.section ? "Saving..." : "Add"}
             </Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {sections.map((s) => (
-            <div key={s.id} className={`border rounded-lg px-3 py-2 flex items-center gap-2 ${selectedSectionId === s.id ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}>
-              <button className="text-sm font-semibold" onClick={() => setSelectedSectionId(s.id)}>
+      <div className="flex flex-wrap gap-3">
+        {sections.map((s) => (
+          <div
+            key={s.id}
+            className={`border rounded-xl px-3 py-2 flex items-center gap-3 shadow-sm min-w-[220px] ${
+              selectedSectionId === s.id ? "bg-indigo-50 border-indigo-200" : "bg-white"
+            }`}
+          >
+            {s.imageUrl ? (
+              <img
+                src={s.imageUrl}
+                alt={s.name || s.id}
+                className="h-12 w-12 rounded-lg object-cover border border-gray-100"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded-lg border border-dashed border-gray-200 flex items-center justify-center text-xs text-gray-400">
+                Img
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <button className="text-sm font-semibold block truncate text-left" onClick={() => setSelectedSectionId(s.id)}>
                 {s.name || s.id}
               </button>
-              <span className="text-xs text-gray-500">({(s.tables || []).length} tables)</span>
+              <div className="text-[11px] text-gray-500">{(s.tables || []).length} tables</div>
+              <div className="flex items-center gap-2 text-[11px] mt-1">
+                <label className="inline-flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={!!s.quickCashEnabled}
+                    onChange={(e) => updateSectionMeta(s.id, { quickCashEnabled: e.target.checked })}
+                  />
+                  Caja rápida
+                </label>
+                {s.quickCashEnabled && <span className="text-emerald-700 font-semibold">Quick</span>}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <label className="text-[11px] text-blue-600 cursor-pointer">
+                Img
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file) return;
+                    try {
+                      const raw = await readFileAsDataUrl(file);
+                      const resized = await resizeImageDataUrl(raw, 512, 0.82);
+                      await updateSectionMeta(s.id, { imageUrl: resized });
+                    } catch (err) {
+                      console.error(err);
+                    } finally {
+                      e.target.value = "";
+                    }
+                  }}
+                />
+              </label>
               <button className="text-xs text-red-600" onClick={() => removeSection(s.id)}>
                 Delete
               </button>
             </div>
-          ))}
+          </div>
+        ))}
           {sections.length === 0 && <div className="text-sm text-gray-500">No sections yet.</div>}
         </div>
         </Card>

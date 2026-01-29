@@ -1,48 +1,53 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ClipboardList,
-  FileText,
-  Boxes,
-  UtensilsCrossed,
-  ScrollText,
-  ChevronRight,
-} from "lucide-react";
+import { ClipboardList, FileText, Boxes, UtensilsCrossed, ScrollText, ChevronRight } from "lucide-react";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
 // Manually adjust tile size:
 const LOBBY_TILE_SIZE = "lg"; // "sm" | "md" | "lg"
 
-const Tile = ({ title, desc, icon: Icon, onClick, tone = "amber", size = LOBBY_TILE_SIZE }) => {
+const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE }) => {
   const cardDecor = {
-    amber: { border: "border-amber-200", overlay: "from-amber-600/90 to-orange-500/80" },
+    amber: { border: "border-lime-300", overlay: "from-lime-600/90 to-orange-500/80" },
+    lime: { border: "border-lime-300", overlay: "from-lime-500/90 to-emerald-500/80" },
     slate: { border: "border-slate-200", overlay: "from-slate-700/90 to-slate-900/80" },
     emerald: { border: "border-emerald-200", overlay: "from-emerald-600/90 to-emerald-500/80" },
     indigo: { border: "border-indigo-200", overlay: "from-indigo-600/90 to-blue-500/80" },
   };
   const toneDecor = {
     amber: {
-      iconBg: "bg-gradient-to-br from-amber-500 to-orange-600",
-      iconText: "text-white",
-      watermark: "text-amber-600/20",
-      glow: "shadow-amber-900/25",
+      bg: "bg-white",
+      iconBg: "bg-white",
+      iconText: "text-black",
+      watermark: "text-black",
+      glow: "shadow-lime-900/25",
+    },
+    lime: {
+      bg: "bg-lime-50",
+      iconBg: "bg-white",
+      iconText: "text-black",
+      watermark: "text-black/50",
+      glow: "shadow-lime-900/25",
     },
     slate: {
-      iconBg: "bg-gradient-to-br from-slate-700 to-slate-950",
-      iconText: "text-white",
-      watermark: "text-slate-600/20",
+      bg: "bg-white",
+      iconBg: "bg-white",
+      iconText: "text-black",
+      watermark: "text-black",
       glow: "shadow-slate-950/30",
     },
     emerald: {
-      iconBg: "bg-gradient-to-br from-emerald-500 to-emerald-700",
-      iconText: "text-white",
-      watermark: "text-emerald-600/20",
+      bg: "bg-white",
+      iconBg: "bg-white",
+      iconText: "text-black",
+      watermark: "text-black",
       glow: "shadow-emerald-900/25",
     },
     indigo: {
-      iconBg: "bg-gradient-to-br from-indigo-500 to-blue-600",
-      iconText: "text-white",
-      watermark: "text-indigo-600/20",
+      bg: "bg-white",
+      iconBg: "bg-white",
+      iconText: "text-black",
+      watermark: "text-black",
       glow: "shadow-indigo-900/25",
     },
   };
@@ -79,10 +84,9 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "amber", size = LOBBY_T
 
   return (
     <button
-      className={`group relative overflow-hidden rounded-2xl border ${c.border} bg-white shadow-sm text-left ${s.root} hover:shadow-md transition`}
+      className={`group relative overflow-hidden rounded-2xl border ${c.border} ${d.bg || "bg-white"} shadow-sm text-left ${s.root} hover:shadow-md transition`}
       onClick={onClick}
     >
-      <div className={`absolute inset-0 bg-gradient-to-br ${c.overlay} opacity-10`} />
       <div className="absolute -top-6 -right-6 pointer-events-none">
         <Icon className={`w-28 h-28 ${d.watermark}`} />
       </div>
@@ -92,11 +96,11 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "amber", size = LOBBY_T
             <div className={`${s.iconWrap} ${d.iconBg} shadow-lg ${d.glow} flex items-center justify-center`}>
               <Icon className={`${s.icon} ${d.iconText}`} />
             </div>
-            <div className={`${s.title} font-semibold text-slate-900`}>{title}</div>
+            <div className={`${s.title} font-semibold text-black`}>{title}</div>
           </div>
-          <div className={`${s.desc} text-slate-700`}>{desc}</div>
+          <div className={`${s.desc} text-black`}>{desc}</div>
         </div>
-        <ChevronRight className={`${s.chevron} text-slate-500 group-hover:translate-x-0.5 transition`} />
+        <ChevronRight className={`${s.chevron} text-black group-hover:translate-x-0.5 transition`} />
       </div>
     </button>
   );
@@ -104,6 +108,50 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "amber", size = LOBBY_T
 
 export default function RestaurantLobby() {
   const navigate = useNavigate();
+  const tiles = [
+    {
+      title: "Restaurante (POS)",
+      desc: "Mesas, comandas, cobro y cierre de orden.",
+      icon: UtensilsCrossed,
+      onClick: () => navigate("/restaurant/pos"),
+      tone: "lime",
+    },
+    {
+      title: "Comandas (KDS Cocina/Bar)",
+      desc: "Pantalla de cocina y bar con estados de preparacion.",
+      icon: ScrollText,
+      onClick: () => navigate("/restaurant/kds"),
+      tone: "emerald",
+    },
+    {
+      title: "Historicos",
+      desc: "Facturacion e informes en un solo lugar.",
+      icon: FileText,
+      onClick: () => navigate("/restaurant/reports"),
+      tone: "indigo",
+    },
+    {
+      title: "Cierres",
+      desc: "Cierres de caja del restaurante y conciliacion.",
+      icon: ClipboardList,
+      onClick: () => navigate("/restaurant/closes"),
+      tone: "slate",
+    },
+    {
+      title: "Inventario",
+      desc: "Inventario y recetario (configuracion).",
+      icon: Boxes,
+      onClick: () => navigate("/management?view=restaurantInventory"),
+      tone: "slate",
+    },
+    {
+      title: "Reimpresiones",
+      desc: "Reimpresiones, anulaciones y re-Reimpresiones.",
+      icon: FileText,
+      onClick: () => navigate("/restaurant/billing"),
+      tone: "amber",
+    },
+  ];
   const gridCols =
     LOBBY_TILE_SIZE === "lg"
       ? "md:grid-cols-2 lg:grid-cols-3"
@@ -112,10 +160,10 @@ export default function RestaurantLobby() {
         : "md:grid-cols-2 lg:grid-cols-3";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
-      <header className="h-14 flex items-center justify-between px-6 bg-gradient-to-r from-amber-700 to-slate-800 text-white shadow">
+    <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
+      <header className="h-14 flex items-center justify-between px-6 bg-white/90 backdrop-blur border-b border-slate-200 text-black shadow">
         <div>
-          <div className="text-xs uppercase text-amber-200/80">Restaurant</div>
+          <div className="text-xs uppercase text-black/80">Restaurant</div>
           <div className="text-sm font-semibold">Lobby</div>
         </div>
         <div className="flex items-center gap-2">
@@ -124,57 +172,26 @@ export default function RestaurantLobby() {
       </header>
 
       <div className="max-w-6xl mx-auto p-6 space-y-4">
-        <div className="text-white">
+        <div className="text-black">
           <div className="text-2xl font-semibold">Point of Sale dashboard</div>
-          <div className="text-sm text-amber-100/70">Choose where you want to go.</div>
+          <div className="text-sm text-black">Choose where you want to go.</div>
         </div>
 
         <div className={`grid gap-4 ${gridCols}`}>
-          <Tile
-            title="Restaurant (POS)"
-          
-            desc="Tables, orders, payment, and order closing."
-            icon={UtensilsCrossed}
-            onClick={() => navigate("/restaurant/pos")}
-            tone="amber"
-          />
-          <Tile
-            title="Orders (KDS Kitchen/Bar)"
-            desc="Kitchen and bar screen with preparation statuses."
-            icon={ScrollText}
-            onClick={() => navigate("/restaurant/kds")}
-            tone="emerald"
-          />
-          <Tile
-            title="Reports"
-            desc="Restaurant KPIs and reports."
-            icon={FileText}
-            onClick={() => navigate("/restaurant/reports")}
-            tone="indigo"
-          />
-          <Tile
-            title="Closures"
-            desc="Restaurant cash closures and reconciliation."
-            icon={ClipboardList}
-            onClick={() => navigate("/restaurant/closes")}
-            tone="slate"
-          />
-          <Tile
-            title="Inventory"
-            desc="Inventory and recipes (configuration)."
-            icon={Boxes}
-            onClick={() => navigate("/management?view=restaurantConfig&tab=inventory")}
-            tone="slate"
-          />
-          <Tile
-            title="Billing"
-            desc="Reprints, voids and re-invoicing (history)."
-            icon={FileText}
-            onClick={() => navigate("/restaurant/billing")}
-            tone="amber"
-          />
+          {tiles.map((t) => (
+            <Tile key={t.title} {...t} />
+          ))}
         </div>
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
+
+

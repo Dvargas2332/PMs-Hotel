@@ -13,7 +13,10 @@ export default function Roles() {
   const [permissions, setPermissions] = useState([]);
   const [rolePerms, setRolePerms] = useState({});
   const [formRole, setFormRole] = useState({ id: "", name: "", description: "", jobTitle: "" });
+  // selectedRole = roleId whose permissions we are editing
   const [selectedRole, setSelectedRole] = useState("");
+  // keep track of the selected profile option so dropdown can distinguish users with same role
+  const [selectedProfileOption, setSelectedProfileOption] = useState("");
   const [editingId, setEditingId] = useState(null);
 
   const load = useCallback(async () => {
@@ -98,6 +101,7 @@ export default function Roles() {
     await api.put(`/permissions/role/${selectedRole}`, { permissions: perms });
     // Al guardar permisos, volver a dejar el selector de perfil vacío
     setSelectedRole("");
+    setSelectedProfileOption("");
   };
 
   return (
@@ -171,13 +175,17 @@ export default function Roles() {
           <div className="flex items-center gap-2">
             <span className="text-sm">Role:</span>
             <Select
-              value={selectedRole}
-              onChange={(val) => setSelectedRole(val)}
+              value={selectedProfileOption}
+              onChange={(val) => {
+                setSelectedProfileOption(val);
+                const roleId = String(val || "").split(":::")[1] || "";
+                setSelectedRole(roleId);
+              }}
               options={[
                 { value: "", label: "Select..." },
                 // Solo perfiles de launcher (UserLauncher)
                 ...profiles.map((acc) => ({
-                  value: acc.roleId,
+                  value: `${acc.id || acc.username || acc.roleId}:::${acc.roleId}`,
                   label: acc.name || acc.username || acc.roleId,
                 })),
               ]}

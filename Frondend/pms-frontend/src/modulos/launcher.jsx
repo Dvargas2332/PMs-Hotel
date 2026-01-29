@@ -22,8 +22,8 @@ import { useLanguage } from "../context/LanguageContext";
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
   management: { from: "from-indigo-500/90", to: "to-blue-500/80", text: "text-white" },
-  accounting: { from: "from-rose-500/90", to: "to-slate-800/90", text: "text-white" },
-  restaurant: { from: "from-amber-500/90", to: "to-orange-500/80", text: "text-white" },
+  accounting: { from: "from-amber-500/90", to: "to-orange-500/80", text: "text-white" },
+  restaurant: { from: "from-lime-500/90", to: "to-emerald-500/80", text: "text-white" },
   einvoicing: { from: "from-violet-500/90", to: "to-fuchsia-600/80", text: "text-white" },
 };
 

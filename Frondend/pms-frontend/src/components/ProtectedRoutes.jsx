@@ -5,6 +5,7 @@ export default function ProtectedRoute({ children, fallback }) {
   const { token, hotel, user } = useAuth();
   const location = useLocation();
   const isLauncher = location.pathname.startsWith("/launcher");
+  const isGestorPanel = location.pathname.startsWith("/launchergestor");
 
   // Sin login de HOTEL no se puede entrar a nada
   if (!token || !hotel) {
@@ -12,6 +13,15 @@ export default function ProtectedRoute({ children, fallback }) {
     const next = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
+
+  // Usuario SaaS (gestor): solo puede entrar a su panel
+  if (hotel?.isGestor) {
+    if (!isGestorPanel) return <Navigate to="/launchergestor" replace />;
+    return children;
+  }
+
+  // No-gestor intentando entrar al panel
+  if (isGestorPanel) return <Navigate to="/launcher" replace />;
 
   // Para cualquier ruta distinta de /launcher se exige usuario interno
   if (!isLauncher) {

@@ -21,7 +21,7 @@ export default function RestaurantUserMenu() {
   return (
     <div className="relative" ref={ref}>
       <button
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold"
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white hover:bg-white text-sm font-semibold"
         onClick={() => setOpen((s) => !s)}
       >
         <CircleUser className="w-5 h-5" />
@@ -29,13 +29,13 @@ export default function RestaurantUserMenu() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-48 bg-white text-amber-900 rounded-lg shadow-lg border">
+        <div className="absolute right-0 top-12 w-48 bg-white text-black rounded-lg shadow-lg border">
           <div className="px-3 py-2 text-sm border-b">
             <div className="font-semibold">{user?.name || "User"}</div>
-            <div className="text-xs text-amber-700/80">{user?.email || user?.username || ""}</div>
+            <div className="text-xs text-black">{user?.email || user?.username || ""}</div>
           </div>
           <button
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-amber-50"
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-lime-50"
             onClick={() => {
               setOpen(false);
               navigate("/launcher");
@@ -49,3 +49,9 @@ export default function RestaurantUserMenu() {
     </div>
   );
 }
+
+
+
+
+
+

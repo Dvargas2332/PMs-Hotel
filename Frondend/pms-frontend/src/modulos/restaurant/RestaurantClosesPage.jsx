@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronLeft, RefreshCw, CheckCircle2, Printer } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
+import { useAuth } from "../../context/AuthContext";
 
 function asNumber(v) {
   const n = Number(v);
@@ -15,12 +16,14 @@ function formatMoney(n) {
 
 export default function RestaurantClosesPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState("");
   const [stats, setStats] = useState(null);
   const [closes, setCloses] = useState([]);
   const [form, setForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
+  const [closeType, setCloseType] = useState("X");
   const [printerCfg, setPrinterCfg] = useState({ cashierPrinter: "", kitchenPrinter: "", barPrinter: "" });
   const [printSettings, setPrintSettings] = useState({ paperType: "80mm" });
 
@@ -30,9 +33,10 @@ export default function RestaurantClosesPage() {
     const sinpe = asNumber(form.sinpe);
     const transfer = asNumber(form.transfer);
     const room = asNumber(form.room);
+    const tips = asNumber(stats?.tipTotal);
     const reported = cash + card + sinpe + transfer + room;
     const system = asNumber(stats?.systemTotal);
-    return { system, reported, diff: reported - system };
+    return { system, reported, diff: reported - system, tips };
   }, [form, stats]);
 
   const refresh = async () => {
@@ -63,8 +67,12 @@ export default function RestaurantClosesPage() {
       const items = [
         { id: "system", itemId: "system", name: "System", category: "Close", qty: 1, price: asNumber(c?.totals?.system) },
         { id: "reported", itemId: "reported", name: "Reported", category: "Close", qty: 1, price: asNumber(c?.totals?.reported) },
+        { id: "tips", itemId: "tips", name: "Tips", category: "Close", qty: 1, price: asNumber(c?.totals?.tips) },
         { id: "diff", itemId: "diff", name: "Difference", category: "Close", qty: 1, price: asNumber(c?.totals?.diff) },
       ];
+      Object.entries(c?.breakdown || {}).forEach(([method, amount]) => {
+        items.push({ id: `m-${method}`, itemId: method, name: `Paid ${method}`, category: "Payments", qty: 1, price: asNumber(amount) });
+      });
       await api.post("/restaurant/print", {
         tableId: `CLOSE-${c.id}`,
         items,
@@ -84,6 +92,12 @@ export default function RestaurantClosesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const canCloseZ = useMemo(() => {
+    const perms = Array.isArray(user?.permissions) ? user.permissions : [];
+    const role = String(user?.role || "").toUpperCase();
+    return role === "ADMIN" || perms.includes("restaurant.shift.closeZ");
+  }, [user?.permissions, user?.role]);
+
   const submitClose = async () => {
     if (closing) return;
     setClosing(true);
@@ -94,6 +108,8 @@ export default function RestaurantClosesPage() {
         payments: form,
         note: form.notes,
         breakdown: stats?.byMethod || {},
+        tipTotal: asNumber(stats?.tipTotal),
+        type: closeType,
       });
       setForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
       await refresh();
@@ -108,29 +124,29 @@ export default function RestaurantClosesPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 text-white">
-      <header className="h-14 flex items-center justify-between px-6 bg-gradient-to-r from-amber-700 to-slate-800 shadow">
+    <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
+      <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
         <div className="flex items-center gap-2">
           <button
-            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 flex items-center gap-2 text-sm"
+            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
             onClick={() => navigate("/restaurant")}
           >
             <ChevronLeft className="w-4 h-4" />
             Lobby
           </button>
           <div>
-            <div className="text-xs uppercase text-amber-200/80">Closes</div>
+            <div className="text-xs uppercase text-black/80">Closes</div>
             <div className="text-sm font-semibold">Restaurant</div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center gap-2 text-xs text-amber-100/80">
-            <div className="px-3 py-1 rounded-lg bg-white/10">Paper {printSettings.paperType || "80mm"}</div>
-            <div className="px-3 py-1 rounded-lg bg-white/10">Printer {printerCfg.cashierPrinter || "-"}</div>
+          <div className="hidden md:flex items-center gap-2 text-xs text-black">
+            <div className="px-3 py-1 rounded-lg bg-white">Paper {printSettings.paperType || "80mm"}</div>
+            <div className="px-3 py-1 rounded-lg bg-white">Printer {printerCfg.cashierPrinter || "-"}</div>
           </div>
           <button
-            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-sm flex items-center gap-2"
+            className="h-9 px-3 rounded-lg bg-white hover:bg-white text-sm flex items-center gap-2"
             onClick={refresh}
             disabled={loading}
           >
@@ -145,61 +161,77 @@ export default function RestaurantClosesPage() {
         {error && <div className="text-sm text-red-300">{error}</div>}
 
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-xs text-amber-100/70">System sales (since last close)</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-xs text-black">System sales (since last close)</div>
             <div className="text-2xl font-bold">{formatMoney(stats?.systemTotal)}</div>
-            <div className="text-xs text-amber-100/60">Paid sales</div>
+            <div className="text-xs text-black">Paid sales</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-xs text-amber-100/70">Open orders</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-xs text-black">Open orders</div>
             <div className="text-2xl font-bold">{stats?.openOrders ?? 0}</div>
-            <div className="text-xs text-amber-100/60">Value: {formatMoney(stats?.openOrderValue)}</div>
+            <div className="text-xs text-black">Value: {formatMoney(stats?.openOrderValue)}</div>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            <div className="text-xs text-amber-100/70">Last close</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="text-xs text-black">Last close</div>
             <div className="text-sm font-semibold">{stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : "-"}</div>
-            <div className="text-xs text-amber-100/60">Listed closes: {(closes || []).length}</div>
+            <div className="text-xs text-black">Listed closes: {(closes || []).length}</div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-lg font-semibold">Record close</div>
-            <div className="text-xs text-amber-100/70 mb-3">
+            <div className="text-xs text-black mb-3">
               Enter the counted amounts by method. The system computes the actual total from paid sales.
+            </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                className={`px-3 py-2 rounded-lg border text-sm ${closeType === "X" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
+                onClick={() => setCloseType("X")}
+              >
+                Cierre X (parcial)
+              </button>
+              <button
+                className={`px-3 py-2 rounded-lg border text-sm ${closeType === "Z" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
+                onClick={() => canCloseZ && setCloseType("Z")}
+                disabled={!canCloseZ}
+                title={canCloseZ ? "" : "No tienes permiso para cierre Z"}
+              >
+                Cierre Z (final)
+              </button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input
-                className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Cash"
                 type="number"
                 value={form.cash}
                 onChange={(e) => setForm((f) => ({ ...f, cash: e.target.value }))} 
               />
               <input
-                className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Card"
                 type="number"
                 value={form.card}
                 onChange={(e) => setForm((f) => ({ ...f, card: e.target.value }))} 
               />
               <input
-                className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="SINPE"
                 type="number"
                 value={form.sinpe}
                 onChange={(e) => setForm((f) => ({ ...f, sinpe: e.target.value }))}
               />
               <input
-                className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Transfer"
                 type="number"
                 value={form.transfer}
                 onChange={(e) => setForm((f) => ({ ...f, transfer: e.target.value }))}
               />
               <input
-                className="h-11 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 text-sm text-white placeholder:text-amber-100/40"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Room charge"
                 type="number"
                 value={form.room}
@@ -208,24 +240,24 @@ export default function RestaurantClosesPage() {
             </div>
 
             <textarea
-              className="mt-3 w-full rounded-xl border border-white/10 bg-slate-950/30 px-3 py-2 text-sm text-white placeholder:text-amber-100/40 min-h-[90px]"
+              className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-black placeholder:text-black min-h-[90px]"
               placeholder="Close notes..."
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
 
-            <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-sm">
               <div className="flex items-center justify-between">
-                <div className="text-amber-100/70">System</div>
+                <div className="text-black">System</div>
                 <div className="font-semibold">{formatMoney(closeSummary.system)}</div>
               </div>
               <div className="flex items-center justify-between">
-                <div className="text-amber-100/70">Reported</div>
+                <div className="text-black">Reported</div>
                 <div className="font-semibold">{formatMoney(closeSummary.reported)}</div>
               </div>
               <div className="flex items-center justify-between">
-                <div className="text-amber-100/70">Difference</div>
-                <div className={`font-semibold ${closeSummary.diff === 0 ? "text-emerald-200" : "text-amber-200"}`}>
+                <div className="text-black">Difference</div>
+                <div className={`font-semibold ${closeSummary.diff === 0 ? "text-black" : "text-black"}`}>
                   {formatMoney(closeSummary.diff)}
                 </div>
               </div>
@@ -233,7 +265,7 @@ export default function RestaurantClosesPage() {
 
             <div className="mt-3 flex justify-end">
               <button
-                className="h-10 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-sm font-semibold flex items-center gap-2 disabled:bg-amber-600/40"
+                className="h-10 px-4 rounded-xl bg-lime-200 hover:bg-lime-300 text-black text-sm font-semibold flex items-center gap-2 disabled:bg-lime-200/40"
                 onClick={submitClose}
                 disabled={closing}
               >
@@ -243,24 +275,27 @@ export default function RestaurantClosesPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-lg font-semibold">Recent closes</div>
-            <div className="text-xs text-amber-100/70 mb-3">Last 200 (sorted by date).</div>
+            <div className="text-xs text-black mb-3">Last 200 (sorted by date).</div>
             {(closes || []).length === 0 && !loading && (
-              <div className="text-sm text-amber-100/70">No closes.</div>
+              <div className="text-sm text-black">No closes.</div>
             )}
             {(closes || []).length > 0 && (
               <div className="space-y-2 max-h-[62vh] overflow-y-auto">
                 {closes.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-white/10 bg-slate-950/30 p-3">
+                  <div key={c.id} className="rounded-xl border border-slate-200 bg-white p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="font-semibold">{c.turno || c.shift || c.id}</div>
+                      <div>
+                        <div className="font-semibold">{c.turno || c.shift || c.id}</div>
+                        <div className="text-xs text-black">Tipo: {c.type || "X"}</div>
+                      </div>
                       <div className="flex items-center gap-2">
-                        <div className="text-xs text-amber-100/60">
+                        <div className="text-xs text-black">
                           {c.createdAt ? new Date(c.createdAt).toLocaleString() : ""}
                         </div>
                         <button
-                          className="h-8 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-sm flex items-center gap-2"
+                          className="h-8 px-3 rounded-lg bg-white hover:bg-white text-sm flex items-center gap-2"
                           onClick={() => printClose(c)}
                           title="Print close"
                         >
@@ -269,16 +304,16 @@ export default function RestaurantClosesPage() {
                         </button>
                       </div>
                     </div>
-                    <div className="mt-1 text-xs text-amber-100/70">
+                    <div className="mt-1 text-xs text-black">
                       System: {formatMoney(c.totals?.system)} | Reported: {formatMoney(c.totals?.reported)} | Diff:{" "}
                       {formatMoney(c.totals?.diff)}
                     </div>
-                    <div className="mt-1 text-xs text-amber-100/70">
+                    <div className="mt-1 text-xs text-black">
                       Payments: cash {formatMoney(c.payments?.cash)}, card {formatMoney(c.payments?.card)}, sinpe{" "}
                       {formatMoney(c.payments?.sinpe)}, transfer {formatMoney(c.payments?.transfer)}, room{" "}
                       {formatMoney(c.payments?.room)}
                     </div>
-                    {c.note && <div className="mt-1 text-xs text-amber-100/60">Note: {c.note}</div>}
+                    {c.note && <div className="mt-1 text-xs text-black">Note: {c.note}</div>}
                   </div>
                 ))}
               </div>
@@ -289,3 +324,9 @@ export default function RestaurantClosesPage() {
     </div>
   );
 }
+
+
+
+
+
+
