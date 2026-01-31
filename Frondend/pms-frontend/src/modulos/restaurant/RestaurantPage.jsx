@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
+import { CheckCircle, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
@@ -307,6 +307,14 @@ const [subCategory, setSubCategory] = useState("");
   const [closeForm, setCloseForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [cancelForm, setCancelForm] = useState({ username: "", password: "", reason: "" });
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState("");
+  const cancelTargetRef = useRef(null);
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelSuccessOpen, setCancelSuccessOpen] = useState(false);
+  const cancelSuccessTimerRef = useRef(null);
 
   const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cashier" }));
   const [taxesCfg, setTaxesCfg] = useState({
@@ -655,6 +663,12 @@ const subCategories = useMemo(() => {
     selectedTableRef.current = selectedTable;
   }, [selectedTable]);
 
+  useEffect(() => {
+    return () => {
+      if (cancelSuccessTimerRef.current) clearTimeout(cancelSuccessTimerRef.current);
+    };
+  }, []);
+
   const totals = useMemo(() => {
     const serviceRate = Number(taxesCfg.servicio || 0) / 100;
     const taxRate = Number(taxesCfg.iva || 0) / 100;
@@ -789,6 +803,10 @@ const subCategories = useMemo(() => {
     return Math.max(0, itemSplitData.orderTotal - assigned);
   }, [splitByItem, itemSplitData]);
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
+  const isComandada = useMemo(
+    () => String(currentOrder?.status || "").toUpperCase() === "ENVIADO",
+    [currentOrder?.status]
+  );
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
@@ -1186,64 +1204,117 @@ const subCategories = useMemo(() => {
     return { adminCode: code };
   };
 
-  const cancelCurrentOrder = async () => {
+  const closeCancelModal = () => {
+    if (cancelBusy) return;
+    setCancelModalOpen(false);
+    setCancelError("");
+    setCancelForm({ username: "", password: "", reason: "" });
+    setCancelTarget(null);
+    cancelTargetRef.current = null;
+  };
+
+  const showCancelSuccess = () => {
+    setCancelSuccessOpen(true);
+    if (cancelSuccessTimerRef.current) clearTimeout(cancelSuccessTimerRef.current);
+    cancelSuccessTimerRef.current = setTimeout(() => {
+      setCancelSuccessOpen(false);
+      cancelSuccessTimerRef.current = null;
+    }, 1600);
+  };
+
+  const cancelCurrentOrder = () => {
     if (!selectedTable?.id) return;
 
-    const exists = Boolean(getOrderKey(currentOrder) || currentOrder?.items?.length || hasItems);
+    const list = selectedTableOrders;
+    const targetOrder = list.find((o) => getOrderKey(o) === activeOrderKey) || list[0] || currentOrder;
+    const orderKey = getOrderKey(targetOrder);
+    const exists = Boolean(orderKey || targetOrder?.items?.length || hasItems);
     if (!exists) {
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No open order to cancel." } }));
       return;
     }
+    const status = String(targetOrder?.status || currentOrder?.status || "").toUpperCase();
+    if (status !== "ENVIADO") {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Solo se puede anular una orden comandada." } }));
+      return;
+    }
 
-    const ok = window.confirm("Cancel this order?");
-    if (!ok) return;
+    const idx = list.findIndex((o) => getOrderKey(o) === orderKey);
+    const orderLabel = idx >= 0 ? `Orden ${idx + 1}` : "Orden";
+    const target = {
+      tableId: selectedTable.id,
+      tableName: selectedTable?.name || "",
+      orderKey,
+      orderId: targetOrder?.id || targetOrder?.orderId || "",
+      orderLabel,
+      itemsCount: Array.isArray(targetOrder?.items) ? targetOrder.items.length : 0,
+    };
+    cancelTargetRef.current = { tableId: target.tableId, orderKey: target.orderKey, orderId: target.orderId };
+    setCancelTarget(target);
+    setCancelForm({ username: "", password: "", reason: "" });
+    setCancelError("");
+    setCancelModalOpen(true);
+  };
 
-    const reason = (window.prompt("Cancel reason (optional):", "") || "").trim();
-    const auth = requireAdminCodeIfNeeded();
-    if (!auth) return;
+  const confirmCancelOrder = async () => {
+    if (cancelBusy) return;
+    const username = String(cancelForm.username || "").trim();
+    const password = String(cancelForm.password || "").trim();
+    const reason = String(cancelForm.reason || "").trim();
+    if (!username || !password || !reason) {
+      setCancelError("Usuario, contrasena y motivo son requeridos.");
+      return;
+    }
 
-    await flushOrderSave();
+    const target = cancelTargetRef.current;
+    if (!target?.tableId) {
+      setCancelError("No order selected.");
+      return;
+    }
 
+    setCancelBusy(true);
+    setCancelError("");
     try {
-      await api.post("/restaurant/order/cancel", {
-        tableId: selectedTable.id,
-        restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
-        orderId: currentOrder?.id || currentOrder?.orderId || undefined,
-        reason: reason || undefined,
-        ...auth,
-      });
+      await flushOrderSave();
 
-      let nextActiveKey = "";
+      if (target.orderId) {
+        await api.post("/restaurant/order/cancel", {
+          tableId: target.tableId,
+          restaurantOrderId: target.orderId || undefined,
+          orderId: target.orderId || undefined,
+          reason,
+          adminCode: password,
+          adminUser: username,
+        });
+      }
+
+      const list = normalizeOrderList(ordersByTable[target.tableId]);
+      const remaining = list.filter((o) => getOrderKey(o) !== target.orderKey);
+      const nextActiveKey = remaining.length > 0 ? getOrderKey(remaining[0]) : "";
+
       setOrdersByTable((prev) => {
-        const list = normalizeOrderList(prev[selectedTable.id]);
-        const nextList = list.filter((o) => getOrderKey(o) !== getOrderKey(currentOrder));
-        nextActiveKey = nextList.length > 0 ? getOrderKey(nextList[0]) : "";
+        const prevList = normalizeOrderList(prev[target.tableId]);
+        const nextList = prevList.filter((o) => getOrderKey(o) !== target.orderKey);
         const next = { ...prev };
         if (nextList.length > 0) {
-          next[selectedTable.id] = nextList;
+          next[target.tableId] = nextList;
         } else {
-          delete next[selectedTable.id];
+          delete next[target.tableId];
         }
         return next;
       });
+
       setActiveOrderByTable((prev) => {
         const next = { ...prev };
         if (nextActiveKey) {
-          next[selectedTable.id] = nextActiveKey;
+          next[target.tableId] = nextActiveKey;
         } else {
-          delete next[selectedTable.id];
+          delete next[target.tableId];
         }
         return next;
       });
 
-      if (nextActiveKey) {
-        const remaining = normalizeOrderList(ordersByTable[selectedTable.id]).filter((o) => getOrderKey(o) !== getOrderKey(currentOrder));
-        const nextOrder = remaining.find((o) => getOrderKey(o) === nextActiveKey) || remaining[0];
-        setOrderNote(nextOrder?.note || "");
-        setCovers(nextOrder?.covers || 2);
-        setServiceType(nextOrder?.serviceType || "DINE_IN");
-        setRoomCharge(nextOrder?.roomId || "");
-      } else {
+      if (selectedTableRef.current?.id === target.tableId) {
         setOrderNote("");
         setCovers(2);
         setServiceType("DINE_IN");
@@ -1252,10 +1323,14 @@ const subCategories = useMemo(() => {
         setSectionLauncher(false);
       }
 
+      closeCancelModal();
+      showCancelSuccess();
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Order canceled." } }));
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "Could not cancel order.";
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+      setCancelError(msg);
+    } finally {
+      setCancelBusy(false);
     }
   };
 
@@ -1991,6 +2066,77 @@ const subCategories = useMemo(() => {
         </div>
       )}
 
+      {cancelModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase text-red-600">Anular orden</div>
+                <div className="text-lg font-semibold text-slate-900">Confirmar anulacion</div>
+              </div>
+              <RestaurantCloseXButton onClick={closeCancelModal} />
+            </div>
+
+            {cancelTarget && (
+              <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <div className="font-semibold">{cancelTarget.orderLabel}</div>
+                <div className="text-xs text-red-700">
+                  Mesa {cancelTarget.tableName || cancelTarget.tableId} - {cancelTarget.itemsCount} items
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-2">
+              <input
+                className="h-11 w-full rounded-lg border px-3 text-sm"
+                placeholder="Usuario administrador"
+                value={cancelForm.username}
+                onChange={(e) => setCancelForm((f) => ({ ...f, username: e.target.value }))}
+              />
+              <input
+                className="h-11 w-full rounded-lg border px-3 text-sm"
+                placeholder="Contrasena administrador"
+                type="password"
+                value={cancelForm.password}
+                onChange={(e) => setCancelForm((f) => ({ ...f, password: e.target.value }))}
+              />
+              <textarea
+                className="w-full rounded-lg border px-3 py-2 text-sm min-h-[90px]"
+                placeholder="Motivo de anulacion (requerido)"
+                value={cancelForm.reason}
+                onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+
+            {cancelError && <div className="text-xs text-red-600">{cancelError}</div>}
+
+            <div className="flex justify-end gap-2">
+              <button className="px-4 py-2 rounded-lg border text-sm" disabled={cancelBusy} onClick={closeCancelModal}>
+                Cerrar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
+                disabled={cancelBusy}
+                onClick={confirmCancelOrder}
+              >
+                {cancelBusy ? "Anulando..." : "Anular orden"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelSuccessOpen && (
+        <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-3">
+            <div className="h-14 w-14 rounded-full bg-emerald-100 flex items-center justify-center">
+              <CheckCircle className="h-9 w-9 text-emerald-600" />
+            </div>
+            <div className="text-lg font-semibold text-emerald-700">Eliminado</div>
+          </div>
+        </div>
+      )}
+
       {closeOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex justify-end">
           <div className="w-full max-w-[360px] max-h-[40vh] min-h-[200px] bg-white rounded-l-2xl shadow-2xl p-3 flex flex-col gap-3 overflow-y-auto">
@@ -2409,8 +2555,8 @@ const subCategories = useMemo(() => {
                       <button
                         className="px-3 py-2 rounded-lg bg-white border hover:bg-lime-50 text-sm font-semibold disabled:opacity-50"
                         onClick={cancelCurrentOrder}
-                        disabled={!hasItems}
-                        title="Cancel open order (Admin only)"
+                        disabled={!hasItems || !isComandada}
+                        title={isComandada ? "Cancel open order (Admin only)" : "Solo orden comandada"}
                       >
                         Cancel order
                       </button>
@@ -2978,3 +3124,4 @@ const subCategories = useMemo(() => {
     </div>
   );
 }
+

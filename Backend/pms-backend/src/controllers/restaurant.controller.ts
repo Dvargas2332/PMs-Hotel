@@ -1759,7 +1759,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { sectionId, tableId, items, note, covers, serviceType, roomId } = req.body as {
+  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew } = req.body as {
     sectionId?: string;
     tableId: string;
     items: { id: string; name: string; category?: string; price: number; qty: number }[];
@@ -1767,16 +1767,33 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     covers?: number;
     serviceType?: string;
     roomId?: string;
+    orderId?: string;
+    restaurantOrderId?: string;
+    createNew?: boolean;
+    forceNew?: boolean;
   };
   if (!tableId || !Array.isArray(items)) return res.status(400).json({ message: "tableId e items requeridos" });
 
   const internalTableId = toInternalId(hotelId, String(tableId));
   const internalSectionId = sectionId ? toInternalId(hotelId, String(sectionId)) : undefined;
 
-  const existing = await prisma.restaurantOrder.findFirst({
-    where: { hotelId, status: "OPEN", tableId: { in: [internalTableId, String(tableId)] } },
-    include: { items: true },
-  });
+  const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
+  const shouldCreateNew = Boolean(createNew || forceNew);
+  let existing = null as any;
+  if (incomingOrderId) {
+    existing = await prisma.restaurantOrder.findFirst({
+      where: { id: incomingOrderId, hotelId, status: "OPEN" },
+      include: { items: true },
+    });
+    if (!existing) return res.status(404).json({ message: "Orden no encontrada" });
+  }
+  if (!existing && !shouldCreateNew) {
+    existing = await prisma.restaurantOrder.findFirst({
+      where: { hotelId, status: "OPEN", tableId: { in: [internalTableId, String(tableId)] } },
+      orderBy: { updatedAt: "desc" },
+      include: { items: true },
+    });
+  }
 
   const taxes = await getRestaurantTaxesForHotel(hotelId);
   const serviceRate = Number(taxes.servicio || 0) / 100;
@@ -1935,17 +1952,23 @@ export async function closeOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { tableId, payments, totals, note, serviceType, roomId } = req.body || {};
-  if (!tableId) return res.status(400).json({ message: "tableId requerido" });
+  const { tableId, payments, totals, note, serviceType, roomId, orderId, restaurantOrderId } = req.body || {};
+  const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
+  if (!tableId && !incomingOrderId) return res.status(400).json({ message: "tableId requerido" });
 
-  const order = await prisma.restaurantOrder.findFirst({
-    where: {
-      hotelId,
-      status: "OPEN",
-      tableId: { in: [toInternalId(hotelId, String(tableId)), String(tableId)] },
-    },
-    include: { items: true },
-  });
+  const order = incomingOrderId
+    ? await prisma.restaurantOrder.findFirst({
+        where: { id: incomingOrderId, hotelId, status: "OPEN" },
+        include: { items: true },
+      })
+    : await prisma.restaurantOrder.findFirst({
+        where: {
+          hotelId,
+          status: "OPEN",
+          tableId: { in: [toInternalId(hotelId, String(tableId)), String(tableId)] },
+        },
+        include: { items: true },
+      });
   if (!order) return res.status(404).json({ message: "Orden no encontrada" });
 
   const totalToSave = asNumber(totals?.total ?? totals?.reported) || asNumber(order.total);
@@ -2307,14 +2330,15 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { orderId, tableId, reason, adminCode } = req.body || {};
-  if (!orderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
+  const { orderId, restaurantOrderId, tableId, reason, adminCode } = req.body || {};
+  const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
+  if (!incomingOrderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
 
   const allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
   if (!allowed) return res.status(401).json({ message: "Admin PIN requerido" });
 
   const where: any = { hotelId, status: "OPEN" };
-  if (orderId) where.id = String(orderId);
+  if (incomingOrderId) where.id = String(incomingOrderId);
   if (tableId) where.tableId = { in: [toInternalId(hotelId, String(tableId)), String(tableId)] };
 
   const order = await prisma.restaurantOrder.findFirst({
@@ -2340,7 +2364,7 @@ export async function moveOrderTable(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
 
-  const { fromTableId, toTableId } = req.body || {};
+  const { fromTableId, toTableId, orderId, restaurantOrderId } = req.body || {};
   if (!fromTableId || !toTableId) return res.status(400).json({ message: "fromTableId y toTableId requeridos" });
 
   const hotelId = user.hotelId;
@@ -2354,10 +2378,16 @@ export async function moveOrderTable(req: Request, res: Response) {
     return res.status(403).json({ message: "Solo ADMIN/MANAGER pueden cambiar mesa" });
   }
 
-  const order = await prisma.restaurantOrder.findFirst({
-    where: { hotelId, status: "OPEN", tableId: { in: [fromInternal, String(fromTableId)] } },
-    include: { items: true },
-  });
+  const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
+  const order = incomingOrderId
+    ? await prisma.restaurantOrder.findFirst({
+        where: { hotelId, status: "OPEN", id: incomingOrderId },
+        include: { items: true },
+      })
+    : await prisma.restaurantOrder.findFirst({
+        where: { hotelId, status: "OPEN", tableId: { in: [fromInternal, String(fromTableId)] } },
+        include: { items: true },
+      });
   if (!order) return res.status(404).json({ message: "Orden abierta no encontrada para esa mesa" });
 
   const target = await prisma.restaurantTable.findFirst({
@@ -2366,11 +2396,7 @@ export async function moveOrderTable(req: Request, res: Response) {
   });
   if (!target) return res.status(404).json({ message: "Mesa destino no encontrada" });
 
-  const existsOnTarget = await prisma.restaurantOrder.findFirst({
-    where: { hotelId, status: "OPEN", tableId: target.id },
-    select: { id: true },
-  });
-  if (existsOnTarget) return res.status(409).json({ message: "La mesa destino ya tiene una orden abierta" });
+  // Multiple open orders per table are allowed, so we don't block moves.
 
   await prisma.restaurantOrder.updateMany({
     where: { id: order.id, hotelId },
@@ -2400,11 +2426,12 @@ export async function reprintOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { orderId, tableId } = req.body || {};
-  if (!orderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
+  const { orderId, restaurantOrderId, tableId } = req.body || {};
+  const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
+  if (!incomingOrderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
 
   const where: any = { hotelId };
-  if (orderId) where.id = String(orderId);
+  if (incomingOrderId) where.id = String(incomingOrderId);
   if (tableId) where.tableId = { in: [toInternalId(hotelId, String(tableId)), String(tableId)] };
 
   const order = await prisma.restaurantOrder.findFirst({

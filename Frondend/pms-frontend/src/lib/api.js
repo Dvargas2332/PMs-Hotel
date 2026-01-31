@@ -29,6 +29,7 @@ const BACKEND_PREFIXES = [
   "/auth",
   "/launcher",
   "/gestor",
+  "/settings",
   "/reservations",
   "/rooms",
   "/roomTypes",
@@ -168,7 +169,8 @@ export const api = {
   },
   async loginUser(username, password) {
     // Login de usuario del launcher (tabla UserLauncher)
-    const { data } = await post("/launcher/login", { username, password });
+    const endpoint = USE_MOCK ? "/auth/user-login" : "/launcher/login";
+    const { data } = await post(endpoint, { username, password });
     return data;
   },
   async register(name, email, password) {
