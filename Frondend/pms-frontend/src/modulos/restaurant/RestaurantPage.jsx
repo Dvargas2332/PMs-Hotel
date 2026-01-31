@@ -26,11 +26,11 @@ function buildPrintPreviewText({ title, payload, totals }) {
   lines.push(String(title || "IMPRIMIR").toUpperCase());
   lines.push(`Fecha: ${now.toLocaleString()}`);
   if (payload?.type) lines.push(`Tipo: ${String(payload.type)}`);
-  if (payload?.sectionId) lines.push(`SecciÃ³n: ${String(payload.sectionId)}`);
+  if (payload?.sectionId) lines.push(`Sección: ${String(payload.sectionId)}`);
   if (payload?.tableId) lines.push(`Mesa: ${String(payload.tableId)}`);
   if (payload?.covers != null) lines.push(`Personas: ${asInt(payload.covers, 0)}`);
   if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
-  if (payload?.roomId) lines.push(`HabitaciÃ³n: ${String(payload.roomId)}`);
+  if (payload?.roomId) lines.push(`Habitación: ${String(payload.roomId)}`);
   lines.push("");
 
   const items = Array.isArray(payload?.items) ? payload.items : [];
@@ -190,6 +190,45 @@ function getTableIcons(kind) {
 
 const sumNumbers = (obj = {}) => Object.values(obj).reduce((acc, v) => acc + (Number(v) || 0), 0);
 
+const normalizePaymentName = (value) => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  try {
+    return raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  } catch {
+    return raw;
+  }
+};
+
+const slugifyPaymentKey = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9_-]/g, "")
+    .slice(0, 64);
+
+const resolvePaymentKey = (name, id) => {
+  const base = normalizePaymentName(name || id);
+  if (!base) return "";
+  const normalized = base.replace(/\s+/g, " ").trim();
+  const directMap = {
+    efectivo: "cash",
+    cash: "cash",
+    tarjeta: "card",
+    card: "card",
+    sinpe: "sinpe",
+    transferencia: "transfer",
+    transfer: "transfer",
+    "bank transfer": "transfer",
+    habitacion: "room",
+    room: "room",
+    "cargo habitacion": "room",
+  };
+  if (directMap[normalized]) return directMap[normalized];
+  return slugifyPaymentKey(name || id);
+};
+
 export default function RestaurantPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -249,11 +288,20 @@ const [subCategory, setSubCategory] = useState("");
     permitirDescuentos: true,
     impuestoIncluido: true,
   });
-  const [paymentsCfg, setPaymentsCfg] = useState({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false });
+  const [paymentsCfg, setPaymentsCfg] = useState({
+    monedaBase: "CRC",
+    monedaSec: "USD",
+    tipoCambio: 530,
+    cobros: [],
+    cargoHabitacion: false,
+    paymentMethods: [],
+  });
   const [stats, setStats] = useState({ systemTotal: 0, openOrders: 0, salesCount: 0, openOrderValue: 0, lastCloseAt: null, byMethod: {} });
 
   const [paymentsModalOpen, setPaymentsModalOpen] = useState(false);
-  const [paymentForm, setPaymentForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "" });
+  const [paymentForm, setPaymentForm] = useState({});
+  const [splitPayments, setSplitPayments] = useState(false);
+  const [selectedPaymentKeys, setSelectedPaymentKeys] = useState([]);
   const [serviceType, setServiceType] = useState("DINE_IN"); // DINE_IN, TAKEOUT, DELIVERY, ROOM
   const [roomCharge, setRoomCharge] = useState("");
 
@@ -447,20 +495,56 @@ const subCategories = useMemo(() => {
   const paymentTotal = useMemo(() => sumNumbers(paymentForm), [paymentForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
 
-  const enabledPaymentInputs = useMemo(() => {
-    const list = Array.isArray(paymentsCfg?.cobros) ? paymentsCfg.cobros : [];
-    const normalized = list.map((s) => String(s || "").trim().toLowerCase()).filter(Boolean);
-    const anyConfigured = normalized.length > 0;
-    const has = (...names) => names.some((n) => normalized.includes(String(n).toLowerCase()));
+  const availablePaymentMethods = useMemo(() => {
+    const usedKeys = new Set();
+    const toUniqueKey = (base, idx) => {
+      let key = base || `pm-${idx + 1}`;
+      let i = 1;
+      while (usedKeys.has(key)) {
+        key = `${base || "pm"}-${i}`;
+        i += 1;
+      }
+      usedKeys.add(key);
+      return key;
+    };
 
-    const cash = !anyConfigured || has("efectivo", "cash");
-    const card = !anyConfigured || has("tarjeta", "card");
-    const sinpe = !anyConfigured || has("sinpe");
-    const transfer = !anyConfigured || has("transferencia", "transfer", "bank transfer");
-    const room = Boolean(paymentsCfg?.cargoHabitacion) || !anyConfigured || has("habitacion", "habitaciÃ³n", "room", "cargo habitacion", "cargo habitaciÃ³n");
+    const fromPaymentMethods = Array.isArray(paymentsCfg?.paymentMethods) ? paymentsCfg.paymentMethods : [];
+    const enabledFromMethods = fromPaymentMethods
+      .filter((m) => m && m.enabled !== false)
+      .map((m, idx) => {
+        const name = String(m?.name || m?.id || "").trim();
+        if (!name) return null;
+        const baseKey = resolvePaymentKey(name, m?.id);
+        return { id: String(m?.id || name || `pm-${idx + 1}`), name, key: toUniqueKey(baseKey, idx) };
+      })
+      .filter(Boolean);
 
-    return { cash, card, sinpe, transfer, room };
-  }, [paymentsCfg?.cobros, paymentsCfg?.cargoHabitacion]);
+    const cobros = Array.isArray(paymentsCfg?.cobros) ? paymentsCfg.cobros : [];
+    const normalizedCobros = cobros.map((c) => String(c || "").trim()).filter(Boolean);
+    const fallbackCobros = normalizedCobros.length > 0 ? normalizedCobros : ["Efectivo", "Tarjeta", "SINPE", "Transferencia"];
+
+    const fromCobros = fallbackCobros.map((name, idx) => {
+      const baseKey = resolvePaymentKey(name, name);
+      return { id: slugifyPaymentKey(name) || `pm-${idx + 1}`, name, key: toUniqueKey(baseKey, idx) };
+    });
+
+    const hasPaymentMethods = fromPaymentMethods.length > 0;
+    const baseList = hasPaymentMethods ? enabledFromMethods : fromCobros;
+    const methods = [...baseList];
+
+    if (paymentsCfg?.cargoHabitacion && !methods.some((m) => m.key === "room")) {
+      const roomKey = toUniqueKey("room", methods.length);
+      methods.push({ id: "room", name: "Habitación", key: roomKey });
+    }
+
+    return methods;
+  }, [paymentsCfg?.paymentMethods, paymentsCfg?.cobros, paymentsCfg?.cargoHabitacion]);
+
+  const selectedPaymentMethods = useMemo(() => {
+    if (!selectedPaymentKeys.length) return [];
+    const byKey = new Map(availablePaymentMethods.map((m) => [m.key, m]));
+    return selectedPaymentKeys.map((k) => byKey.get(k)).filter(Boolean);
+  }, [availablePaymentMethods, selectedPaymentKeys]);
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
@@ -583,16 +667,22 @@ const subCategories = useMemo(() => {
     try {
       const { data } = await api.get("/restaurant/payments");
       if (data && typeof data === "object") {
+        const cobrosList = Array.isArray(data.cobros)
+          ? data.cobros
+          : typeof data.cobros === "string"
+            ? data.cobros.split(",").map((c) => c.trim()).filter(Boolean)
+            : [];
         setPaymentsCfg({
           monedaBase: data.monedaBase || "CRC",
           monedaSec: data.monedaSec || "USD",
           tipoCambio: Number(data.tipoCambio || 0) || 530,
-          cobros: Array.isArray(data.cobros) ? data.cobros : [],
+          cobros: cobrosList,
           cargoHabitacion: Boolean(data.cargoHabitacion),
+          paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
         });
       }
     } catch {
-      setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false });
+      setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false, paymentMethods: [] });
     }
   }, []);
 
@@ -761,7 +851,7 @@ const subCategories = useMemo(() => {
     const previewTotals = { subtotal, service: subtotal * serviceRate, tax: subtotal * taxRate, total: subtotal + subtotal * serviceRate + subtotal * taxRate };
 
     openPrintConfirm({
-      title: "ReimpresiÃ³n de factura",
+      title: "Reimpresión de factura",
       payload,
       totals: previewTotals,
       onConfirm: async () => {
@@ -772,7 +862,7 @@ const subCategories = useMemo(() => {
             text,
             copies: Number(printSettings?.types?.document?.copies || 1),
           });
-          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "ReimpresiÃ³n enviada." } }));
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reimpresión enviada." } }));
         } catch (err) {
           const msg = err?.message || err?.response?.data?.message || "No se pudo reimprimir.";
           window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
@@ -1021,8 +1111,76 @@ const subCategories = useMemo(() => {
       window.alert("Agrega el numero de habitacion para el cargo.");
       return;
     }
-    setPaymentForm({ cash: "", card: "", sinpe: "", transfer: "", room: activeService === "ROOM" ? roomTarget : "" });
+    const methods = availablePaymentMethods;
+    const totalDue = Number(totals.total || 0);
+    const totalValue = Number.isFinite(totalDue) ? totalDue.toFixed(2) : "";
+    const roomKey = methods.find((m) => m.key === "room")?.key;
+    const defaultKey = activeService === "ROOM" && roomKey ? roomKey : methods[0]?.key;
+    const baseForm = {};
+    methods.forEach((m) => {
+      baseForm[m.key] = "";
+    });
+    if (defaultKey) baseForm[defaultKey] = totalValue;
+    setPaymentForm(baseForm);
+    setSelectedPaymentKeys(defaultKey ? [defaultKey] : []);
+    setSplitPayments(false);
     setPaymentsModalOpen(true);
+  };
+
+  const handleSplitToggle = () => {
+    const nextSplit = !splitPayments;
+    setSplitPayments(nextSplit);
+    if (!nextSplit) {
+      const totalDue = Number(totals.total || 0);
+      const totalValue = Number.isFinite(totalDue) ? totalDue.toFixed(2) : "";
+      const fallbackKey = selectedPaymentKeys[selectedPaymentKeys.length - 1] || availablePaymentMethods[0]?.key;
+      setSelectedPaymentKeys(fallbackKey ? [fallbackKey] : []);
+      setPaymentForm((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          next[k] = "";
+        });
+        if (fallbackKey) next[fallbackKey] = totalValue;
+        return next;
+      });
+    }
+  };
+
+  const handlePaymentMethodToggle = (key) => {
+    if (!key) return;
+    const totalDue = Number(totals.total || 0);
+    const totalValue = Number.isFinite(totalDue) ? totalDue.toFixed(2) : "";
+    const isSelected = selectedPaymentKeys.includes(key);
+
+    if (!splitPayments) {
+      setSelectedPaymentKeys([key]);
+      setPaymentForm((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          next[k] = "";
+        });
+        next[key] = totalValue;
+        return next;
+      });
+      return;
+    }
+
+    if (isSelected && selectedPaymentKeys.length === 1) return;
+    setSelectedPaymentKeys((prev) => (isSelected ? prev.filter((k) => k !== key) : [...prev, key]));
+    setPaymentForm((prev) => {
+      const next = { ...prev };
+      if (isSelected) {
+        next[key] = "";
+      } else if (!String(next[key] ?? "").trim()) {
+        const remaining = Math.max(0, totalDue - sumNumbers(prev));
+        next[key] = remaining ? remaining.toFixed(2) : "";
+      }
+      return next;
+    });
+  };
+
+  const updatePaymentAmount = (key, value) => {
+    setPaymentForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const confirmChargeOrder = async () => {
@@ -1047,7 +1205,9 @@ const subCategories = useMemo(() => {
       });
       setPaymentsModalOpen(false);
       setOrderNote("");
-      setPaymentForm({ cash: "", card: "", sinpe: "", transfer: "", room: "" });
+      setPaymentForm({});
+      setSelectedPaymentKeys([]);
+      setSplitPayments(false);
       refreshStats();
       window.alert("Order paid.");
     } catch {
@@ -1074,7 +1234,7 @@ const subCategories = useMemo(() => {
 
   const openPrintConfirm = ({ title, payload, totals: previewTotals, onConfirm }) => {
     pendingPrintRef.current = onConfirm;
-    setPrintConfirmTitle(title || "Confirmar impresiÃ³n");
+    setPrintConfirmTitle(title || "Confirmar impresión");
     setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
     setPrintConfirmOpen(true);
   };
@@ -1139,7 +1299,7 @@ const subCategories = useMemo(() => {
           <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-indigo-600">ImpresiÃ³n</div>
+                <div className="text-xs uppercase text-indigo-600">Impresión</div>
                 <div className="text-lg font-semibold text-slate-900">{printConfirmTitle}</div>
               </div>
               <RestaurantCloseXButton onClick={closePrintConfirm} />
@@ -1314,7 +1474,7 @@ const subCategories = useMemo(() => {
 
       {paymentsModalOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-y-auto max-h-[70vh]">
+          <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-emerald-600">Payment</div>
@@ -1322,30 +1482,86 @@ const subCategories = useMemo(() => {
               </div>
               <RestaurantCloseXButton onClick={() => setPaymentsModalOpen(false)} />
             </div>
-            <div className="rounded-lg border bg-lime-50 px-4 py-3 text-sm">
-              <div className="text-xs text-slate-600">Total due</div>
-              <div className="text-2xl font-bold text-slate-900">{formatMoney(totals.total)}</div>
-              <div className="text-xs text-slate-500">Subtotal {formatMoney(totals.subtotal)}  Service {formatMoney(totals.service)}  Taxes {formatMoney(totals.tax)}</div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-3">
-              {enabledPaymentInputs.cash && (
-                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Cash" type="number" value={paymentForm.cash} onChange={(e) => setPaymentForm((f) => ({ ...f, cash: e.target.value }))} />
-              )}
-              {enabledPaymentInputs.card && (
-                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Card" type="number" value={paymentForm.card} onChange={(e) => setPaymentForm((f) => ({ ...f, card: e.target.value }))} />
-              )}
-              {enabledPaymentInputs.sinpe && (
-                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="SINPE" type="number" value={paymentForm.sinpe} onChange={(e) => setPaymentForm((f) => ({ ...f, sinpe: e.target.value }))} />
-              )}
-              {enabledPaymentInputs.transfer && (
-                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Bank transfer" type="number" value={paymentForm.transfer} onChange={(e) => setPaymentForm((f) => ({ ...f, transfer: e.target.value }))} />
-              )}
-              {enabledPaymentInputs.room && (
-                <input className="h-11 w-full rounded-lg border px-3 text-sm" placeholder="Room charge" type="number" value={paymentForm.room} onChange={(e) => setPaymentForm((f) => ({ ...f, room: e.target.value }))} />
-              )}
-            </div>
-            <div className="text-sm text-lime-800 bg-lime-50 border border-lime-100 rounded-lg px-3 py-2">
-              Paid: {formatMoney(paymentTotal)}  Change/Diff: {formatMoney(paymentDiff)}
+            <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
+              <div className="space-y-4">
+                <div className="rounded-xl border bg-lime-50 px-4 py-4 text-sm">
+                  <div className="text-xs text-slate-600">Total due</div>
+                  <div className="text-2xl font-bold text-slate-900">{formatMoney(totals.total)}</div>
+                  <div className="text-xs text-slate-500">
+                    Subtotal {formatMoney(totals.subtotal)}  Service {formatMoney(totals.service)}  Taxes {formatMoney(totals.tax)}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-slate-800">Forma de pago</div>
+                    <button
+                      className={`h-8 px-3 rounded-full text-xs font-semibold border transition ${
+                        splitPayments ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700"
+                      }`}
+                      onClick={handleSplitToggle}
+                    >
+                      {splitPayments ? "Pago dividido: Sí" : "Pago dividido: No"}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {availablePaymentMethods.map((method) => {
+                      const active = selectedPaymentKeys.includes(method.key);
+                      return (
+                        <button
+                          key={method.key}
+                          className={`px-3 py-2 rounded-lg border text-sm font-semibold transition ${
+                            active
+                              ? "bg-emerald-600 border-emerald-600 text-white"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                          }`}
+                          onClick={() => handlePaymentMethodToggle(method.key)}
+                        >
+                          {method.name}
+                        </button>
+                      );
+                    })}
+                    {availablePaymentMethods.length === 0 && (
+                      <div className="text-sm text-slate-500">No hay formas de pago activas.</div>
+                    )}
+                  </div>
+
+                  {(currentOrder.serviceType || serviceType) === "ROOM" && (currentOrder.roomId || roomCharge) && (
+                    <div className="text-xs text-slate-600">
+                      Habitación: <span className="font-semibold">{currentOrder.roomId || roomCharge}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-sm font-semibold text-slate-800">Montos</div>
+                {selectedPaymentMethods.length > 0 ? (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {selectedPaymentMethods.map((method) => (
+                      <div key={method.key} className="space-y-1">
+                        <div className="text-xs text-slate-600">{method.name}</div>
+                        <input
+                          className="h-11 w-full rounded-lg border px-3 text-sm"
+                          placeholder="0.00"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={paymentForm[method.key] ?? ""}
+                          onChange={(e) => updatePaymentAmount(method.key, e.target.value)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-500">Selecciona una forma de pago para ingresar el monto.</div>
+                )}
+
+                <div className="text-sm text-lime-800 bg-lime-50 border border-lime-100 rounded-lg px-3 py-2">
+                  Pagado: {formatMoney(paymentTotal)}  Diferencia: {formatMoney(paymentDiff)}
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button className="px-4 py-2 rounded-lg border text-sm" onClick={() => setPaymentsModalOpen(false)}>
@@ -1353,7 +1569,7 @@ const subCategories = useMemo(() => {
               </button>
               <button
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
-                disabled={!hasItems}
+                disabled={!hasItems || selectedPaymentKeys.length === 0}
                 onClick={confirmChargeOrder}
               >
                 Confirm payment
@@ -1481,7 +1697,7 @@ const subCategories = useMemo(() => {
                     <div className="rounded-2xl border border-lime-200 bg-lime-50 p-4">
                       <div className="text-sm font-semibold text-lime-900">No sections configured</div>
                       <div className="text-sm text-lime-700 mt-1">
-                        Create sections and tables from <span className="font-semibold">Management â†’ Restaurant â†’ Sections, tables and menu</span>.
+                        Create sections and tables from <span className="font-semibold">Management → Restaurant → Sections, tables and menu</span>.
                       </div>
                       {["ADMIN", "MANAGER"].includes(role) && (
                         <button
@@ -1951,7 +2167,7 @@ const subCategories = useMemo(() => {
                   <div className="mt-2 text-[11px] text-slate-600">
                     <div>Tax included in prices: {taxesCfg.impuestoIncluido ? "Yes" : "No"}</div>
                     <div>
-                      Discounts: {taxesCfg.permitirDescuentos ? "Enabled" : "Disabled"} â€¢ Max {taxesCfg.descuentoMax ?? 0}%
+                      Discounts: {taxesCfg.permitirDescuentos ? "Enabled" : "Disabled"} • Max {taxesCfg.descuentoMax ?? 0}%
                     </div>
                   </div>
 
