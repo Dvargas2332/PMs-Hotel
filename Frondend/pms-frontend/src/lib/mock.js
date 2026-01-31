@@ -540,7 +540,7 @@ export const mockApi = {
         },
       });
     }
-    if (path === "/auth/user-login") {
+    if (path === "/auth/user-login" || path === "/launcher/login") {
       // Login de USUARIO interno: valida contra DB.usersFD
       const username = (payload?.username || "").trim();
       const password = String(payload?.password || "").trim();
@@ -579,18 +579,35 @@ export const mockApi = {
       if (perms.some((p) => p.startsWith("accounting."))) modulesSet.add("accounting");
       if (perms.some((p) => p.startsWith("management."))) modulesSet.add("management");
 
+      const baseUser = {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: Array.isArray(user.roles) ? user.roles[0] || "" : "",
+        roles,
+        // Campo de relación con hotel para usuarios (se expone como hotelId)
+        hotelId: user.hotelId || "HOTEL-DEMO-1",
+        permissions: perms,
+      };
+      const modules = Array.from(modulesSet);
+
+      if (path === "/launcher/login") {
+        return makeResp({
+          token: "mock-user-token",
+          launcher: {
+            ...baseUser,
+            roleId: baseUser.role,
+            hotelName: DB.hotelInfo?.name || "Hotel Demo",
+            allowedModules: modules,
+          },
+        });
+      }
+
       return makeResp({
         token: "mock-user-token",
         user: {
-          id: user.id,
-          username: user.username,
-          name: user.name,
-          role: Array.isArray(user.roles) ? user.roles[0] || "" : "",
-          roles,
-          // Campo de relación con hotel para usuarios (se expone como hotelId)
-          hotelId: user.hotelId || "HOTEL-DEMO-1",
-          permissions: perms,
-          modules: Array.from(modulesSet),
+          ...baseUser,
+          modules,
         },
       });
     }

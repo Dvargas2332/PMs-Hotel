@@ -84,7 +84,7 @@ export function AuthProvider({ children }) {
   // Login de USUARIO DEL LAUNCHER (segundo nivel).
   const loginUser = useCallback(async (username, password) => {
     const data = await api.loginUser(username, password);
-    const launcher = data?.launcher;
+    const launcher = data?.launcher ?? data?.user;
     const nextToken = data?.token;
     if (!launcher || !nextToken) return null;
 
@@ -92,16 +92,27 @@ export function AuthProvider({ children }) {
     // las pantallas de Management sigan funcionando sin 403.
     // El token del launcher solo se usa para construir el perfil (permisos/front-end).
 
+    const permissions = Array.isArray(launcher.permissions) ? launcher.permissions : [];
+    const allowedModules = Array.isArray(launcher.allowedModules)
+      ? launcher.allowedModules
+      : Array.isArray(launcher.modules)
+        ? launcher.modules
+        : [];
+    const roleId =
+      launcher.roleId ??
+      launcher.role ??
+      (Array.isArray(launcher.roles) ? launcher.roles[0] : undefined);
+
     const u = {
       id: launcher.id,
-      username: launcher.username,
-      name: launcher.name || launcher.username,
+      username: launcher.username ?? launcher.email ?? "",
+      name: launcher.name || launcher.username || launcher.email || "",
       hotelId: launcher.hotelId,
       hotelName: launcher.hotelName,
-      roleId: launcher.roleId,
-      role: launcher.roleId,
-      permissions: launcher.permissions || [],
-      allowedModules: launcher.allowedModules || [],
+      roleId,
+      role: roleId || launcher.role || "",
+      permissions,
+      allowedModules,
     };
     setUser(u);
     return u;
