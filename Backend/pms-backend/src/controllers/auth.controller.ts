@@ -75,6 +75,31 @@ export async function login(req: Request, res: Response) {
       return res.status(400).json({ message: "Email/usuario y password son requeridos" });
     }
 
+    const gestorEmail = String(process.env.GESTOR_EMAIL || "").trim().toLowerCase();
+    const gestorPassword = String(process.env.GESTOR_PASSWORD || "").trim();
+    if (gestorEmail && gestorPassword && identifier.toLowerCase() === gestorEmail && password === gestorPassword) {
+      const token = sign({ sub: "gestor", email: gestorEmail, role: "ADMIN", hotelId: "saas-gestor" });
+      return res.json({
+        token,
+        user: {
+          id: "gestor",
+          name: process.env.GESTOR_NAME || "Gestor SaaS",
+          email: gestorEmail,
+          role: "ADMIN",
+          createdAt: new Date(),
+          hotelId: "saas-gestor",
+          isGestor: true,
+        },
+        hotel: {
+          id: "saas-gestor",
+          name: process.env.GESTOR_SYSTEM_HOTEL_NAME || "Gestor SaaS",
+          membership: "PLATINUM",
+          allowedModules: allowedModulesForMembership("PLATINUM"),
+          isGestor: true,
+        },
+      });
+    }
+
     const user = await prisma.user.findUnique({ where: { email: identifier } });
     if (!user) return res.status(401).json({ message: "Credenciales inválidas" });
 
