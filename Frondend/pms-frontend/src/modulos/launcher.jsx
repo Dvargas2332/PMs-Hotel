@@ -378,9 +378,9 @@ export default function Launcher() {
             {/* Módulos */}
             {!user && (
               <Card className="border-slate-200/80 p-10 shadow">
-                <div className="text-3xl font-semibold text-slate-900">Bienvenido</div>
-                <div className="mt-3 text-base text-slate-600">
-                  Inicia sesión con un perfil en la tarjeta de la izquierda para ver los módulos disponibles.
+                <div className=" text-5xl text-center font-semibold text-slate-900">{t("Launcher.Welcome")}</div>
+                <div className="mt-3 text-center text-base text-slate-600">
+                  {t("Launcher.subtitle")}.
                 </div>
               </Card>
             )}
@@ -417,7 +417,7 @@ export default function Launcher() {
 
         <footer className="mx-auto my-8 w-full max-w-6xl px-6 text-[11px] text-gray-600">
           <div className="flex items-center justify-between">
-            <span>(c) {new Date().getFullYear()} Kazehana PMS</span>
+            <span>(©) {new Date().getFullYear()} Kazehana PMS</span>
             <span className="hidden items-center gap-1 sm:inline-flex" />
           </div>
         </footer>

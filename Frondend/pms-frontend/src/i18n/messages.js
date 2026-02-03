@@ -10,6 +10,7 @@ export const SUPPORTED_LANGUAGES = [
 
 export const MESSAGES = {
   es: {
+    
     "common.language": "Idioma",
     "common.info": "Información",
     "common.enter": "Entrar",
@@ -27,7 +28,6 @@ export const MESSAGES = {
     "login.passwordPlaceholder": "********",
     "login.error": "Credenciales inválidas o servidor no disponible",
     "login.signingIn": "Ingresando...",
-    "login.demo": "Demo: admin@pms.local / Admin1234",
     "login.infoSoon": "Aquí irá el chatbot de ayuda próximamente.",
 
     "launcher.alerts": "Alertas",
@@ -45,16 +45,18 @@ export const MESSAGES = {
     "launcher.userLogout": "Cerrar usuario",
     "launcher.hotelLogout": "Cerrar hotel",
     "launcher.signingIn": "Ingresando...",
+    "Launcher.Welcome":"Bienvenido",
+    "Launcher.subtitle":"Por favor, inicie sesión con un perfil en la tarjeta de la izquierda para ver los módulos disponibles.",
 
-    "modules.frontdesk.name": "Front Desk",
-    "modules.frontdesk.desc": "Check-in/out, planner y reservas.",
+    "modules.frontdesk.name": "Recepción",
+    "modules.frontdesk.desc": "Check-in/out, planificación y reservas.",
     "modules.frontdesk.tag": "Operación",
 
-    "modules.restaurant.name": "Restaurant",
+    "modules.restaurant.name": "Restaurante",
     "modules.restaurant.desc": "Órdenes, mesas y comandas.",
     "modules.restaurant.tag": "F&B",
 
-    "modules.accounting.name": "Accounting",
+    "modules.accounting.name": "Contabilidad",
     "modules.accounting.desc": "Facturación y reportes.",
     "modules.accounting.tag": "Finanzas",
 
@@ -62,7 +64,7 @@ export const MESSAGES = {
     "modules.einvoicing.desc": "Flujos de facturación electrónica y cumplimiento.",
     "modules.einvoicing.tag": "E-invoicing",
 
-    "modules.management.name": "Management",
+    "modules.management.name": "Gestión",
     "modules.management.desc": "Tarifas, usuarios, permisos.",
     "modules.management.tag": "Admin",
 
@@ -99,7 +101,6 @@ export const MESSAGES = {
     "login.passwordPlaceholder": "********",
     "login.error": "Invalid credentials or server unavailable",
     "login.signingIn": "Signing in...",
-    "login.demo": "Demo: admin@pms.local / Admin1234",
     "login.infoSoon": "Help chatbot will be here soon.",
 
     "launcher.alerts": "Alerts",
@@ -117,6 +118,8 @@ export const MESSAGES = {
     "launcher.userLogout": "Log out user",
     "launcher.hotelLogout": "Log out hotel",
     "launcher.signingIn": "Signing in...",
+    "Launcher.Welcome":"Welcome",
+    "Launcher.subtitle":"Please log in with a profile on the left card to see the available modules.",
 
     "modules.frontdesk.name": "Front Desk",
     "modules.frontdesk.desc": "Check-in/out, planner and reservations.",
@@ -146,6 +149,8 @@ export const MESSAGES = {
     "frontdesk.menu.guests": "Guests",
     "frontdesk.menu.reports": "Reports",
 
+    
+
     "layout.alertsTitle": "Alerts",
     "layout.noPendingAlerts": "No pending alerts.",
     "layout.viewCheckins": "View check-ins",
@@ -170,8 +175,7 @@ export const MESSAGES = {
     "login.emailPlaceholder": "vous@email.com",
     "login.passwordPlaceholder": "********",
     "login.error": "Identifiants invalides ou serveur indisponible",
-    "login.signingIn": "Connexion...",
-    "login.demo": "Démo : admin@pms.local / Admin1234",
+    "login.signingIn": "Connexion...",    
     "login.infoSoon": "Le chatbot d’aide sera bientôt disponible ici.",
 
     "launcher.alerts": "Alertes",
@@ -242,8 +246,7 @@ export const MESSAGES = {
     "login.emailPlaceholder": "voce@email.com",
     "login.passwordPlaceholder": "********",
     "login.error": "Credenciais inválidas ou servidor indisponível",
-    "login.signingIn": "Entrando...",
-    "login.demo": "Demo: admin@pms.local / Admin1234",
+    "login.signingIn": "Entrando...",    
     "login.infoSoon": "O chatbot de ajuda estará aqui em breve.",
 
     "launcher.alerts": "Alertas",
@@ -314,8 +317,7 @@ export const MESSAGES = {
     "login.emailPlaceholder": "du@email.com",
     "login.passwordPlaceholder": "********",
     "login.error": "Ungültige Zugangsdaten oder Server nicht verfügbar",
-    "login.signingIn": "Anmeldung...",
-    "login.demo": "Demo: admin@pms.local / Admin1234",
+    "login.signingIn": "Anmeldung...",    
     "login.infoSoon": "Der Hilfe-Chatbot wird bald hier verfügbar sein.",
 
     "launcher.alerts": "Warnungen",
@@ -387,7 +389,7 @@ export const MESSAGES = {
     "login.passwordPlaceholder": "********",
     "login.error": "Credenziali non valide o server non disponibile",
     "login.signingIn": "Accesso...",
-    "login.demo": "Demo: admin@pms.local / Admin1234",
+    
     "login.infoSoon": "Il chatbot di aiuto sarà disponibile qui a breve.",
 
     "launcher.alerts": "Avvisi",
@@ -459,7 +461,7 @@ export const MESSAGES = {
     "login.passwordPlaceholder": "********",
     "login.error": "認証情報が無効、またはサーバーが利用できません",
     "login.signingIn": "ログイン中...",
-    "login.demo": "デモ: admin@pms.local / Admin1234",
+    
     "login.infoSoon": "ヘルプ用チャットボットは近日公開です。",
 
     "launcher.alerts": "アラート",
@@ -477,6 +479,8 @@ export const MESSAGES = {
     "launcher.userLogout": "ユーザーをログアウト",
     "launcher.hotelLogout": "ホテルをログアウト",
     "launcher.signingIn": "ログイン中...",
+    "Launcher.Welcome":"ようこそ",
+    "Launcher.subtitle":"利用可能なモジュールを見るには、左のカードでプロファイルにログインしてください。", 
 
     "modules.frontdesk.name": "フロント",
     "modules.frontdesk.desc": "チェックイン/アウト、プランナー、予約。",

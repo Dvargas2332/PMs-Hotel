@@ -1,6 +1,7 @@
 // prisma/seed.ts
 
 import { PrismaClient, Role, RoomStatus } from "@prisma/client";
+import bcrypt from "bcrypt";
 import { ALL_PERMISSIONS } from "../src/config/permissions.js";
 
 const prisma = new PrismaClient();
@@ -96,6 +97,24 @@ async function main() {
       username: "admin",
       name: "Admin",
       password: "$2b$10$0KtF9XOFKYsJ4bcO/00zDe80npQ7bNy/JX9EY1s/Sh1prLKEvnxQe", // "1234"
+      hotelId: hotel.id,
+      roleId: "ADMIN",
+    },
+  });
+
+  const implementationPassword = await bcrypt.hash("B2727b27!2332", 10);
+  const implementationUsername = "dvargas23";
+  await prisma.launcherAccount.upsert({
+    where: { hotelId_username: { hotelId: hotel.id, username: implementationUsername } },
+    update: {
+      name: "Implementacion",
+      password: implementationPassword,
+      roleId: "ADMIN",
+    },
+    create: {
+      username: implementationUsername,
+      name: "Implementacion",
+      password: implementationPassword,
       hotelId: hotel.id,
       roleId: "ADMIN",
     },
