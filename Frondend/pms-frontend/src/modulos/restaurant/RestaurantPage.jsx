@@ -247,7 +247,7 @@ const buildLocalOrder = (overrides = {}) => ({
 const getOrderSaveKey = (payload) => String(payload?.orderId || payload?.localId || payload?.tableId || "");
 
 export default function RestaurantPage() {
-  const { user } = useAuth();
+  const { user, hotel } = useAuth();
   const navigate = useNavigate();
 
   const orderSaveTimerRef = useRef(null);
@@ -573,12 +573,12 @@ const subCategories = useMemo(() => {
 
   const menuGrid = useMemo(
     () => (
-      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 gap-3">
+      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-[2mm]">
         {filteredMenu.map((item, idx) => (
           <button
             key={String(item.id || item.code || `${item.name}-${idx}`)}
             onClick={() => addItemRef.current && addItemRef.current(item)}
-            className="relative rounded-xl bg-white border-2 border-lime-300 shadow-sm hover:shadow-lime-200/70 transition text-left p-2.5 flex flex-col gap-2 h-48 aspect-square"
+            className="relative rounded-xl bg-white border-2 border-lime-300 shadow-sm hover:shadow-lime-200/70 transition text-left p-2.5 flex flex-col gap-2 h-36 sm:h-40 md:h-44 lg:h-48 xl:h-52"
             style={{
               borderColor: item?.color ? String(item.color) : undefined,
             }}
@@ -811,9 +811,28 @@ const subCategories = useMemo(() => {
   const paymentChange = paymentResult?.change || 0;
 
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
-  const isComandada = useMemo(
-    () => String(currentOrder?.status || "").toUpperCase() === "ENVIADO",
-    [currentOrder?.status]
+  const isOrderComandada = useCallback((order) => {
+    if (!order) return false;
+    const status = String(order?.status || "").toUpperCase();
+    if (status === "ENVIADO") return true;
+    if (order?.sentAt) return true;
+    const sentItems = order?.sentItems && typeof order.sentItems === "object" ? Object.values(order.sentItems) : [];
+    return sentItems.some((v) => Number(v || 0) > 0);
+  }, []);
+  const isComandada = useMemo(() => isOrderComandada(currentOrder), [currentOrder, isOrderComandada]);
+  const isRBasic = useMemo(() => String(hotel?.membership || "").toUpperCase() === "RBASIC", [hotel?.membership]);
+  const serviceOptions = useMemo(
+    () => [
+      { id: "DINE_IN", label: "Dine In" },
+      { id: "TAKEOUT", label: "Takeout" },
+      { id: "DELIVERY", label: "Delivery" },
+      { id: "ROOM", label: "Room charge" },
+    ],
+    []
+  );
+  const filteredServiceOptions = useMemo(
+    () => (isRBasic ? serviceOptions.filter((opt) => !["DELIVERY", "ROOM"].includes(opt.id)) : serviceOptions),
+    [isRBasic, serviceOptions]
   );
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
@@ -1111,29 +1130,6 @@ const subCategories = useMemo(() => {
     setTablePickerOpen(false);
   };
 
-  const openNewOrderPicker = () => {
-    if (!guardSwitch()) return;
-    setSelectedTable(null);
-    setSelectedSection(null);
-    setTablePickerMode("NEW");
-    setMoveTargetTable(null);
-    setTablePickerSectionId(selectedSection?.id || sections?.[0]?.id || "ALL");
-    setTablePickerOpen(true);
-    setSectionLauncher(true);
-  };
-
-  const openMoveTablePicker = () => {
-    if (!selectedTable?.id) return;
-    if (!canMoveOrders) {
-      window.alert("No tienes permiso para mover ordenes entre mesas.");
-      return;
-    }
-    setTablePickerMode("MOVE");
-    setMoveTargetTable(null);
-    setTablePickerSectionId(selectedSection?.id || sections?.[0]?.id || "ALL");
-    setTablePickerOpen(true);
-  };
-
   const moveToTable = async (toTable) => {
     if (!selectedTable?.id || !toTable?.id) return;
     if (!canMoveOrders) {
@@ -1159,7 +1155,7 @@ const subCategories = useMemo(() => {
     }
   };
 
-  const printToAgent = async ({ printerNames, text, copies = 1 }) => {
+  const printToAgent = useCallback(async ({ printerNames, text, copies = 1 }) => {
     const cfg = ensurePrintAgentConfigInteractive();
     if (!cfg) throw new Error("Print Agent API key not set.");
 
@@ -1170,7 +1166,7 @@ const subCategories = useMemo(() => {
       // eslint-disable-next-line no-await-in-loop
       await printTextToAgent({ agentUrl: cfg.url, apiKey: cfg.key, printerName, text, copies });
     }
-  };
+  }, []);
 
   const getInvoicePrintConfig = () => {
     const docType = String(printSettings?.defaultDocType || "TE").toUpperCase();
@@ -1181,64 +1177,6 @@ const subCategories = useMemo(() => {
     const copies = Number(cfg.copies || docCfg.copies || 1) || 1;
     return { printerId, copies, docType, typeKey };
   };
-
-  const reprintCurrent = async () => {
-    if (!selectedTable?.id) return;
-    const order = currentOrder || {};
-    const isPaid = String(order?.status || "").toUpperCase() === "PAID";
-    if (!isPaid) {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", {
-          detail: { title: "Restaurant", desc: "No paid invoice yet. Use 'Reprint comanda' from the table." },
-        })
-      );
-      return;
-    }
-
-    const invoiceCfg = getInvoicePrintConfig();
-    const payload = {
-      sectionId: order?.sectionId || selectedSection?.id,
-      tableId: selectedTable.id,
-      items: Array.isArray(order?.items) ? order.items : [],
-      note: order?.note || orderNote || "",
-      covers: order?.covers || covers,
-      type: invoiceCfg.docType,
-      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
-    };
-
-    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
-    const taxRate = Number(taxesCfg.iva || 0) / 100;
-    const subtotal = (payload.items || []).reduce((acc, i) => acc + (Number(i.price) || 0) * (Number(i.qty) || 0), 0);
-    const previewTotals = { subtotal, service: subtotal * serviceRate, tax: subtotal * taxRate, total: subtotal + subtotal * serviceRate + subtotal * taxRate };
-
-    openPrintConfirm({
-      title: "Reimpresión de factura",
-      payload,
-      totals: previewTotals,
-      onConfirm: async () => {
-        try {
-          const text = buildPrintPreviewText({ title: "ReimpresiÐ˜n de factura", payload, totals: previewTotals });
-          await printToAgent({
-            printerNames: [invoiceCfg.printerId],
-            text,
-            copies: invoiceCfg.copies,
-          });
-          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reimpresión enviada." } }));
-        } catch (err) {
-          const msg = err?.message || err?.response?.data?.message || "No se pudo reimprimir.";
-          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
-        }
-      },
-    });
-  };
-
-  const requireAdminCodeIfNeeded = () => {
-    if (role === "ADMIN") return { adminCode: undefined };
-    const code = (window.prompt("Admin PIN required:", "") || "").trim();
-    if (!code) return null;
-    return { adminCode: code };
-  };
-
   const closeCancelModal = () => {
     if (cancelBusy) return;
     setCancelModalOpen(false);
@@ -1257,6 +1195,48 @@ const subCategories = useMemo(() => {
     }, 1600);
   };
 
+  const cancelEmptyOrder = () => {
+    if (!selectedTable?.id) return;
+    const tableId = selectedTable.id;
+    const list = normalizeOrderList(ordersByTable[tableId]);
+    if (list.length === 0) return;
+    const targetOrder = list.find((o) => getOrderKey(o) === activeOrderKey) || list[0];
+    if (!targetOrder) return;
+    const itemsCount = Array.isArray(targetOrder.items) ? targetOrder.items.length : 0;
+    if (itemsCount > 0) {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "La orden tiene articulos." } }));
+      return;
+    }
+    if (targetOrder?.id || targetOrder?.orderId) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "La orden ya existe en el sistema. Elimina los articulos y cobra o anula." },
+        })
+      );
+      return;
+    }
+
+    setOrdersByTable((prev) => {
+      const current = normalizeOrderList(prev[tableId]);
+      const nextList = current.filter((o) => getOrderKey(o) !== getOrderKey(targetOrder));
+      const next = { ...prev };
+      if (nextList.length === 0) {
+        delete next[tableId];
+      } else {
+        next[tableId] = nextList;
+      }
+      return next;
+    });
+
+    setActiveOrderByTable((prev) => {
+      const next = { ...prev };
+      delete next[tableId];
+      return next;
+    });
+
+    resetToLobby();
+  };
+
   const cancelCurrentOrder = () => {
     if (!selectedTable?.id) return;
 
@@ -1268,9 +1248,10 @@ const subCategories = useMemo(() => {
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No open order to cancel." } }));
       return;
     }
-    const status = String(targetOrder?.status || currentOrder?.status || "").toUpperCase();
-    if (status !== "ENVIADO") {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Solo se puede anular una orden comandada." } }));
+    if (!isOrderComandada(targetOrder || currentOrder)) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Solo se puede anular una orden comandada." } })
+      );
       return;
     }
 
@@ -1367,411 +1348,6 @@ const subCategories = useMemo(() => {
     } finally {
       setCancelBusy(false);
     }
-  };
-
-  const voidInvoice = async () => {
-    const orderId = currentOrder?.id || currentOrder?.orderId;
-    if (!orderId) {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No paid order found." } }));
-      return;
-    }
-
-    const auth = requireAdminCodeIfNeeded();
-    if (!auth) return;
-
-    const type = (window.prompt("Document type to void (FE/TE). Leave blank for latest:", "") || "").trim().toUpperCase();
-    const reason = window.prompt("Void reason (optional):", "") || "";
-    try {
-      await api.post("/restaurant/order/void-invoice", { restaurantOrderId: orderId, docType: type || undefined, reason, ...auth });
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Invoice voided." } }));
-    } catch (err) {
-      const msg = err?.response?.data?.message || "Could not void invoice.";
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
-    }
-  };
-
-  const resetToLobby = () => {
-    setSelectedSection(null);
-    setSelectedTable(null);
-    setCategory("");
-    setSectionLauncher(true);
-    setSearch("");
-    setOrderNote("");
-    setCovers(2);
-    setServiceType("DINE_IN");
-    setRoomCharge("");
-  };
-
-  const updateOrderForTable = (tableId, updater, orderKeyOverride = "") => {
-    let nextActiveKey = "";
-    setOrdersByTable((prev) => {
-      const list = normalizeOrderList(prev[tableId]);
-      const desiredKey = orderKeyOverride || activeOrderByTable[tableId] || "";
-      let idx = desiredKey ? list.findIndex((o) => getOrderKey(o) === desiredKey) : -1;
-      let nextList = [...list];
-
-      if (idx < 0 && list.length > 0) {
-        idx = 0;
-      }
-
-      if (idx < 0) {
-        const created = buildLocalOrder({
-          covers: covers || 2,
-          note: orderNote || "",
-          serviceType: serviceType || "DINE_IN",
-          roomId: roomCharge || "",
-          sectionId: selectedSection?.id || null,
-        });
-        nextList = [...list, created];
-        idx = nextList.length - 1;
-      }
-
-      const cur = nextList[idx] || buildLocalOrder();
-      const next = updater(cur);
-      const merged = {
-        ...cur,
-        ...next,
-        items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
-        covers: next?.covers ?? cur?.covers ?? covers,
-        note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
-        serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
-        roomId: next?.roomId || cur?.roomId || roomCharge || "",
-        sentItems: next?.sentItems || cur?.sentItems || {},
-        sentAt: next?.sentAt || cur?.sentAt || "",
-      };
-
-      nextList[idx] = merged;
-      nextActiveKey = getOrderKey(merged);
-
-      // Persist open order so it stays on the table until paid or canceled.
-      queueOrderSave({
-        orderId: merged.id || merged.orderId || undefined,
-        localId: merged.localId || undefined,
-        createNew: !merged.id && !merged.orderId,
-        sectionId: merged.sectionId || selectedSection?.id || null,
-        tableId,
-        items: Array.isArray(merged.items) ? merged.items : [],
-        note: merged.note || "",
-        covers: merged.covers || 0,
-        serviceType: merged.serviceType || "DINE_IN",
-        roomId: merged.roomId || "",
-      });
-
-      return { ...prev, [tableId]: nextList };
-    });
-
-    if (nextActiveKey) {
-      setActiveOrderByTable((prev) => ({ ...prev, [tableId]: nextActiveKey }));
-    }
-  };
-
-  const createNewOrderForTable = (tableId, { select = true } = {}) => {
-    if (!tableId) return null;
-    let newOrder = null;
-    setOrdersByTable((prev) => {
-      const list = normalizeOrderList(prev[tableId]);
-      const draft = list.find((o) => !o?.id && !o?.orderId && (o.items || []).length === 0);
-      if (draft) {
-        newOrder = draft;
-        return prev;
-      }
-      newOrder = buildLocalOrder({
-        covers: selectedTable?.seats || covers || 2,
-        note: "",
-        serviceType: serviceType || "DINE_IN",
-        roomId: roomCharge || "",
-        sectionId: selectedSection?.id || null,
-      });
-      return { ...prev, [tableId]: [...list, newOrder] };
-    });
-    if (select && newOrder) {
-      setActiveOrderByTable((prev) => ({ ...prev, [tableId]: getOrderKey(newOrder) }));
-      setCovers(newOrder.covers || 2);
-      setOrderNote(newOrder.note || "");
-      setServiceType(newOrder.serviceType || "DINE_IN");
-      setRoomCharge(newOrder.roomId || "");
-    }
-    return newOrder;
-  };
-
-  const selectOrderForTable = (tableId, orderKey) => {
-    if (!tableId || !orderKey) return;
-    const list = normalizeOrderList(ordersByTable[tableId]);
-    const order = list.find((o) => getOrderKey(o) === orderKey);
-    if (!order) return;
-    setActiveOrderByTable((prev) => ({ ...prev, [tableId]: orderKey }));
-    setCovers(order.covers || selectedTable?.seats || 2);
-    setOrderNote(order.note || "");
-    setServiceType(order.serviceType || "DINE_IN");
-    setRoomCharge(order.roomId || "");
-  };
-
-  const moveItemToOrder = (item, targetKey) => {
-    if (!selectedTable?.id || !item) return;
-    const tableId = selectedTable.id;
-    const fromKey = getOrderKey(currentOrder);
-    if (!fromKey) return;
-
-    let fromSnapshot = null;
-    let toSnapshot = null;
-    let newOrderKey = "";
-
-    setOrdersByTable((prev) => {
-      const list = normalizeOrderList(prev[tableId]);
-      const fromIdx = list.findIndex((o) => getOrderKey(o) === fromKey);
-      if (fromIdx < 0) return prev;
-
-      const nextList = [...list];
-      const fromOrder = { ...nextList[fromIdx], items: [...(nextList[fromIdx].items || [])] };
-      const itemIdx = fromOrder.items.findIndex((i) => i.id === item.id);
-      if (itemIdx < 0) return prev;
-
-      const movingItem = fromOrder.items[itemIdx];
-      fromOrder.items.splice(itemIdx, 1);
-      nextList[fromIdx] = fromOrder;
-
-      let targetOrder = null;
-      let targetIdx = -1;
-      if (targetKey === "__new__") {
-        const created = buildLocalOrder({
-          covers: fromOrder.covers || covers || 2,
-          note: "",
-          serviceType: fromOrder.serviceType || serviceType || "DINE_IN",
-          roomId: fromOrder.roomId || "",
-          sectionId: fromOrder.sectionId || selectedSection?.id || null,
-        });
-        newOrderKey = getOrderKey(created);
-        targetOrder = created;
-        nextList.push(created);
-        targetIdx = nextList.length - 1;
-      } else {
-        targetIdx = nextList.findIndex((o) => getOrderKey(o) === targetKey);
-        if (targetIdx >= 0) {
-          targetOrder = { ...nextList[targetIdx], items: [...(nextList[targetIdx].items || [])] };
-        }
-      }
-
-      if (!targetOrder) return prev;
-
-      const existingIdx = targetOrder.items.findIndex((i) => i.id === movingItem.id);
-      if (existingIdx >= 0) {
-        const existing = targetOrder.items[existingIdx];
-        targetOrder.items[existingIdx] = { ...existing, qty: (Number(existing.qty) || 0) + (Number(movingItem.qty) || 0) };
-      } else {
-        targetOrder.items.push({ ...movingItem });
-      }
-
-      nextList[targetIdx] = targetOrder;
-      fromSnapshot = fromOrder;
-      toSnapshot = targetOrder;
-
-      return { ...prev, [tableId]: nextList };
-    });
-
-    if (fromSnapshot) {
-      queueOrderSave({
-        orderId: fromSnapshot.id || fromSnapshot.orderId || undefined,
-        localId: fromSnapshot.localId || undefined,
-        createNew: !fromSnapshot.id && !fromSnapshot.orderId,
-        sectionId: fromSnapshot.sectionId || selectedSection?.id || null,
-        tableId,
-        items: Array.isArray(fromSnapshot.items) ? fromSnapshot.items : [],
-        note: fromSnapshot.note || "",
-        covers: fromSnapshot.covers || 0,
-        serviceType: fromSnapshot.serviceType || "DINE_IN",
-        roomId: fromSnapshot.roomId || "",
-      });
-    }
-    if (toSnapshot) {
-      queueOrderSave({
-        orderId: toSnapshot.id || toSnapshot.orderId || undefined,
-        localId: toSnapshot.localId || undefined,
-        createNew: !toSnapshot.id && !toSnapshot.orderId,
-        sectionId: toSnapshot.sectionId || selectedSection?.id || null,
-        tableId,
-        items: Array.isArray(toSnapshot.items) ? toSnapshot.items : [],
-        note: toSnapshot.note || "",
-        covers: toSnapshot.covers || 0,
-        serviceType: toSnapshot.serviceType || "DINE_IN",
-        roomId: toSnapshot.roomId || "",
-      });
-    }
-    if (newOrderKey) {
-      setActiveOrderByTable((prev) => ({ ...prev, [tableId]: newOrderKey }));
-    }
-  };
-
-  const addItem = (item) => {
-    if (!selectedTable?.id) return;
-    updateOrderForTable(selectedTable.id, (cur) => {
-      const idx = cur.items.findIndex((i) => i.id === item.id);
-      const items = idx >= 0
-        ? cur.items.map((i, k) => (k === idx ? { ...i, qty: i.qty + 1 } : i))
-        : [...cur.items, { ...item, qty: 1 }];
-      return { ...cur, items, covers: cur.covers || covers, note: cur.note || orderNote };
-    });
-  };
-  addItemRef.current = addItem;
-
-  const updateQty = (id, delta) => {
-    if (!selectedTable?.id) return;
-    if (isComandada && delta < 0) return;
-    updateOrderForTable(selectedTable.id, (cur) => {
-      const items = cur.items
-        .map((i) => (i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
-        .filter((i) => i.qty > 0);
-      return { ...cur, items };
-    });
-  };
-
-  const removeItem = (id) => {
-    if (!selectedTable?.id) return;
-    if (isComandada) return;
-    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => i.id !== id) }));
-  };
-
-  const handleCoversChange = (value) => {
-    if (!selectedTable?.id) return;
-    const next = Math.max(1, Number(value) || 1);
-    setCovers(next);
-    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, covers: next }));
-  };
-
-  const handleNoteChange = (value) => {
-    setOrderNote(value);
-    if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, note: value }));
-  };
-
-  const handleServiceTypeChange = (value) => {
-    const next = value || "DINE_IN";
-    setServiceType(next);
-    if (next !== "ROOM") setRoomCharge("");
-    if (selectedTable?.id) {
-      updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, serviceType: next, roomId: next === "ROOM" ? roomCharge : "" }));
-    }
-  };
-
-  const handleRoomChargeChange = (value) => {
-    setRoomCharge(value);
-    if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
-  };
-
-  const getSentMap = (order) => (order?.sentItems && typeof order.sentItems === "object" ? order.sentItems : {});
-
-  const buildComandaDelta = (order) => {
-    const sentMap = getSentMap(order);
-    return (order.items || [])
-      .map((i) => {
-        const sentQty = Number(sentMap[i.id] || 0);
-        const qty = Number(i.qty || 0);
-        const delta = Math.max(0, qty - sentQty);
-        return delta > 0 ? { ...i, qty: delta } : null;
-      })
-      .filter(Boolean);
-  };
-
-  const sendComanda = async ({ markAsSent = true, silent = false, itemsOverride } = {}) => {
-    if (!selectedTable?.id || !hasItems) return;
-    const itemsToPrint = itemsOverride || (markAsSent ? buildComandaDelta(currentOrder) : currentOrder.items || []);
-    if (markAsSent && (!itemsToPrint || itemsToPrint.length === 0)) {
-      if (!silent) {
-        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No hay nuevos articulos para comandar." } }));
-      }
-      return;
-    }
-    const payload = {
-      sectionId: selectedSection?.id,
-      tableId: selectedTable?.id,
-      orderId: currentOrder?.id || currentOrder?.orderId || undefined,
-      items: currentOrder.items || [],
-      note: orderNote || "",
-      covers: currentOrder.covers || covers,
-      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
-      type: "KITCHEN_BAR",
-      status: markAsSent ? "ENVIADO" : undefined,
-      serviceType: currentOrder.serviceType || serviceType,
-      roomId: currentOrder.roomId || roomCharge,
-    };
-
-    const run = async () => {
-      try {
-        if (markAsSent) {
-          await api.post("/restaurant/order", payload);
-        }
-        const title = markAsSent ? "Imprimir comanda" : "Reimprimir comanda";
-        const text = buildPrintPreviewText({ title, payload: { ...payload, items: itemsToPrint }, totals });
-        const printers = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
-        await printToAgent({
-          printerNames: printers.length ? printers : [printerCfg.cashierPrinter],
-          text,
-          copies: 1,
-        });
-        if (markAsSent) {
-          const nextSent = {};
-          (currentOrder.items || []).forEach((i) => {
-            nextSent[i.id] = Number(i.qty || 0);
-          });
-          updateOrderForTable(selectedTable.id, (cur) => ({
-            ...cur,
-            status: "ENVIADO",
-            sentItems: nextSent,
-            sentAt: cur.sentAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }));
-          refreshStats();
-        }
-        if (!silent) {
-          window.dispatchEvent(
-            new CustomEvent("pms:push-alert", {
-              detail: { title: "Restaurant", desc: markAsSent ? "Comanda enviada." : "Comanda reimpresa." },
-            })
-          );
-        }
-      } catch (err) {
-        if (!silent) {
-          const msg = err?.message || err?.response?.data?.message || "No se pudo enviar a impresoras.";
-          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
-        }
-      }
-    };
-
-    if (silent) {
-      await run();
-      return;
-    }
-
-    openPrintConfirm({
-      title: markAsSent ? "Imprimir comanda" : "Reimprimir comanda",
-      payload,
-      totals,
-      onConfirm: run,
-    });
-  };
-
-  const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: false });
-
-  const reprintComanda = async () => sendComanda({ markAsSent: false, silent: false });
-
-  useEffect(() => {
-    if (!isComandada) return;
-    if (autoComandaRef.current) return;
-    const delta = buildComandaDelta(currentOrder);
-    if (!delta || delta.length === 0) return;
-    autoComandaRef.current = true;
-    sendComanda({ markAsSent: true, silent: true, itemsOverride: delta })
-      .finally(() => {
-        autoComandaRef.current = false;
-      });
-  }, [isComandada, currentOrder.items, currentOrder.sentItems]);
-
-  const backToSection = async () => {
-    if (!selectedTable?.id) return;
-    const currentStatus = String(currentOrder?.status || "").toUpperCase();
-    if (hasItems && currentStatus !== "ENVIADO") {
-      await sendComanda({ markAsSent: true, silent: true });
-    }
-    setSelectedTable(null);
-    setSectionLauncher(false);
   };
 
   const openPayments = () => {
@@ -2029,6 +1605,435 @@ const subCategories = useMemo(() => {
     }
   };
 
+  const resetToLobby = () => {
+    setSelectedSection(null);
+    setSelectedTable(null);
+    setCategory("");
+    setSectionLauncher(true);
+    setSearch("");
+    setOrderNote("");
+    setCovers(2);
+    setServiceType("DINE_IN");
+    setRoomCharge("");
+  };
+
+  const updateOrderForTable = useCallback(
+    (tableId, updater, orderKeyOverride = "") => {
+      let nextActiveKey = "";
+      setOrdersByTable((prev) => {
+        const list = normalizeOrderList(prev[tableId]);
+        const desiredKey = orderKeyOverride || activeOrderByTable[tableId] || "";
+        let idx = desiredKey ? list.findIndex((o) => getOrderKey(o) === desiredKey) : -1;
+        let nextList = [...list];
+
+        if (idx < 0 && list.length > 0) {
+          idx = 0;
+        }
+
+        if (idx < 0) {
+          const created = buildLocalOrder({
+            covers: covers || 2,
+            note: orderNote || "",
+            serviceType: serviceType || "DINE_IN",
+            roomId: roomCharge || "",
+            sectionId: selectedSection?.id || null,
+          });
+          nextList = [...list, created];
+          idx = nextList.length - 1;
+        }
+
+        const cur = nextList[idx] || buildLocalOrder();
+        const next = updater(cur);
+        const merged = {
+          ...cur,
+          ...next,
+          items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
+          covers: next?.covers ?? cur?.covers ?? covers,
+          note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
+          serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
+          roomId: next?.roomId || cur?.roomId || roomCharge || "",
+          status: typeof next?.status === "string" ? next.status : cur?.status || "",
+          sentItems: next?.sentItems || cur?.sentItems || {},
+          sentAt: next?.sentAt || cur?.sentAt || "",
+        };
+
+        nextList[idx] = merged;
+        nextActiveKey = getOrderKey(merged);
+
+        // Persist open order so it stays on the table until paid or canceled.
+        queueOrderSave({
+          orderId: merged.id || merged.orderId || undefined,
+          localId: merged.localId || undefined,
+          createNew: !merged.id && !merged.orderId,
+          sectionId: merged.sectionId || selectedSection?.id || null,
+          tableId,
+          items: Array.isArray(merged.items) ? merged.items : [],
+          note: merged.note || "",
+          covers: merged.covers || 0,
+          serviceType: merged.serviceType || "DINE_IN",
+          roomId: merged.roomId || "",
+        });
+
+        return { ...prev, [tableId]: nextList };
+      });
+
+      if (nextActiveKey) {
+        setActiveOrderByTable((prev) => ({ ...prev, [tableId]: nextActiveKey }));
+      }
+    },
+    [activeOrderByTable, covers, orderNote, serviceType, roomCharge, selectedSection?.id, queueOrderSave]
+  );
+
+  const createNewOrderForTable = (tableId, { select = true } = {}) => {
+    if (!tableId) return null;
+    let newOrder = null;
+    setOrdersByTable((prev) => {
+      const list = normalizeOrderList(prev[tableId]);
+      const draft = list.find((o) => !o?.id && !o?.orderId && (o.items || []).length === 0);
+      if (draft) {
+        newOrder = draft;
+        return prev;
+      }
+      newOrder = buildLocalOrder({
+        covers: selectedTable?.seats || covers || 2,
+        note: "",
+        serviceType: serviceType || "DINE_IN",
+        roomId: roomCharge || "",
+        sectionId: selectedSection?.id || null,
+      });
+      return { ...prev, [tableId]: [...list, newOrder] };
+    });
+    if (select && newOrder) {
+      setActiveOrderByTable((prev) => ({ ...prev, [tableId]: getOrderKey(newOrder) }));
+      setCovers(newOrder.covers || 2);
+      setOrderNote(newOrder.note || "");
+      setServiceType(newOrder.serviceType || "DINE_IN");
+      setRoomCharge(newOrder.roomId || "");
+    }
+    return newOrder;
+  };
+
+  const selectOrderForTable = (tableId, orderKey) => {
+    if (!tableId || !orderKey) return;
+    const list = normalizeOrderList(ordersByTable[tableId]);
+    const order = list.find((o) => getOrderKey(o) === orderKey);
+    if (!order) return;
+    setActiveOrderByTable((prev) => ({ ...prev, [tableId]: orderKey }));
+    setCovers(order.covers || selectedTable?.seats || 2);
+    setOrderNote(order.note || "");
+    setServiceType(order.serviceType || "DINE_IN");
+    setRoomCharge(order.roomId || "");
+  };
+
+  const moveItemToOrder = (item, targetKey) => {
+    if (!selectedTable?.id || !item) return;
+    const tableId = selectedTable.id;
+    const fromKey = getOrderKey(currentOrder);
+    if (!fromKey) return;
+
+    let fromSnapshot = null;
+    let toSnapshot = null;
+    let newOrderKey = "";
+
+    setOrdersByTable((prev) => {
+      const list = normalizeOrderList(prev[tableId]);
+      const fromIdx = list.findIndex((o) => getOrderKey(o) === fromKey);
+      if (fromIdx < 0) return prev;
+
+      const nextList = [...list];
+      const fromOrder = { ...nextList[fromIdx], items: [...(nextList[fromIdx].items || [])] };
+      const itemIdx = fromOrder.items.findIndex((i) => i.id === item.id);
+      if (itemIdx < 0) return prev;
+
+      const movingItem = fromOrder.items[itemIdx];
+      fromOrder.items.splice(itemIdx, 1);
+      nextList[fromIdx] = fromOrder;
+
+      let targetOrder = null;
+      let targetIdx = -1;
+      if (targetKey === "__new__") {
+        const created = buildLocalOrder({
+          covers: fromOrder.covers || covers || 2,
+          note: "",
+          serviceType: fromOrder.serviceType || serviceType || "DINE_IN",
+          roomId: fromOrder.roomId || "",
+          sectionId: fromOrder.sectionId || selectedSection?.id || null,
+        });
+        newOrderKey = getOrderKey(created);
+        targetOrder = created;
+        nextList.push(created);
+        targetIdx = nextList.length - 1;
+      } else {
+        targetIdx = nextList.findIndex((o) => getOrderKey(o) === targetKey);
+        if (targetIdx >= 0) {
+          targetOrder = { ...nextList[targetIdx], items: [...(nextList[targetIdx].items || [])] };
+        }
+      }
+
+      if (!targetOrder) return prev;
+
+      const existingIdx = targetOrder.items.findIndex((i) => i.id === movingItem.id);
+      if (existingIdx >= 0) {
+        const existing = targetOrder.items[existingIdx];
+        targetOrder.items[existingIdx] = { ...existing, qty: (Number(existing.qty) || 0) + (Number(movingItem.qty) || 0) };
+      } else {
+        targetOrder.items.push({ ...movingItem });
+      }
+
+      nextList[targetIdx] = targetOrder;
+      fromSnapshot = fromOrder;
+      toSnapshot = targetOrder;
+
+      return { ...prev, [tableId]: nextList };
+    });
+
+    if (fromSnapshot) {
+      queueOrderSave({
+        orderId: fromSnapshot.id || fromSnapshot.orderId || undefined,
+        localId: fromSnapshot.localId || undefined,
+        createNew: !fromSnapshot.id && !fromSnapshot.orderId,
+        sectionId: fromSnapshot.sectionId || selectedSection?.id || null,
+        tableId,
+        items: Array.isArray(fromSnapshot.items) ? fromSnapshot.items : [],
+        note: fromSnapshot.note || "",
+        covers: fromSnapshot.covers || 0,
+        serviceType: fromSnapshot.serviceType || "DINE_IN",
+        roomId: fromSnapshot.roomId || "",
+      });
+    }
+    if (toSnapshot) {
+      queueOrderSave({
+        orderId: toSnapshot.id || toSnapshot.orderId || undefined,
+        localId: toSnapshot.localId || undefined,
+        createNew: !toSnapshot.id && !toSnapshot.orderId,
+        sectionId: toSnapshot.sectionId || selectedSection?.id || null,
+        tableId,
+        items: Array.isArray(toSnapshot.items) ? toSnapshot.items : [],
+        note: toSnapshot.note || "",
+        covers: toSnapshot.covers || 0,
+        serviceType: toSnapshot.serviceType || "DINE_IN",
+        roomId: toSnapshot.roomId || "",
+      });
+    }
+    if (newOrderKey) {
+      setActiveOrderByTable((prev) => ({ ...prev, [tableId]: newOrderKey }));
+    }
+  };
+
+  const addItem = (item) => {
+    if (!selectedTable?.id) return;
+    updateOrderForTable(selectedTable.id, (cur) => {
+      const idx = cur.items.findIndex((i) => i.id === item.id);
+      const items = idx >= 0
+        ? cur.items.map((i, k) => (k === idx ? { ...i, qty: i.qty + 1 } : i))
+        : [...cur.items, { ...item, qty: 1 }];
+      return { ...cur, items, covers: cur.covers || covers, note: cur.note || orderNote };
+    });
+  };
+  addItemRef.current = addItem;
+
+  const updateQty = (id, delta) => {
+    if (!selectedTable?.id) return;
+    if (isComandada && delta < 0) return;
+    updateOrderForTable(selectedTable.id, (cur) => {
+      const items = cur.items
+        .map((i) => (i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
+        .filter((i) => i.qty > 0);
+      return { ...cur, items };
+    });
+  };
+
+  const removeItem = (id) => {
+    if (!selectedTable?.id) return;
+    if (isComandada) return;
+    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => i.id !== id) }));
+  };
+
+  const handleCoversChange = (value) => {
+    if (!selectedTable?.id) return;
+    const next = Math.max(1, Number(value) || 1);
+    setCovers(next);
+    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, covers: next }));
+  };
+
+  const handleNoteChange = (value) => {
+    setOrderNote(value);
+    if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, note: value }));
+  };
+
+  const handleServiceTypeChange = (value) => {
+    const next = value || "DINE_IN";
+    setServiceType(next);
+    if (next !== "ROOM") setRoomCharge("");
+    if (selectedTable?.id) {
+      updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, serviceType: next, roomId: next === "ROOM" ? roomCharge : "" }));
+    }
+  };
+
+  const handleRoomChargeChange = (value) => {
+    setRoomCharge(value);
+    if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
+  };
+  const closePrintConfirm = () => {
+    if (printConfirmBusy) return;
+    pendingPrintRef.current = null;
+    setPrintConfirmOpen(false);
+  };
+
+  const openPrintConfirm = useCallback(
+    ({ title, payload, totals: previewTotals, onConfirm }) => {
+      pendingPrintRef.current = onConfirm;
+      setPrintConfirmTitle(title || "Confirmar impresi??n");
+      setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
+      setPrintConfirmOpen(true);
+    },
+    []
+  );
+
+  const getSentMap = useCallback(
+    (order) => (order?.sentItems && typeof order.sentItems === "object" ? order.sentItems : {}),
+    []
+  );
+
+  const buildComandaDelta = useCallback(
+    (order) => {
+      const sentMap = getSentMap(order);
+      return (order.items || [])
+        .map((i) => {
+          const sentQty = Number(sentMap[i.id] || 0);
+          const qty = Number(i.qty || 0);
+          const delta = Math.max(0, qty - sentQty);
+          return delta > 0 ? { ...i, qty: delta } : null;
+        })
+        .filter(Boolean);
+    },
+    [getSentMap]
+  );
+  const sendComanda = useCallback(async ({ markAsSent = true, silent = false, itemsOverride, returnToSection = false } = {}) => {
+    if (!selectedTable?.id || !hasItems) return;
+    const itemsToPrint = itemsOverride || (markAsSent ? buildComandaDelta(currentOrder) : currentOrder.items || []);
+    if (markAsSent && (!itemsToPrint || itemsToPrint.length === 0)) {
+      if (!silent) {
+        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No hay nuevos articulos para comandar." } }));
+      }
+      return;
+    }
+    const payload = {
+      sectionId: selectedSection?.id,
+      tableId: selectedTable?.id,
+      orderId: currentOrder?.id || currentOrder?.orderId || undefined,
+      items: currentOrder.items || [],
+      note: orderNote || "",
+      covers: currentOrder.covers || covers,
+      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+      type: "KITCHEN_BAR",
+      serviceType: currentOrder.serviceType || serviceType,
+      roomId: currentOrder.roomId || roomCharge,
+    };
+
+    const run = async () => {
+      try {
+        let serverOrder = null;
+        if (markAsSent) {
+          const resp = await api.post("/restaurant/order", payload);
+          serverOrder = resp?.data || null;
+        }
+        const title = markAsSent ? "Imprimir comanda" : "Reimprimir comanda";
+        const text = buildPrintPreviewText({ title, payload: { ...payload, items: itemsToPrint }, totals });
+        const printers = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
+        await printToAgent({
+          printerNames: printers.length ? printers : [printerCfg.cashierPrinter],
+          text,
+          copies: 1,
+        });
+        if (markAsSent) {
+          const nextSent = {};
+          (currentOrder.items || []).forEach((i) => {
+            nextSent[i.id] = Number(i.qty || 0);
+          });
+          updateOrderForTable(selectedTable.id, (cur) => ({
+            ...cur,
+            status: "ENVIADO",
+            id: serverOrder?.id || cur?.id || cur?.orderId || undefined,
+            orderId: serverOrder?.orderId || cur?.orderId || serverOrder?.id || undefined,
+            sentItems: nextSent,
+            sentAt: cur.sentAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }));
+          refreshStats();
+          if (returnToSection) {
+            setSelectedTable(null);
+            setSectionLauncher(false);
+          }
+        }
+        if (!silent) {
+          window.dispatchEvent(
+            new CustomEvent("pms:push-alert", {
+              detail: { title: "Restaurant", desc: markAsSent ? "Comanda enviada." : "Comanda reimpresa." },
+            })
+          );
+        }
+      } catch (err) {
+        if (!silent) {
+          const msg = err?.message || err?.response?.data?.message || "No se pudo enviar a impresoras.";
+          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+        }
+      }
+    };
+
+    if (silent) {
+      await run();
+      return;
+    }
+
+    openPrintConfirm({
+      title: markAsSent ? "Imprimir comanda" : "Reimprimir comanda",
+      payload,
+      totals,
+      onConfirm: run,
+    });
+  }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm]);
+
+  const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: true, returnToSection: true });
+
+  const reprintComanda = async () => sendComanda({ markAsSent: false, silent: false });
+
+  useEffect(() => {
+    if (!isComandada) return;
+    if (autoComandaRef.current) return;
+    const delta = buildComandaDelta(currentOrder);
+    if (!delta || delta.length === 0) return;
+    autoComandaRef.current = true;
+    sendComanda({ markAsSent: true, silent: true, itemsOverride: delta })
+      .finally(() => {
+        autoComandaRef.current = false;
+      });
+  }, [isComandada, currentOrder, buildComandaDelta, sendComanda]);
+  const printSubtotal = async () => {
+    if (!selectedTable?.id || !hasItems) return;
+    try {
+      await flushOrderSave();
+      const subtotalPayload = {
+        sectionId: selectedSection?.id,
+        tableId: selectedTable.id,
+        items: currentOrder.items || [],
+        note: orderNote,
+        covers: currentOrder.covers || covers,
+        type: "SUBTOTAL",
+        serviceType: currentOrder.serviceType || serviceType,
+        roomId: currentOrder.roomId || roomCharge,
+        printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+      };
+      const text = buildPrintPreviewText({ title: "Subtotal", payload: subtotalPayload, totals });
+      const invoiceCfg = getInvoicePrintConfig();
+      await printToAgent({ printerNames: [invoiceCfg.printerId], text, copies: invoiceCfg.copies });
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Subtotal impreso." } }));
+    } catch (err) {
+      const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir subtotal.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    }
+  };
+
   const confirmChargeOrder = async () => {
     if (!selectedTable?.id || !hasItems) return;
     try {
@@ -2103,19 +2108,6 @@ const subCategories = useMemo(() => {
     return false;
   };
 
-  const closePrintConfirm = () => {
-    if (printConfirmBusy) return;
-    pendingPrintRef.current = null;
-    setPrintConfirmOpen(false);
-  };
-
-  const openPrintConfirm = ({ title, payload, totals: previewTotals, onConfirm }) => {
-    pendingPrintRef.current = onConfirm;
-    setPrintConfirmTitle(title || "Confirmar impresión");
-    setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
-    setPrintConfirmOpen(true);
-  };
-
   const confirmPrint = async () => {
     if (printConfirmBusy) return;
     const fn = pendingPrintRef.current;
@@ -2154,8 +2146,8 @@ const subCategories = useMemo(() => {
             </div>
             <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
             <div className="flex items-center gap-2">
-              <span className="px-3 py-2 rounded-xl bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
-              <span className="px-3 py-2 rounded-xl bg-white/15">TC {paymentsCfg.tipoCambio}</span>
+              <span className="px-2.5 py-1.5 rounded-lg bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
+              <span className="px-2.5 py-1.5 rounded-lg bg-white/15">TC {paymentsCfg.tipoCambio}</span>
             </div>
           </div>
           <RestaurantUserMenu
@@ -2273,8 +2265,8 @@ const subCategories = useMemo(() => {
           <div className="w-full max-w-[360px] max-h-[40vh] min-h-[200px] bg-white rounded-l-2xl shadow-2xl p-3 flex flex-col gap-3 overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-lime-500">Cash status</div>
-                <div className="text-lg font-semibold text-lime-900">Restaurant cash</div>
+                <div className="text-[10px] uppercase text-lime-500">Cash status</div>
+                <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
                 <div className="text-xs text-lime-700">
                   Opened: {new Date(openInfo.openedAt).toLocaleString()}  {openInfo.user}
                 </div>
@@ -2315,8 +2307,8 @@ const subCategories = useMemo(() => {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-lime-500">Cash close</div>
-                <div className="text-lg font-semibold text-lime-900">Restaurant cash</div>
+                <div className="text-[10px] uppercase text-lime-500">Cash close</div>
+                <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
               </div>
               <RestaurantCloseXButton onClick={() => setCloseModalOpen(false)} />
             </div>
@@ -2538,7 +2530,7 @@ const subCategories = useMemo(() => {
                   >
                     Cerrar sin imprimir
                   </button>
-                  <button
+              <button
                     className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                     onClick={printPaidInvoice}
                     disabled={paymentPrintBusy}
@@ -2555,14 +2547,14 @@ const subCategories = useMemo(() => {
                   >
                     Split Order
                   </button>
-                  <button
+              <button
                     className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                     disabled={!hasItems || selectedPaymentKeys.length === 0}
                     onClick={confirmChargeOrder}
                   >
                     Confirm Payment
                   </button>
-                  <button
+              <button
                     className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-500"
                     onClick={closePaymentsModal}
                   >
@@ -2604,7 +2596,7 @@ const subCategories = useMemo(() => {
                 >
                   2 cuentas
                 </button>
-                <button
+              <button
                   className={`h-8 px-3 rounded-lg border text-xs font-semibold ${
                     splitOrderCount === 3 ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-600"
                   }`}
@@ -2660,7 +2652,7 @@ const subCategories = useMemo(() => {
                               >
                                 &lt;
                               </button>
-                              <button
+              <button
                                 className="h-7 w-7 rounded border text-xs disabled:opacity-40"
                                 disabled={!canMoveRight}
                                 onClick={() =>
@@ -2706,8 +2698,8 @@ const subCategories = useMemo(() => {
           <div className="w-full md:w-[560px] h-full bg-white rounded-l-2xl shadow-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-lime-500">{tablePickerMode === "MOVE" ? "Change table" : "Quick table"}</div>
-                <div className="text-lg font-semibold text-lime-900">{tablePickerMode === "MOVE" ? "Select destination table" : "Select table"}</div>
+                <div className="text-[10px] uppercase text-lime-500">{tablePickerMode === "MOVE" ? "Change table" : "Quick table"}</div>
+                <div className="text-sm font-semibold text-lime-900">{tablePickerMode === "MOVE" ? "Select destination table" : "Select table"}</div>
               </div>
               <RestaurantCloseXButton onClick={() => setTablePickerOpen(false)} />
             </div>
@@ -2756,7 +2748,7 @@ const subCategories = useMemo(() => {
                     onClick={() => (tablePickerMode === "MOVE" ? setMoveTargetTable(t) : handleSelectTable(t, t.section))}
                   >
                     <div className="text-xs text-lime-500">{t.section?.name || "Section"}</div>
-                    <div className="text-lg font-semibold text-lime-900">{t.name}</div>
+                    <div className="text-sm font-semibold text-lime-900">{t.name}</div>
                     <div className="text-xs text-lime-700/80">{t.seats} seats</div>
                     {hasOrder && (
                       <div className="text-[11px] text-emerald-700 mt-1">
@@ -2831,8 +2823,8 @@ const subCategories = useMemo(() => {
                             setSectionLauncher(false);
                           }}
                         >
-                          <div className="text-xs uppercase text-lime-500">Section</div>
-                          <div className="text-lg font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
+                          <div className="text-[10px] uppercase text-lime-500">Section</div>
+                          <div className="text-sm font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
                           <div className="text-xs text-lime-700/90 mt-1">{(sec.tables || []).length} tables</div>
                           <div className="text-[11px] text-lime-700/80 mt-1">
                             Menu: <span className="font-semibold">{sec?.activeMenu?.name || "-"}</span>
@@ -3144,8 +3136,8 @@ const subCategories = useMemo(() => {
                   </div>
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="text-xs uppercase text-lime-500">Order</div>
-                      <div className="text-lg font-semibold text-lime-900">
+                      <div className="text-[10px] uppercase text-lime-500">Order</div>
+                      <div className="text-sm font-semibold text-lime-900">
                         {selectedSection ? `${selectedSection.name} - ` : ""}
                         {selectedTable?.name || "No table"}
                       </div>
@@ -3180,14 +3172,9 @@ const subCategories = useMemo(() => {
                   />
 
                   <div className="mt-3 space-y-2">
-                    <div className="text-xs uppercase text-lime-500">Services Types</div>
+                    <div className="text-[10px] uppercase text-lime-500">Services Types</div>
                     <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { id: "DINE_IN", label: "Dine In" },
-                        { id: "TAKEOUT", label: "Takeout" },
-                        { id: "DELIVERY", label: "Delivery" },
-                        { id: "ROOM", label: "Room charge" },
-                      ].map((opt) => (
+                      {filteredServiceOptions.map((opt) => (
                         <button
                           key={opt.id}
                           className={`h-9 rounded-lg border text-sm font-semibold ${serviceType === opt.id ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"}`}
@@ -3302,22 +3289,21 @@ const subCategories = useMemo(() => {
                     >
                       Comandar
                     </button>
-                    <button
-                      className="h-12 rounded-xl bg-white border text-lime-800 font-semibold hover:bg-lime-50 disabled:opacity-60"
-                      onClick={reprintComanda}
-                      disabled={!hasItems}
-                      title="Reprint comanda without re-sending to kitchen/KDS"
-                    >
-                      Reprint comanda
-                    </button>
-                    <button
+              <button
                       className="h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:bg-emerald-300"
                       onClick={openPayments}
                       disabled={!hasItems}
                     >
                       Cobrar
                     </button>
-                    <button
+              <button
+                      className="h-12 rounded-xl bg-emerald-100 text-emerald-800 font-semibold disabled:opacity-60"
+                      onClick={printSubtotal}
+                      disabled={!hasItems}
+                    >
+                      Subtotal
+                    </button>
+              <button
                       className="h-12 rounded-xl bg-red-600 text-white font-semibold disabled:bg-red-300"
                       onClick={cancelCurrentOrder}
                       disabled={!hasItems || !isComandada}
@@ -3332,21 +3318,21 @@ const subCategories = useMemo(() => {
         </div>
       </div>
       {selectedTable && !sectionLauncher && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-3xl">
-          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-2xl px-5 py-3 flex items-center justify-between">
+        <div className="fixed bottom-4 left-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[900px]">
+          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-xl px-3 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
             <div>
-              <div className="text-xs uppercase text-lime-500">Mesa</div>
-              <div className="text-lg font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
+              <div className="text-[10px] uppercase text-lime-500">Mesa</div>
+              <div className="text-sm font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
             </div>
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex flex-wrap items-center justify-start md:justify-end gap-1.5 text-[12px]">
               <button
-                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
                 onClick={() => createNewOrderForTable(selectedTable?.id)}
               >
                 Nueva orden
               </button>
               <button
-                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
                 onClick={() => {
                   setTablePickerMode("MOVE");
                   setTablePickerOpen(true);
@@ -3356,14 +3342,30 @@ const subCategories = useMemo(() => {
                 Change table
               </button>
               <button
-                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
                 onClick={openSplitOrderModal}
                 disabled={!hasItems}
               >
                 Split Order
               </button>
               <button
-                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                onClick={reprintComanda}
+                disabled={!hasItems}
+                title="Reprint comanda without re-sending to kitchen/KDS"
+              >
+                Reprint comanda
+              </button>
+              <button
+                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50 ml-1"
+                onClick={cancelEmptyOrder}
+                disabled={hasItems}
+                title="Cancelar orden vac�a"
+              >
+                Cancelar orden
+              </button>
+              <button
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 ml-1"
                 onClick={resetToLobby}
               >
                 Back
@@ -3375,3 +3377,8 @@ const subCategories = useMemo(() => {
     </div>
   );
 }
+
+
+
+
+

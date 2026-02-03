@@ -56,6 +56,15 @@ function randomSecurityCode() {
   return padLeft(String(Math.floor(Math.random() * 100_000_000)), 8);
 }
 
+function normalizeReceiver(input: unknown) {
+  if (!input || typeof input !== "object") return null;
+  const data = input as Record<string, unknown>;
+  const hasData = ["id", "idNumber", "identification", "name", "legalName", "email", "phone"].some(
+    (k) => String(data[k] ?? "").trim().length > 0
+  );
+  return hasData ? data : null;
+}
+
 function crOfficialKey(opts: {
   countryCode: string;
   issuerId: string;
@@ -117,12 +126,15 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     return res.status(400).json({ message: "La orden debe estar pagada antes de emitir FE/TE" });
   }
 
+  const normalizedReceiver = normalizeReceiver(receiver);
+  const effectiveDocType: "FE" | "TE" = normalizedReceiver ? docType : "TE";
+
   const existing = await prisma.eInvoicingDocument.findFirst({
-    where: { hotelId, restaurantOrderId: String(restaurantOrderId), docType },
+    where: { hotelId, restaurantOrderId: String(restaurantOrderId), docType: effectiveDocType },
   });
   if (existing) return res.json(existing);
 
-  const consecutive = await nextConsecutive(hotelId, docType, branch, terminal);
+  const consecutive = await nextConsecutive(hotelId, effectiveDocType, branch, terminal);
   const key = crOfficialKey({
     countryCode,
     issuerId: issuerIdNumber,
@@ -160,13 +172,13 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     data: {
       hotelId,
       restaurantOrderId: String(restaurantOrderId),
-      docType,
+      docType: effectiveDocType,
       status: "DRAFT",
       branch: padLeft(branch, 3),
       terminal: padLeft(terminal, 5),
       consecutive,
       key,
-      receiver: receiver ?? null,
+      receiver: normalizedReceiver,
       payload,
     },
   });

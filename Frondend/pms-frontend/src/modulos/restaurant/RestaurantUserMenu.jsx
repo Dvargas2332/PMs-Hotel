@@ -29,7 +29,7 @@ export default function RestaurantUserMenu({ onOpenCashStatus }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-60 bg-white text-black rounded-lg shadow-lg border overflow-hidden">
+        <div className="absolute right-0 top-12 w-60 bg-white text-black rounded-lg shadow-lg border overflow-hidden z-50">
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-lime-50 hover:bg-lime-100"
             onClick={() => setOpen(false)}
