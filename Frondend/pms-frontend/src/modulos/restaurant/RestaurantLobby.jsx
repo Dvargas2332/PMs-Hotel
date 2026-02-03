@@ -8,48 +8,54 @@ const LOBBY_TILE_SIZE = "lg"; // "sm" | "md" | "lg"
 
 const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE }) => {
   const cardDecor = {
-    amber: { border: "border-lime-300", overlay: "from-lime-600/90 to-orange-500/80" },
-    lime: { border: "border-lime-300", overlay: "from-lime-500/90 to-emerald-500/80" },
-    slate: { border: "border-slate-200", overlay: "from-slate-700/90 to-slate-900/80" },
-    emerald: { border: "border-emerald-200", overlay: "from-emerald-600/90 to-emerald-500/80" },
-    indigo: { border: "border-indigo-200", overlay: "from-indigo-600/90 to-blue-500/80" },
+    aqua: { border: "border-aqua-500", overlay: "from-aqua-600/90 to-aqua-500/80" },
+    lime: { border: "border-lime-500", overlay: "from-lime-500/90 to-emerald-500/80" },
+    orange: { border: "border-orange-500", overlay: "from-orange-600/90 to-orange-500/80" },
+    emerald: { border: "border-emerald-500", overlay: "from-emerald-600/90 to-emerald-500/80" },
+    indigo: { border: "border-indigo-500", overlay: "from-indigo-600/90 to-blue-500/80" },
   };
   const toneDecor = {
-    amber: {
-      bg: "bg-white",
-      iconBg: "bg-white",
-      iconText: "text-black",
-      watermark: "text-black",
-      glow: "shadow-lime-900/25",
-    },
+
     lime: {
-      bg: "bg-lime-50",
+      bg: "bg-lime-200",
       iconBg: "bg-white",
-      iconText: "text-black",
-      watermark: "text-black/50",
-      glow: "shadow-lime-900/25",
+      iconText: "text-lime-500",
+      watermark: "text-lime-900/80",
+      glow: "shadow-lime-900/100",
     },
-    slate: {
-      bg: "bg-white",
-      iconBg: "bg-white",
-      iconText: "text-black",
-      watermark: "text-black",
-      glow: "shadow-slate-950/30",
-    },
+
     emerald: {
-      bg: "bg-white",
+      bg: "bg-emerald-200",
       iconBg: "bg-white",
-      iconText: "text-black",
-      watermark: "text-black",
-      glow: "shadow-emerald-900/25",
+      iconText: "text-emerald-500",
+      watermark: "text-emerald-900/80",
+      glow: "shadow-emerald-900/100",
     },
+
     indigo: {
-      bg: "bg-white",
+      bg: "bg-indigo-200",
+      iconBg: "bg-white",
+      iconText: "text-indigo-500",
+      watermark: "text-indigo-900/80",
+      glow: "shadow-indigo-900/100",
+    },
+
+    orange: {
+      bg: "bg-orange-200",
       iconBg: "bg-white",
       iconText: "text-black",
       watermark: "text-black",
-      glow: "shadow-indigo-900/25",
+      glow: "shadow-orange-950/30",
     },
+    
+    aqua: {
+      bg: "bg-aqua-200",
+      iconBg: "bg-white",
+      iconText: "text-aqua-500",
+      watermark: "text-aqua-900/80",
+      glow: "shadow-aqua-900/100",
+    },
+
   };
 
   const sizes = {
@@ -70,17 +76,17 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
       chevron: "w-5 h-5",
     },
     lg: {
-      root: "px-4 py-8 min-h-[176px]",
-      iconWrap: "h-12 w-12 rounded-2xl",
-      icon: "w-6 h-6",
+      root: "px-4 py-8 min-h-[186px]",
+      iconWrap: "h-20 w-20 rounded-3xl",
+      icon: "w-10 h-10",
       title: "text-xl",
       desc: "text-sm mt-2.5",
-      chevron: "w-6 h-6",
+      chevron: "w-10 h-10",
     },
   };
   const s = sizes[size] || sizes.md;
-  const c = cardDecor[tone] || cardDecor.amber;
-  const d = toneDecor[tone] || toneDecor.amber;
+  const c = cardDecor[tone] || cardDecor.aqua;
+  const d = toneDecor[tone] || toneDecor.aqua;
 
   return (
     <button
@@ -113,6 +119,7 @@ export default function RestaurantLobby() {
       title: "Restaurante (POS)",
       desc: "Mesas, comandas, cobro y cierre de orden.",
       icon: UtensilsCrossed,
+      size: "lg",
       onClick: () => navigate("/restaurant/pos"),
       tone: "lime",
     },
@@ -120,6 +127,7 @@ export default function RestaurantLobby() {
       title: "Comandas (KDS Cocina/Bar)",
       desc: "Pantalla de cocina y bar con estados de preparacion.",
       icon: ScrollText,
+      size: "lg",
       onClick: () => navigate("/restaurant/kds"),
       tone: "emerald",
     },
@@ -127,6 +135,7 @@ export default function RestaurantLobby() {
       title: "Historicos",
       desc: "Facturacion e informes en un solo lugar.",
       icon: FileText,
+      size: "lg",
       onClick: () => navigate("/restaurant/reports"),
       tone: "indigo",
     },
@@ -134,22 +143,25 @@ export default function RestaurantLobby() {
       title: "Cierres",
       desc: "Cierres de caja del restaurante y conciliacion.",
       icon: ClipboardList,
+      size: "lg",
       onClick: () => navigate("/restaurant/closes"),
-      tone: "slate",
+      tone: "orange",
     },
     {
       title: "Inventario",
       desc: "Inventario y recetario (configuracion).",
       icon: Boxes,
+      size: "lg",
       onClick: () => navigate("/management?view=restaurantInventory"),
-      tone: "slate",
+      tone: "orange",
     },
     {
       title: "Reimpresiones",
       desc: "Reimpresiones, anulaciones y re-Reimpresiones.",
       icon: FileText,
+      size: "lg",
       onClick: () => navigate("/restaurant/billing"),
-      tone: "amber",
+      tone: "aqua",
     },
   ];
   const gridCols =
@@ -160,7 +172,7 @@ export default function RestaurantLobby() {
         : "md:grid-cols-2 lg:grid-cols-3";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
+    <div className="min-h-screen bg-gradient-to-b from-white to-emerald-500/80 text-black">
       <header className="h-14 flex items-center justify-between px-6 bg-white/90 backdrop-blur border-b border-slate-200 text-black shadow">
         <div>
           <div className="text-xs uppercase text-black/80">Restaurant</div>

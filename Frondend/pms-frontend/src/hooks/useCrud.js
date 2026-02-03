@@ -1,5 +1,6 @@
 // src/hooks/useCrud.js
-import { useEffect, useState } from "react";
+//import { useEffect, useState } from "react";
+import {useState } from "react";
 export function useCrud(api, base) {
   const [items, setItems] = useState([]), [loading, setLoading] = useState(false), [error, setError] = useState(null);
   const load = async (params) => { setLoading(true); setError(null);

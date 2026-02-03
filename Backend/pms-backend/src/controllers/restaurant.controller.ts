@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { RestaurantOrderStatus } from "@prisma/client";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
@@ -9,6 +10,27 @@ const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
   return Number.isFinite(n) ? n : 0;
 };
+
+const ORDER_STATUS_ALIASES: Record<string, RestaurantOrderStatus> = {
+  ENVIADO: "OPEN",
+  ENVIADA: "OPEN",
+  ABIERTO: "OPEN",
+  CERRADO: "CLOSED",
+  PAGADO: "PAID",
+};
+
+const VALID_ORDER_STATUSES = new Set<RestaurantOrderStatus>(["OPEN", "CLOSED", "PAID"]);
+
+const OPEN_ORDER_STATUSES: RestaurantOrderStatus[] = ["OPEN"];
+
+function normalizeOrderStatus(value: unknown): RestaurantOrderStatus | undefined {
+  const raw = String(value ?? "").trim().toUpperCase();
+  if (!raw) return undefined;
+  const alias = ORDER_STATUS_ALIASES[raw];
+  if (alias) return alias;
+  if (VALID_ORDER_STATUSES.has(raw as RestaurantOrderStatus)) return raw as RestaurantOrderStatus;
+  return undefined;
+}
 
 const toInternalId = (hotelId: string, externalId: string) => `${hotelId}:${externalId}`;
 const fromInternalId = (hotelId: string, internalId: string) => {
@@ -1730,13 +1752,26 @@ export async function listOrders(req: Request, res: Response) {
   const hotelId = user.hotelId;
 
   const status = (req.query.status as string | undefined) || "OPEN";
+  const statusList = String(status || "")
+    .split(",")
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  const normalizedStatusList = statusList
+    .map(normalizeOrderStatus)
+    .filter((s): s is RestaurantOrderStatus => Boolean(s));
+  const whereStatus =
+    normalizedStatusList.length === 0
+      ? undefined
+      : normalizedStatusList.includes("OPEN")
+        ? { in: Array.from(new Set([...OPEN_ORDER_STATUSES, ...normalizedStatusList])) }
+        : { in: normalizedStatusList };
   const sectionId = (req.query.section as string | undefined) || undefined;
   const internalSectionId = sectionId ? toInternalId(hotelId, sectionId) : undefined;
 
   const orders = await prisma.restaurantOrder.findMany({
     where: {
       hotelId,
-      ...(status ? { status: status as any } : {}),
+      ...(whereStatus ? { status: whereStatus as any } : {}),
       ...(internalSectionId ? { sectionId: internalSectionId } : {}),
     },
     include: { items: true },
@@ -1759,7 +1794,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew } = req.body as {
+  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew, status } = req.body as {
     sectionId?: string;
     tableId: string;
     items: { id: string; name: string; category?: string; price: number; qty: number }[];
@@ -1771,6 +1806,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     restaurantOrderId?: string;
     createNew?: boolean;
     forceNew?: boolean;
+    status?: string;
   };
   if (!tableId || !Array.isArray(items)) return res.status(400).json({ message: "tableId e items requeridos" });
 
@@ -1842,6 +1878,8 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
       }))?.id ?? internalSectionId
     : undefined;
 
+  const nextStatus: RestaurantOrderStatus = "OPEN";
+
   const order = existing
     ? await prisma.$transaction(async (tx) => {
         await tx.restaurantOrder.updateMany({
@@ -1856,6 +1894,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             roomId: roomId ?? existing.roomId,
             total,
             tip10: service,
+            status: nextStatus,
           },
         });
 
@@ -1909,7 +1948,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
           sectionId: resolvedSectionId || null,
           tableId: internalTableId,
           waiterId: user.sub,
-          status: "OPEN",
+        status: nextStatus,
           note: note || "",
           covers: covers || 0,
           serviceType: inferredServiceType,
@@ -1951,6 +1990,7 @@ export async function closeOrder(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
+  const activeStatuses = OPEN_ORDER_STATUSES;
 
   const { tableId, payments, totals, note, serviceType, roomId, orderId, restaurantOrderId } = req.body || {};
   const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
@@ -1958,13 +1998,13 @@ export async function closeOrder(req: Request, res: Response) {
 
   const order = incomingOrderId
     ? await prisma.restaurantOrder.findFirst({
-        where: { id: incomingOrderId, hotelId, status: "OPEN" },
+        where: { id: incomingOrderId, hotelId, status: { in: activeStatuses } },
         include: { items: true },
       })
     : await prisma.restaurantOrder.findFirst({
         where: {
           hotelId,
-          status: "OPEN",
+          status: { in: activeStatuses },
           tableId: { in: [toInternalId(hotelId, String(tableId)), String(tableId)] },
         },
         include: { items: true },
@@ -2337,7 +2377,7 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   const allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
   if (!allowed) return res.status(401).json({ message: "Admin PIN requerido" });
 
-  const where: any = { hotelId, status: "OPEN" };
+  const where: any = { hotelId, status: { in: OPEN_ORDER_STATUSES } };
   if (incomingOrderId) where.id = String(incomingOrderId);
   if (tableId) where.tableId = { in: [toInternalId(hotelId, String(tableId)), String(tableId)] };
 
@@ -2352,7 +2392,7 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   const nextNote = cancelReason ? `${order.note || ""}\n[CANCELED] ${cancelReason}`.trim() : order.note || "";
 
   await prisma.restaurantOrder.updateMany({
-    where: { id: order.id, hotelId, status: "OPEN" },
+    where: { id: order.id, hotelId, status: { in: OPEN_ORDER_STATUSES } },
     data: { status: "CLOSED", note: nextNote },
   });
 
@@ -2381,11 +2421,15 @@ export async function moveOrderTable(req: Request, res: Response) {
   const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
   const order = incomingOrderId
     ? await prisma.restaurantOrder.findFirst({
-        where: { hotelId, status: "OPEN", id: incomingOrderId },
+        where: { hotelId, status: { in: OPEN_ORDER_STATUSES }, id: incomingOrderId },
         include: { items: true },
       })
     : await prisma.restaurantOrder.findFirst({
-        where: { hotelId, status: "OPEN", tableId: { in: [fromInternal, String(fromTableId)] } },
+        where: {
+          hotelId,
+          status: { in: OPEN_ORDER_STATUSES },
+          tableId: { in: [fromInternal, String(fromTableId)] },
+        },
         include: { items: true },
       });
   if (!order) return res.status(404).json({ message: "Orden abierta no encontrada para esa mesa" });

@@ -1,11 +1,13 @@
-export const MEMBERSHIP_TIERS = ["BASIC", "STANDARD", "PRO", "PLATINUM"] as const;
+export const MEMBERSHIP_TIERS = ["HBASIC","RBasic", "STANDARD", "PRO", "PLATINUM"] as const;
 
 export type MembershipTier = (typeof MEMBERSHIP_TIERS)[number];
 
 export const MEMBERSHIP_MODULES: Record<MembershipTier, string[]> = {
-  BASIC: ["frontdesk", "management"],
-  STANDARD: ["frontdesk", "restaurant", "management"],
-  PRO: ["frontdesk", "restaurant", "accounting", "management"],
+
+  RBasic: ["restaurant", "management", "einvoicing"],
+  HBASIC: ["frontdesk", "management", "einvoicing"],
+  STANDARD: ["frontdesk", "restaurant", "management", "einvoicing"],
+  PRO: ["frontdesk", "restaurant", "accounting", "management", "einvoicing"],
   PLATINUM: ["frontdesk", "restaurant", "accounting", "einvoicing", "management"],
 };
 
