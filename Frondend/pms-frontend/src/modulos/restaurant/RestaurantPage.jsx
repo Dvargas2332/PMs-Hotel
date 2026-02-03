@@ -229,11 +229,6 @@ const resolvePaymentKey = (name, id) => {
   return slugifyPaymentKey(name || id);
 };
 
-const getOrderItemKey = (item, idx) => {
-  const base = item?.id ?? item?.code ?? item?.name ?? "item";
-  return `${String(base)}-${idx}`;
-};
-
 const normalizeOrderList = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
 const getOrderKey = (order) => String(order?.id || order?.orderId || order?.localId || "");
@@ -243,7 +238,7 @@ const buildLocalOrder = (overrides = {}) => ({
   items: [],
   covers: 2,
   note: "",
-  status: "NUEVA",
+  status: "NEW",
   serviceType: "DINE_IN",
   roomId: "",
   ...overrides,
@@ -262,6 +257,7 @@ export default function RestaurantPage() {
   const addItemRef = useRef(null);
 
   const pendingPrintRef = useRef(null);
+  const autoComandaRef = useRef(false);
   const [printConfirmOpen, setPrintConfirmOpen] = useState(false);
   const [printConfirmTitle, setPrintConfirmTitle] = useState("");
   const [printConfirmText, setPrintConfirmText] = useState("");
@@ -273,6 +269,8 @@ export default function RestaurantPage() {
   const [selectedSection, setSelectedSection] = useState(null);
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [tablePickerMode, setTablePickerMode] = useState("NEW"); // NEW | MOVE
+  const [moveTargetTable, setMoveTargetTable] = useState(null);
+  const [tablePickerSectionId, setTablePickerSectionId] = useState("");
   const [sectionLauncher, setSectionLauncher] = useState(true);
 
   const [covers, setCovers] = useState(2);
@@ -286,6 +284,7 @@ const [subCategory, setSubCategory] = useState("");
   const [sectionsError, setSectionsError] = useState("");
   const [menuItems, setMenuItems] = useState([]);
   const [ordersByTable, setOrdersByTable] = useState({});
+  const ordersByTableRef = useRef({});
   const [activeOrderByTable, setActiveOrderByTable] = useState({});
   const activeOrderByTableRef = useRef({});
   const selectedTableRef = useRef(null);
@@ -340,13 +339,34 @@ const [subCategory, setSubCategory] = useState("");
   const [selectedPaymentKeys, setSelectedPaymentKeys] = useState([]);
   const [paymentResult, setPaymentResult] = useState(null);
   const [paymentPrintBusy, setPaymentPrintBusy] = useState(false);
-  const [splitByItem, setSplitByItem] = useState(false);
-  const [itemSplitMap, setItemSplitMap] = useState({});
+  const [splitOrderModalOpen, setSplitOrderModalOpen] = useState(false);
+  const [splitOrderMap, setSplitOrderMap] = useState({});
+  const [splitOrderCount, setSplitOrderCount] = useState(2);
   const [serviceType, setServiceType] = useState("DINE_IN"); // DINE_IN, TAKEOUT, DELIVERY, ROOM
   const [roomCharge, setRoomCharge] = useState("");
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
+  const canMoveOrders = useMemo(() => {
+    if (role === "ADMIN") return true;
+    const perms = Array.isArray(user?.permissions) ? user.permissions : [];
+    return perms.includes("restaurant.orders.move");
+  }, [role, user?.permissions]);
+
+  const formatElapsed = useCallback(
+    (iso) => {
+      if (!iso) return "";
+      const start = new Date(iso);
+      if (Number.isNaN(start.getTime())) return "";
+      const ms = Math.max(0, now - start);
+      const totalMin = Math.floor(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      return `${m}m`;
+    },
+    [now]
+  );
 
   const persistOrderNow = useCallback(async (payload) => {
     if (!payload?.tableId) return;
@@ -470,13 +490,23 @@ const [subCategory, setSubCategory] = useState("");
     return list;
   }, [sections]);
 
+  const tablePickerTables = useMemo(() => {
+    if (!tablePickerSectionId || tablePickerSectionId === "ALL") return allTables;
+    return allTables.filter((t) => String(t.section?.id || "") === String(tablePickerSectionId));
+  }, [allTables, tablePickerSectionId]);
+
   const tableOrderSummary = useMemo(() => {
     const summary = {};
     Object.entries(ordersByTable || {}).forEach(([tableId, entry]) => {
       const list = normalizeOrderList(entry);
+      const sentTimes = list
+        .map((o) => (o?.sentAt ? new Date(o.sentAt) : null))
+        .filter((d) => d && !Number.isNaN(d.getTime()))
+        .sort((a, b) => a - b);
       summary[tableId] = {
         count: list.length,
         hasItems: list.some((o) => (o.items || []).length > 0),
+        sentAt: sentTimes.length > 0 ? sentTimes[0].toISOString() : "",
       };
     });
     return summary;
@@ -608,25 +638,25 @@ const subCategories = useMemo(() => {
     () =>
       selectedTableOrders.map((o, idx) => ({
         key: getOrderKey(o) || `order-${idx + 1}`,
-        label: `Orden ${idx + 1}`,
+        label: `Order ${idx + 1}`,
       })),
     [selectedTableOrders]
   );
 
   const currentOrder = useMemo(() => {
-    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "NUEVA", serviceType, roomId: roomCharge };
+    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge };
     const list = selectedTableOrders;
     const byKey = list.find((o) => getOrderKey(o) && getOrderKey(o) === activeOrderKey);
     const stored = byKey || list[0];
     if (!stored) {
-      return { items: [], covers, note: orderNote, status: "NUEVA", serviceType, roomId: roomCharge };
+      return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge };
     }
     return {
       ...stored,
       items: Array.isArray(stored?.items) ? stored.items : [],
       covers: stored?.covers || covers,
       note: typeof stored?.note === "string" ? stored.note : orderNote || "",
-      status: stored?.status || "NUEVA",
+      status: stored?.status || "New",
       updatedAt: stored?.updatedAt,
       serviceType: stored?.serviceType || serviceType,
       roomId: stored?.roomId || roomCharge,
@@ -658,6 +688,10 @@ const subCategories = useMemo(() => {
   useEffect(() => {
     activeOrderByTableRef.current = activeOrderByTable;
   }, [activeOrderByTable]);
+
+  useEffect(() => {
+    ordersByTableRef.current = ordersByTable;
+  }, [ordersByTable]);
 
   useEffect(() => {
     selectedTableRef.current = selectedTable;
@@ -776,32 +810,6 @@ const subCategories = useMemo(() => {
   const displayTotals = paymentResult?.totals || totals;
   const paymentChange = paymentResult?.change || 0;
 
-  const itemSplitData = useMemo(() => {
-    if (!splitByItem) return { totals: {}, orderTotal: 0 };
-    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
-    const taxRate = Number(taxesCfg.iva || 0) / 100;
-    const totalsByMethod = {};
-    let orderTotal = 0;
-    (currentOrder.items || []).forEach((item, idx) => {
-      const qty = Number(item?.qty || 0);
-      const price = Number(item?.price || 0);
-      const gross = qty * price;
-      const includes = item?.priceIncludesTaxesAndService !== false;
-      const lineTotal = includes ? gross : gross + gross * serviceRate + gross * taxRate;
-      orderTotal += lineTotal;
-      const itemKey = getOrderItemKey(item, idx);
-      const methodKey = itemSplitMap[itemKey];
-      if (!methodKey) return;
-      totalsByMethod[methodKey] = (totalsByMethod[methodKey] || 0) + lineTotal;
-    });
-    return { totals: totalsByMethod, orderTotal };
-  }, [splitByItem, currentOrder.items, itemSplitMap, taxesCfg.iva, taxesCfg.servicio]);
-
-  const itemSplitUnassigned = useMemo(() => {
-    if (!splitByItem) return 0;
-    const assigned = sumNumbers(itemSplitData.totals);
-    return Math.max(0, itemSplitData.orderTotal - assigned);
-  }, [splitByItem, itemSplitData]);
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
   const isComandada = useMemo(
     () => String(currentOrder?.status || "").toUpperCase() === "ENVIADO",
@@ -962,6 +970,7 @@ const subCategories = useMemo(() => {
         const map = {};
         data.forEach((o, idx) => {
           if (!o?.tableId) return;
+          const previousList = normalizeOrderList(ordersByTableRef.current[o.tableId]);
           const order = {
             ...o,
             items: Array.isArray(o.items) ? o.items : [],
@@ -970,7 +979,20 @@ const subCategories = useMemo(() => {
             status: o.status || "ENVIADO",
             serviceType: o.serviceType || "DINE_IN",
             roomId: o.roomId || "",
+            sentItems: {},
+            sentAt: "",
           };
+          const incomingKey = getOrderKey(order);
+          if (incomingKey) {
+            const prevMatch = previousList.find((p) => getOrderKey(p) === incomingKey);
+            const prevStatus = String(prevMatch?.status || "").toUpperCase();
+            const incomingStatus = String(order.status || "").toUpperCase();
+            if (prevStatus === "ENVIADO" && (incomingStatus === "OPEN" || !incomingStatus)) {
+              order.status = "ENVIADO";
+            }
+            if (prevMatch?.sentItems) order.sentItems = prevMatch.sentItems;
+            if (prevMatch?.sentAt) order.sentAt = prevMatch.sentAt;
+          }
           if (!getOrderKey(order)) {
             order.localId = `local-${o.tableId}-${idx}-${Date.now()}`;
           }
@@ -1094,18 +1116,30 @@ const subCategories = useMemo(() => {
     setSelectedTable(null);
     setSelectedSection(null);
     setTablePickerMode("NEW");
+    setMoveTargetTable(null);
+    setTablePickerSectionId(selectedSection?.id || sections?.[0]?.id || "ALL");
     setTablePickerOpen(true);
     setSectionLauncher(true);
   };
 
   const openMoveTablePicker = () => {
     if (!selectedTable?.id) return;
+    if (!canMoveOrders) {
+      window.alert("No tienes permiso para mover ordenes entre mesas.");
+      return;
+    }
     setTablePickerMode("MOVE");
+    setMoveTargetTable(null);
+    setTablePickerSectionId(selectedSection?.id || sections?.[0]?.id || "ALL");
     setTablePickerOpen(true);
   };
 
   const moveToTable = async (toTable) => {
     if (!selectedTable?.id || !toTable?.id) return;
+    if (!canMoveOrders) {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No tienes permiso para mover ordenes." } }));
+      return;
+    }
     try {
       await api.post("/restaurant/order/move", {
         fromTableId: selectedTable.id,
@@ -1117,6 +1151,7 @@ const subCategories = useMemo(() => {
       setSelectedSection(toTable.section || selectedSection);
       setSelectedTable(toTable);
       setTablePickerOpen(false);
+      setMoveTargetTable(null);
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Table changed." } }));
     } catch (err) {
       const msg = err?.response?.data?.message || "Could not change table.";
@@ -1240,7 +1275,7 @@ const subCategories = useMemo(() => {
     }
 
     const idx = list.findIndex((o) => getOrderKey(o) === orderKey);
-    const orderLabel = idx >= 0 ? `Orden ${idx + 1}` : "Orden";
+    const orderLabel = idx >= 0 ? `Order ${idx + 1}` : "Order";
     const target = {
       tableId: selectedTable.id,
       tableName: selectedTable?.name || "",
@@ -1401,6 +1436,8 @@ const subCategories = useMemo(() => {
         note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
         serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
         roomId: next?.roomId || cur?.roomId || roomCharge || "",
+        sentItems: next?.sentItems || cur?.sentItems || {},
+        sentAt: next?.sentAt || cur?.sentAt || "",
       };
 
       nextList[idx] = merged;
@@ -1574,13 +1611,11 @@ const subCategories = useMemo(() => {
       return { ...cur, items, covers: cur.covers || covers, note: cur.note || orderNote };
     });
   };
-
-  useEffect(() => {
-    addItemRef.current = addItem;
-  }, [addItem]);
+  addItemRef.current = addItem;
 
   const updateQty = (id, delta) => {
     if (!selectedTable?.id) return;
+    if (isComandada && delta < 0) return;
     updateOrderForTable(selectedTable.id, (cur) => {
       const items = cur.items
         .map((i) => (i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
@@ -1591,6 +1626,7 @@ const subCategories = useMemo(() => {
 
   const removeItem = (id) => {
     if (!selectedTable?.id) return;
+    if (isComandada) return;
     updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => i.id !== id) }));
   };
 
@@ -1620,8 +1656,29 @@ const subCategories = useMemo(() => {
     if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
   };
 
-  const sendComanda = async ({ markAsSent = true, silent = false } = {}) => {
+  const getSentMap = (order) => (order?.sentItems && typeof order.sentItems === "object" ? order.sentItems : {});
+
+  const buildComandaDelta = (order) => {
+    const sentMap = getSentMap(order);
+    return (order.items || [])
+      .map((i) => {
+        const sentQty = Number(sentMap[i.id] || 0);
+        const qty = Number(i.qty || 0);
+        const delta = Math.max(0, qty - sentQty);
+        return delta > 0 ? { ...i, qty: delta } : null;
+      })
+      .filter(Boolean);
+  };
+
+  const sendComanda = async ({ markAsSent = true, silent = false, itemsOverride } = {}) => {
     if (!selectedTable?.id || !hasItems) return;
+    const itemsToPrint = itemsOverride || (markAsSent ? buildComandaDelta(currentOrder) : currentOrder.items || []);
+    if (markAsSent && (!itemsToPrint || itemsToPrint.length === 0)) {
+      if (!silent) {
+        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No hay nuevos articulos para comandar." } }));
+      }
+      return;
+    }
     const payload = {
       sectionId: selectedSection?.id,
       tableId: selectedTable?.id,
@@ -1642,7 +1699,7 @@ const subCategories = useMemo(() => {
           await api.post("/restaurant/order", payload);
         }
         const title = markAsSent ? "Imprimir comanda" : "Reimprimir comanda";
-        const text = buildPrintPreviewText({ title, payload, totals });
+        const text = buildPrintPreviewText({ title, payload: { ...payload, items: itemsToPrint }, totals });
         const printers = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
         await printToAgent({
           printerNames: printers.length ? printers : [printerCfg.cashierPrinter],
@@ -1650,7 +1707,17 @@ const subCategories = useMemo(() => {
           copies: 1,
         });
         if (markAsSent) {
-          updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, status: "ENVIADO", updatedAt: new Date().toISOString() }));
+          const nextSent = {};
+          (currentOrder.items || []).forEach((i) => {
+            nextSent[i.id] = Number(i.qty || 0);
+          });
+          updateOrderForTable(selectedTable.id, (cur) => ({
+            ...cur,
+            status: "ENVIADO",
+            sentItems: nextSent,
+            sentAt: cur.sentAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }));
           refreshStats();
         }
         if (!silent) {
@@ -1685,6 +1752,18 @@ const subCategories = useMemo(() => {
 
   const reprintComanda = async () => sendComanda({ markAsSent: false, silent: false });
 
+  useEffect(() => {
+    if (!isComandada) return;
+    if (autoComandaRef.current) return;
+    const delta = buildComandaDelta(currentOrder);
+    if (!delta || delta.length === 0) return;
+    autoComandaRef.current = true;
+    sendComanda({ markAsSent: true, silent: true, itemsOverride: delta })
+      .finally(() => {
+        autoComandaRef.current = false;
+      });
+  }, [isComandada, currentOrder.items, currentOrder.sentItems]);
+
   const backToSection = async () => {
     if (!selectedTable?.id) return;
     const currentStatus = String(currentOrder?.status || "").toUpperCase();
@@ -1718,8 +1797,6 @@ const subCategories = useMemo(() => {
     setSplitPayments(false);
     setPaymentResult(null);
     setPaymentPrintBusy(false);
-    setSplitByItem(false);
-    setItemSplitMap({});
     setPaymentsModalOpen(true);
   };
 
@@ -1731,16 +1808,146 @@ const subCategories = useMemo(() => {
     setSplitPayments(false);
     setPaymentResult(null);
     setPaymentPrintBusy(false);
-    setSplitByItem(false);
-    setItemSplitMap({});
+  };
+
+  const finalizePaymentAndExit = () => {
+    closePaymentsModal();
+    setOrderNote("");
+    setCovers(2);
+    setServiceType("DINE_IN");
+    setRoomCharge("");
+    setSelectedTable(null);
+    setSectionLauncher(false);
+  };
+
+  const getSplitItemKey = (item, idx) => String(item?.id ?? item?.code ?? item?.name ?? idx ?? "");
+  const getItemQty = (item) => Math.max(0, Math.floor(Number(item?.qty || 0)));
+
+  const openSplitOrderModal = () => {
+    if (!selectedTable?.id || !hasItems) return;
+    const map = {};
+    (currentOrder.items || []).forEach((item, idx) => {
+      const key = getSplitItemKey(item, idx);
+      const qty = getItemQty(item);
+      map[key] = { A: qty, B: 0, C: 0 };
+    });
+    setSplitOrderMap(map);
+    setSplitOrderCount(2);
+    setSplitOrderModalOpen(true);
+  };
+
+  const closeSplitOrderModal = () => {
+    setSplitOrderModalOpen(false);
+  };
+
+  const confirmSplitOrder = () => {
+    if (!selectedTable?.id) return;
+    const items = Array.isArray(currentOrder.items) ? currentOrder.items : [];
+    const itemsA = [];
+    const itemsB = [];
+    const itemsC = [];
+    let qtyA = 0;
+    let qtyB = 0;
+    let qtyC = 0;
+    items.forEach((it, idx) => {
+      const key = getSplitItemKey(it, idx);
+      const split = splitOrderMap[key] || { A: getItemQty(it), B: 0, C: 0 };
+      if (split.A > 0) {
+        itemsA.push({ ...it, qty: split.A });
+        qtyA += split.A;
+      }
+      if (split.B > 0) {
+        itemsB.push({ ...it, qty: split.B });
+        qtyB += split.B;
+      }
+      if (splitOrderCount === 3 && split.C > 0) {
+        itemsC.push({ ...it, qty: split.C });
+        qtyC += split.C;
+      }
+    });
+    if (qtyA === 0 || qtyB === 0 || (splitOrderCount === 3 && qtyC === 0)) {
+      window.alert(splitOrderCount === 3 ? "Debes asignar articulos a las tres cuentas." : "Debes asignar articulos a las dos cuentas.");
+      return;
+    }
+
+    const newOrder = buildLocalOrder({
+      covers: currentOrder.covers || covers || 2,
+      note: "",
+      serviceType: currentOrder.serviceType || serviceType || "DINE_IN",
+      roomId: currentOrder.roomId || roomCharge || "",
+      sectionId: currentOrder.sectionId || selectedSection?.id || null,
+    });
+
+    setOrdersByTable((prev) => {
+      const list = normalizeOrderList(prev[selectedTable.id]);
+      const currentKey = getOrderKey(currentOrder);
+      const idx = list.findIndex((o) => getOrderKey(o) === currentKey);
+      if (idx < 0) return prev;
+      const nextList = [...list];
+      nextList[idx] = { ...nextList[idx], items: itemsA };
+      nextList.push({ ...newOrder, items: itemsB });
+      return { ...prev, [selectedTable.id]: nextList };
+    });
+
+    queueOrderSave({
+      orderId: currentOrder.id || currentOrder.orderId || undefined,
+      localId: currentOrder.localId || undefined,
+      createNew: !currentOrder.id && !currentOrder.orderId,
+      sectionId: currentOrder.sectionId || selectedSection?.id || null,
+      tableId: selectedTable.id,
+      items: itemsA,
+      note: currentOrder.note || "",
+      covers: currentOrder.covers || covers || 0,
+      serviceType: currentOrder.serviceType || serviceType || "DINE_IN",
+      roomId: currentOrder.roomId || roomCharge || "",
+    });
+    queueOrderSave({
+      orderId: newOrder.id || newOrder.orderId || undefined,
+      localId: newOrder.localId || undefined,
+      createNew: true,
+      sectionId: newOrder.sectionId || selectedSection?.id || null,
+      tableId: selectedTable.id,
+      items: itemsB,
+      note: "",
+      covers: newOrder.covers || 0,
+      serviceType: newOrder.serviceType || serviceType || "DINE_IN",
+      roomId: newOrder.roomId || roomCharge || "",
+    });
+
+    if (splitOrderCount === 3) {
+      const newOrderC = buildLocalOrder({
+        covers: currentOrder.covers || covers || 2,
+        note: "",
+        serviceType: currentOrder.serviceType || serviceType || "DINE_IN",
+        roomId: currentOrder.roomId || roomCharge || "",
+        sectionId: currentOrder.sectionId || selectedSection?.id || null,
+      });
+      setOrdersByTable((prev) => {
+        const list = normalizeOrderList(prev[selectedTable.id]);
+        return { ...prev, [selectedTable.id]: [...list, { ...newOrderC, items: itemsC }] };
+      });
+      queueOrderSave({
+        orderId: newOrderC.id || newOrderC.orderId || undefined,
+        localId: newOrderC.localId || undefined,
+        createNew: true,
+        sectionId: newOrderC.sectionId || selectedSection?.id || null,
+        tableId: selectedTable.id,
+        items: itemsC,
+        note: "",
+        covers: newOrderC.covers || 0,
+        serviceType: newOrderC.serviceType || serviceType || "DINE_IN",
+        roomId: newOrderC.roomId || roomCharge || "",
+      });
+    }
+
+    setActiveOrderByTable((prev) => ({ ...prev, [selectedTable.id]: getOrderKey(currentOrder) }));
+    setSplitOrderModalOpen(false);
   };
 
   const handleSplitToggle = () => {
     const nextSplit = !splitPayments;
     setSplitPayments(nextSplit);
     if (!nextSplit) {
-      setSplitByItem(false);
-      setItemSplitMap({});
       const totalDue = Number(totals.total || 0);
       const totalValue = Number.isFinite(totalDue) ? totalDue.toFixed(2) : "";
       const fallbackKey = selectedPaymentKeys[selectedPaymentKeys.length - 1] || availablePaymentMethods[0]?.key;
@@ -1756,30 +1963,11 @@ const subCategories = useMemo(() => {
     }
   };
 
-  const toggleSplitByItem = () => {
-    const next = !splitByItem;
-    setSplitByItem(next);
-    if (next) {
-      if (!splitPayments) setSplitPayments(true);
-      if (!selectedPaymentKeys.length && availablePaymentMethods[0]?.key) {
-        setSelectedPaymentKeys([availablePaymentMethods[0].key]);
-      }
-    } else {
-      setItemSplitMap({});
-    }
-  };
-
   const handlePaymentMethodToggle = (key) => {
     if (!key) return;
     const totalDue = Number(totals.total || 0);
     const totalValue = Number.isFinite(totalDue) ? totalDue.toFixed(2) : "";
     const isSelected = selectedPaymentKeys.includes(key);
-
-    if (splitByItem) {
-      if (isSelected && selectedPaymentKeys.length === 1) return;
-      setSelectedPaymentKeys((prev) => (isSelected ? prev.filter((k) => k !== key) : [...prev, key]));
-      return;
-    }
 
     if (!splitPayments) {
       setSelectedPaymentKeys([key]);
@@ -1812,53 +2000,6 @@ const subCategories = useMemo(() => {
     setPaymentForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const assignItemToMethod = (itemKey, methodKey) => {
-    setItemSplitMap((prev) => {
-      const next = { ...prev };
-      if (!methodKey) {
-        delete next[itemKey];
-      } else {
-        next[itemKey] = methodKey;
-      }
-      return next;
-    });
-    if (methodKey) {
-      if (!splitPayments) setSplitPayments(true);
-      setSelectedPaymentKeys((prev) => (prev.includes(methodKey) ? prev : [...prev, methodKey]));
-    }
-  };
-
-  useEffect(() => {
-    if (!splitByItem) return;
-    const firstKey = selectedPaymentKeys[0] || availablePaymentMethods[0]?.key;
-    if (!firstKey) return;
-    setItemSplitMap((prev) => {
-      const next = {};
-      (currentOrder.items || []).forEach((item, idx) => {
-        const key = getOrderItemKey(item, idx);
-        const assigned = prev[key];
-        if (assigned && selectedPaymentKeys.includes(assigned)) {
-          next[key] = assigned;
-        } else {
-          next[key] = firstKey;
-        }
-      });
-      return next;
-    });
-  }, [splitByItem, currentOrder.items, selectedPaymentKeys, availablePaymentMethods]);
-
-  useEffect(() => {
-    if (!splitByItem) return;
-    setPaymentForm((prev) => {
-      const next = { ...prev };
-      availablePaymentMethods.forEach((method) => {
-        const amount = itemSplitData.totals[method.key] || 0;
-        next[method.key] = amount ? amount.toFixed(2) : "";
-      });
-      return next;
-    });
-  }, [splitByItem, itemSplitData, availablePaymentMethods]);
-
   const printPaidInvoice = async () => {
     if (paymentPrintBusy) return;
     const payload = paymentResult?.payload;
@@ -1878,7 +2019,8 @@ const subCategories = useMemo(() => {
         copies: invoiceCfg.copies,
       });
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Factura impresa." } }));
-      closePaymentsModal();
+      setPaymentPrintBusy(false);
+      finalizePaymentAndExit();
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir.";
       window.alert(msg);
@@ -1991,49 +2133,38 @@ const subCategories = useMemo(() => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-white">
       {sectionsLoading && (
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] flex items-center justify-center">
           <div className="bg-white rounded-2xl shadow-xl px-6 py-5 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full border-4 border-lime-200 border-t-lime-700 animate-spin" />
-            <div className="text-sm font-semibold text-slate-700">Cargando secciones...</div>
+            <div className="text-sm font-semibold text-slate-700">Cargando...</div>
           </div>
         </div>
       )}
-      <header className="relative h-14 bg-gradient-to-r from-lime-700 to-slate-800 text-white flex items-center justify-between px-6 shadow">
+      <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
         <div className="flex items-center gap-3">
-          <button
-            className="h-9 px-3 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold"
-            onClick={() => navigate("/restaurant")}
-            title="Back to lobby"
-          >
-            Lobby
-          </button>
-          <span className="text-lg font-semibold">Restaurant</span>
-          <span className="text-sm text-lime-200">Welcome</span>
+          <span className="text-lg font-semibold text-white">Restaurant</span>
+          
         </div>
           <div className="flex items-center gap-4 relative">
-          <div className="hidden md:flex items-center gap-3 text-xs">
-            <div className="px-3 py-1 rounded-lg bg-white/10 text-white">
+          <div className="hidden md:flex items-center gap-4 text-sm font-semibold">
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
               {now.toLocaleDateString()}  {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </div>
-            <div className="px-3 py-1 rounded-lg bg-white/10 text-white">{shift}</div>
-            <div className="flex items-center gap-1">
-              <span className="px-2 py-1 rounded bg-white/10">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
-              <span className="px-2 py-1 rounded bg-white/10">TC {paymentsCfg.tipoCambio}</span>
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-2 rounded-xl bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
+              <span className="px-3 py-2 rounded-xl bg-white/15">TC {paymentsCfg.tipoCambio}</span>
             </div>
           </div>
-          <button
-            className="px-3 py-2 rounded-lg bg-lime-600 hover:bg-lime-500 text-sm font-semibold"
-            onClick={() => {
+          <RestaurantUserMenu
+            onOpenCashStatus={() => {
               if (!guardSwitch()) return;
               setCloseOpen(true);
               setOpenInfo((prev) => ({ ...prev, openedAt: prev.openedAt || new Date().toISOString() }));
             }}
-          >
-            Cash status
-          </button>
-          <RestaurantUserMenu />
+          />
         </div>
       </header>
 
@@ -2294,7 +2425,6 @@ const subCategories = useMemo(() => {
                 <div className="text-xs uppercase text-emerald-600">Payment</div>
                 <div className="text-lg font-semibold text-slate-900">{selectedTable?.name}</div>
               </div>
-              <RestaurantCloseXButton onClick={closePaymentsModal} />
             </div>
             <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
               <div className="space-y-4">
@@ -2327,14 +2457,6 @@ const subCategories = useMemo(() => {
                         >
                           {splitPayments ? "Pago dividido: Si" : "Pago dividido: No"}
                         </button>
-                        <button
-                          className={`h-8 px-3 rounded-full text-xs font-semibold border transition ${
-                            splitByItem ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-200 text-slate-700"
-                          }`}
-                          onClick={toggleSplitByItem}
-                        >
-                          Dividir por articulos
-                        </button>
                       </div>
                     </div>
 
@@ -2360,49 +2482,6 @@ const subCategories = useMemo(() => {
                       )}
                     </div>
 
-                    {splitByItem && (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs uppercase text-slate-500">Dividir por articulos</div>
-                          {itemSplitUnassigned > 0 && (
-                            <div className="text-xs text-amber-700">Pendiente: {formatMoney(itemSplitUnassigned)}</div>
-                          )}
-                        </div>
-                        <div className="max-h-52 overflow-y-auto space-y-2 pr-1">
-                          {(currentOrder.items || []).map((item, idx) => {
-                            const itemKey = getOrderItemKey(item, idx);
-                            const qty = Number(item?.qty || 0);
-                            const price = Number(item?.price || 0);
-                            const lineTotal = qty * price;
-                            return (
-                              <div key={itemKey} className="flex items-center justify-between gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="text-sm font-semibold text-slate-800 truncate">{item?.name || "Item"}</div>
-                                  <div className="text-[11px] text-slate-500">
-                                    {qty} x {formatMoney(price)} = {formatMoney(lineTotal)}
-                                  </div>
-                                </div>
-                                <select
-                                  className="h-9 rounded-lg border px-2 text-xs bg-white"
-                                  value={itemSplitMap[itemKey] || ""}
-                                  onChange={(e) => assignItemToMethod(itemKey, e.target.value)}
-                                >
-                                  <option value="">Sin asignar</option>
-                                  {availablePaymentMethods.map((m) => (
-                                    <option key={m.key} value={m.key}>
-                                      {m.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          Los montos se calculan automaticamente segun los articulos asignados.
-                        </div>
-                      </div>
-                    )}
 
                     {(currentOrder.serviceType || serviceType) === "ROOM" && (currentOrder.roomId || roomCharge) && (
                       <div className="text-xs text-slate-600">
@@ -2427,14 +2506,13 @@ const subCategories = useMemo(() => {
                           <div key={method.key} className="space-y-1">
                             <div className="text-xs text-slate-600">{method.name}</div>
                             <input
-                              className={`h-11 w-full rounded-lg border px-3 text-sm ${splitByItem ? "bg-slate-50 text-slate-500" : ""}`}
+                              className="h-11 w-full rounded-lg border px-3 text-sm"
                               placeholder="0.00"
                               type="number"
                               min="0"
                               step="0.01"
                               value={paymentForm[method.key] ?? ""}
                               onChange={(e) => updatePaymentAmount(method.key, e.target.value)}
-                              readOnly={splitByItem}
                             />
                           </div>
                         ))}
@@ -2455,7 +2533,7 @@ const subCategories = useMemo(() => {
                 <>
                   <button
                     className="px-4 py-2 rounded-lg border text-sm"
-                    onClick={closePaymentsModal}
+                    onClick={finalizePaymentAndExit}
                     disabled={paymentPrintBusy}
                   >
                     Cerrar sin imprimir
@@ -2470,18 +2548,155 @@ const subCategories = useMemo(() => {
                 </>
               ) : (
                 <>
-                  <button className="px-4 py-2 rounded-lg border text-sm" onClick={closePaymentsModal}>
-                    Cancel
+                  <button
+                    className="px-4 py-2 rounded-lg border text-sm"
+                    onClick={openSplitOrderModal}
+                    disabled={!hasItems}
+                  >
+                    Split Order
                   </button>
                   <button
                     className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                     disabled={!hasItems || selectedPaymentKeys.length === 0}
                     onClick={confirmChargeOrder}
                   >
-                    Confirm payment
+                    Confirm Payment
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-500"
+                    onClick={closePaymentsModal}
+                  >
+                    Cancelar
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {splitOrderModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase text-slate-500">Dividir cuentas</div>
+                <div className="text-lg font-semibold text-slate-900">Separar ordenes</div>
+              </div>
+              <RestaurantCloseXButton onClick={closeSplitOrderModal} />
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-slate-700">Cuentas</div>
+              <div className="flex items-center gap-2">
+                <button
+                  className={`h-8 px-3 rounded-lg border text-xs font-semibold ${
+                    splitOrderCount === 2 ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => {
+                    setSplitOrderCount(2);
+                    setSplitOrderMap((prev) => {
+                      const next = { ...prev };
+                      Object.keys(next).forEach((k) => {
+                        if (next[k] === "C") next[k] = "B";
+                      });
+                      return next;
+                    });
+                  }}
+                >
+                  2 cuentas
+                </button>
+                <button
+                  className={`h-8 px-3 rounded-lg border text-xs font-semibold ${
+                    splitOrderCount === 3 ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-600"
+                  }`}
+                  onClick={() => setSplitOrderCount(3)}
+                >
+                  3 cuentas
+                </button>
+              </div>
+            </div>
+            <div className={`grid gap-3 ${splitOrderCount === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+              {["A", "B", ...(splitOrderCount === 3 ? ["C"] : [])].map((bucket) => (
+                <div key={`bucket-${bucket}`} className="rounded-xl border border-slate-200 bg-slate-50 p-2 flex flex-col">
+                  <div className="text-xs font-semibold text-slate-600 text-center mb-2">
+                    {bucket === "A" ? "Cuenta A (actual)" : bucket === "B" ? "Cuenta B" : "Cuenta C"}
+                  </div>
+                  <div className="flex-1 space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {(currentOrder.items || [])
+                      .map((item, idx) => ({ item, idx, key: getSplitItemKey(item, idx) }))
+                      .filter(({ item, key }) => {
+                        const split = splitOrderMap[key] || { A: getItemQty(item), B: 0, C: 0 };
+                        return (split[bucket] || 0) > 0;
+                      })
+                      .map(({ item, idx, key }) => {
+                        const split = splitOrderMap[key] || { A: getItemQty(item), B: 0, C: 0 };
+                        const qty = split[bucket] || 0;
+                        const canMoveLeft = bucket !== "A";
+                        const canMoveRight = bucket !== (splitOrderCount === 3 ? "C" : "B");
+                        return (
+                          <div key={`bucket-${bucket}-${key}`} className="bg-white border rounded-lg px-2 py-2 flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-slate-800 truncate">{item.name}</div>
+                              <div className="text-[11px] text-slate-500">
+                                {qty} x {formatMoney(item.price)}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                className="h-7 w-7 rounded border text-xs disabled:opacity-40"
+                                disabled={!canMoveLeft}
+                                onClick={() =>
+                                  setSplitOrderMap((prev) => ({
+                                    ...prev,
+                                    [key]: (() => {
+                                      const next = { ...(prev[key] || { A: 0, B: 0, C: 0 }) };
+                                      if (bucket === "A" || next[bucket] <= 0) return next;
+                                      next[bucket] = Math.max(0, next[bucket] - 1);
+                                      if (bucket === "B") next.A += 1;
+                                      if (bucket === "C") next.B += 1;
+                                      return next;
+                                    })(),
+                                  }))
+                                }
+                              >
+                                &lt;
+                              </button>
+                              <button
+                                className="h-7 w-7 rounded border text-xs disabled:opacity-40"
+                                disabled={!canMoveRight}
+                                onClick={() =>
+                                  setSplitOrderMap((prev) => ({
+                                    ...prev,
+                                    [key]: (() => {
+                                      const next = { ...(prev[key] || { A: 0, B: 0, C: 0 }) };
+                                      if ((bucket === "C" && splitOrderCount === 3) || next[bucket] <= 0) return next;
+                                      next[bucket] = Math.max(0, next[bucket] - 1);
+                                      if (bucket === "A") next.B += 1;
+                                      if (bucket === "B") next.C += 1;
+                                      return next;
+                                    })(),
+                                  }))
+                                }
+                              >
+                                &gt;
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="px-4 py-2 rounded-lg border text-sm" onClick={closeSplitOrderModal}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold"
+                onClick={confirmSplitOrder}
+              >
+                Split Order
+              </button>
             </div>
           </div>
         </div>
@@ -2496,16 +2711,49 @@ const subCategories = useMemo(() => {
               </div>
               <RestaurantCloseXButton onClick={() => setTablePickerOpen(false)} />
             </div>
+            {(sections || []).length > 0 && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
+                {[
+                  { id: "ALL", name: "All" },
+                  ...(sections || []).map((s) => ({ id: String(s.id), name: s.name || s.id })),
+                ].map((sec, idx) => {
+                  const active = String(tablePickerSectionId || "ALL") === String(sec.id);
+                  return (
+                    <button
+                      key={`tab-${sec.id}-${idx}`}
+                      className={`px-4 py-2 text-xs font-semibold border-t border-l border-r rounded-t-md transition ${
+                        active
+                          ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                          : "bg-slate-100 border-transparent text-slate-500 hover:bg-white hover:border-slate-200"
+                      }`}
+                      onClick={() => {
+                        setTablePickerSectionId(sec.id);
+                        setMoveTargetTable(null);
+                      }}
+                    >
+                      {sec.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto">
-              {allTables.map((t, idx) => {
+              {tablePickerTables.map((t, idx) => {
                 const hasOrder = Boolean(tableOrderSummary[t.id]?.hasItems);
                 const orderCount = tableOrderSummary[t.id]?.count || 0;
                 const pickerKey = String(`${t.section?.id || "sec"}-${t.id || t.name || idx}`);
+                const isSelected = tablePickerMode === "MOVE" && moveTargetTable?.id === t.id;
                 return (
                   <button
                     key={pickerKey}
-                    className={`rounded-2xl border ${hasOrder ? "border-emerald-200 bg-emerald-50" : "border-lime-100 bg-lime-50"} hover:bg-lime-100 text-left px-4 py-3 shadow-sm`}
-                    onClick={() => (tablePickerMode === "MOVE" ? moveToTable(t) : handleSelectTable(t, t.section))}
+                    className={`rounded-2xl border ${
+                      isSelected
+                        ? "border-emerald-500 bg-emerald-100"
+                        : hasOrder
+                          ? "border-emerald-200 bg-emerald-50"
+                          : "border-lime-100 bg-lime-50"
+                    } hover:bg-lime-100 text-left px-4 py-3 shadow-sm`}
+                    onClick={() => (tablePickerMode === "MOVE" ? setMoveTargetTable(t) : handleSelectTable(t, t.section))}
                   >
                     <div className="text-xs text-lime-500">{t.section?.name || "Section"}</div>
                     <div className="text-lg font-semibold text-lime-900">{t.name}</div>
@@ -2515,90 +2763,39 @@ const subCategories = useMemo(() => {
                         {orderCount > 1 ? `${orderCount} ordenes` : "Orden activa"}
                       </div>
                     )}
+                    {tableOrderSummary[t.id]?.sentAt && (
+                      <div className="text-[11px] text-emerald-600">
+                        {formatElapsed(tableOrderSummary[t.id].sentAt)}
+                      </div>
+                    )}
                   </button>
                 );
               })}
             </div>
+            {tablePickerMode === "MOVE" && (
+              <div className="mt-auto flex items-center justify-between gap-3 border-t pt-3">
+                <div className="text-xs text-slate-600">
+                  Destino:{" "}
+                  <span className="font-semibold text-slate-900">
+                    {moveTargetTable?.name || "Selecciona una mesa"}
+                  </span>
+                </div>
+                <button
+                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                  disabled={!moveTargetTable?.id || moveTargetTable?.id === selectedTable?.id}
+                  onClick={() => moveTargetTable && moveToTable(moveTargetTable)}
+                >
+                  Confirmar cambio
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
        <div className="flex flex-1">
          <div className="flex-1 flex flex-col">
-            <header className="px-4 py-3 bg-white border-b flex items-center gap-3 shadow-sm">
-              <div className="flex items-center justify-between w-full">
-                 <div className="flex items-center gap-3">
-                  <div className="text-lg font-semibold text-lime-900">
-                   {selectedTable
-                     ? `${selectedSection?.name || ""}${selectedSection ? " - " : ""}${selectedTable?.name}`
-                     : sectionLauncher
-                       ? "Elige una seccion"
-                       : selectedSection
-                         ? selectedSection.name
-                         : "Elige una seccion"}
-                  </div>
-                  {selectedTable?.id && (
-                    <>
-                      <button
-                        className="px-3 py-2 rounded-lg bg-lime-700 hover:bg-lime-600 text-sm font-semibold"
-                        onClick={openNewOrderPicker}
-                      >
-                        New order
-                      </button>
-                      <button
-                        className="px-3 py-2 rounded-lg bg-lime-100 hover:bg-lime-200 text-sm font-semibold text-lime-900 disabled:opacity-50"
-                        onClick={openMoveTablePicker}
-                        disabled={!hasItems}
-                      >
-                        Change table
-                      </button>
-                      <button
-                        className="px-3 py-2 rounded-lg bg-white border hover:bg-lime-50 text-sm font-semibold disabled:opacity-50"
-                        onClick={cancelCurrentOrder}
-                        disabled={!hasItems || !isComandada}
-                        title={isComandada ? "Cancel open order (Admin only)" : "Solo orden comandada"}
-                      >
-                        Cancel order
-                      </button>
-                      <button
-                        className="px-3 py-2 rounded-lg bg-white border hover:bg-lime-50 text-sm font-semibold disabled:opacity-50"
-                        onClick={reprintCurrent}
-                        disabled={String(currentOrder?.status || "").toUpperCase() !== "PAID"}
-                        title="Reprint paid invoice/document"
-                      >
-                        Reprint invoice
-                      </button>
-                      <button
-                        className="px-3 py-2 rounded-lg bg-white border hover:bg-lime-50 text-sm font-semibold disabled:opacity-50"
-                        onClick={voidInvoice}
-                        disabled={String(currentOrder?.status || "").toUpperCase() !== "PAID"}
-                      >
-                        Void invoice
-                      </button>
-                    </>
-                  )}
-                </div>
-               {selectedTable?.id ? (
-                  <button
-                    className="h-11 px-4 rounded-xl bg-lime-100 text-lime-800 text-sm font-semibold hover:bg-lime-200"
-                    onClick={backToSection}
-                    title="Back to section"
-                  >
-                    Back
-                  </button>
-               ) : (!sectionLauncher && (
-                  <button
-                    className="h-11 px-4 rounded-xl bg-lime-100 text-lime-800 text-sm font-semibold hover:bg-lime-200"
-                    onClick={() => {
-                      if (!guardSwitch()) return;
-                      resetToLobby();
-                    }}
-                   >
-                     Back
-                   </button>
-                 ))}
-              </div>
-            </header>
+            
 
           {sectionLauncher || !selectedTable ? (
             <div key={sectionLauncher ? "restaurant-launcher" : `restaurant-section-${String(selectedSection?.id || "none")}`} className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto">
@@ -2650,14 +2847,14 @@ const subCategories = useMemo(() => {
                 <div className="col-span-3">
                   {selectedSection ? (
                     <div className="space-y-2">
-                      <div className="text-xs text-lime-700">
-                        Floor plan of <span className="font-semibold">{selectedSection.name}</span>. Tap a table to open it.
+                      <div className="text-s text-lime-700">
+                        Floor plan of <span className="font-semibold">{selectedSection.name}</span>.
                       </div>
-                      <div className="text-[11px] text-lime-700/80">
+                      <div className="text-[16px] text-lime-700/80">
                         Active menu: <span className="font-semibold">{selectedSection?.activeMenu?.name || "-"}</span>
                       </div>
                       <div className="relative w-full h-72 md:h-80 rounded-2xl border border-lime-200 bg-lime-50/60 overflow-hidden">
-                        <div className="absolute inset-x-3 top-2 flex justify-between text-[11px] text-lime-600">
+                        <div className="absolute inset-x-3 top-2 flex justify-between text-[13px] text-dark-600">
                           <span>Entrance</span>
                           <span>Bar / Kitchen</span>
                         </div>
@@ -2786,6 +2983,11 @@ const subCategories = useMemo(() => {
                               >
                                 {t.id || t.name}
                               </div>
+                              {tableOrderSummary[t.id]?.sentAt && (
+                                <div className="text-[10px] text-emerald-700 font-semibold">
+                                  {formatElapsed(tableOrderSummary[t.id].sentAt)}
+                                </div>
+                              )}
                             </button>
                           );
                         })}
@@ -2816,7 +3018,7 @@ const subCategories = useMemo(() => {
                         setSubCategory("");
                       }}
                     >
-                      Todas
+                      All
                     </button>
                     {categories.map((cat) => (
                       <button
@@ -2864,7 +3066,7 @@ const subCategories = useMemo(() => {
                             setSubSubCategory("");
                           }}
                         >
-                          Todas
+                          All
                         </button>
                         {subCategories.map((sub) => (
                           <button
@@ -2892,7 +3094,7 @@ const subCategories = useMemo(() => {
                           }`}
                           onClick={() => setSubSubCategory("")}
                         >
-                          Todas
+                          All
                         </button>
                         {subSubCategories.map((sub2) => (
                           <button
@@ -2914,14 +3116,16 @@ const subCategories = useMemo(() => {
 
                 <div className="bg-white border border-lime-100 rounded-2xl shadow p-4 flex flex-col">
                   <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 overflow-x-auto">
+                    <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-1">
                       {orderTabs.map((tab) => {
                         const active = tab.key === activeOrderKey;
                         return (
                           <button
                             key={tab.key}
-                            className={`h-8 px-3 rounded-full border text-xs font-semibold whitespace-nowrap ${
-                              active ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700"
+                            className={`h-8 px-3 border-t border-l border-r rounded-t-md text-xs font-semibold whitespace-nowrap transition ${
+                              active
+                                ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                : "bg-slate-100 border-transparent text-slate-500 hover:bg-white hover:border-slate-200"
                             }`}
                             onClick={() => selectOrderForTable(selectedTable?.id, tab.key)}
                           >
@@ -2929,13 +3133,14 @@ const subCategories = useMemo(() => {
                           </button>
                         );
                       })}
+                      <button
+                        className="h-8 w-8 flex items-center justify-center border-t border-l border-r rounded-t-md text-sm font-bold bg-slate-900 text-white"
+                        onClick={() => createNewOrderForTable(selectedTable?.id)}
+                        title="Nueva orden"
+                      >
+                        +
+                      </button>
                     </div>
-                    <button
-                      className="h-8 px-3 rounded-full bg-slate-900 text-white text-xs font-semibold"
-                      onClick={() => createNewOrderForTable(selectedTable?.id)}
-                    >
-                      Nueva orden
-                    </button>
                   </div>
                   <div className="flex items-center justify-between mb-3">
                     <div>
@@ -2961,7 +3166,7 @@ const subCategories = useMemo(() => {
                         className="h-9 px-3 rounded-lg bg-white border border-lime-300 text-sm font-semibold text-lime-800 hover:bg-lime-50"
                         onClick={() => alert("Selecciona un cliente desde el listado de clientes.")}
                       >
-                        Cliente
+                        Customer
                       
                       </button>
                     </div>
@@ -2969,16 +3174,16 @@ const subCategories = useMemo(() => {
 
                   <textarea
                     className="w-full rounded-lg border border-lime-100 px-3 py-2 text-sm min-h-[70px]"
-                    placeholder="Notas para cocina"
+                    placeholder="Kitchen Notes..."
                     value={orderNote}
                     onChange={(e) => handleNoteChange(e.target.value)}
                   />
 
                   <div className="mt-3 space-y-2">
-                    <div className="text-xs uppercase text-lime-500">Tipo de servicio</div>
+                    <div className="text-xs uppercase text-lime-500">Services Types</div>
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { id: "DINE_IN", label: "Comer aqui" },
+                        { id: "DINE_IN", label: "Dine In" },
                         { id: "TAKEOUT", label: "Takeout" },
                         { id: "DELIVERY", label: "Delivery" },
                         { id: "ROOM", label: "Room charge" },
@@ -3017,8 +3222,9 @@ const subCategories = useMemo(() => {
                           </div>
                           <div className="flex items-center gap-2">
                             <button
-                              className="h-8 w-8 rounded-lg bg-lime-50 text-lg"
+                              className="h-8 w-8 rounded-lg bg-lime-50 text-lg disabled:opacity-50"
                               onClick={() => updateQty(item.id, -1)}
+                              disabled={isComandada}
                             >
                               -
                             </button>
@@ -3056,8 +3262,9 @@ const subCategories = useMemo(() => {
                               </select>
                             )}
                             <button
-                              className="text-xs text-red-600 hover:underline"
+                              className="text-xs text-red-600 hover:underline disabled:opacity-50"
                               onClick={() => removeItem(item.id)}
+                              disabled={isComandada}
                             >
                               Quitar
                             </button>
@@ -3085,12 +3292,7 @@ const subCategories = useMemo(() => {
                       <span>{formatMoney(totals.total)}</span>
                     </div>
                   </div>
-                  <div className="mt-2 text-[11px] text-slate-600">
-                    <div>Tax included in prices: {taxesCfg.impuestoIncluido ? "Yes" : "No"}</div>
-                    <div>
-                      Discounts: {taxesCfg.permitirDescuentos ? "Enabled" : "Disabled"} • Max {taxesCfg.descuentoMax ?? 0}%
-                    </div>
-                  </div>
+                  
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
@@ -3098,7 +3300,7 @@ const subCategories = useMemo(() => {
                       onClick={sendToKitchen}
                       disabled={!hasItems}
                     >
-                      Comanda
+                      Comandar
                     </button>
                     <button
                       className="h-12 rounded-xl bg-white border text-lime-800 font-semibold hover:bg-lime-50 disabled:opacity-60"
@@ -3115,13 +3317,61 @@ const subCategories = useMemo(() => {
                     >
                       Cobrar
                     </button>
+                    <button
+                      className="h-12 rounded-xl bg-red-600 text-white font-semibold disabled:bg-red-300"
+                      onClick={cancelCurrentOrder}
+                      disabled={!hasItems || !isComandada}
+                      title={isComandada ? "Anular orden" : "Solo orden comandada"}
+                    >
+                      Anular orden
+                    </button>
                   </div>
                 </div>
               </div>
           )}
         </div>
       </div>
+      {selectedTable && !sectionLauncher && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-3xl">
+          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-2xl px-5 py-3 flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase text-lime-500">Mesa</div>
+              <div className="text-lg font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              <button
+                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                onClick={() => createNewOrderForTable(selectedTable?.id)}
+              >
+                Nueva orden
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                onClick={() => {
+                  setTablePickerMode("MOVE");
+                  setTablePickerOpen(true);
+                  setMoveTargetTable(null);
+                }}
+              >
+                Change table
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                onClick={openSplitOrderModal}
+                disabled={!hasItems}
+              >
+                Split Order
+              </button>
+              <button
+                className="px-3 py-2 rounded-xl bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                onClick={resetToLobby}
+              >
+                Back
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
