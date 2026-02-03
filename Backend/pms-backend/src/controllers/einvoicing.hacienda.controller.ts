@@ -411,10 +411,30 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: { id, hotelId },
-    select: { id: true, invoiceId: true, docType: true, status: true, consecutive: true, key: true },
+    select: {
+      id: true,
+      invoiceId: true,
+      restaurantOrderId: true,
+      docType: true,
+      status: true,
+      consecutive: true,
+      key: true,
+      createdAt: true,
+    },
   });
   if (!doc) return res.status(404).json({ message: "Documento no encontrado" });
   if (doc.status === "CANCELED") return res.json(doc);
+
+  if (doc.restaurantOrderId) {
+    const lastClose = await prisma.restaurantClose.findFirst({
+      where: { hotelId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (lastClose?.createdAt && doc.createdAt <= lastClose.createdAt) {
+      return res.status(403).json({ message: "No se puede anular un documento de restaurante despuÃ©s del cierre Z" });
+    }
+  }
 
   await prisma.eInvoicingAcknowledgement.create({
     data: {
