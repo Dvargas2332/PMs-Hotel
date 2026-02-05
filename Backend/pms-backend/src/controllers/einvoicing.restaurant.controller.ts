@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth.js";
 
 function resolveHotelId(req: Request): string | undefined {
@@ -57,12 +58,12 @@ function randomSecurityCode() {
 }
 
 function normalizeReceiver(input: unknown) {
-  if (!input || typeof input !== "object") return null;
+  if (!input || typeof input !== "object") return undefined;
   const data = input as Record<string, unknown>;
   const hasData = ["id", "idNumber", "identification", "name", "legalName", "email", "phone"].some(
     (k) => String(data[k] ?? "").trim().length > 0
   );
-  return hasData ? data : null;
+  return hasData ? (data as Prisma.InputJsonValue) : undefined;
 }
 
 function crOfficialKey(opts: {

@@ -21,6 +21,7 @@ export default function RestaurantReportsPage() {
   const [paidOrders, setPaidOrders] = useState([]);
   const [itemsCatalog, setItemsCatalog] = useState([]);
   const [historyGroup, setHistoryGroup] = useState("article");
+  const [staffList, setStaffList] = useState([]);
 
   const tipTotal = useMemo(() => Number(stats?.tipTotal || 0), [stats?.tipTotal]);
   const paymentsByMethod = useMemo(() => stats?.byMethod || {}, [stats?.byMethod]);
@@ -49,12 +50,14 @@ export default function RestaurantReportsPage() {
       const p = d.printing && typeof d.printing === "object" ? d.printing : null;
       if (p && p.paperType) setPrintSettings({ paperType: p.paperType });
 
-      const [paid, items] = await Promise.all([
+      const [paid, items, staff] = await Promise.all([
         api.get("/restaurant/orders?status=PAID"),
         api.get("/restaurant/items"),
+        api.get("/restaurant/staff").catch(() => ({ data: [] })),
       ]);
       setPaidOrders(Array.isArray(paid?.data) ? paid.data : []);
       setItemsCatalog(Array.isArray(items?.data) ? items.data : []);
+      setStaffList(Array.isArray(staff?.data) ? staff.data : []);
     } catch (e) {
       setError("Could not load reports.");
     } finally {
@@ -76,6 +79,14 @@ export default function RestaurantReportsPage() {
     });
     return map;
   }, [itemsCatalog]);
+
+  const staffById = useMemo(() => {
+    const map = new Map();
+    (staffList || []).forEach((s) => {
+      map.set(String(s.id), s);
+    });
+    return map;
+  }, [staffList]);
 
   const closesSorted = useMemo(() => {
     return (closes || [])
@@ -125,13 +136,20 @@ export default function RestaurantReportsPage() {
       }
 
       if (historyGroup === "cashier") {
-        addRow("Cajero (por implementar)", "Cajero (por implementar)", 1, orderTotal);
+        const cashierId = order?.cashierId ? String(order.cashierId) : "";
+        const cashier = cashierId ? staffById.get(cashierId) : null;
+        const label = cashier ? cashier.name : cashierId || "Sin cajero";
+        const key = cashier ? cashier.id : cashierId || "Sin cajero";
+        addRow(key, label, 1, orderTotal);
         return;
       }
 
       if (historyGroup === "waiter") {
-        const waiterId = order?.waiterId ? String(order.waiterId) : "Sin mesero";
-        addRow(waiterId, waiterId, 1, orderTotal);
+        const waiterId = order?.waiterId ? String(order.waiterId) : "";
+        const waiter = waiterId ? staffById.get(waiterId) : null;
+        const label = waiter ? waiter.name : waiterId || "Sin mesero";
+        const key = waiter ? waiter.id : waiterId || "Sin mesero";
+        addRow(key, label, 1, orderTotal);
         return;
       }
 
@@ -161,7 +179,7 @@ export default function RestaurantReportsPage() {
     });
 
     return Array.from(rows.values()).sort((a, b) => b.total - a.total);
-  }, [paidOrders, historyGroup, itemById, resolveCloseKey]);
+  }, [paidOrders, historyGroup, itemById, resolveCloseKey, staffById]);
 
   const printSalesReport = async () => {
     try {
@@ -350,8 +368,8 @@ export default function RestaurantReportsPage() {
                 <option value="family">Familia</option>
                 <option value="subFamily">Subfamilia</option>
                 <option value="subSubFamily">Sub Subfamilia</option>
-                <option value="cashier">Cajero (por implementar)</option>
-                <option value="waiter">Mesero (por implementar)</option>
+                <option value="cashier">Cajero</option>
+                <option value="waiter">Mesero</option>
               </select>
             </div>
           </div>
@@ -404,7 +422,5 @@ export default function RestaurantReportsPage() {
     </div>
   );
 }
-
-
 
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -9,70 +9,161 @@ export default function RestaurantFamilies() {
   const [families, setFamilies] = useState([]);
   const [subFamilies, setSubFamilies] = useState([]);
   const [subSubFamilies, setSubSubFamilies] = useState([]);
+  const [selectedFamilyId, setSelectedFamilyId] = useState("");
+  const [selectedSubFamilyId, setSelectedSubFamilyId] = useState("");
+  const [familyName, setFamilyName] = useState("");
+  const [subFamilyName, setSubFamilyName] = useState("");
+  const [subSubFamilyName, setSubSubFamilyName] = useState("");
+  const [familyCabys, setFamilyCabys] = useState("");
+  const [familyCabysSearch, setFamilyCabysSearch] = useState("");
+  const [familyCabysLoading, setFamilyCabysLoading] = useState(false);
+  const [familyCabysResults, setFamilyCabysResults] = useState([]);
 
-  const [familyForm, setFamilyForm] = useState({ name: "" });
-  const [subFamilyForm, setSubFamilyForm] = useState({ familyId: "", name: "" });
-  const [subSubFamilyForm, setSubSubFamilyForm] = useState({ subFamilyId: "", name: "" });
+  const pushAlert = (title, desc) => {
+    window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title, desc } }));
+  };
+  const getApiError = (err, fallback) => err?.response?.data?.message || err?.message || fallback;
 
-  const refresh = async () => {
+  const loadFamilies = async () => {
     setLoading(true);
     try {
-      const [f, sf, ssf] = await Promise.all([
-        api.get("/restaurant/families"),
-        api.get("/restaurant/subfamilies"),
-        api.get("/restaurant/subsubfamilies"),
-      ]);
-      setFamilies(Array.isArray(f?.data) ? f.data : []);
-      setSubFamilies(Array.isArray(sf?.data) ? sf.data : []);
-      setSubSubFamilies(Array.isArray(ssf?.data) ? ssf.data : []);
+      const { data } = await api.get("/restaurant/families");
+      if (Array.isArray(data)) {
+        setFamilies(data);
+        setSelectedFamilyId((cur) => cur || data[0]?.id || "");
+      } else {
+        setFamilies([]);
+      }
     } catch {
-      // ignore
+      setFamilies([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    refresh();
+    loadFamilies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const familiesById = useMemo(() => new Map((families || []).map((f) => [f.id, f])), [families]);
-  const subFamiliesById = useMemo(() => new Map((subFamilies || []).map((f) => [f.id, f])), [subFamilies]);
+  useEffect(() => {
+    const q = String(familyCabysSearch || "").trim();
+    if (q.length < 3) {
+      setFamilyCabysResults([]);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      setFamilyCabysLoading(true);
+      try {
+        const qs = new URLSearchParams();
+        qs.set("q", q);
+        qs.set("take", "25");
+        const { data } = await api.get(`/einvoicing/cabys?${qs.toString()}`);
+        if (!cancelled) setFamilyCabysResults(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setFamilyCabysResults([]);
+      } finally {
+        if (!cancelled) setFamilyCabysLoading(false);
+      }
+    };
+    const t = setTimeout(run, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [familyCabysSearch]);
+
+  useEffect(() => {
+    const fam = (families || []).find((f) => f.id === selectedFamilyId) || null;
+    setFamilyCabys(String(fam?.cabys || ""));
+  }, [families, selectedFamilyId]);
+
+  useEffect(() => {
+    const loadSub = async () => {
+      if (!selectedFamilyId) {
+        setSubFamilies([]);
+        setSelectedSubFamilyId("");
+        return;
+      }
+      try {
+        const { data } = await api.get(`/restaurant/subfamilies?familyId=${encodeURIComponent(selectedFamilyId)}`);
+        if (Array.isArray(data)) {
+          setSubFamilies(data);
+          setSelectedSubFamilyId((cur) => (cur && data.some((sf) => sf.id === cur) ? cur : data[0]?.id || ""));
+        } else {
+          setSubFamilies([]);
+        }
+      } catch {
+        setSubFamilies([]);
+      }
+    };
+    loadSub();
+  }, [selectedFamilyId]);
+
+  useEffect(() => {
+    const loadSubSub = async () => {
+      if (!selectedSubFamilyId) {
+        setSubSubFamilies([]);
+        return;
+      }
+      try {
+        const { data } = await api.get(`/restaurant/subsubfamilies?subFamilyId=${encodeURIComponent(selectedSubFamilyId)}`);
+        setSubSubFamilies(Array.isArray(data) ? data : []);
+      } catch {
+        setSubSubFamilies([]);
+      }
+    };
+    loadSubSub();
+  }, [selectedSubFamilyId]);
 
   const addFamily = async () => {
-    const name = String(familyForm.name || "").trim();
+    const name = String(familyName || "").trim();
     if (!name) return;
     try {
-      const { data } = await api.post("/restaurant/families", { name });
+      const cabys = String(familyCabys || "").trim();
+      const { data } = await api.post("/restaurant/families", { name, cabys: cabys || undefined });
       setFamilies((prev) => [...(prev || []), data].filter(Boolean));
-      setFamilyForm({ name: "" });
-    } catch {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not create family" } }));
+      setFamilyName("");
+      if (data?.id) setSelectedFamilyId(data.id);
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not create family."));
     }
   };
 
   const addSubFamily = async () => {
-    const name = String(subFamilyForm.name || "").trim();
-    if (!subFamilyForm.familyId || !name) return;
+    const name = String(subFamilyName || "").trim();
+    if (!selectedFamilyId || !name) return;
     try {
-      const { data } = await api.post("/restaurant/subfamilies", { familyId: subFamilyForm.familyId, name });
+      const { data } = await api.post("/restaurant/subfamilies", { familyId: selectedFamilyId, name });
       setSubFamilies((prev) => [...(prev || []), data].filter(Boolean));
-      setSubFamilyForm((f) => ({ ...f, name: "" }));
-    } catch {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not create subfamily" } }));
+      setSubFamilyName("");
+      if (data?.id) setSelectedSubFamilyId(data.id);
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not create sub-family."));
     }
   };
 
   const addSubSubFamily = async () => {
-    const name = String(subSubFamilyForm.name || "").trim();
-    if (!subSubFamilyForm.subFamilyId || !name) return;
+    const name = String(subSubFamilyName || "").trim();
+    if (!selectedSubFamilyId || !name) return;
     try {
-      const { data } = await api.post("/restaurant/subsubfamilies", { subFamilyId: subSubFamilyForm.subFamilyId, name });
+      const { data } = await api.post("/restaurant/subsubfamilies", { subFamilyId: selectedSubFamilyId, name });
       setSubSubFamilies((prev) => [...(prev || []), data].filter(Boolean));
-      setSubSubFamilyForm((f) => ({ ...f, name: "" }));
-    } catch {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not create sub-subfamily" } }));
+      setSubSubFamilyName("");
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not create sub-sub-family."));
+    }
+  };
+
+  const saveFamilyCabys = async () => {
+    if (!selectedFamilyId) return;
+    const cabys = String(familyCabys || "").trim();
+    try {
+      const { data } = await api.patch(`/restaurant/families/${selectedFamilyId}`, { cabys: cabys || null });
+      setFamilies((prev) => prev.map((f) => (f.id === selectedFamilyId ? data : f)));
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not save family CABYS."));
     }
   };
 
@@ -80,15 +171,14 @@ export default function RestaurantFamilies() {
     try {
       await api.delete(`/restaurant/families/${id}`);
       setFamilies((prev) => (prev || []).filter((f) => f.id !== id));
-      setSubFamilies((prev) => (prev || []).filter((sf) => sf.familyId !== id));
-      setSubSubFamilies((prev) => {
-        const remainingSub = new Set((subFamilies || []).filter((sf) => sf.familyId !== id).map((sf) => sf.id));
-        return (prev || []).filter((ssf) => remainingSub.has(ssf.subFamilyId));
-      });
-    } catch {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not delete family (it may have items)" } })
-      );
+      if (selectedFamilyId === id) {
+        setSelectedFamilyId("");
+        setSelectedSubFamilyId("");
+        setSubFamilies([]);
+        setSubSubFamilies([]);
+      }
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not delete family (it may have items)."));
     }
   };
 
@@ -96,11 +186,12 @@ export default function RestaurantFamilies() {
     try {
       await api.delete(`/restaurant/subfamilies/${id}`);
       setSubFamilies((prev) => (prev || []).filter((sf) => sf.id !== id));
-      setSubSubFamilies((prev) => (prev || []).filter((ssf) => ssf.subFamilyId !== id));
-    } catch {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not delete subfamily (it may have items)" } })
-      );
+      if (selectedSubFamilyId === id) {
+        setSelectedSubFamilyId("");
+        setSubSubFamilies([]);
+      }
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not delete sub-family (it may have items)."));
     }
   };
 
@@ -108,152 +199,240 @@ export default function RestaurantFamilies() {
     try {
       await api.delete(`/restaurant/subsubfamilies/${id}`);
       setSubSubFamilies((prev) => (prev || []).filter((ssf) => ssf.id !== id));
-    } catch {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Could not delete sub-subfamily (it may have items)" } })
-      );
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "Could not delete sub-sub-family (it may have items)."));
     }
   };
 
   return (
-    <div className="space-y-4">
-      <Card className="p-5 space-y-3">
-        <div className="flex items-start justify-between gap-3">
+    <div className="min-h-screen flex flex-col gap-3">
+      <Card className="p-4 space-y-3 border border-indigo-700/30 shadow-sm">
+        <div className="rounded-lg bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-indigo-50 px-3 py-2 flex items-center justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-lg">Families</h3>
-            <p className="text-sm text-gray-600">A family can have many subfamilies and items.</p>
-          </div>
-          <Button variant="outline" onClick={refresh} disabled={loading}>
-            {loading ? "Loading..." : "Refresh"}
-          </Button>
-        </div>
-        <div className="grid md:grid-cols-2 gap-3">
-          <Input
-            placeholder="Family name"
-            value={familyForm.name}
-            onChange={(e) => setFamilyForm((f) => ({ ...f, name: e.target.value }))}
-          />
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={addFamily}>
-              Add family
-            </Button>
+            <h3 className="font-semibold text-base">Families</h3>
+            <p className="text-[11px] text-indigo-200">Crear y administrar familias.</p>
           </div>
         </div>
 
-        {(families || []).length > 0 && (
-          <div className="grid md:grid-cols-3 gap-2">
-            {(families || []).map((f) => (
-              <div key={f.id} className="border rounded-lg px-3 py-2 flex items-center justify-between">
-                <div className="text-sm font-semibold">{f.name}</div>
-                <Button size="sm" variant="outline" onClick={() => removeFamily(f.id)}>
-                  Remove
+        <div className="rounded-xl border border-indigo-600/30 bg-indigo/30 p-3 space-y-3 shadow-sm">
+          <div className="grid lg:grid-cols-3 gap-3">
+            <Card className="p-3 space-y-2 border border-indigo-600/30 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-sm">Families</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={addFamily}
+                  disabled={loading}
+                >
+                  Add
                 </Button>
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-5 space-y-3">
-        <div>
-          <h3 className="font-semibold text-lg">Subfamilies</h3>
-          <p className="text-sm text-gray-600">A subfamily belongs to one family.</p>
-        </div>
-        <div className="grid md:grid-cols-3 gap-3">
-          <select
-            className="h-11 rounded-lg border px-3 text-sm bg-white"
-            value={subFamilyForm.familyId}
-            onChange={(e) => setSubFamilyForm((f) => ({ ...f, familyId: e.target.value }))}
-          >
-            <option value="">Select family</option>
-            {(families || []).map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="Subfamily name"
-            value={subFamilyForm.name}
-            onChange={(e) => setSubFamilyForm((f) => ({ ...f, name: e.target.value }))}
-          />
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={addSubFamily}>
-              Add subfamily
-            </Button>
-          </div>
-        </div>
-
-        {(subFamilies || []).length > 0 && (
-          <div className="grid md:grid-cols-3 gap-2">
-            {(subFamilies || []).map((sf) => (
-              <div key={sf.id} className="border rounded-lg px-3 py-2 flex items-center justify-between">
-                <div className="text-sm">
-                  <div className="font-semibold">{sf.name}</div>
-                  <div className="text-xs text-gray-600">{familiesById.get(sf.familyId)?.name || ""}</div>
+              <Input
+                placeholder="New family name"
+                value={familyName}
+                onChange={(e) => setFamilyName(e.target.value)}
+                className="h-8 text-[14px] px-2 placeholder:text-[14px]"
+              />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    placeholder="Family CABYS (set here only)"
+                    value={familyCabys}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setFamilyCabys(v);
+                      setFamilyCabysSearch(v);
+                    }}
+                    className="h-8 text-[14px] px-2 placeholder:text-[14px]"
+                  />
+                  {(familyCabysLoading || (familyCabysResults || []).length > 0) &&
+                    String(familyCabysSearch || "").trim().length >= 3 && (
+                      <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow max-h-64 overflow-y-auto">
+                        {familyCabysLoading && <div className="px-3 py-2 text-xs text-slate-600">Searching...</div>}
+                        {!familyCabysLoading && (familyCabysResults || []).length === 0 && (
+                          <div className="px-3 py-2 text-xs text-slate-600">No results.</div>
+                        )}
+                        {(familyCabysResults || []).map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className="w-full px-3 py-2 text-left hover:bg-slate-50"
+                            onClick={() => {
+                              setFamilyCabys(String(r.id));
+                              setFamilyCabysSearch("");
+                              setFamilyCabysResults([]);
+                            }}
+                          >
+                            <div className="text-xs font-semibold text-slate-900">{r.id}</div>
+                            <div className="text-[11px] text-slate-600 line-clamp-2">{r.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => removeSubFamily(sf.id)}>
-                  Remove
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  onClick={saveFamilyCabys}
+                  disabled={!selectedFamilyId}
+                >
+                  Save CABYS
                 </Button>
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
+                {(families || []).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60 ${
+                      selectedFamilyId === f.id ? "border-indigo-300 bg-indigo-50" : "border-indigo-100"
+                    }`}
+                    onClick={() => setSelectedFamilyId(f.id)}
+                  >
+                    <span className="text-sm font-semibold truncate">
+                      {f.name}
+                      {f.cabys ? <span className="ml-2 text-[11px] font-semibold text-slate-500">{f.cabys}</span> : null}
+                    </span>
+                    <button
+                      type="button"
+                      className="text-xs text-red-600 hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeFamily(f.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </button>
+                ))}
+                {(families || []).length === 0 && <div className="text-sm text-gray-500">No families yet.</div>}
+              </div>
+            </Card>
 
-      <Card className="p-5 space-y-3">
-        <div>
-          <h3 className="font-semibold text-lg">Sub-subfamilies</h3>
-          <p className="text-sm text-gray-600">A sub-subfamily belongs to one subfamily.</p>
-        </div>
-        <div className="grid md:grid-cols-3 gap-3">
-          <select
-            className="h-11 rounded-lg border px-3 text-sm bg-white"
-            value={subSubFamilyForm.subFamilyId}
-            onChange={(e) => setSubSubFamilyForm((f) => ({ ...f, subFamilyId: e.target.value }))}
-          >
-            <option value="">Select subfamily</option>
-            {(subFamilies || []).map((sf) => (
-              <option key={sf.id} value={sf.id}>
-                {(familiesById.get(sf.familyId)?.name ? `${familiesById.get(sf.familyId).name} / ` : "") + sf.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="Sub-subfamily name"
-            value={subSubFamilyForm.name}
-            onChange={(e) => setSubSubFamilyForm((f) => ({ ...f, name: e.target.value }))}
-          />
-          <div className="flex justify-end">
-            <Button variant="secondary" onClick={addSubSubFamily}>
-              Add sub-subfamily
-            </Button>
-          </div>
-        </div>
+            <Card className="p-3 space-y-2 border border-indigo-600/30 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-sm">Sub-families</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={addSubFamily}
+                  disabled={!selectedFamilyId}
+                >
+                  Add
+                </Button>
+              </div>
+              <select
+                className="h-8 rounded-lg border px-2 text-[14px] bg-white"
+                value={selectedFamilyId}
+                onChange={(e) => setSelectedFamilyId(e.target.value)}
+                title="Family"
+              >
+                <option value="">Select family...</option>
+                {(families || []).map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+              <Input placeholder="Family CABYS (inherited)" value={familyCabys} disabled className="h-8 text-[14px] px-2 placeholder:text-[14px]" />
+              <Input
+                placeholder="New sub-family name"
+                value={subFamilyName}
+                onChange={(e) => setSubFamilyName(e.target.value)}
+                disabled={!selectedFamilyId}
+                className="h-8 text-[14px] px-2 placeholder:text-[14px]"
+              />
+              <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
+                {(subFamilies || []).map((sf) => (
+                  <button
+                    key={sf.id}
+                    type="button"
+                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60 ${
+                      selectedSubFamilyId === sf.id ? "border-indigo-300 bg-indigo-50" : "border-indigo-100"
+                    }`}
+                    onClick={() => setSelectedSubFamilyId(sf.id)}
+                  >
+                    <span className="text-sm font-semibold truncate">{sf.name}</span>
+                    <button
+                      type="button"
+                      className="text-xs text-red-600 hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeSubFamily(sf.id);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </button>
+                ))}
+                {!selectedFamilyId && <div className="text-sm text-gray-500">Select a family first.</div>}
+                {selectedFamilyId && (subFamilies || []).length === 0 && (
+                  <div className="text-sm text-gray-500">No sub-families yet.</div>
+                )}
+              </div>
+            </Card>
 
-        {(subSubFamilies || []).length > 0 && (
-          <div className="grid md:grid-cols-3 gap-2">
-            {(subSubFamilies || []).map((ssf) => {
-              const sf = subFamiliesById.get(ssf.subFamilyId);
-              const fam = sf ? familiesById.get(sf.familyId) : null;
-              const path = `${fam?.name || ""}${fam ? " / " : ""}${sf?.name || ""}`;
-              return (
-                <div key={ssf.id} className="border rounded-lg px-3 py-2 flex items-center justify-between">
-                  <div className="text-sm">
-                    <div className="font-semibold">{ssf.name}</div>
-                    <div className="text-xs text-gray-600">{path}</div>
+            <Card className="p-3 space-y-2 border border-indigo-600/30 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-semibold text-sm">Sub-sub-families</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-80 disabled:cursor-not-allowed"
+                  onClick={addSubSubFamily}
+                  disabled={!selectedSubFamilyId}
+                >
+                  Add
+                </Button>
+              </div>
+              <select
+                className="h-8 rounded-lg border px-2 text-[14px] bg-white"
+                value={selectedSubFamilyId}
+                onChange={(e) => setSelectedSubFamilyId(e.target.value)}
+                title="Sub-family"
+                disabled={!selectedFamilyId}
+              >
+                <option value="">Select sub-family...</option>
+                {(subFamilies || []).map((sf) => (
+                  <option key={sf.id} value={sf.id}>
+                    {sf.name}
+                  </option>
+                ))}
+              </select>
+              <Input
+                placeholder="New sub-sub-family name"
+                value={subSubFamilyName}
+                onChange={(e) => setSubSubFamilyName(e.target.value)}
+                disabled={!selectedSubFamilyId}
+                className="h-8 text-[14px] px-2 placeholder:text-[14px]"
+              />
+              <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
+                {(subSubFamilies || []).map((ssf) => (
+                  <div
+                    key={ssf.id}
+                    className="w-full rounded-lg border border-indigo-100 px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60"
+                  >
+                    <span className="text-sm font-semibold truncate">{ssf.name}</span>
+                    <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => removeSubSubFamily(ssf.id)}>
+                      Delete
+                    </button>
                   </div>
-                  <Button size="sm" variant="outline" onClick={() => removeSubSubFamily(ssf.id)}>
-                    Remove
-                  </Button>
-                </div>
-              );
-            })}
+                ))}
+                {!selectedSubFamilyId && <div className="text-sm text-gray-500">Select a sub-family first.</div>}
+                {selectedSubFamilyId && (subSubFamilies || []).length === 0 && (
+                  <div className="text-sm text-gray-500">No sub-sub-families yet.</div>
+                )}
+              </div>
+            </Card>
           </div>
-        )}
+        </div>
       </Card>
-
-      {loading && <div className="text-sm text-gray-500">Loading...</div>}
     </div>
   );
 }

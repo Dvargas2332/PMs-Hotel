@@ -39,7 +39,6 @@ import RestaurantPayments from "./Restaurant/RestaurantPayments";
 import RestaurantFamilies from "./Restaurant/RestaurantFamilies";
 import RestaurantRecipes from "./Restaurant/RestaurantRecipes";
 import RestaurantInventory from "./Restaurant/RestaurantInventory";
-import RestaurantItems from "./Restaurant/RestaurantItems";
 
 // Vista de perfiles de launcher (UserLauncher)
 function LauncherProfiles() {
@@ -300,7 +299,6 @@ const VIEWS = {
   restaurantFamilies: RestaurantFamilies,
   restaurantRecipes: RestaurantRecipes,
   restaurantInventory: RestaurantInventory,
-  restaurantItems: RestaurantItems,
   restaurantConfig: RestaurantConfig,
 
   // Channel manager

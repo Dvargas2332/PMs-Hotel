@@ -50,6 +50,11 @@ enum RestaurantOrderItemStatus {
   SERVED
 }
 
+enum RestaurantStaffRole {
+  CASHIER
+  WAITER
+}
+
 // Restaurant inventory units
 // Stored as String to keep backward/forward compatibility with UI.
 
@@ -161,6 +166,7 @@ model RestaurantOrder {
   sectionId        String?
   tableId          String
   waiterId         String?
+  cashierId        String?
   status           RestaurantOrderStatus @default(OPEN)
   note             String?
   covers           Int?
@@ -186,10 +192,12 @@ model RestaurantOrderItem {
   hotelId  String
   orderId  String
   itemId   String
+  variantKey String                 @default("")
   name     String
   category String?
   price    Decimal                   @db.Decimal(12, 2)
   qty      Int
+  detailNote String?
   priceIncludesTaxesAndService Boolean @default(true)
   area     RestaurantKdsArea         @default(KITCHEN)
   status   RestaurantOrderItemStatus @default(NEW)
@@ -197,8 +205,28 @@ model RestaurantOrderItem {
   order RestaurantOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   hotel Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
-  @@unique([hotelId, orderId, itemId])
+  @@unique([hotelId, orderId, itemId, variantKey])
   @@index([hotelId])
+}
+
+model RestaurantStaff {
+  id           String              @id @default(cuid())
+  hotelId      String
+  launcherId   String?
+  name         String
+  username     String
+  role         RestaurantStaffRole
+  active       Boolean             @default(true)
+  passwordHash String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  hotel    Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  launcher LauncherAccount? @relation(fields: [launcherId], references: [id], onDelete: SetNull)
+
+  @@unique([hotelId, username])
+  @@index([hotelId])
+  @@index([hotelId, launcherId])
 }
 
 model RestaurantSection {
@@ -416,6 +444,8 @@ model RestaurantItem {
   cabys          String?
   color          String?
   imageUrl       String?
+  sizes          Json?
+  details        Json?
   priceIncludesTaxesAndService Boolean @default(true)
   price          Decimal  @default(0) @db.Decimal(12, 2)
   tax            Decimal  @default(0) @db.Decimal(5, 2)
@@ -598,6 +628,7 @@ model Hotel {
   restaurantInventoryItems     RestaurantInventoryItem[]
   restaurantInventoryMovements RestaurantInventoryMovement[]
   restaurantRecipeLines        RestaurantRecipeLine[]
+  restaurantStaff              RestaurantStaff[]
   reservationSequences         ReservationSequence[]
   hotelSequences               HotelSequence[]
   launcherAccounts             LauncherAccount[]
@@ -727,8 +758,9 @@ model LauncherAccount {
   roleId    String   @default("ADMIN")
   createdAt DateTime @default(now())
 
-  hotel Hotel   @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  role  AppRole @relation(fields: [hotelId, roleId], references: [hotelId, id], onDelete: Cascade)
+  hotel           Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  role            AppRole          @relation(fields: [hotelId, roleId], references: [hotelId, id], onDelete: Cascade)
+  restaurantStaff RestaurantStaff[]
 
   @@unique([hotelId, username])
   @@index([hotelId])

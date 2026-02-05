@@ -17,6 +17,7 @@ import {
   closeShift,
   listCloses,
   listOrders,
+  listRestaurantShiftInvoices,
   listKds,
   updateKdsItem,
   createOrUpdateOrder,
@@ -74,6 +75,11 @@ import {
   listRecipes,
   createRecipeLine,
   deleteRecipeLine,
+  listRestaurantStaff,
+  createRestaurantStaff,
+  updateRestaurantStaff,
+  deleteRestaurantStaff,
+  loginRestaurantStaff,
 } from "../controllers/restaurant.controller.js";
 
 const router = Router();
@@ -96,6 +102,7 @@ router.post("/print", requirePermission("restaurant.access.pos", "restaurant.pos
 router.post("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), requirePermission("restaurant.shift.close"), closeShift);
 router.get("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), listCloses);
 router.get("/stats", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantStats);
+router.get("/shift/invoices", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), listRestaurantShiftInvoices);
 router.get("/orders", requirePermission("restaurant.access.pos", "restaurant.access.history", "restaurant.pos.open"), listOrders);
 router.post("/order", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.write"), createOrUpdateOrder);
 router.post("/order/close", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.close"), closeOrder);
@@ -106,6 +113,11 @@ router.post("/order/reprint", requirePermission("restaurant.access.reprints", "r
 router.post("/order/void-invoice", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), voidRestaurantInvoice);
 router.get("/kds", requirePermission("restaurant.access.kds", "restaurant.pos.open"), listKds);
 router.patch("/kds/:orderItemId", requirePermission("restaurant.access.kds", "restaurant.pos.open"), requirePermission("restaurant.orders.write"), updateKdsItem);
+router.get("/staff", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.access.history"), listRestaurantStaff);
+router.post("/staff/login", requirePermission("restaurant.access.pos", "restaurant.pos.open"), loginRestaurantStaff);
+router.post("/staff", requirePermission("restaurant.staff.write"), createRestaurantStaff);
+router.patch("/staff/:id", requirePermission("restaurant.staff.write"), updateRestaurantStaff);
+router.delete("/staff/:id", requirePermission("restaurant.staff.write"), deleteRestaurantStaff);
 router.get("/sections", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.sections.write"), listSections);
 router.post("/sections", requirePermission("restaurant.sections.write"), createSection);
 router.delete("/sections/:sectionId", requirePermission("restaurant.sections.write"), deleteSection);

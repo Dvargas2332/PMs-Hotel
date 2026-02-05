@@ -1,61 +1,48 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, FileText, Boxes, UtensilsCrossed, ScrollText, ChevronRight } from "lucide-react";
+import { ClipboardList, FileText, Boxes, UtensilsCrossed, ScrollText, ChevronRight, Users } from "lucide-react";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
 // Manually adjust tile size:
 const LOBBY_TILE_SIZE = "lg"; // "sm" | "md" | "lg"
 
 const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE }) => {
-  const cardDecor = {
-    aqua: { border: "border-black/20", overlay: "from-black/10 to-black/5" },
-    lime: { border: "border-black/20", overlay: "from-black/10 to-black/5" },
-    orange: { border: "border-black/20", overlay: "from-black/10 to-black/5" },
-    emerald: { border: "border-black/20", overlay: "from-black/10 to-black/5" },
-    indigo: { border: "border-black/20", overlay: "from-black/10 to-black/5" },
-  };
   const toneDecor = {
-
     lime: {
-      bg: "bg-white",
-      iconBg: "bg-black",
+      border: "border-lime-200",
+      iconBg: "bg-lime-700",
       iconText: "text-white",
-      watermark: "text-black/10",
-      glow: "shadow-black/20",
+      watermark: "text-lime-200/60",
+      glow: "shadow-emerald-500/20",
     },
-
     emerald: {
-      bg: "bg-white",
-      iconBg: "bg-black",
+      border: "border-emerald-200",
+      iconBg: "bg-emerald-600",
       iconText: "text-white",
-      watermark: "text-black/10",
-      glow: "shadow-black/20",
+      watermark: "text-emerald-200/60",
+      glow: "shadow-emerald-500/20",
     },
-
     indigo: {
-      bg: "bg-white",
-      iconBg: "bg-black",
+      border: "border-lime-200",
+      iconBg: "bg-lime-700",
       iconText: "text-white",
-      watermark: "text-black/10",
-      glow: "shadow-black/20",
+      watermark: "text-lime-200/60",
+      glow: "shadow-emerald-500/20",
     },
-
     orange: {
-      bg: "bg-white",
-      iconBg: "bg-black",
+      border: "border-emerald-200",
+      iconBg: "bg-emerald-600",
       iconText: "text-white",
-      watermark: "text-black/10",
-      glow: "shadow-black/20",
+      watermark: "text-emerald-200/60",
+      glow: "shadow-emerald-500/20",
     },
-    
     aqua: {
-      bg: "bg-white",
-      iconBg: "bg-black",
+      border: "border-lime-200",
+      iconBg: "bg-lime-700",
       iconText: "text-white",
-      watermark: "text-black/10",
-      glow: "shadow-black/20",
+      watermark: "text-lime-200/60",
+      glow: "shadow-emerald-500/20",
     },
-
   };
 
   const sizes = {
@@ -85,12 +72,11 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
     },
   };
   const s = sizes[size] || sizes.md;
-  const c = cardDecor[tone] || cardDecor.aqua;
-  const d = toneDecor[tone] || toneDecor.aqua;
+  const d = toneDecor[tone] || toneDecor.lime;
 
   return (
     <button
-      className={`group relative overflow-hidden rounded-2xl border ${c.border} ${d.bg || "bg-white"} shadow-sm text-left ${s.root} hover:shadow-md transition`}
+      className={`group relative overflow-hidden rounded-2xl bg-white/95 border ${d.border} shadow-[0_8px_20px_rgba(16,185,129,0.18)] hover:shadow-[0_12px_28px_rgba(16,185,129,0.28)] hover:-translate-y-0.5 transition text-left ${s.root}`}
       onClick={onClick}
     >
       <div className="absolute -top-6 -right-6 pointer-events-none">
@@ -102,11 +88,11 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
             <div className={`${s.iconWrap} ${d.iconBg} shadow-lg ${d.glow} flex items-center justify-center`}>
               <Icon className={`${s.icon} ${d.iconText}`} />
             </div>
-            <div className={`${s.title} font-semibold text-black`}>{title}</div>
+            <div className={`${s.title} font-semibold text-lime-900`}>{title}</div>
           </div>
-          <div className={`${s.desc} text-black`}>{desc}</div>
+          <div className={`${s.desc} text-slate-600`}>{desc}</div>
         </div>
-        <ChevronRight className={`${s.chevron} text-black group-hover:translate-x-0.5 transition`} />
+        <ChevronRight className={`${s.chevron} text-lime-700 group-hover:translate-x-0.5 transition`} />
       </div>
     </button>
   );
@@ -114,6 +100,18 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
 
 export default function RestaurantLobby() {
   const navigate = useNavigate();
+  const [now, setNow] = useState(new Date());
+  const shift = useMemo(() => {
+    const h = now.getHours();
+    if (h < 15) return "Morning shift";
+    if (h < 22) return "Afternoon shift";
+    return "Night shift";
+  }, [now]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
   const tiles = [
     {
       title: "Restaurante (POS)",
@@ -138,6 +136,14 @@ export default function RestaurantLobby() {
       size: "lg",
       onClick: () => navigate("/restaurant/reports"),
       tone: "indigo",
+    },
+    {
+      title: "Cajeros y Meseros",
+      desc: "Crea y administra personal con acceso al TPV.",
+      icon: Users,
+      size: "lg",
+      onClick: () => navigate("/restaurant/staff"),
+      tone: "emerald",
     },
     {
       title: "Cierres",
@@ -173,12 +179,18 @@ export default function RestaurantLobby() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-200 text-black">
-      <header className="h-14 flex items-center justify-between px-6 bg-white/95 backdrop-blur border-b border-black/10 text-black shadow">
-        <div>
-          <div className="text-xs uppercase text-black/80">Restaurant</div>
-          <div className="text-sm font-semibold">Lobby</div>
+      <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-semibold text-white">Restaurant</span>
+          <span className="text-sm text-white/80">Lobby</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-4 text-sm font-semibold">
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
+              {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
+          </div>
           <RestaurantUserMenu />
         </div>
       </header>
@@ -198,9 +210,6 @@ export default function RestaurantLobby() {
     </div>
   );
 }
-
-
-
 
 
 
