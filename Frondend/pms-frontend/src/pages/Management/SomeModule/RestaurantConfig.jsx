@@ -6,6 +6,8 @@ import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
 import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
+import RestaurantItems from "../Restaurant/RestaurantItems";
+import RestaurantFamilies from "../Restaurant/RestaurantFamilies";
 
 const NAV_TABS = [
   { id: "general", label: "Información general" },
@@ -145,10 +147,10 @@ export default function RestaurantConfig() {
   const [drag, setDrag] = useState(null); // { type: 'table', mode: 'move', id, rect, startX, startY, baseX, baseY }
   const dragLatestRef = useRef(null);
   const [selectedTableId, setSelectedTableId] = useState("");
+  const [selectedObjectId, setSelectedObjectId] = useState("");
   const [tableEdit, setTableEdit] = useState(null);
   const [rotationSnap, setRotationSnap] = useState(15); // 0 = off
   const [floorplanSaving, setFloorplanSaving] = useState(false); // posiciones
-  const [styleSaving, setStyleSaving] = useState(false); // estilo
   const [dirtyPosTableIds, setDirtyPosTableIds] = useState([]); // X/Y moved on floorplan
   const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation/color changed
   const [backgroundForm, setBackgroundForm] = useState({ color: "", image: "" });
@@ -175,6 +177,7 @@ export default function RestaurantConfig() {
   }, [general?.backgrounds, selectedSectionId]);
 
   const floorplanDirty = (dirtyPosTableIds || []).length > 0;
+  const floorplanHasChanges = floorplanDirty || (dirtyStyleTableIds || []).length > 0;
   const markPosDirty = (tableId) => {
     if (!tableId) return;
     setDirtyPosTableIds((prev) => (prev.includes(tableId) ? prev : [...prev, tableId]));
@@ -224,46 +227,8 @@ export default function RestaurantConfig() {
   const [discountsModalOpen, setDiscountsModalOpen] = useState(false);
   const [taxForm, setTaxForm] = useState({ code: "", name: "", percent: 0, scope: "pos" });
   const [taxBusy, setTaxBusy] = useState(false);
-  const [families, setFamilies] = useState([]);
-  const [subFamilies, setSubFamilies] = useState([]);
-  const [subSubFamilies, setSubSubFamilies] = useState([]);
-  const [selectedFamilyId, setSelectedFamilyId] = useState("");
-  const [selectedSubFamilyId, setSelectedSubFamilyId] = useState("");
-  const [familyName, setFamilyName] = useState("");
-  const [subFamilyName, setSubFamilyName] = useState("");
-  const [subSubFamilyName, setSubSubFamilyName] = useState("");
   const [items, setItems] = useState([]);
   const [taxCatalog, setTaxCatalog] = useState([]);
-  const [quickItem, setQuickItem] = useState({
-    name: "",
-    familyId: "",
-    subFamilyId: "",
-    subSubFamilyId: "",
-    price: "",
-    imageUrl: "",
-    priceIncludesTaxesAndService: true,
-    taxIds: [],
-    notes: "",
-  });
-  const [editingItemId, setEditingItemId] = useState("");
-  const [editItem, setEditItem] = useState(null);
-  const [itemImageBusy, setItemImageBusy] = useState(false);
-  const [itemFilters, setItemFilters] = useState({
-    q: "",
-    familyId: "",
-    subFamilyId: "",
-    subSubFamilyId: "",
-    active: "",
-    minPrice: "",
-    maxPrice: "",
-    tax: "",
-  });
-  const [allSubFamilies, setAllSubFamilies] = useState([]);
-  const [allSubSubFamilies, setAllSubSubFamilies] = useState([]);
-  const [familyCabys, setFamilyCabys] = useState("");
-  const [familyCabysSearch, setFamilyCabysSearch] = useState("");
-  const [familyCabysLoading, setFamilyCabysLoading] = useState(false);
-  const [familyCabysResults, setFamilyCabysResults] = useState([]);
   const [recipeLines, setRecipeLines] = useState([]);
   const [selectedRecipeItemId, setSelectedRecipeItemId] = useState("");
   const [recipeLineForm, setRecipeLineForm] = useState({ inventoryItemId: "", qty: "", unit: "" });
@@ -305,24 +270,6 @@ export default function RestaurantConfig() {
   useEffect(() => {
     if (menuPickerOpen && (active !== "sections" || subTab !== "menus")) setMenuPickerOpen(false);
   }, [active, subTab, menuPickerOpen]);
-
-  useEffect(() => {
-    const loadAll = async () => {
-      try {
-        const { data } = await api.get("/restaurant/subfamilies");
-        setAllSubFamilies(Array.isArray(data) ? data : []);
-      } catch {
-        setAllSubFamilies([]);
-      }
-      try {
-        const { data } = await api.get("/restaurant/subsubfamilies");
-        setAllSubSubFamilies(Array.isArray(data) ? data : []);
-      } catch {
-        setAllSubSubFamilies([]);
-      }
-    };
-    loadAll();
-  }, []);
 
   const isCostaRica = useMemo(() => {
     const base = String(payments?.monedaBase || "").toUpperCase();
@@ -366,33 +313,6 @@ export default function RestaurantConfig() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCostaRica]);
 
-  useEffect(() => {
-    const q = String(familyCabysSearch || "").trim();
-    if (q.length < 3) {
-      setFamilyCabysResults([]);
-      return;
-    }
-    let cancelled = false;
-    const run = async () => {
-      setFamilyCabysLoading(true);
-      try {
-        const qs = new URLSearchParams();
-        qs.set("q", q);
-        qs.set("take", "25");
-        const { data } = await api.get(`/einvoicing/cabys?${qs.toString()}`);
-        if (!cancelled) setFamilyCabysResults(Array.isArray(data) ? data : []);
-      } catch {
-        if (!cancelled) setFamilyCabysResults([]);
-      } finally {
-        if (!cancelled) setFamilyCabysLoading(false);
-      }
-    };
-    const t = setTimeout(run, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [familyCabysSearch]);
   useEffect(() => {
     const load = async () => {
       try {
@@ -536,15 +456,6 @@ export default function RestaurantConfig() {
         setTaxCatalog([]);
       }
       try {
-        const { data } = await api.get("/restaurant/families");
-        if (Array.isArray(data)) {
-          setFamilies(data);
-          setSelectedFamilyId((cur) => cur || data[0]?.id || "");
-        }
-      } catch {
-        setFamilies([]);
-      }
-      try {
         const { data } = await api.get("/restaurant/items");
         if (Array.isArray(data)) setItems(data);
       } catch {
@@ -607,54 +518,11 @@ export default function RestaurantConfig() {
     loadMenuItems();
   }, [selectedMenuId]);
 
-  useEffect(() => {
-    const loadSub = async () => {
-      if (!selectedFamilyId) {
-        setSubFamilies([]);
-        setSelectedSubFamilyId("");
-        return;
-      }
-      try {
-        const { data } = await api.get(`/restaurant/subfamilies?familyId=${encodeURIComponent(selectedFamilyId)}`);
-        if (Array.isArray(data)) {
-          setSubFamilies(data);
-          if (!selectedSubFamilyId && data[0]?.id) setSelectedSubFamilyId(data[0].id);
-        } else {
-          setSubFamilies([]);
-        }
-      } catch {
-        setSubFamilies([]);
-      }
-    };
-    loadSub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFamilyId]);
-
-  useEffect(() => {
-    const fam = (families || []).find((f) => f.id === selectedFamilyId) || null;
-    setFamilyCabys(String(fam?.cabys || ""));
-  }, [families, selectedFamilyId]);
-
-  useEffect(() => {
-    const loadSubSub = async () => {
-      if (!selectedSubFamilyId) {
-        setSubSubFamilies([]);
-        return;
-      }
-      try {
-        const { data } = await api.get(`/restaurant/subsubfamilies?subFamilyId=${encodeURIComponent(selectedSubFamilyId)}`);
-        setSubSubFamilies(Array.isArray(data) ? data : []);
-      } catch {
-        setSubSubFamilies([]);
-      }
-    };
-    loadSubSub();
-  }, [selectedSubFamilyId]);
-
-  // Floorplan objects removed (tables only)
+  // Floorplan state reset per section
   useEffect(() => {
     setDirtyPosTableIds([]);
     setDirtyStyleTableIds([]);
+    setSelectedObjectId("");
   }, [selectedSectionId]);
 
   useEffect(() => {
@@ -777,6 +645,68 @@ export default function RestaurantConfig() {
       clearStyleDirty(tableId);
     } catch (err) {
       alert("Restaurant", getApiError(err, "Could not delete table."));
+    }
+  };
+
+  const updateSectionObjects = (sectionId, updater) => {
+    setSections((prev) =>
+      prev.map((s) => {
+        if (String(s.id) !== String(sectionId)) return s;
+        const current = Array.isArray(s.objects) ? s.objects : [];
+        const nextObjects = updater(current);
+        return { ...s, objects: nextObjects };
+      })
+    );
+  };
+
+  const addBarObject = async () => {
+    if (!selectedSectionId) return;
+    try {
+      const payload = {
+        kind: "BAR",
+        label: "Barra",
+        x: 50,
+        y: 50,
+        w: 24,
+        h: 10,
+        rotation: 0,
+        color: "#f59e0b",
+        meta: { iconUrl: BAR_DECOR_ICON_URL },
+      };
+      const { data } = await api.post(`/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects`, payload);
+      updateSectionObjects(selectedSectionId, (prev) => [...prev, data]);
+      setSelectedObjectId(String(data?.id || ""));
+      alert("Restaurant", "Barra agregada.");
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "No se pudo agregar la barra."));
+    }
+  };
+
+  const updateObjectXY = async (objectId, patch) => {
+    if (!selectedSectionId || !objectId) return;
+    try {
+      const { data } = await api.patch(
+        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects/${encodeURIComponent(String(objectId))}`,
+        patch
+      );
+      updateSectionObjects(selectedSectionId, (prev) =>
+        prev.map((o) => (String(o.id) === String(objectId) ? { ...o, ...data } : o))
+      );
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "No se pudo actualizar el objeto."));
+    }
+  };
+
+  const removeObject = async (objectId) => {
+    if (!selectedSectionId || !objectId) return;
+    try {
+      await api.delete(
+        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects/${encodeURIComponent(String(objectId))}`
+      );
+      updateSectionObjects(selectedSectionId, (prev) => prev.filter((o) => String(o.id) !== String(objectId)));
+      if (String(selectedObjectId) === String(objectId)) setSelectedObjectId("");
+    } catch (err) {
+      alert("Restaurant", getApiError(err, "No se pudo eliminar el objeto."));
     }
   };
 
@@ -918,17 +848,23 @@ export default function RestaurantConfig() {
       color: color || "",
     };
 
-    try {
-      await api.patch(
-        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`,
-        nextStyle
-      );
-      const { data: secData } = await api.get("/restaurant/sections");
-      if (Array.isArray(secData)) setSections(secData);
-      clearStyleDirty(tableId);
-    } catch (err) {
-      // Backward compatibility: if backend doesn't have the endpoint yet, keep the old fallback.
-      if (err?.response?.status !== 404) throw err;
+    const isStylePersisted = (sectionsData) => {
+      const sec = Array.isArray(sectionsData) ? sectionsData.find((s) => String(s?.id) === String(selectedSectionId)) : null;
+      const t = sec?.tables ? sec.tables.find((tt) => String(tt?.id) === String(tableId)) : null;
+      if (!t) return false;
+      const savedColor = String(t.color || t.colorHex || t.iconColor || "").trim();
+      const savedSize = Number(t.size ?? t.iconSize);
+      const savedRotation = Number(t.rotation ?? t.angle);
+      const wantColor = String(nextStyle.color || "").trim();
+      const wantSize = Number(nextStyle.size);
+      const wantRotation = Number(nextStyle.rotation);
+      const colorOk = wantColor ? savedColor === wantColor : true;
+      const sizeOk = Number.isFinite(wantSize) ? Number.isFinite(savedSize) && savedSize === wantSize : true;
+      const rotationOk = Number.isFinite(wantRotation) ? Number.isFinite(savedRotation) && savedRotation === wantRotation : true;
+      return colorOk && sizeOk && rotationOk;
+    };
+
+    const persistToGeneral = async () => {
       const { data: gen } = await api.get("/restaurant/general");
       const existing = gen && typeof gen === "object" ? gen : {};
       const prevStyles = existing.tableStyles && typeof existing.tableStyles === "object" ? existing.tableStyles : {};
@@ -951,14 +887,50 @@ export default function RestaurantConfig() {
       setGeneral((prev) => ({ ...prev, ...nextGeneral }));
       setSections((prev) => applyTableStylesToSections(prev, nextStyles));
       clearStyleDirty(tableId);
+    };
+
+    try {
+      await api.patch(
+        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`,
+        nextStyle
+      );
+      const { data: secData } = await api.get("/restaurant/sections");
+      if (Array.isArray(secData)) {
+        setSections(secData);
+        if (isStylePersisted(secData)) {
+          clearStyleDirty(tableId);
+          return;
+        }
+      }
+      await persistToGeneral();
+    } catch (err) {
+      // Backward compatibility: if backend doesn't have the endpoint yet, keep the old fallback.
+      if (err?.response?.status !== 404) {
+        await persistToGeneral();
+        return;
+      }
+      await persistToGeneral();
+    }
+  };
+
+  const saveAllTableStyles = async () => {
+    if (!selectedSectionId) return;
+    const ids = Array.from(new Set(dirtyStyleTableIds || [])).map(String);
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      const table = (selectedSection?.tables || []).find((t) => String(t.id) === String(id)) || null;
+      // eslint-disable-next-line no-await-in-loop
+      await saveTableStyle(String(id), table || {});
     }
   };
 
   const saveFloorplan = async () => {
     if (!selectedSectionId || floorplanSaving) return;
+    if (!floorplanHasChanges) return;
     setFloorplanSaving(true);
     try {
-      await saveLayoutPositions();
+      if (floorplanDirty) await saveLayoutPositions();
+      if ((dirtyStyleTableIds || []).length > 0) await saveAllTableStyles();
       alert("Restaurant", "Floorplan guardado.");
     } catch (err) {
       alert("Restaurant", getApiError(err, "No se pudo guardar el floorplan."));
@@ -984,28 +956,55 @@ export default function RestaurantConfig() {
     const rect = el.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
-    if (type !== "table") return;
-    const base = (selectedSection?.tables || []).find((t) => t.id === id) || null;
-    if (!base) return;
-    setSelectedTableId(id);
-    dragLatestRef.current = {
-      type: "table",
-      mode: "move",
-      id,
-      x: Number(base.x ?? 50),
-      y: Number(base.y ?? 50),
-    };
-    setDrag({
-      type: "table",
-      mode: "move",
-      id,
-      rect,
-      startX,
-      startY,
-      baseX: Number(base.x ?? 50),
-      baseY: Number(base.y ?? 50),
-    });
-    e.preventDefault();
+    if (type === "table") {
+      const base = (selectedSection?.tables || []).find((t) => t.id === id) || null;
+      if (!base) return;
+      setSelectedTableId(id);
+      setSelectedObjectId("");
+      dragLatestRef.current = {
+        type: "table",
+        mode: "move",
+        id,
+        x: Number(base.x ?? 50),
+        y: Number(base.y ?? 50),
+      };
+      setDrag({
+        type: "table",
+        mode: "move",
+        id,
+        rect,
+        startX,
+        startY,
+        baseX: Number(base.x ?? 50),
+        baseY: Number(base.y ?? 50),
+      });
+      e.preventDefault();
+      return;
+    }
+    if (type === "object") {
+      const base = (selectedSection?.objects || []).find((o) => String(o.id) === String(id)) || null;
+      if (!base) return;
+      setSelectedObjectId(String(id));
+      setSelectedTableId("");
+      dragLatestRef.current = {
+        type: "object",
+        mode: "move",
+        id,
+        x: Number(base.x ?? 50),
+        y: Number(base.y ?? 50),
+      };
+      setDrag({
+        type: "object",
+        mode: "move",
+        id,
+        rect,
+        startX,
+        startY,
+        baseX: Number(base.x ?? 50),
+        baseY: Number(base.y ?? 50),
+      });
+      e.preventDefault();
+    }
   };
 
   useEffect(() => {
@@ -1017,15 +1016,26 @@ export default function RestaurantConfig() {
         const nx = clamp(drag.baseX + toPct(dx, drag.rect.width), 2, 98);
         const ny = clamp(drag.baseY + toPct(dy, drag.rect.height), 5, 95);
         dragLatestRef.current = { ...dragLatestRef.current, x: nx, y: ny };
-        markPosDirty(drag.id);
-        if (drag.id === selectedTableId) setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
-        setSections((prev) =>
-          prev.map((s) =>
-            s.id === selectedSectionId
-              ? { ...s, tables: (s.tables || []).map((t) => (t.id === drag.id ? { ...t, x: nx, y: ny } : t)) }
-              : s
-          )
-        );
+        if (drag.type === "table") {
+          markPosDirty(drag.id);
+          if (drag.id === selectedTableId) setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
+          setSections((prev) =>
+            prev.map((s) =>
+              s.id === selectedSectionId
+                ? { ...s, tables: (s.tables || []).map((t) => (t.id === drag.id ? { ...t, x: nx, y: ny } : t)) }
+                : s
+            )
+          );
+        }
+        if (drag.type === "object") {
+          setSections((prev) =>
+            prev.map((s) =>
+              s.id === selectedSectionId
+                ? { ...s, objects: (s.objects || []).map((o) => (String(o.id) === String(drag.id) ? { ...o, x: nx, y: ny } : o)) }
+                : s
+            )
+          );
+        }
         return;
       }
     };
@@ -1034,7 +1044,12 @@ export default function RestaurantConfig() {
       const nx = Number(latest?.x ?? drag.baseX);
       const ny = Number(latest?.y ?? drag.baseY);
       setDrag(null);
-      if (drag.id === selectedTableId) setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
+      if (drag.type === "table" && drag.id === selectedTableId) {
+        setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
+      }
+      if (drag.type === "object") {
+        updateObjectXY(drag.id, { x: nx, y: ny });
+      }
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
@@ -1047,6 +1062,11 @@ export default function RestaurantConfig() {
   const selectedTable = useMemo(
     () => (selectedSection?.tables || []).find((t) => t.id === selectedTableId) || null,
     [selectedSection, selectedTableId]
+  );
+
+  const barObjects = useMemo(
+    () => (selectedSection?.objects || []).filter((o) => String(o.kind || "").toUpperCase() === "BAR"),
+    [selectedSection]
   );
 
   const filteredMenuEntries = useMemo(() => {
@@ -1438,6 +1458,8 @@ export default function RestaurantConfig() {
   };
 
   const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
+  const TABURETE_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-free.png`;
+  const BAR_DECOR_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/bar.svg`;
 
   const CamastroFreeIcon = ({ className = "" }) => {
     const [ok, setOk] = React.useState(true);
@@ -1447,7 +1469,38 @@ export default function RestaurantConfig() {
         alt="Camastro"
         src={CAMASTRO_FREE_ICON_URL}
         className={className}
-        style={{ width: "1.5rem", height: "1.5rem", objectFit: "contain" }}
+        style={{ objectFit: "contain" }}
+        onError={() => setOk(false)}
+      />
+    );
+  };
+
+  const TabureteFreeIcon = ({ className = "" }) => {
+    const [ok, setOk] = React.useState(true);
+    if (!ok) return <MesaFreeIcon className={className} />;
+    return (
+      <img
+        alt="Taburete"
+        src={TABURETE_FREE_ICON_URL}
+        className={className}
+        style={{ objectFit: "contain" }}
+        onError={() => setOk(false)}
+      />
+    );
+  };
+
+  const BarDecorIcon = ({ className = "", src }) => {
+    const [ok, setOk] = React.useState(true);
+    const resolved = src || BAR_DECOR_ICON_URL;
+    if (!ok) {
+      return <div className={`rounded-xl bg-orange-400/80 ${className}`} />;
+    }
+    return (
+      <img
+        alt="Barra"
+        src={resolved}
+        className={className}
+        style={{ objectFit: "contain" }}
         onError={() => setOk(false)}
       />
     );
@@ -1457,16 +1510,16 @@ export default function RestaurantConfig() {
     const k = String(kind || "mesa").toLowerCase();
     if (k === "mesa") return MesaFreeIcon;
     if (k === "camastro") return CamastroFreeIcon;
+    if (k === "taburete" || k === "butaca") return TabureteFreeIcon;
     return MesaFreeIcon;
   };
 
   const TABLE_KIND_OPTIONS = [
     { id: "mesa", label: "Mesa" },
-    { id: "butaca", label: "Butaca" },
+    { id: "butaca", label: "Taburete" },
     { id: "camastro", label: "Camastro" },
     { id: "sillon", label: "Sill\u00F3n" },
     { id: "sofa", label: "Sof\u00E1" },
-    { id: "barra", label: "Barra" },
   ];
 
   const renderFloorplan = () => (
@@ -1523,17 +1576,17 @@ export default function RestaurantConfig() {
           <div className="flex items-center gap-2">
             {selectedSectionId && (
               <div className="flex items-center gap-2 text-xs text-slate-600">
-                {floorplanDirty ? (
+                {floorplanHasChanges ? (
                   <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-                    Posición sin guardar
+                    Cambios sin guardar
                   </span>
                 ) : (
                   <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
                     Guardado
                   </span>
                 )}
-                <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || !floorplanDirty}>
-                  {floorplanSaving ? "Guardando..." : "Guardar posiciones"}
+                <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || !floorplanHasChanges}>
+                  {floorplanSaving ? "Guardando..." : "Guardar todo"}
                 </Button>
               </div>
             )}
@@ -1571,6 +1624,31 @@ export default function RestaurantConfig() {
                   <span>Entrance</span>
                   <span>Bar / Kitchen</span>
                 </div>
+
+                {(barObjects || []).map((o) => {
+                  const iconSrc = o?.meta?.iconDataUrl || o?.meta?.iconUrl || BAR_DECOR_ICON_URL;
+                  const selected = String(selectedObjectId) === String(o.id);
+                  const w = Number(o.w ?? 24) || 24;
+                  const h = Number(o.h ?? 10) || 10;
+                  return (
+                    <div
+                      key={String(o.id)}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 select-none ${selected ? "ring-2 ring-amber-400" : ""}`}
+                      style={{
+                        left: `${Number(o.x ?? 50)}%`,
+                        top: `${Number(o.y ?? 50)}%`,
+                        width: `${w}%`,
+                        height: `${h}%`,
+                        transform: `translate(-50%, -50%) rotate(${Number(o.rotation ?? 0)}deg)`,
+                        zIndex: Number(o.zIndex ?? 0),
+                      }}
+                      onPointerDown={(e) => onCanvasPointerDown(e, "object", o.id)}
+                      title="Barra"
+                    >
+                      <BarDecorIcon className="w-full h-full" src={iconSrc} />
+                    </div>
+                  );
+                })}
 
                 {(selectedSection?.tables || []).map((t) => {
                   const Icon = getTableFreeIcon(t.kind || "mesa");
@@ -1739,25 +1817,56 @@ export default function RestaurantConfig() {
                       <div className="text-xs text-slate-500">
                         {dirtyStyleTableIds.includes(selectedTable.id) ? "Estilo sin guardar" : "Estilo guardado"}
                       </div>
-                      <Button
-                        type="button"
-                        disabled={styleSaving || !dirtyStyleTableIds.includes(selectedTable.id)}
-                        onClick={async () => {
-                          if (!tableEdit?.id) return;
-                          setStyleSaving(true);
-                          try {
-                            await saveTableStyle(String(tableEdit.id), tableEdit);
-                          } catch (err) {
-                            alert("Restaurant", getApiError(err, "No se pudo guardar el estilo de la mesa."));
-                          } finally {
-                            setStyleSaving(false);
-                          }
-                        }}
-                      >
-                        {styleSaving ? "Guardando..." : "Guardar estilo"}
-                      </Button>
+                      <div className="text-xs text-slate-400">Usa "Guardar todo"</div>
                     </div>
                   </>
+                )}
+              </Card>
+
+              <Card className="p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-semibold text-sm">Barra decorativa</div>
+                  <Button type="button" variant="outline" onClick={addBarObject}>
+                    Agregar barra
+                  </Button>
+                </div>
+                <div className="text-xs text-slate-500">Arrastra la barra en el plano para ubicarla.</div>
+                {(barObjects || []).length === 0 && <div className="text-sm text-gray-600">No hay barras en esta secciÃ³n.</div>}
+                {(barObjects || []).length > 0 && (
+                  <div className="space-y-2">
+                    {barObjects.map((o) => {
+                      const iconSrc = o?.meta?.iconDataUrl || o?.meta?.iconUrl || BAR_DECOR_ICON_URL;
+                      const isSelected = String(selectedObjectId) === String(o.id);
+                      return (
+                        <div
+                          key={String(o.id)}
+                          className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1 ${isSelected ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}
+                        >
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 min-w-0"
+                            onClick={() => setSelectedObjectId(String(o.id))}
+                          >
+                            <div className="h-7 w-12">
+                              <BarDecorIcon className="w-full h-full" src={iconSrc} />
+                            </div>
+                            <div className="text-xs font-semibold text-slate-700 truncate">{o.label || "Barra"}</div>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs text-red-600"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              removeObject(o.id);
+                            }}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </Card>
 
@@ -2021,173 +2130,6 @@ export default function RestaurantConfig() {
       
     </div>
   );
-  const addFamily = async () => {
-    const name = String(familyName || "").trim();
-    if (!name) return;
-    try {
-      const cabys = String(familyCabys || "").trim();
-      const { data } = await api.post("/restaurant/families", { name, cabys: cabys || undefined });
-      setFamilies((prev) => [...prev, data].sort((a, b) => String(a.name).localeCompare(String(b.name))));
-      setSelectedFamilyId(data?.id || "");
-      setFamilyName("");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "Could not create family."));
-    }
-  };
-
-  const addSubFamily = async () => {
-    const name = String(subFamilyName || "").trim();
-    if (!selectedFamilyId || !name) return;
-    try {
-      const { data } = await api.post("/restaurant/subfamilies", { familyId: selectedFamilyId, name });
-      setSubFamilies((prev) => [...prev, data].sort((a, b) => String(a.name).localeCompare(String(b.name))));
-      setSelectedSubFamilyId(data?.id || "");
-      setSubFamilyName("");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "Could not create sub-family."));
-    }
-  };
-
-  const addSubSubFamily = async () => {
-    const name = String(subSubFamilyName || "").trim();
-    if (!selectedSubFamilyId || !name) return;
-    try {
-      const { data } = await api.post("/restaurant/subsubfamilies", { subFamilyId: selectedSubFamilyId, name });
-      setSubSubFamilies((prev) => [...prev, data].sort((a, b) => String(a.name).localeCompare(String(b.name))));
-      setSubSubFamilyName("");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "Could not create sub-sub-family."));
-    }
-  };
-
-  const saveFamilyCabys = async () => {
-    if (!selectedFamilyId) return;
-    const cabys = String(familyCabys || "").trim();
-    try {
-      const { data } = await api.patch(`/restaurant/families/${selectedFamilyId}`, { cabys: cabys || null });
-      setFamilies((prev) => prev.map((f) => (f.id === selectedFamilyId ? data : f)));
-      alert("Restaurant", "Family CABYS saved and applied to items.");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "Could not save family CABYS."));
-    }
-  };
-
-  const removeFamily = async (id) => {
-    await api.delete(`/restaurant/families/${id}`);
-    setFamilies((prev) => prev.filter((f) => f.id !== id));
-    if (selectedFamilyId === id) {
-      setSelectedFamilyId("");
-      setSelectedSubFamilyId("");
-      setSubFamilies([]);
-      setSubSubFamilies([]);
-    }
-  };
-
-  const removeSubFamily = async (id) => {
-    await api.delete(`/restaurant/subfamilies/${id}`);
-    setSubFamilies((prev) => prev.filter((f) => f.id !== id));
-    if (selectedSubFamilyId === id) {
-      setSelectedSubFamilyId("");
-      setSubSubFamilies([]);
-    }
-  };
-
-  const removeSubSubFamily = async (id) => {
-    await api.delete(`/restaurant/subsubfamilies/${id}`);
-    setSubSubFamilies((prev) => prev.filter((f) => f.id !== id));
-  };
-
-  const addItem = async () => {
-    const fam = (families || []).find((x) => x.id === quickItem.familyId) || null;
-    if (saving.item || !quickItem.name || !quickItem.familyId || !quickItem.price) return;
-    if (!fam?.cabys) {
-      alert("Restaurant", "Select a family with CABYS configured first.");
-      return;
-    }
-    setSaving((s) => ({ ...s, item: true }));
-    try {
-      const payload = {
-        name: quickItem.name,
-        familyId: quickItem.familyId,
-        subFamilyId: quickItem.subFamilyId || undefined,
-        subSubFamilyId: quickItem.subSubFamilyId || undefined,
-        price: Number(quickItem.price || 0),
-        imageUrl: String(quickItem.imageUrl || "").trim() || "",
-        priceIncludesTaxesAndService: quickItem.priceIncludesTaxesAndService !== false,
-        taxIds: Array.isArray(quickItem.taxIds) ? quickItem.taxIds : [],
-        notes: quickItem.notes || undefined,
-      };
-      const { data } = await api.post("/restaurant/items", payload);
-      const saved = Array.isArray(data) ? data : [data];
-      setItems((prev) => [...prev, ...saved]);
-      setQuickItem({
-        name: "",
-        familyId: "",
-        subFamilyId: "",
-        subSubFamilyId: "",
-        price: "",
-        imageUrl: "",
-        priceIncludesTaxesAndService: true,
-        taxIds: [],
-        notes: "",
-      });
-    } finally {
-      setSaving((s) => ({ ...s, item: false }));
-    }
-  };
-
-  const removeItem = async (id) => {
-    await api.delete(`/restaurant/items/${id}`);
-    setItems((prev) => prev.filter((i) => i.id !== id));
-  };
-
-  const startEditItem = (it) => {
-    if (!it?.id) return;
-    setEditingItemId(it.id);
-      setEditItem({
-        code: String(it.code || ""),
-        name: String(it.name || ""),
-        familyId: String(it.familyId || ""),
-        subFamilyId: String(it.subFamilyId || ""),
-        subSubFamilyId: String(it.subSubFamilyId || ""),
-        price: String(it.price ?? ""),
-        imageUrl: String(it.imageUrl || ""),
-        notes: String(it.notes || ""),
-        active: it.active !== false,
-        priceIncludesTaxesAndService: it.priceIncludesTaxesAndService !== false,
-        taxIds: Array.isArray(it.taxIds) ? it.taxIds : Array.isArray(it.taxes) ? it.taxes.map((t) => t.id).filter(Boolean) : [],
-      });
-  };
-
-  const cancelEditItem = () => {
-    setEditingItemId("");
-    setEditItem(null);
-  };
-
-  const saveEditItem = async () => {
-    if (!editingItemId || !editItem) return;
-      const payload = {
-        name: editItem.name,
-        familyId: editItem.familyId,
-        subFamilyId: editItem.subFamilyId ? editItem.subFamilyId : null,
-        subSubFamilyId: editItem.subSubFamilyId ? editItem.subSubFamilyId : null,
-        price: Number(editItem.price || 0),
-        imageUrl: String(editItem.imageUrl || "").trim() || "",
-        notes: editItem.notes || null,
-        active: editItem.active !== false,
-        priceIncludesTaxesAndService: editItem.priceIncludesTaxesAndService !== false,
-        taxIds: Array.isArray(editItem.taxIds) ? editItem.taxIds : [],
-      };
-    try {
-      const { data } = await api.patch(`/restaurant/items/${editingItemId}`, payload);
-      setItems((prev) => prev.map((x) => (x.id === data.id ? data : x)));
-      cancelEditItem();
-      alert("Restaurant", "Item saved.");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "Could not save item."));
-    }
-  };
-
   const addRecipeLine = async () => {
     if (!selectedRecipeItemId) return;
     const inventoryItemId = String(recipeLineForm.inventoryItemId || "").trim();
@@ -3148,734 +3090,9 @@ export default function RestaurantConfig() {
     </Card>
   );
 
-  const renderItems = () => (
-    <Card className="p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-lg">Artículos</h3>
-          <p className="text-sm text-gray-600">Quick creation with family, CABYS and tax.</p>
-        </div>
-        <Button onClick={addItem} disabled={saving.item}>{saving.item ? "Saving..." : "Add"}</Button>
-      </div>
-      {editItem ? (
-        <Card className="p-4 border border-indigo-200 bg-indigo-50/40 space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-semibold">Editar artículo</div>
-              <div className="text-xs text-slate-600">
-                Código: <span className="font-mono">{editItem.code || "-"}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={cancelEditItem}>
-                Cancelar
-              </Button>
-              <Button type="button" onClick={saveEditItem}>
-                Guardar
-              </Button>
-            </div>
-          </div>
+  const renderItems = () => <RestaurantItems onItemsChange={setItems} />;
 
-          <div className="grid md:grid-cols-3 gap-3">
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Nombre</div>
-              <Input value={editItem.name} onChange={(e) => setEditItem((p) => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Familia</div>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm w-full"
-                value={editItem.familyId}
-                onChange={(e) => {
-                  const fid = e.target.value;
-                  setEditItem((p) => ({ ...p, familyId: fid, subFamilyId: "", subSubFamilyId: "" }));
-                }}
-              >
-                <option value="">Seleccionar familia</option>
-                {(families || []).map((fam) => (
-                  <option key={fam.id} value={fam.id}>
-                    {fam.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Subfamilia (opcional)</div>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm w-full"
-                value={editItem.subFamilyId}
-                onChange={(e) => setEditItem((p) => ({ ...p, subFamilyId: e.target.value, subSubFamilyId: "" }))}
-                disabled={!editItem.familyId}
-              >
-                <option value="">Sin subfamilia</option>
-                {(subFamilies || []).filter((sf) => sf.familyId === editItem.familyId).map((sf) => (
-                  <option key={sf.id} value={sf.id}>
-                    {sf.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Sub-subfamilia (opcional)</div>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm w-full"
-                value={editItem.subSubFamilyId}
-                onChange={(e) => setEditItem((p) => ({ ...p, subSubFamilyId: e.target.value }))}
-                disabled={!editItem.subFamilyId}
-              >
-                <option value="">Sin sub-subfamilia</option>
-                {(subSubFamilies || []).filter((ssf) => ssf.subFamilyId === editItem.subFamilyId).map((ssf) => (
-                  <option key={ssf.id} value={ssf.id}>
-                    {ssf.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Precio</div>
-              <Input type="number" value={editItem.price} onChange={(e) => setEditItem((p) => ({ ...p, price: e.target.value }))} />
-            </div>
-            <div>
-              <div className="text-xs text-slate-600 mb-1">Estado</div>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm w-full"
-                value={editItem.active ? "active" : "inactive"}
-                onChange={(e) => setEditItem((p) => ({ ...p, active: e.target.value === "active" }))}
-              >
-                <option value="active">Activo</option>
-                <option value="inactive">Inactivo</option>
-              </select>
-            </div>
-            <div className="md:col-span-3">
-              <div className="text-xs text-slate-600 mb-1">Impuestos</div>
-              <div className="flex flex-wrap gap-2">
-                {(taxCatalog || []).filter((t) => t.active !== false).map((t) => {
-                  const checked = Array.isArray(editItem.taxIds) && editItem.taxIds.includes(t.id);
-                  return (
-                    <label
-                      key={t.id}
-                      className={`px-2 py-1 rounded-lg border text-xs cursor-pointer select-none ${
-                        checked ? "bg-indigo-100 border-indigo-300 text-indigo-900" : "bg-white border-slate-200 text-slate-700"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="mr-2"
-                        checked={checked}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setEditItem((p) => {
-                            const prev = Array.isArray(p.taxIds) ? p.taxIds : [];
-                            const next = on ? Array.from(new Set([...prev, t.id])) : prev.filter((x) => x !== t.id);
-                            return { ...p, taxIds: next };
-                          });
-                        }}
-                      />
-                      {t.code} · {t.name} ({Number(t.percent || 0).toFixed(2)}%)
-                    </label>
-                  );
-                })}
-                {(taxCatalog || []).length === 0 && <div className="text-xs text-slate-500">No hay impuestos creados aún.</div>}
-              </div>
-            </div>
-            <div className="md:col-span-3">
-              <div className="text-xs text-slate-600 mb-1">Notas</div>
-              <Textarea value={editItem.notes} onChange={(e) => setEditItem((p) => ({ ...p, notes: e.target.value }))} />
-            </div>
-            <div className="md:col-span-3">
-              <div className="text-xs text-slate-600 mb-1">Imagen (miniatura en TPV)</div>
-              <div className="grid md:grid-cols-[1fr_200px] gap-3 items-start">
-                <div className="space-y-2">
-                  <Input
-                    placeholder="URL de imagen (https://... o data:image/...)"
-                    value={editItem.imageUrl || ""}
-                    onChange={(e) => setEditItem((p) => ({ ...p, imageUrl: e.target.value }))}
-                  />
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={itemImageBusy}
-                    onChange={async (e) => {
-                      const file = e.target.files && e.target.files[0];
-                      e.target.value = "";
-                      if (!file) return;
-                      setItemImageBusy(true);
-                      try {
-                        const raw = await readFileAsDataUrl(file);
-                        const resized = await resizeImageDataUrl(raw, 512, 0.86);
-                        setEditItem((p) => ({ ...p, imageUrl: resized }));
-                      } finally {
-                        setItemImageBusy(false);
-                      }
-                    }}
-                  />
-                  <div className="text-[11px] text-slate-500">Puedes subir una imagen o pegar una URL. Se guarda en `imageUrl`.</div>
-                  {editItem.imageUrl ? (
-                    <button
-                      type="button"
-                      className="text-xs px-2 py-1 rounded border hover:bg-white"
-                      onClick={() => setEditItem((p) => ({ ...p, imageUrl: "" }))}
-                    >
-                      Quitar imagen
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="rounded-xl border bg-white overflow-hidden h-[120px] flex items-center justify-center">
-                  {editItem.imageUrl ? (
-                    <img alt="" src={editItem.imageUrl} className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="text-xs text-slate-400">Sin imagen</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </Card>
-      ) : null}
-      <div className="grid md:grid-cols-3 gap-3">
-        <Input placeholder="Código (auto)" value="" disabled />
-        <Input placeholder="Name" value={quickItem.name} onChange={(e) => setQuickItem((f) => ({ ...f, name: e.target.value }))} />
-        <select
-          className="h-10 rounded-lg border px-3 text-sm"
-          value={quickItem.familyId}
-          onChange={(e) => {
-            const fid = e.target.value;
-            setQuickItem((f) => ({
-              ...f,
-              familyId: fid,
-              subFamilyId: "",
-              subSubFamilyId: "",
-            }));
-          }}
-          title="Family"
-        >
-          <option value="">Select family…</option>
-          {(families || []).map((fam) => (
-            <option key={fam.id} value={fam.id}>
-              {fam.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-10 rounded-lg border px-3 text-sm"
-          value={quickItem.subFamilyId}
-          onChange={(e) => setQuickItem((f) => ({ ...f, subFamilyId: e.target.value, subSubFamilyId: "" }))}
-          title="Sub-family"
-          disabled={!quickItem.familyId}
-        >
-          <option value="">Sub-family (optional)…</option>
-          {(subFamilies || []).filter((sf) => sf.familyId === quickItem.familyId).map((sf) => (
-            <option key={sf.id} value={sf.id}>
-              {sf.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="h-10 rounded-lg border px-3 text-sm"
-          value={quickItem.subSubFamilyId}
-          onChange={(e) => setQuickItem((f) => ({ ...f, subSubFamilyId: e.target.value }))}
-          title="Sub-sub-family"
-          disabled={!quickItem.subFamilyId}
-        >
-          <option value="">Sub-sub-family (optional)…</option>
-          {(subSubFamilies || []).filter((ssf) => ssf.subFamilyId === quickItem.subFamilyId).map((ssf) => (
-            <option key={ssf.id} value={ssf.id}>
-              {ssf.name}
-            </option>
-          ))}
-        </select>
-        <Input
-          placeholder="CABYS (inherited from family)"
-          value={String((families || []).find((x) => x.id === quickItem.familyId)?.cabys || "")}
-          disabled
-        />
-        <Input type="number" placeholder="Precio" value={quickItem.price} onChange={(e) => setQuickItem((f) => ({ ...f, price: e.target.value }))} />
-        <div className="md:col-span-3">
-          <div className="text-xs text-slate-600 mb-1">Imagen (opcional)</div>
-          <div className="grid md:grid-cols-[1fr_200px] gap-3 items-start">
-            <div className="space-y-2">
-              <Input
-                placeholder="URL de imagen (https://... o data:image/...)"
-                value={quickItem.imageUrl || ""}
-                onChange={(e) => setQuickItem((f) => ({ ...f, imageUrl: e.target.value }))}
-              />
-              <Input
-                type="file"
-                accept="image/*"
-                disabled={itemImageBusy}
-                onChange={async (e) => {
-                  const file = e.target.files && e.target.files[0];
-                  e.target.value = "";
-                  if (!file) return;
-                  setItemImageBusy(true);
-                  try {
-                    const raw = await readFileAsDataUrl(file);
-                    const resized = await resizeImageDataUrl(raw, 512, 0.86);
-                    setQuickItem((f) => ({ ...f, imageUrl: resized }));
-                  } finally {
-                    setItemImageBusy(false);
-                  }
-                }}
-              />
-              {quickItem.imageUrl ? (
-                <button
-                  type="button"
-                  className="text-xs px-2 py-1 rounded border hover:bg-white"
-                  onClick={() => setQuickItem((p) => ({ ...p, imageUrl: "" }))}
-                >
-                  Quitar imagen
-                </button>
-              ) : null}
-            </div>
-            <div className="rounded-xl border bg-white overflow-hidden h-[120px] flex items-center justify-center">
-              {quickItem.imageUrl ? (
-                <img alt="" src={quickItem.imageUrl} className="h-full w-full object-cover" />
-              ) : (
-                <div className="text-xs text-slate-400">Sin imagen</div>
-              )}
-            </div>
-          </div>
-        </div>
-        <label className="md:col-span-3 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={quickItem.priceIncludesTaxesAndService !== false}
-            onChange={(e) => setQuickItem((f) => ({ ...f, priceIncludesTaxesAndService: e.target.checked }))}
-          />
-          Price includes taxes and service
-        </label>
-        <div className="md:col-span-3">
-          <div className="text-xs text-slate-600 mb-1">Impuestos</div>
-          <div className="flex flex-wrap gap-2">
-            {(taxCatalog || []).filter((t) => t.active !== false).map((t) => {
-              const checked = Array.isArray(quickItem.taxIds) && quickItem.taxIds.includes(t.id);
-              return (
-                <label
-                  key={t.id}
-                  className={`px-2 py-1 rounded-lg border text-xs cursor-pointer select-none ${
-                    checked ? "bg-slate-100 border-slate-300 text-slate-900" : "bg-white border-slate-200 text-slate-700"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    className="mr-2"
-                    checked={checked}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setQuickItem((p) => {
-                        const prev = Array.isArray(p.taxIds) ? p.taxIds : [];
-                        const next = on ? Array.from(new Set([...prev, t.id])) : prev.filter((x) => x !== t.id);
-                        return { ...p, taxIds: next };
-                      });
-                    }}
-                  />
-                  {t.code} · {t.name} ({Number(t.percent || 0).toFixed(2)}%)
-                </label>
-              );
-            })}
-            {(taxCatalog || []).length === 0 && <div className="text-xs text-slate-500">No hay impuestos creados aún.</div>}
-          </div>
-        </div>
-        <Textarea placeholder="Notas" value={quickItem.notes} onChange={(e) => setQuickItem((f) => ({ ...f, notes: e.target.value }))} className="md:col-span-3" />
-      </div>
-      <Card className="p-3 bg-slate-50 space-y-2">
-        <div className="grid md:grid-cols-4 gap-2 items-end">
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Search</div>
-            <Input
-              placeholder="Name or code..."
-              value={itemFilters.q}
-              onChange={(e) => setItemFilters((p) => ({ ...p, q: e.target.value }))}
-            />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Family</div>
-            <select
-              className="h-10 rounded-lg border px-3 text-sm w-full"
-              value={itemFilters.familyId}
-              onChange={(e) =>
-                setItemFilters((p) => ({ ...p, familyId: e.target.value, subFamilyId: "", subSubFamilyId: "" }))
-              }
-            >
-              <option value="">All</option>
-              {(families || []).map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Sub-family</div>
-            <select
-              className="h-10 rounded-lg border px-3 text-sm w-full"
-              value={itemFilters.subFamilyId}
-              onChange={(e) => setItemFilters((p) => ({ ...p, subFamilyId: e.target.value, subSubFamilyId: "" }))}
-              disabled={!itemFilters.familyId}
-            >
-              <option value="">All</option>
-              {(allSubFamilies || [])
-                .filter((sf) => !itemFilters.familyId || sf.familyId === itemFilters.familyId)
-                .map((sf) => (
-                  <option key={sf.id} value={sf.id}>
-                    {sf.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Sub-sub-family</div>
-            <select
-              className="h-10 rounded-lg border px-3 text-sm w-full"
-              value={itemFilters.subSubFamilyId}
-              onChange={(e) => setItemFilters((p) => ({ ...p, subSubFamilyId: e.target.value }))}
-              disabled={!itemFilters.subFamilyId}
-            >
-              <option value="">All</option>
-              {(allSubSubFamilies || [])
-                .filter((ssf) => !itemFilters.subFamilyId || ssf.subFamilyId === itemFilters.subFamilyId)
-                .map((ssf) => (
-                  <option key={ssf.id} value={ssf.id}>
-                    {ssf.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-5 gap-2 items-end">
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Active</div>
-            <select
-              className="h-10 rounded-lg border px-3 text-sm w-full"
-              value={itemFilters.active}
-              onChange={(e) => setItemFilters((p) => ({ ...p, active: e.target.value }))}
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Tax %</div>
-            <Input
-              type="number"
-              placeholder="Any"
-              value={itemFilters.tax}
-              onChange={(e) => setItemFilters((p) => ({ ...p, tax: e.target.value }))}
-            />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Min price</div>
-            <Input
-              type="number"
-              placeholder="0"
-              value={itemFilters.minPrice}
-              onChange={(e) => setItemFilters((p) => ({ ...p, minPrice: e.target.value }))}
-            />
-          </div>
-          <div>
-            <div className="text-xs text-slate-600 mb-1">Max price</div>
-            <Input
-              type="number"
-              placeholder="0"
-              value={itemFilters.maxPrice}
-              onChange={(e) => setItemFilters((p) => ({ ...p, maxPrice: e.target.value }))}
-            />
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                setItemFilters({ q: "", familyId: "", subFamilyId: "", subSubFamilyId: "", active: "", minPrice: "", maxPrice: "", tax: "" })
-              }
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
-      </Card>
-      {(() => {
-        const q = String(itemFilters.q || "").trim().toLowerCase();
-        const minP = itemFilters.minPrice === "" ? null : Number(itemFilters.minPrice);
-        const maxP = itemFilters.maxPrice === "" ? null : Number(itemFilters.maxPrice);
-        const tax = itemFilters.tax === "" ? null : Number(itemFilters.tax);
-        const filtered = (items || []).filter((it) => {
-          if (q) {
-            const hay =
-              String(it.name || "").toLowerCase().includes(q) ||
-              String(it.code || "").toLowerCase().includes(q) ||
-              String(it.family || "").toLowerCase().includes(q) ||
-              String(it.subFamily || "").toLowerCase().includes(q) ||
-              String(it.subSubFamily || "").toLowerCase().includes(q);
-            if (!hay) return false;
-          }
-          if (itemFilters.familyId && String(it.familyId || "") !== itemFilters.familyId) return false;
-          if (itemFilters.subFamilyId && String(it.subFamilyId || "") !== itemFilters.subFamilyId) return false;
-          if (itemFilters.subSubFamilyId && String(it.subSubFamilyId || "") !== itemFilters.subSubFamilyId) return false;
-          if (itemFilters.active === "active" && it.active === false) return false;
-          if (itemFilters.active === "inactive" && it.active !== false) return false;
-          const price = Number(it.price || 0);
-          if (minP !== null && Number.isFinite(minP) && price < minP) return false;
-          if (maxP !== null && Number.isFinite(maxP) && price > maxP) return false;
-          const t = Number(it.tax || 0);
-          if (tax !== null && Number.isFinite(tax) && t !== tax) return false;
-          return true;
-        });
-
-        return (
-          <div className="space-y-2">
-            <div className="text-xs text-slate-500 flex items-center justify-end">{filtered.length} items</div>
-            <div className="border rounded-lg overflow-hidden bg-white">
-              <div className="overflow-x-auto">
-                <table className="min-w-[980px] w-full text-sm">
-                  <thead className="bg-slate-100 text-slate-600 text-xs uppercase">
-                    <tr>
-                      <th className="text-left px-3 py-2">Code</th>
-                      <th className="text-left px-3 py-2">Name</th>
-                      <th className="text-left px-3 py-2">Group</th>
-                      <th className="text-left px-3 py-2">CABYS</th>
-                      <th className="text-right px-3 py-2">Tax %</th>
-                      <th className="text-right px-3 py-2">Price</th>
-                      <th className="text-left px-3 py-2">Status</th>
-                      <th className="text-right px-3 py-2">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((it) => {
-                      const chain = [it.family, it.subFamily, it.subSubFamily].filter(Boolean).join(" / ");
-                      return (
-                        <tr key={it.id} className="border-t hover:bg-slate-50">
-                          <td className="px-3 py-2 font-mono text-xs text-slate-700">{it.code}</td>
-                          <td className="px-3 py-2 font-semibold text-slate-900">{it.name}</td>
-                          <td className="px-3 py-2 text-slate-700">{chain || "-"}</td>
-                          <td className="px-3 py-2 text-slate-700">{it.cabys || "-"}</td>
-                          <td className="px-3 py-2 text-right text-slate-700">{Number(it.tax || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right text-slate-900">${Number(it.price || 0).toFixed(2)}</td>
-                          <td className="px-3 py-2">
-                            {it.active === false ? (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] border bg-red-50 border-red-200 text-red-700">
-                                Inactive
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] border bg-emerald-50 border-emerald-200 text-emerald-700">
-                                Active
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <button
-                              className="text-xs text-indigo-700 mr-3"
-                              onClick={() => startEditItem(it)}
-                            >
-                              Editar
-                            </button>
-                            <button className="text-xs text-red-600" onClick={() => removeItem(it.id)}>
-                              Eliminar
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filtered.length === 0 && (
-                      <tr className="border-t">
-                        <td className="px-3 py-8 text-sm text-gray-500 text-center" colSpan={8}>
-                          No items match the filters.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-    </Card>
-  );
-  const renderGroups = () => (
-    <Card className="p-5 space-y-3">
-      <div>
-        <h3 className="font-semibold text-lg">Families</h3>
-        <p className="text-sm text-gray-600">Create Families → Sub-families → Sub-sub-families.</p>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-3">
-        <Card className="p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-sm">Families</div>
-            <Button type="button" variant="outline" onClick={addFamily}>
-              Add
-            </Button>
-          </div>
-          <Input placeholder="New family name" value={familyName} onChange={(e) => setFamilyName(e.target.value)} />
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Input
-                placeholder="Family CABYS (set here only)"
-                value={familyCabys}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setFamilyCabys(v);
-                  setFamilyCabysSearch(v);
-                }}
-              />
-              {(familyCabysLoading || (familyCabysResults || []).length > 0) &&
-                String(familyCabysSearch || "").trim().length >= 3 && (
-                  <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow max-h-64 overflow-y-auto">
-                    {familyCabysLoading && <div className="px-3 py-2 text-xs text-slate-600">Searching…</div>}
-                    {!familyCabysLoading && (familyCabysResults || []).length === 0 && (
-                      <div className="px-3 py-2 text-xs text-slate-600">No results.</div>
-                    )}
-                    {(familyCabysResults || []).map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        className="w-full px-3 py-2 text-left hover:bg-slate-50"
-                        onClick={() => {
-                          setFamilyCabys(String(r.id));
-                          setFamilyCabysSearch("");
-                          setFamilyCabysResults([]);
-                        }}
-                      >
-                        <div className="text-xs font-semibold text-slate-900">{r.id}</div>
-                        <div className="text-[11px] text-slate-600 line-clamp-2">{r.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </div>
-            <Button type="button" variant="outline" onClick={saveFamilyCabys} disabled={!selectedFamilyId}>
-              Save CABYS
-            </Button>
-          </div>
-          <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
-            {(families || []).map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-slate-50 ${
-                  selectedFamilyId === f.id ? "border-indigo-300 bg-indigo-50" : ""
-                }`}
-                onClick={() => setSelectedFamilyId(f.id)}
-              >
-                <span className="text-sm font-semibold truncate">
-                  {f.name}
-                  {f.cabys ? <span className="ml-2 text-[11px] font-semibold text-slate-500">{f.cabys}</span> : null}
-                </span>
-                <button
-                  type="button"
-                  className="text-xs text-red-600"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    removeFamily(f.id);
-                  }}
-                >
-                  Delete
-                </button>
-              </button>
-            ))}
-            {(families || []).length === 0 && <div className="text-sm text-gray-500">No families yet.</div>}
-          </div>
-        </Card>
-
-        <Card className="p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-sm">Sub-families</div>
-            <Button type="button" variant="outline" onClick={addSubFamily} disabled={!selectedFamilyId}>
-              Add
-            </Button>
-          </div>
-          <select
-            className="h-10 rounded-lg border px-3 text-sm"
-            value={selectedFamilyId}
-            onChange={(e) => setSelectedFamilyId(e.target.value)}
-            title="Family"
-          >
-            <option value="">Select family…</option>
-            {(families || []).map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-          <Input placeholder="Family CABYS (inherited)" value={familyCabys} disabled />
-          <Input placeholder="New sub-family name" value={subFamilyName} onChange={(e) => setSubFamilyName(e.target.value)} disabled={!selectedFamilyId} />
-          <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
-            {(subFamilies || []).map((sf) => (
-              <button
-                key={sf.id}
-                type="button"
-                className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-slate-50 ${
-                  selectedSubFamilyId === sf.id ? "border-indigo-300 bg-indigo-50" : ""
-                }`}
-                onClick={() => setSelectedSubFamilyId(sf.id)}
-              >
-                <span className="text-sm font-semibold truncate">{sf.name}</span>
-                <button
-                  type="button"
-                  className="text-xs text-red-600"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    removeSubFamily(sf.id);
-                  }}
-                >
-                  Delete
-                </button>
-              </button>
-            ))}
-            {!selectedFamilyId && <div className="text-sm text-gray-500">Select a family first.</div>}
-            {selectedFamilyId && (subFamilies || []).length === 0 && <div className="text-sm text-gray-500">No sub-families yet.</div>}
-          </div>
-        </Card>
-
-        <Card className="p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="font-semibold text-sm">Sub-sub-families</div>
-            <Button type="button" variant="outline" onClick={addSubSubFamily} disabled={!selectedSubFamilyId}>
-              Add
-            </Button>
-          </div>
-          <select
-            className="h-10 rounded-lg border px-3 text-sm"
-            value={selectedSubFamilyId}
-            onChange={(e) => setSelectedSubFamilyId(e.target.value)}
-            title="Sub-family"
-            disabled={!selectedFamilyId}
-          >
-            <option value="">Select sub-family…</option>
-            {(subFamilies || []).map((sf) => (
-              <option key={sf.id} value={sf.id}>
-                {sf.name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="New sub-sub-family name"
-            value={subSubFamilyName}
-            onChange={(e) => setSubSubFamilyName(e.target.value)}
-            disabled={!selectedSubFamilyId}
-          />
-          <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
-            {(subSubFamilies || []).map((ssf) => (
-              <div key={ssf.id} className="w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold truncate">{ssf.name}</span>
-                <button type="button" className="text-xs text-red-600" onClick={() => removeSubSubFamily(ssf.id)}>
-                  Delete
-                </button>
-              </div>
-            ))}
-            {!selectedSubFamilyId && <div className="text-sm text-gray-500">Select a sub-family first.</div>}
-            {selectedSubFamilyId && (subSubFamilies || []).length === 0 && <div className="text-sm text-gray-500">No sub-sub-families yet.</div>}
-          </div>
-        </Card>
-      </div>
-    </Card>
-  );
+  const renderGroups = () => <RestaurantFamilies />;
 
   const renderTaxes = () => (
     <div className="space-y-4">
@@ -4672,14 +3889,16 @@ export default function RestaurantConfig() {
 
   return (
     <div className="grid lg:grid-cols-[230px_1fr] gap-4">
-      <Card className="p-3 space-y-2 h-max">
-        <div className="text-m uppercase text-gray-700 px-2">Configuración del restaurante</div>
+      <Card className="p-3 space-y-2 h-max bg-indigo-900 text-indigo-50 border border-indigo-900 shadow-lg">
+        <div className="text-[15px] text-center uppercase tracking-wide text-indigo-200 px-2">Configuración del restaurante</div>
         {NAV_TABS.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActive(tab.id)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-sm ${
-              active === tab.id ? "bg-indigo-600 text-white" : "hover:bg-indigo-50"
+            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+              active === tab.id
+                ? "bg-indigo-700 text-white border border-indigo-500/60 shadow-sm"
+                : "text-indigo-100 hover:bg-indigo-800/70"
             }`}
           >
             {tab.label}
@@ -4690,3 +3909,4 @@ export default function RestaurantConfig() {
     </div>
   );
 }
+

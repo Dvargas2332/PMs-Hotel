@@ -9,6 +9,10 @@ import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
 const OCCUPIED_TABLE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/table-occupied.png`;
 const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
+const CAMASTRO_OCCUPIED_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-occupied.png`;
+const TABURETE_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-free.png`;
+const TABURETE_OCCUPIED_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-occupied.png`;
+const BAR_DECOR_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/bar.svg`;
 
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
@@ -263,7 +267,10 @@ export default function RestaurantPage() {
   const [printConfirmText, setPrintConfirmText] = useState("");
   const [printConfirmBusy, setPrintConfirmBusy] = useState(false);
   const [occupiedIconOk, setOccupiedIconOk] = useState(true);
-  const [camastroIconOk, setCamastroIconOk] = useState(true);
+  const [camastroFreeIconOk, setCamastroFreeIconOk] = useState(true);
+  const [camastroOccupiedIconOk, setCamastroOccupiedIconOk] = useState(true);
+  const [tabureteFreeIconOk, setTabureteFreeIconOk] = useState(true);
+  const [tabureteOccupiedIconOk, setTabureteOccupiedIconOk] = useState(true);
 
   const [selectedTable, setSelectedTable] = useState(null);
   const [selectedSection, setSelectedSection] = useState(null);
@@ -306,14 +313,16 @@ const [subCategory, setSubCategory] = useState("");
   const [closeForm, setCloseForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
-  const [cancelModalOpen, setCancelModalOpen] = useState(false);
-  const [cancelForm, setCancelForm] = useState({ username: "", password: "", reason: "" });
-  const [cancelBusy, setCancelBusy] = useState(false);
-  const [cancelError, setCancelError] = useState("");
-  const cancelTargetRef = useRef(null);
-  const [cancelTarget, setCancelTarget] = useState(null);
-  const [cancelSuccessOpen, setCancelSuccessOpen] = useState(false);
-  const cancelSuccessTimerRef = useRef(null);
+  const [voidInvoiceModalOpen, setVoidInvoiceModalOpen] = useState(false);
+  const [voidInvoiceForm, setVoidInvoiceForm] = useState({ username: "", password: "", reason: "" });
+  const [voidInvoiceBusy, setVoidInvoiceBusy] = useState(false);
+  const [voidInvoiceError, setVoidInvoiceError] = useState("");
+  const [voidInvoiceList, setVoidInvoiceList] = useState([]);
+  const [voidInvoiceLoading, setVoidInvoiceLoading] = useState(false);
+  const [voidInvoiceTarget, setVoidInvoiceTarget] = useState(null);
+  const [voidInvoiceAuthOpen, setVoidInvoiceAuthOpen] = useState(false);
+  const [voidInvoiceSuccessOpen, setVoidInvoiceSuccessOpen] = useState(false);
+  const voidInvoiceSuccessTimerRef = useRef(null);
 
   const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cashier" }));
   const [taxesCfg, setTaxesCfg] = useState({
@@ -342,8 +351,22 @@ const [subCategory, setSubCategory] = useState("");
   const [splitOrderModalOpen, setSplitOrderModalOpen] = useState(false);
   const [splitOrderMap, setSplitOrderMap] = useState({});
   const [splitOrderCount, setSplitOrderCount] = useState(2);
+  const [itemOptionsOpen, setItemOptionsOpen] = useState(false);
+  const [itemOptionsItem, setItemOptionsItem] = useState(null);
+  const [itemOptionsSize, setItemOptionsSize] = useState("");
+  const [itemOptionsDetails, setItemOptionsDetails] = useState([]);
+  const [itemOptionsNote, setItemOptionsNote] = useState("");
+  const [floorZoom, setFloorZoom] = useState(1);
+  const [floorPan, setFloorPan] = useState({ x: 0, y: 0 });
+  const [floorDragging, setFloorDragging] = useState(false);
   const [serviceType, setServiceType] = useState("DINE_IN"); // DINE_IN, TAKEOUT, DELIVERY, ROOM
   const [roomCharge, setRoomCharge] = useState("");
+  const [activeStaff, setActiveStaff] = useState(null);
+  const activeStaffRef = useRef(null);
+  const [staffLoginOpen, setStaffLoginOpen] = useState(false);
+  const [staffLoginForm, setStaffLoginForm] = useState({ username: "", password: "" });
+  const [staffLoginBusy, setStaffLoginBusy] = useState(false);
+  const [staffLoginError, setStaffLoginError] = useState("");
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
@@ -352,6 +375,62 @@ const [subCategory, setSubCategory] = useState("");
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
     return perms.includes("restaurant.orders.move");
   }, [role, user?.permissions]);
+  const staffStorageKey = useMemo(() => {
+    const hotelId = hotel?.id || user?.hotelId || "";
+    const userId = user?.id || "";
+    if (!hotelId || !userId) return "";
+    return `restaurantStaff:${hotelId}:${userId}`;
+  }, [hotel?.id, user?.hotelId, user?.id]);
+  const floorPanRef = useRef({ x: 0, y: 0 });
+  const floorDragRef = useRef(null);
+
+  useEffect(() => {
+    floorPanRef.current = floorPan;
+  }, [floorPan]);
+
+  useEffect(() => {
+    activeStaffRef.current = activeStaff;
+  }, [activeStaff]);
+
+  useEffect(() => {
+    if (!staffStorageKey) {
+      setActiveStaff(null);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(staffStorageKey);
+      if (!raw) {
+        setActiveStaff(null);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.id) {
+        setActiveStaff(parsed);
+      } else {
+        setActiveStaff(null);
+      }
+    } catch {
+      setActiveStaff(null);
+    }
+  }, [staffStorageKey]);
+
+  useEffect(() => {
+    if (!staffStorageKey) return;
+    if (activeStaff) {
+      localStorage.setItem(staffStorageKey, JSON.stringify(activeStaff));
+    } else {
+      localStorage.removeItem(staffStorageKey);
+    }
+  }, [activeStaff, staffStorageKey]);
+
+  useEffect(() => {
+    if (!staffStorageKey) return;
+    if (!activeStaff) setStaffLoginOpen(true);
+  }, [activeStaff, staffStorageKey]);
+
+  useEffect(() => {
+    if (activeStaff) setStaffLoginOpen(false);
+  }, [activeStaff]);
 
   const formatElapsed = useCallback(
     (iso) => {
@@ -366,6 +445,51 @@ const [subCategory, setSubCategory] = useState("");
       return `${m}m`;
     },
     [now]
+  );
+
+  const clampZoom = useCallback((value) => Math.min(2.4, Math.max(0.6, value)), []);
+
+  const resetFloorView = useCallback(() => {
+    setFloorZoom(1);
+    setFloorPan({ x: 0, y: 0 });
+  }, []);
+
+  const handleFloorPointerDown = useCallback(
+    (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      const target = e.target;
+      if (target?.closest && target.closest("[data-floor-table=\"true\"]")) return;
+      e.preventDefault();
+      if (typeof e.currentTarget.setPointerCapture === "function") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      const start = floorPanRef.current;
+      floorDragRef.current = { x: e.clientX, y: e.clientY, panX: start.x, panY: start.y };
+      setFloorDragging(true);
+    },
+    []
+  );
+
+  const handleFloorPointerMove = useCallback((e) => {
+    if (!floorDragRef.current) return;
+    const dx = e.clientX - floorDragRef.current.x;
+    const dy = e.clientY - floorDragRef.current.y;
+    setFloorPan({ x: floorDragRef.current.panX + dx, y: floorDragRef.current.panY + dy });
+  }, []);
+
+  const handleFloorPointerUp = useCallback(() => {
+    if (!floorDragRef.current) return;
+    floorDragRef.current = null;
+    setFloorDragging(false);
+  }, []);
+
+  const handleFloorWheel = useCallback(
+    (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.08 : 0.08;
+      setFloorZoom((z) => clampZoom(z + delta));
+    },
+    [clampZoom]
   );
 
   const persistOrderNow = useCallback(async (payload) => {
@@ -571,52 +695,6 @@ const subCategories = useMemo(() => {
     });
   }, [menuItems, category, subCategory, subSubCategory, search]);
 
-  const menuGrid = useMemo(
-    () => (
-      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-[2mm]">
-        {filteredMenu.map((item, idx) => (
-          <button
-            key={String(item.id || item.code || `${item.name}-${idx}`)}
-            onClick={() => addItemRef.current && addItemRef.current(item)}
-            className="relative rounded-xl bg-white border-2 border-lime-300 shadow-sm hover:shadow-lime-200/70 transition text-left p-2.5 flex flex-col gap-2 h-36 sm:h-40 md:h-44 lg:h-48 xl:h-52"
-            style={{
-              borderColor: item?.color ? String(item.color) : undefined,
-            }}
-          >
-            <div className="absolute top-2 right-2 text-[16px] font-bold text-lime-800 leading-none">
-              {formatMoney(item.price)}
-            </div>
-
-            {item.imageUrl ? (
-              <>
-                <div className="pr-14 min-w-0 text-[16px] font-semibold text-lime-900 leading-tight line-clamp-2">
-                  {item.name}
-                </div>
-                <div className="flex-1 min-h-0 rounded-lg overflow-hidden border border-lime-100 bg-white flex items-center justify-center">
-                  <img
-                    alt=""
-                    src={item.imageUrl}
-                    className="h-full w-full object-contain p-1"
-                    onError={(ev) => {
-                      ev.currentTarget.style.display = "none";
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 min-h-0 flex items-center justify-center text-center px-2">
-                <div className="text-[17px] font-semibold text-lime-900 leading-snug line-clamp-3">
-                  {item.name}
-                </div>
-              </div>
-            )}
-          </button>
-        ))}
-      </div>
-    ),
-    [filteredMenu]
-  );
-
   const shift = useMemo(() => {
     const h = now.getHours();
     if (h < 15) return "Morning shift";
@@ -677,6 +755,11 @@ const subCategories = useMemo(() => {
   }, [selectedTable?.id, selectedTable?.seats, currentOrder, covers, orderNote, serviceType, roomCharge]);
 
   useEffect(() => {
+    if (!selectedSection?.id || selectedTable) return;
+    resetFloorView();
+  }, [selectedSection?.id, selectedTable, resetFloorView]);
+
+  useEffect(() => {
     if (!selectedTable?.id) return;
     if (selectedTableOrders.length === 0) return;
     const hasActive = selectedTableOrders.some((o) => getOrderKey(o) === activeOrderKey);
@@ -699,7 +782,7 @@ const subCategories = useMemo(() => {
 
   useEffect(() => {
     return () => {
-      if (cancelSuccessTimerRef.current) clearTimeout(cancelSuccessTimerRef.current);
+      if (voidInvoiceSuccessTimerRef.current) clearTimeout(voidInvoiceSuccessTimerRef.current);
     };
   }, []);
 
@@ -1105,11 +1188,20 @@ const subCategories = useMemo(() => {
   }, [selectedSection?.id, loadMenu]);
 
   const handleSelectTable = (table, section) => {
+    if (!activeStaffRef.current) {
+      setStaffLoginOpen(true);
+      return;
+    }
     setSelectedSection(section);
     setSelectedTable(table);
     const list = normalizeOrderList(ordersByTable[table.id]);
     if (list.length === 0) {
-      const newOrder = buildLocalOrder({ covers: table?.seats || 2, serviceType: "DINE_IN", sectionId: section?.id });
+      const newOrder = buildLocalOrder({
+        covers: table?.seats || 2,
+        serviceType: "DINE_IN",
+        sectionId: section?.id,
+        waiterId: activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined,
+      });
       setOrdersByTable((prev) => ({ ...prev, [table.id]: [newOrder] }));
       setActiveOrderByTable((prev) => ({ ...prev, [table.id]: getOrderKey(newOrder) }));
       setCovers(newOrder.covers || table?.seats || 2);
@@ -1177,22 +1269,112 @@ const subCategories = useMemo(() => {
     const copies = Number(cfg.copies || docCfg.copies || 1) || 1;
     return { printerId, copies, docType, typeKey };
   };
-  const closeCancelModal = () => {
-    if (cancelBusy) return;
-    setCancelModalOpen(false);
-    setCancelError("");
-    setCancelForm({ username: "", password: "", reason: "" });
-    setCancelTarget(null);
-    cancelTargetRef.current = null;
+  const closeVoidInvoiceModal = () => {
+    if (voidInvoiceBusy) return;
+    setVoidInvoiceModalOpen(false);
+    setVoidInvoiceAuthOpen(false);
+    setVoidInvoiceError("");
+    setVoidInvoiceForm({ username: "", password: "", reason: "" });
+    setVoidInvoiceTarget(null);
   };
 
-  const showCancelSuccess = () => {
-    setCancelSuccessOpen(true);
-    if (cancelSuccessTimerRef.current) clearTimeout(cancelSuccessTimerRef.current);
-    cancelSuccessTimerRef.current = setTimeout(() => {
-      setCancelSuccessOpen(false);
-      cancelSuccessTimerRef.current = null;
+  const showVoidInvoiceSuccess = () => {
+    setVoidInvoiceSuccessOpen(true);
+    if (voidInvoiceSuccessTimerRef.current) clearTimeout(voidInvoiceSuccessTimerRef.current);
+    voidInvoiceSuccessTimerRef.current = setTimeout(() => {
+      setVoidInvoiceSuccessOpen(false);
+      voidInvoiceSuccessTimerRef.current = null;
     }, 1600);
+  };
+
+  const loadVoidInvoices = async () => {
+    setVoidInvoiceLoading(true);
+    try {
+      const { data } = await api.get("/restaurant/shift/invoices");
+      setVoidInvoiceList(Array.isArray(data) ? data : []);
+    } catch {
+      setVoidInvoiceList([]);
+    } finally {
+      setVoidInvoiceLoading(false);
+    }
+  };
+
+  const openVoidInvoiceModal = () => {
+    setVoidInvoiceModalOpen(true);
+    setVoidInvoiceAuthOpen(false);
+    setVoidInvoiceError("");
+    setVoidInvoiceForm({ username: "", password: "", reason: "" });
+    setVoidInvoiceBusy(false);
+    setVoidInvoiceTarget(null);
+    loadVoidInvoices();
+  };
+
+  const openVoidInvoiceAuth = () => {
+    if (!voidInvoiceTarget?.id) {
+      setVoidInvoiceError("Selecciona una factura primero.");
+      return;
+    }
+    const targetStatus = String(voidInvoiceTarget.status || "").toUpperCase();
+    if (targetStatus === "CANCELED") {
+      setVoidInvoiceError("La factura ya esta anulada.");
+      return;
+    }
+    if (targetStatus === "NO_DOC") {
+      setVoidInvoiceError("Esta factura no tiene documento electronico.");
+      return;
+    }
+    setVoidInvoiceAuthOpen(true);
+    setVoidInvoiceError("");
+    setVoidInvoiceForm({ username: "", password: "", reason: "" });
+  };
+
+  const closeVoidInvoiceAuth = () => {
+    if (voidInvoiceBusy) return;
+    setVoidInvoiceAuthOpen(false);
+    setVoidInvoiceError("");
+    setVoidInvoiceForm({ username: "", password: "", reason: "" });
+  };
+
+  const confirmVoidInvoice = async () => {
+    if (voidInvoiceBusy) return;
+    const username = String(voidInvoiceForm.username || "").trim();
+    const password = String(voidInvoiceForm.password || "").trim();
+    const reason = String(voidInvoiceForm.reason || "").trim();
+    if (!username || !password || !reason) {
+      setVoidInvoiceError("Usuario, contrasena y motivo son requeridos.");
+      return;
+    }
+
+    if (!voidInvoiceTarget?.restaurantOrderId) {
+      setVoidInvoiceError("Selecciona una factura.");
+      return;
+    }
+    if (String(voidInvoiceTarget.status || "").toUpperCase() === "CANCELED") {
+      setVoidInvoiceError("La factura ya esta anulada.");
+      return;
+    }
+
+    setVoidInvoiceBusy(true);
+    setVoidInvoiceError("");
+    try {
+      await api.post("/restaurant/order/void-invoice", {
+        restaurantOrderId: voidInvoiceTarget.restaurantOrderId,
+        tableId: voidInvoiceTarget?.order?.tableId || undefined,
+        docType: voidInvoiceTarget.docType,
+        reason,
+        adminCode: password,
+        adminUser: username,
+      });
+
+      closeVoidInvoiceModal();
+      showVoidInvoiceSuccess();
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Factura anulada." } }));
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "No se pudo anular la factura.";
+      setVoidInvoiceError(msg);
+    } finally {
+      setVoidInvoiceBusy(false);
+    }
   };
 
   const cancelEmptyOrder = () => {
@@ -1235,119 +1417,6 @@ const subCategories = useMemo(() => {
     });
 
     resetToLobby();
-  };
-
-  const cancelCurrentOrder = () => {
-    if (!selectedTable?.id) return;
-
-    const list = selectedTableOrders;
-    const targetOrder = list.find((o) => getOrderKey(o) === activeOrderKey) || list[0] || currentOrder;
-    const orderKey = getOrderKey(targetOrder);
-    const exists = Boolean(orderKey || targetOrder?.items?.length || hasItems);
-    if (!exists) {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "No open order to cancel." } }));
-      return;
-    }
-    if (!isOrderComandada(targetOrder || currentOrder)) {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Solo se puede anular una orden comandada." } })
-      );
-      return;
-    }
-
-    const idx = list.findIndex((o) => getOrderKey(o) === orderKey);
-    const orderLabel = idx >= 0 ? `Order ${idx + 1}` : "Order";
-    const target = {
-      tableId: selectedTable.id,
-      tableName: selectedTable?.name || "",
-      orderKey,
-      orderId: targetOrder?.id || targetOrder?.orderId || "",
-      orderLabel,
-      itemsCount: Array.isArray(targetOrder?.items) ? targetOrder.items.length : 0,
-    };
-    cancelTargetRef.current = { tableId: target.tableId, orderKey: target.orderKey, orderId: target.orderId };
-    setCancelTarget(target);
-    setCancelForm({ username: "", password: "", reason: "" });
-    setCancelError("");
-    setCancelModalOpen(true);
-  };
-
-  const confirmCancelOrder = async () => {
-    if (cancelBusy) return;
-    const username = String(cancelForm.username || "").trim();
-    const password = String(cancelForm.password || "").trim();
-    const reason = String(cancelForm.reason || "").trim();
-    if (!username || !password || !reason) {
-      setCancelError("Usuario, contrasena y motivo son requeridos.");
-      return;
-    }
-
-    const target = cancelTargetRef.current;
-    if (!target?.tableId) {
-      setCancelError("No order selected.");
-      return;
-    }
-
-    setCancelBusy(true);
-    setCancelError("");
-    try {
-      await flushOrderSave();
-
-      if (target.orderId) {
-        await api.post("/restaurant/order/cancel", {
-          tableId: target.tableId,
-          restaurantOrderId: target.orderId || undefined,
-          orderId: target.orderId || undefined,
-          reason,
-          adminCode: password,
-          adminUser: username,
-        });
-      }
-
-      const list = normalizeOrderList(ordersByTable[target.tableId]);
-      const remaining = list.filter((o) => getOrderKey(o) !== target.orderKey);
-      const nextActiveKey = remaining.length > 0 ? getOrderKey(remaining[0]) : "";
-
-      setOrdersByTable((prev) => {
-        const prevList = normalizeOrderList(prev[target.tableId]);
-        const nextList = prevList.filter((o) => getOrderKey(o) !== target.orderKey);
-        const next = { ...prev };
-        if (nextList.length > 0) {
-          next[target.tableId] = nextList;
-        } else {
-          delete next[target.tableId];
-        }
-        return next;
-      });
-
-      setActiveOrderByTable((prev) => {
-        const next = { ...prev };
-        if (nextActiveKey) {
-          next[target.tableId] = nextActiveKey;
-        } else {
-          delete next[target.tableId];
-        }
-        return next;
-      });
-
-      if (selectedTableRef.current?.id === target.tableId) {
-        setOrderNote("");
-        setCovers(2);
-        setServiceType("DINE_IN");
-        setRoomCharge("");
-        setSelectedTable(null);
-        setSectionLauncher(false);
-      }
-
-      closeCancelModal();
-      showCancelSuccess();
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Order canceled." } }));
-    } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Could not cancel order.";
-      setCancelError(msg);
-    } finally {
-      setCancelBusy(false);
-    }
   };
 
   const openPayments = () => {
@@ -1396,7 +1465,7 @@ const subCategories = useMemo(() => {
     setSectionLauncher(false);
   };
 
-  const getSplitItemKey = (item, idx) => String(item?.id ?? item?.code ?? item?.name ?? idx ?? "");
+  const getSplitItemKey = (item, idx) => getOrderItemKey(item) || String(item?.id ?? item?.code ?? item?.name ?? idx ?? "");
   const getItemQty = (item) => Math.max(0, Math.floor(Number(item?.qty || 0)));
 
   const openSplitOrderModal = () => {
@@ -1617,6 +1686,47 @@ const subCategories = useMemo(() => {
     setRoomCharge("");
   };
 
+  const staffRoleLabel = (roleValue) => {
+    const roleKey = String(roleValue || "").toUpperCase();
+    if (roleKey === "CASHIER") return "Cajero";
+    if (roleKey === "WAITER") return "Mesero";
+    return "Personal";
+  };
+
+  const clearStaffSession = () => {
+    setActiveStaff(null);
+    setStaffLoginForm({ username: "", password: "" });
+    setStaffLoginError("");
+    setStaffLoginOpen(true);
+  };
+
+  const submitStaffLogin = async () => {
+    if (staffLoginBusy) return;
+    setStaffLoginBusy(true);
+    setStaffLoginError("");
+    try {
+      const payload = {
+        username: String(staffLoginForm.username || "").trim(),
+        password: String(staffLoginForm.password || "").trim(),
+      };
+      if (!payload.username || !payload.password) {
+        setStaffLoginError("Usuario y password requeridos.");
+        setStaffLoginBusy(false);
+        return;
+      }
+      const { data } = await api.post("/restaurant/staff/login", payload);
+      setActiveStaff(data || null);
+      setStaffLoginForm({ username: "", password: "" });
+      setStaffLoginError("");
+      setStaffLoginOpen(false);
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "No se pudo iniciar.";
+      setStaffLoginError(msg);
+    } finally {
+      setStaffLoginBusy(false);
+    }
+  };
+
   const updateOrderForTable = useCallback(
     (tableId, updater, orderKeyOverride = "") => {
       let nextActiveKey = "";
@@ -1631,31 +1741,34 @@ const subCategories = useMemo(() => {
         }
 
         if (idx < 0) {
-          const created = buildLocalOrder({
-            covers: covers || 2,
-            note: orderNote || "",
-            serviceType: serviceType || "DINE_IN",
-            roomId: roomCharge || "",
-            sectionId: selectedSection?.id || null,
-          });
+            const created = buildLocalOrder({
+              covers: covers || 2,
+              note: orderNote || "",
+              serviceType: serviceType || "DINE_IN",
+              roomId: roomCharge || "",
+              sectionId: selectedSection?.id || null,
+              waiterId: activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined,
+            });
           nextList = [...list, created];
           idx = nextList.length - 1;
         }
 
         const cur = nextList[idx] || buildLocalOrder();
         const next = updater(cur);
-        const merged = {
-          ...cur,
-          ...next,
-          items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
-          covers: next?.covers ?? cur?.covers ?? covers,
-          note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
-          serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
-          roomId: next?.roomId || cur?.roomId || roomCharge || "",
-          status: typeof next?.status === "string" ? next.status : cur?.status || "",
-          sentItems: next?.sentItems || cur?.sentItems || {},
-          sentAt: next?.sentAt || cur?.sentAt || "",
-        };
+          const staffWaiterId = activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined;
+          const merged = {
+            ...cur,
+            ...next,
+            items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
+            covers: next?.covers ?? cur?.covers ?? covers,
+            note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
+            serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
+            roomId: next?.roomId || cur?.roomId || roomCharge || "",
+            status: typeof next?.status === "string" ? next.status : cur?.status || "",
+            sentItems: next?.sentItems || cur?.sentItems || {},
+            sentAt: next?.sentAt || cur?.sentAt || "",
+            waiterId: next?.waiterId || cur?.waiterId || staffWaiterId,
+          };
 
         nextList[idx] = merged;
         nextActiveKey = getOrderKey(merged);
@@ -1667,12 +1780,13 @@ const subCategories = useMemo(() => {
           createNew: !merged.id && !merged.orderId,
           sectionId: merged.sectionId || selectedSection?.id || null,
           tableId,
-          items: Array.isArray(merged.items) ? merged.items : [],
-          note: merged.note || "",
-          covers: merged.covers || 0,
-          serviceType: merged.serviceType || "DINE_IN",
-          roomId: merged.roomId || "",
-        });
+            items: Array.isArray(merged.items) ? merged.items : [],
+            note: merged.note || "",
+            covers: merged.covers || 0,
+            serviceType: merged.serviceType || "DINE_IN",
+            roomId: merged.roomId || "",
+            waiterId: merged.waiterId || undefined,
+          });
 
         return { ...prev, [tableId]: nextList };
       });
@@ -1694,13 +1808,14 @@ const subCategories = useMemo(() => {
         newOrder = draft;
         return prev;
       }
-      newOrder = buildLocalOrder({
-        covers: selectedTable?.seats || covers || 2,
-        note: "",
-        serviceType: serviceType || "DINE_IN",
-        roomId: roomCharge || "",
-        sectionId: selectedSection?.id || null,
-      });
+        newOrder = buildLocalOrder({
+          covers: selectedTable?.seats || covers || 2,
+          note: "",
+          serviceType: serviceType || "DINE_IN",
+          roomId: roomCharge || "",
+          sectionId: selectedSection?.id || null,
+          waiterId: activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined,
+        });
       return { ...prev, [tableId]: [...list, newOrder] };
     });
     if (select && newOrder) {
@@ -1742,7 +1857,8 @@ const subCategories = useMemo(() => {
 
       const nextList = [...list];
       const fromOrder = { ...nextList[fromIdx], items: [...(nextList[fromIdx].items || [])] };
-      const itemIdx = fromOrder.items.findIndex((i) => i.id === item.id);
+      const movingKey = getOrderItemKey(item);
+      const itemIdx = fromOrder.items.findIndex((i) => getOrderItemKey(i) === movingKey);
       if (itemIdx < 0) return prev;
 
       const movingItem = fromOrder.items[itemIdx];
@@ -1772,7 +1888,7 @@ const subCategories = useMemo(() => {
 
       if (!targetOrder) return prev;
 
-      const existingIdx = targetOrder.items.findIndex((i) => i.id === movingItem.id);
+      const existingIdx = targetOrder.items.findIndex((i) => getOrderItemKey(i) === movingKey);
       if (existingIdx >= 0) {
         const existing = targetOrder.items[existingIdx];
         targetOrder.items[existingIdx] = { ...existing, qty: (Number(existing.qty) || 0) + (Number(movingItem.qty) || 0) };
@@ -1820,33 +1936,44 @@ const subCategories = useMemo(() => {
     }
   };
 
-  const addItem = (item) => {
-    if (!selectedTable?.id) return;
+  const addItem = (item, overrides = {}) => {
+    if (!selectedTable?.id || !item) return;
+    const baseId = item?.itemId || item?.id;
+    const variantKey = overrides.variantKey || item?.variantKey || "";
+    const nextItem = {
+      ...item,
+      ...overrides,
+      id: baseId,
+      itemId: baseId,
+      variantKey,
+    };
+    const nextKey = getOrderItemKey(nextItem);
     updateOrderForTable(selectedTable.id, (cur) => {
-      const idx = cur.items.findIndex((i) => i.id === item.id);
+      const idx = cur.items.findIndex((i) => getOrderItemKey(i) === nextKey);
       const items = idx >= 0
         ? cur.items.map((i, k) => (k === idx ? { ...i, qty: i.qty + 1 } : i))
-        : [...cur.items, { ...item, qty: 1 }];
+        : [...cur.items, { ...nextItem, qty: 1 }];
       return { ...cur, items, covers: cur.covers || covers, note: cur.note || orderNote };
     });
   };
   addItemRef.current = addItem;
 
-  const updateQty = (id, delta) => {
+
+  const updateQty = (itemKey, delta) => {
     if (!selectedTable?.id) return;
     if (isComandada && delta < 0) return;
     updateOrderForTable(selectedTable.id, (cur) => {
       const items = cur.items
-        .map((i) => (i.id === id ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
+        .map((i) => (getOrderItemKey(i) === itemKey ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
         .filter((i) => i.qty > 0);
       return { ...cur, items };
     });
   };
 
-  const removeItem = (id) => {
+  const removeItem = (itemKey) => {
     if (!selectedTable?.id) return;
     if (isComandada) return;
-    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => i.id !== id) }));
+    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => getOrderItemKey(i) !== itemKey) }));
   };
 
   const handleCoversChange = (value) => {
@@ -1874,6 +2001,139 @@ const subCategories = useMemo(() => {
     setRoomCharge(value);
     if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
   };
+  const resolveOptionId = useCallback(
+    (opt, idx) => String(opt?.id ?? opt?.key ?? opt?.label ?? opt?.name ?? idx ?? ""),
+    []
+  );
+  const getOrderItemKey = useCallback(
+    (item) => `${String(item?.id ?? item?.itemId ?? "")}::${String(item?.variantKey || "")}`,
+    []
+  );
+  const getItemSizes = useCallback((item) => (Array.isArray(item?.sizes) ? item.sizes : []), []);
+  const getItemDetails = useCallback((item) => (Array.isArray(item?.details) ? item.details : []), []);
+  const itemHasOptions = useCallback(
+    (item) => getItemSizes(item).length > 0 || getItemDetails(item).length > 0,
+    [getItemSizes, getItemDetails]
+  );
+
+  const openItemOptions = useCallback(
+    (item) => {
+      const sizes = getItemSizes(item);
+      const defaultSize = sizes.find((s) => s?.isDefault) || sizes[0] || null;
+      const defaultSizeId = defaultSize ? resolveOptionId(defaultSize, sizes.indexOf(defaultSize)) : "";
+      setItemOptionsItem(item);
+      setItemOptionsSize(defaultSizeId);
+      setItemOptionsDetails([]);
+      setItemOptionsNote("");
+      setItemOptionsOpen(true);
+    },
+    [getItemSizes, resolveOptionId]
+  );
+
+  const closeItemOptions = useCallback(() => {
+    setItemOptionsOpen(false);
+    setItemOptionsItem(null);
+    setItemOptionsSize("");
+    setItemOptionsDetails([]);
+    setItemOptionsNote("");
+  }, []);
+
+  const itemOptionMeta = useMemo(() => {
+    if (!itemOptionsItem) {
+      return { sizeOptions: [], detailOptions: [], selectedSize: null, selectedDetails: [], basePrice: 0, extras: 0, total: 0 };
+    }
+    const sizeOptions = getItemSizes(itemOptionsItem);
+    const detailOptions = getItemDetails(itemOptionsItem);
+    const selectedSize =
+      sizeOptions.find((s, idx) => resolveOptionId(s, idx) === itemOptionsSize) || sizeOptions[0] || null;
+    const selectedDetails = detailOptions.filter((d, idx) =>
+      itemOptionsDetails.includes(resolveOptionId(d, idx))
+    );
+    const basePrice = selectedSize
+      ? Number(selectedSize.price ?? itemOptionsItem.price ?? 0) || 0
+      : Number(itemOptionsItem.price ?? 0) || 0;
+    const extras = selectedDetails.reduce(
+      (sum, d) => sum + (Number(d.priceDelta ?? d.price ?? 0) || 0),
+      0
+    );
+    return { sizeOptions, detailOptions, selectedSize, selectedDetails, basePrice, extras, total: basePrice + extras };
+  }, [itemOptionsItem, itemOptionsSize, itemOptionsDetails, getItemSizes, getItemDetails, resolveOptionId]);
+
+  const confirmItemOptions = () => {
+    if (!itemOptionsItem) return;
+    const sizeOpt = itemOptionMeta.selectedSize;
+    const sizeLabel = sizeOpt ? String(sizeOpt.label || sizeOpt.name || "").trim() : "";
+    const detailOptions = itemOptionMeta.detailOptions || [];
+    const selectedDetails = detailOptions
+      .map((d, idx) => ({ d, key: resolveOptionId(d, idx) }))
+      .filter(({ key }) => itemOptionsDetails.includes(key));
+    const detailLabels = selectedDetails.map(({ d }) => String(d.label || d.name || "").trim()).filter(Boolean);
+    const note = String(itemOptionsNote || "").trim();
+    const detailText = [...detailLabels, ...(note ? [note] : [])].filter(Boolean).join(", ");
+    const nameSuffix = sizeLabel ? ` - ${sizeLabel}` : "";
+    const detailSuffix = detailText ? ` (${detailText})` : "";
+    const finalName = `${itemOptionsItem.name}${nameSuffix}${detailSuffix}`;
+
+    const sizeKey = sizeOpt ? `size:${resolveOptionId(sizeOpt, itemOptionMeta.sizeOptions.indexOf(sizeOpt))}` : "";
+    const detailKeys = selectedDetails.map(({ key }) => `detail:${key}`);
+    const noteKey = note ? `note:${encodeURIComponent(note)}` : "";
+    const variantKey = [sizeKey, ...detailKeys, noteKey].filter(Boolean).join("|");
+
+    addItem(itemOptionsItem, {
+      name: finalName,
+      price: itemOptionMeta.total,
+      variantKey,
+      detailNote: note || null,
+    });
+    closeItemOptions();
+  };
+
+  const menuGrid = useMemo(
+    () => (
+      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-[2mm]">
+        {filteredMenu.map((item, idx) => (
+          <button
+            key={String(item.id || item.code || `${item.name}-${idx}`)}
+            onClick={() => (itemHasOptions(item) ? openItemOptions(item) : addItemRef.current && addItemRef.current(item))}
+            className="relative rounded-2xl bg-white/95 border border-lime-200 shadow-[0_8px_20px_rgba(16,185,129,0.18)] hover:shadow-[0_12px_28px_rgba(16,185,129,0.28)] hover:-translate-y-0.5 transition text-left p-3 flex flex-col gap-2 h-36 sm:h-40 md:h-44 lg:h-48 xl:h-52"
+            style={{
+              borderColor: item?.color ? String(item.color) : undefined,
+            }}
+          >
+            <div className="absolute top-2 right-2 text-[16px] font-bold text-lime-800 leading-none">
+              {formatMoney(item.price)}
+            </div>
+
+            {item.imageUrl ? (
+              <>
+                <div className="pr-14 min-w-0 text-[16px] font-semibold text-lime-900 leading-tight line-clamp-2">
+                  {item.name}
+                </div>
+                <div className="flex-1 min-h-0 rounded-lg overflow-hidden bg-white flex items-center justify-center">
+                  <img
+                    alt=""
+                    src={item.imageUrl}
+                    className="h-full w-full object-contain p-1"
+                    onError={(ev) => {
+                      ev.currentTarget.style.display = "none";
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 min-h-0 flex items-center justify-center text-center px-2">
+                <div className="text-[17px] font-semibold text-lime-900 leading-snug line-clamp-3">
+                  {item.name}
+                </div>
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    ),
+    [filteredMenu, itemHasOptions, openItemOptions]
+  );
+
   const closePrintConfirm = () => {
     if (printConfirmBusy) return;
     pendingPrintRef.current = null;
@@ -1900,14 +2160,14 @@ const subCategories = useMemo(() => {
       const sentMap = getSentMap(order);
       return (order.items || [])
         .map((i) => {
-          const sentQty = Number(sentMap[i.id] || 0);
+          const sentQty = Number(sentMap[getOrderItemKey(i)] || 0);
           const qty = Number(i.qty || 0);
           const delta = Math.max(0, qty - sentQty);
           return delta > 0 ? { ...i, qty: delta } : null;
         })
         .filter(Boolean);
     },
-    [getSentMap]
+    [getSentMap, getOrderItemKey]
   );
   const sendComanda = useCallback(async ({ markAsSent = true, silent = false, itemsOverride, returnToSection = false } = {}) => {
     if (!selectedTable?.id || !hasItems) return;
@@ -1918,18 +2178,20 @@ const subCategories = useMemo(() => {
       }
       return;
     }
-    const payload = {
-      sectionId: selectedSection?.id,
-      tableId: selectedTable?.id,
-      orderId: currentOrder?.id || currentOrder?.orderId || undefined,
-      items: currentOrder.items || [],
-      note: orderNote || "",
-      covers: currentOrder.covers || covers,
-      printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
-      type: "KITCHEN_BAR",
-      serviceType: currentOrder.serviceType || serviceType,
-      roomId: currentOrder.roomId || roomCharge,
-    };
+      const payload = {
+        sectionId: selectedSection?.id,
+        tableId: selectedTable?.id,
+        orderId: currentOrder?.id || currentOrder?.orderId || undefined,
+        items: currentOrder.items || [],
+        note: orderNote || "",
+        covers: currentOrder.covers || covers,
+        printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+        type: "KITCHEN_BAR",
+        serviceType: currentOrder.serviceType || serviceType,
+        roomId: currentOrder.roomId || roomCharge,
+        waiterId:
+          currentOrder.waiterId || (activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined),
+      };
 
     const run = async () => {
       try {
@@ -1949,7 +2211,7 @@ const subCategories = useMemo(() => {
         if (markAsSent) {
           const nextSent = {};
           (currentOrder.items || []).forEach((i) => {
-            nextSent[i.id] = Number(i.qty || 0);
+            nextSent[getOrderItemKey(i)] = Number(i.qty || 0);
           });
           updateOrderForTable(selectedTable.id, (cur) => ({
             ...cur,
@@ -1992,7 +2254,7 @@ const subCategories = useMemo(() => {
       totals,
       onConfirm: run,
     });
-  }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm]);
+  }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm, getOrderItemKey]);
 
   const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: true, returnToSection: true });
 
@@ -2066,6 +2328,7 @@ const subCategories = useMemo(() => {
         items: currentOrder.items,
         serviceType: currentOrder.serviceType || serviceType,
         roomId: currentOrder.roomId || roomCharge,
+        cashierId: activeStaffRef.current?.role === "CASHIER" ? activeStaffRef.current?.id : undefined,
       });
       let nextActiveKey = "";
       setOrdersByTable((prev) => {
@@ -2140,28 +2403,90 @@ const subCategories = useMemo(() => {
           
         </div>
           <div className="flex items-center gap-4 relative">
-          <div className="hidden md:flex items-center gap-4 text-sm font-semibold">
-            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
-              {now.toLocaleDateString()}  {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            <div className="hidden md:flex items-center gap-4 text-sm font-semibold">
+              <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
+                {now.toLocaleDateString()}  {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1.5 rounded-lg bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
+                <span className="px-2.5 py-1.5 rounded-lg bg-white/15">TC {paymentsCfg.tipoCambio}</span>
+              </div>
             </div>
-            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-1.5 rounded-lg bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
-              <span className="px-2.5 py-1.5 rounded-lg bg-white/15">TC {paymentsCfg.tipoCambio}</span>
-            </div>
-          </div>
-          <RestaurantUserMenu
-            onOpenCashStatus={() => {
-              if (!guardSwitch()) return;
-              setCloseOpen(true);
-              setOpenInfo((prev) => ({ ...prev, openedAt: prev.openedAt || new Date().toISOString() }));
+            <button
+              className="px-3 py-2 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
+              onClick={() => setStaffLoginOpen(true)}
+            >
+              {activeStaff ? `${staffRoleLabel(activeStaff.role)}: ${activeStaff.name}` : "Ingresar personal"}
+            </button>
+            <RestaurantUserMenu
+              onOpenCashStatus={() => {
+                if (!guardSwitch()) return;
+                setCloseOpen(true);
+                setOpenInfo((prev) => ({ ...prev, openedAt: prev.openedAt || new Date().toISOString() }));
             }}
           />
         </div>
-      </header>
+        </header>
 
-      {printConfirmOpen && (
-        <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
+        {staffLoginOpen && (
+          <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs uppercase text-lime-600">Acceso TPV</div>
+                  <div className="text-lg font-semibold text-slate-900">Personal de restaurante</div>
+                  <div className="text-xs text-slate-500">Ingresa usuario y password para continuar.</div>
+                </div>
+                {activeStaff && <RestaurantCloseXButton onClick={() => setStaffLoginOpen(false)} />}
+              </div>
+              {activeStaff && (
+                <div className="text-xs text-slate-600">
+                  Actual: <span className="font-semibold">{staffRoleLabel(activeStaff.role)}</span> ·{" "}
+                  <span className="font-semibold">{activeStaff.name}</span>
+                </div>
+              )}
+              <div className="space-y-2">
+                <input
+                  className="w-full h-10 rounded-lg border px-3 text-sm"
+                  placeholder="Usuario"
+                  value={staffLoginForm.username}
+                  onChange={(e) => setStaffLoginForm((p) => ({ ...p, username: e.target.value }))}
+                />
+                <input
+                  className="w-full h-10 rounded-lg border px-3 text-sm"
+                  type="password"
+                  placeholder="Password"
+                  value={staffLoginForm.password}
+                  onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitStaffLogin();
+                  }}
+                />
+                {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                {activeStaff ? (
+                  <button className="px-3 py-2 rounded-lg border text-sm" onClick={clearStaffSession}>
+                    Cerrar sesion
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <button
+                  className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:bg-lime-300"
+                  disabled={staffLoginBusy}
+                  onClick={submitStaffLogin}
+                >
+                  {staffLoginBusy ? "Ingresando..." : "Ingresar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {printConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
           <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
               <div>
@@ -2189,73 +2514,165 @@ const subCategories = useMemo(() => {
         </div>
       )}
 
-      {cancelModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3">
+      {voidInvoiceModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
+          <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase text-red-600">Anular orden</div>
-                <div className="text-lg font-semibold text-slate-900">Confirmar anulacion</div>
+                <div className="text-xs uppercase text-red-600">Anular factura</div>
+                <div className="text-lg font-semibold text-slate-900">Facturas del turno</div>
+                <div className="text-xs text-slate-500">Selecciona una factura emitida para anularla.</div>
               </div>
-              <RestaurantCloseXButton onClick={closeCancelModal} />
+              <RestaurantCloseXButton onClick={closeVoidInvoiceModal} />
             </div>
 
-            {cancelTarget && (
-              <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-800">
-                <div className="font-semibold">{cancelTarget.orderLabel}</div>
-                <div className="text-xs text-red-700">
-                  Mesa {cancelTarget.tableName || cancelTarget.tableId} - {cancelTarget.itemsCount} items
-                </div>
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <div className="max-h-[320px] overflow-y-auto">
+                {voidInvoiceLoading ? (
+                  <div className="p-4 text-sm text-slate-500">Cargando facturas...</div>
+                ) : (voidInvoiceList || []).length === 0 ? (
+                  <div className="p-4 text-sm text-slate-500">No hay facturas en el turno actual.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-xs text-slate-500">
+                      <tr>
+                        <th className="text-left px-3 py-2">Factura</th>
+                        <th className="text-left px-3 py-2">Mesa</th>
+                        <th className="text-left px-3 py-2">Total</th>
+                        <th className="text-left px-3 py-2">Fecha</th>
+                        <th className="text-left px-3 py-2">Estado</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(voidInvoiceList || []).map((doc) => {
+                        const isSelected = voidInvoiceTarget?.id === doc.id;
+                        const statusRaw = String(doc?.status || "").toUpperCase();
+                        const statusLabel =
+                          statusRaw === "CANCELED"
+                            ? "Anulada"
+                            : statusRaw === "ACCEPTED"
+                              ? "Aceptada"
+                              : statusRaw === "DRAFT"
+                                ? "Borrador"
+                                : statusRaw === "NO_DOC"
+                                  ? "Sin documento"
+                                  : "Emitida";
+                        const docLabel = doc?.consecutive || doc?.key || "Sin serie";
+                        const totalValue = Number(doc?.order?.total || 0);
+                        const tableLabel = doc?.order?.tableId ? `Mesa ${doc.order.tableId}` : "-";
+                        const created = doc?.createdAt ? new Date(doc.createdAt).toLocaleString() : "-";
+                        return (
+                          <tr
+                            key={doc.id}
+                            className={`cursor-pointer ${isSelected ? "bg-emerald-50" : "hover:bg-slate-50"}`}
+                            onClick={() => {
+                              setVoidInvoiceTarget(doc);
+                              if (voidInvoiceError) setVoidInvoiceError("");
+                            }}
+                          >
+                            <td className="px-3 py-2">
+                              <div className="font-semibold text-slate-900">{docLabel}</div>
+                              <div className="text-[11px] text-slate-500">{String(doc?.docType || "").toUpperCase()}</div>
+                            </td>
+                            <td className="px-3 py-2">{tableLabel}</td>
+                            <td className="px-3 py-2">{formatMoney(totalValue)}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{created}</td>
+                            <td className="px-3 py-2">
+                              <span
+                                className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                  statusRaw === "CANCELED"
+                                    ? "bg-red-50 text-red-700 border border-red-200"
+                                    : statusRaw === "NO_DOC"
+                                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                      : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                }`}
+                              >
+                                {statusLabel}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-2">
-              <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Usuario administrador"
-                value={cancelForm.username}
-                onChange={(e) => setCancelForm((f) => ({ ...f, username: e.target.value }))}
-              />
-              <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
-                placeholder="Contrasena administrador"
-                type="password"
-                value={cancelForm.password}
-                onChange={(e) => setCancelForm((f) => ({ ...f, password: e.target.value }))}
-              />
-              <textarea
-                className="w-full rounded-lg border px-3 py-2 text-sm min-h-[90px]"
-                placeholder="Motivo de anulacion (requerido)"
-                value={cancelForm.reason}
-                onChange={(e) => setCancelForm((f) => ({ ...f, reason: e.target.value }))}
-              />
             </div>
 
-            {cancelError && <div className="text-xs text-red-600">{cancelError}</div>}
-
-            <div className="flex justify-end gap-2">
-              <button className="px-4 py-2 rounded-lg border text-sm" disabled={cancelBusy} onClick={closeCancelModal}>
+            <div className="flex justify-end gap-2 pt-2">
+              <button className="px-4 py-2 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceModal}>
                 Cerrar
               </button>
               <button
                 className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
-                disabled={cancelBusy}
-                onClick={confirmCancelOrder}
+                disabled={voidInvoiceBusy || !voidInvoiceTarget}
+                onClick={openVoidInvoiceAuth}
               >
-                {cancelBusy ? "Anulando..." : "Anular orden"}
+                Anular factura
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {cancelSuccessOpen && (
+      {voidInvoiceAuthOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase text-red-600">Autorizacion</div>
+                <div className="text-sm font-semibold text-slate-900">Confirmar anulacion</div>
+              </div>
+              <RestaurantCloseXButton onClick={closeVoidInvoiceAuth} />
+            </div>
+
+            <div className="grid gap-2">
+              <input
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                placeholder="Usuario administrador"
+                value={voidInvoiceForm.username}
+                onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, username: e.target.value }))}
+              />
+              <input
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                type="password"
+                placeholder="Contrasena administrador"
+                value={voidInvoiceForm.password}
+                onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, password: e.target.value }))}
+              />
+              <input
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+                placeholder="Asunto / motivo"
+                value={voidInvoiceForm.reason}
+                onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+
+            {voidInvoiceError && <div className="text-xs text-red-600">{voidInvoiceError}</div>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button className="px-4 py-2 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceAuth}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
+                disabled={voidInvoiceBusy}
+                onClick={confirmVoidInvoice}
+              >
+                {voidInvoiceBusy ? "Anulando..." : "Anular factura"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {voidInvoiceSuccessOpen && (
         <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px] flex items-center justify-center p-4">
           <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-3">
             <div className="h-14 w-14 rounded-full bg-emerald-100 flex items-center justify-center">
               <CheckCircle className="h-9 w-9 text-emerald-600" />
             </div>
-            <div className="text-lg font-semibold text-emerald-700">Eliminado</div>
+            <div className="text-lg font-semibold text-emerald-700">Factura anulada</div>
           </div>
         </div>
       )}
@@ -2394,6 +2811,13 @@ const subCategories = useMemo(() => {
                     setCloseModalOpen(false);
                     setCloseOpen(false);
                     setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
+                    setOrdersByTable({});
+                    setActiveOrderByTable({});
+                    setPaymentResult(null);
+                    setPaymentForm({});
+                    setSelectedPaymentKeys([]);
+                    setSplitPayments(false);
+                    resetToLobby();
                     refreshStats();
                   } catch (e) {
                     window.alert("Could not record the cash close.");
@@ -2403,6 +2827,139 @@ const subCategories = useMemo(() => {
                 }}
               >
                 {closeLoading ? "Sending..." : "Record close"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {itemOptionsOpen && itemOptionsItem && (
+        <div className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
+          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-6 space-y-5 overflow-y-auto max-h-[85vh]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                {itemOptionsItem.imageUrl ? (
+                  <div className="h-16 w-16 rounded-xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center">
+                    <img
+                      alt=""
+                      src={itemOptionsItem.imageUrl}
+                      className="h-full w-full object-contain p-1"
+                      onError={(ev) => {
+                        ev.currentTarget.style.display = "none";
+                      }}
+                    />
+                  </div>
+                ) : null}
+                <div>
+                  <div className="text-xs uppercase text-emerald-600">Detalles del articulo</div>
+                  <div className="text-lg font-semibold text-slate-900">{itemOptionsItem.name}</div>
+                  {itemOptionsItem.description && (
+                    <div className="text-xs text-slate-500">{itemOptionsItem.description}</div>
+                  )}
+                </div>
+              </div>
+              <RestaurantCloseXButton onClick={closeItemOptions} />
+            </div>
+
+            {itemOptionMeta.sizeOptions.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700">Tamanos</div>
+                <div className="flex flex-wrap gap-2">
+                  {itemOptionMeta.sizeOptions.map((s, idx) => {
+                    const sizeId = resolveOptionId(s, idx);
+                    const active = itemOptionsSize === sizeId;
+                    const label = String(s.label || s.name || `Tamano ${idx + 1}`);
+                    const price = Number(s.price ?? itemOptionsItem.price ?? 0);
+                    return (
+                      <button
+                        key={sizeId}
+                        type="button"
+                        onClick={() => setItemOptionsSize(sizeId)}
+                        className={`px-3 py-2 rounded-lg border text-sm font-semibold transition ${
+                          active ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{label}</span>
+                          <span className={active ? "text-emerald-100" : "text-slate-500"}>{formatMoney(price)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {itemOptionMeta.detailOptions.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700">Detalles / extras</div>
+                <div className="flex flex-wrap gap-2">
+                  {itemOptionMeta.detailOptions.map((d, idx) => {
+                    const detailId = resolveOptionId(d, idx);
+                    const active = itemOptionsDetails.includes(detailId);
+                    const label = String(d.label || d.name || `Detalle ${idx + 1}`);
+                    const delta = Number(d.priceDelta ?? d.price ?? 0);
+                    const deltaLabel = delta ? `+${formatMoney(delta)}` : "";
+                    return (
+                      <button
+                        key={detailId}
+                        type="button"
+                        onClick={() =>
+                          setItemOptionsDetails((prev) =>
+                            prev.includes(detailId) ? prev.filter((p) => p !== detailId) : [...prev, detailId]
+                          )
+                        }
+                        className={`px-3 py-2 rounded-lg border text-sm font-semibold transition ${
+                          active ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>{label}</span>
+                          {deltaLabel && <span className={active ? "text-emerald-100" : "text-slate-500"}>{deltaLabel}</span>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="md:col-span-2 space-y-2">
+                <div className="text-sm font-semibold text-slate-700">Nota</div>
+                <textarea
+                  className="w-full rounded-xl border px-3 py-2 text-sm min-h-[90px]"
+                  placeholder="Opcional: indicaciones especiales"
+                  value={itemOptionsNote}
+                  onChange={(e) => setItemOptionsNote(e.target.value)}
+                />
+              </div>
+              <div className="rounded-xl border bg-lime-50 px-4 py-3 text-sm space-y-2">
+                <div className="text-xs text-slate-600 uppercase">Resumen</div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Base</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(itemOptionMeta.basePrice)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Extras</span>
+                  <span className="font-semibold text-slate-900">{formatMoney(itemOptionMeta.extras)}</span>
+                </div>
+                <div className="flex items-center justify-between text-base font-semibold">
+                  <span className="text-slate-900">Total</span>
+                  <span className="text-emerald-700">{formatMoney(itemOptionMeta.total)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button className="px-4 py-2 rounded-lg border text-sm" onClick={closeItemOptions}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                onClick={confirmItemOptions}
+              >
+                Agregar
               </button>
             </div>
           </div>
@@ -2845,150 +3402,213 @@ const subCategories = useMemo(() => {
                       <div className="text-[16px] text-lime-700/80">
                         Active menu: <span className="font-semibold">{selectedSection?.activeMenu?.name || "-"}</span>
                       </div>
-                      <div className="relative w-full h-72 md:h-80 rounded-2xl border border-lime-200 bg-lime-50/60 overflow-hidden">
+                      <div
+                        className="relative w-full h-[60vh] md:h-[70vh] min-h-[420px] max-h-[780px] rounded-2xl border border-lime-200 bg-lime-50/60 overflow-hidden"
+                        onPointerDown={handleFloorPointerDown}
+                        onPointerMove={handleFloorPointerMove}
+                        onPointerUp={handleFloorPointerUp}
+                        onPointerCancel={handleFloorPointerUp}
+                        onPointerLeave={handleFloorPointerUp}
+                        onWheel={handleFloorWheel}
+                        style={{ touchAction: "none", cursor: floorDragging ? "grabbing" : "grab" }}
+                      >
                         <div className="absolute inset-x-3 top-2 flex justify-between text-[13px] text-dark-600">
                           <span>Entrance</span>
                           <span>Bar / Kitchen</span>
                         </div>
-                        {(selectedSection.objects || []).map((o, objIdx) => (
+                        <div className="absolute inset-0">
                           <div
-                            key={String(o.id || `${o.kind || "obj"}-${objIdx}`)}
-                            className={`absolute -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none ${
-                              String(o.kind || "").toUpperCase() === "LABEL" ? "px-2 py-1" : "rounded-xl border border-slate-200 bg-white/70 shadow-sm"
-                            }`}
+                            className="absolute inset-0"
                             style={{
-                              left: `${Number(o.x ?? 50)}%`,
-                              top: `${Number(o.y ?? 50)}%`,
-                              width: `${Number(o.w ?? 18)}%`,
-                              height: `${Number(o.h ?? 10)}%`,
-                              transform: `translate(-50%, -50%) rotate(${Number(o.rotation || 0)}deg)`,
-                              backgroundColor: o.color ? `${o.color}20` : undefined,
-                              borderColor: o.color ? `${o.color}55` : undefined,
-                              zIndex: Number(o.zIndex ?? 0),
+                              transform: `translate(${floorPan.x}px, ${floorPan.y}px) scale(${floorZoom})`,
+                              transformOrigin: "center",
                             }}
-                            title={`${o.kind}${o.label ? ` - ${o.label}` : ""}`}
                           >
-                            <div
-                              className={`h-full w-full flex items-center justify-center gap-2 text-lime-800 px-2 ${
-                                String(o.kind || "").toUpperCase() === "LABEL" ? "text-sm font-semibold" : "text-[11px]"
-                              }`}
-                            >
-                              {(() => {
-                                const { Icon, label } = getFloorObjectMeta(o.kind);
-                                const iconDataUrl = o?.meta?.iconDataUrl;
-                                const iconUrl = o?.meta?.iconUrl;
-                                const hasCustom = Boolean(iconDataUrl || iconUrl);
-                                return (
-                                  <>
-                                    {String(o.kind || "").toUpperCase() !== "LABEL" && (
-                                      <span
-                                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg overflow-hidden border border-white/40"
-                                        style={{ backgroundColor: o.color || getFloorObjectMeta(o.kind).bg }}
-                                        title={label}
-                                      >
-                                        {hasCustom ? (
-                                          <img alt="" src={iconDataUrl || iconUrl} className="h-full w-full object-contain bg-white/80" />
-                                        ) : (
-                                          <Icon size={14} className="text-white" />
+                            {(selectedSection.objects || []).map((o, objIdx) => (
+                              <div
+                                key={String(o.id || `${o.kind || "obj"}-${objIdx}`)}
+                                className={`absolute -translate-x-1/2 -translate-y-1/2 select-none pointer-events-none ${
+                                  String(o.kind || "").toUpperCase() === "LABEL" ? "px-2 py-1" : "rounded-xl border border-slate-200 bg-white/70 shadow-sm"
+                                }`}
+                                style={{
+                                  left: `${Number(o.x ?? 50)}%`,
+                                  top: `${Number(o.y ?? 50)}%`,
+                                  width: `${Number(o.w ?? 18)}%`,
+                                  height: `${Number(o.h ?? 10)}%`,
+                                  transform: `translate(-50%, -50%) rotate(${Number(o.rotation || 0)}deg)`,
+                                  backgroundColor: o.color ? `${o.color}20` : undefined,
+                                  borderColor: o.color ? `${o.color}55` : undefined,
+                                  zIndex: Number(o.zIndex ?? 0),
+                                }}
+                                title={`${o.kind}${o.label ? ` - ${o.label}` : ""}`}
+                              >
+                                <div
+                                  className={`h-full w-full flex items-center justify-center gap-2 text-lime-800 px-2 ${
+                                    String(o.kind || "").toUpperCase() === "LABEL" ? "text-sm font-semibold" : "text-[11px]"
+                                  }`}
+                                >
+                                  {(() => {
+                                    const { Icon, label } = getFloorObjectMeta(o.kind);
+                                    const iconDataUrl = o?.meta?.iconDataUrl;
+                                    const iconUrl = o?.meta?.iconUrl;
+                                    const isBar = String(o.kind || "").toUpperCase() === "BAR";
+                                    const iconSrc = iconDataUrl || iconUrl || (isBar ? BAR_DECOR_ICON_URL : "");
+                                    const hasCustom = Boolean(iconSrc);
+                                    return (
+                                      <>
+                                        {String(o.kind || "").toUpperCase() !== "LABEL" && (
+                                          <span
+                                            className="inline-flex items-center justify-center h-6 w-6 rounded-lg overflow-hidden border border-white/40"
+                                            style={{ backgroundColor: o.color || getFloorObjectMeta(o.kind).bg }}
+                                            title={label}
+                                          >
+                                            {hasCustom ? (
+                                              <img alt="" src={iconSrc} className="h-full w-full object-contain bg-white/80" />
+                                            ) : (
+                                              <Icon size={14} className="text-white" />
+                                            )}
+                                          </span>
                                         )}
-                                      </span>
-                                    )}
-                                    <span className="truncate">{o.label || label}</span>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        ))}
-                        {(selectedSection.tables || []).map((t, idx) => {
-                          const hasCustom = typeof t.x === "number" && typeof t.y === "number";
-                          const cols = 5;
-                          const col = idx % cols;
-                          const row = Math.floor(idx / cols);
-                          const fallbackX = (col + 0.5) * (100 / cols);
-                            const fallbackY = 25 + row * 20;
-                          const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
-                          const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
-                          const hasOrder = Boolean(tableOrderSummary[t.id]?.hasItems);
-                          const iconSize = Number(t.size ?? 56) || 56;
-                          const rotation = Number(t.rotation ?? 0) || 0;
-                          const color = String(t.color || t.colorHex || t.iconColor || "").trim();
-                          const tableKey = String(t.id || t.name || `table-${idx}`);
-                          return (
-                            <button
-                              key={tableKey}
-                              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none group"
-                              style={{ left: `${x}%`, top: `${y}%` }}
-                              onClick={() => {
-                                if (!guardSwitch() && selectedTable?.id !== t.id) return;
-                                handleSelectTable(t, selectedSection);
-                              }}
-                            >
-                              <div
-                                className={`rounded-2xl border shadow-sm transition px-2 py-2 ${
-                                  hasOrder
-                                    ? "bg-emerald-600/90 border-emerald-500 group-hover:bg-emerald-500/90"
-                                    : "bg-white/90 border-lime-200 group-hover:border-lime-300"
-                                }`}
-                              >
-                                {(() => {
-                                  const { Free, Occupied } = getTableIcons(t.kind);
-                                  return (
-                                    <div
-                                      style={{
-                                        width: iconSize,
-                                        height: iconSize,
-                                        transform: `rotate(${rotation}deg)`,
-                                        color: color || undefined,
-                                      }}
-                                    >
-                                  {hasOrder && occupiedIconOk ? (
-                                        <img
-                                          alt="Occupied table"
-                                          src={OCCUPIED_TABLE_ICON_URL}
-                                          className="w-full h-full object-contain"
-                                          onError={() => setOccupiedIconOk(false)}
-                                        />
-                                      ) : !hasOrder && String(t.kind || "mesa").toLowerCase() === "camastro" && camastroIconOk ? (
-                                        <img
-                                          alt="Camastro"
-                                          src={CAMASTRO_FREE_ICON_URL}
-                                          className="w-full h-full object-contain"
-                                          onError={() => setCamastroIconOk(false)}
-                                        />
-                                      ) : (
-                                        (() => {
-                                          const Icon = hasOrder ? Occupied : Free;
-                                          return <Icon className="w-full h-full" />;
-                                        })()
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                              <div
-                                className={`text-sm font-bold rounded-lg px-2 py-0.5 border shadow-sm transition ${
-                                  hasOrder
-                                    ? "bg-emerald-600/90 border-emerald-500 text-white group-hover:bg-emerald-500/90"
-                                    : "bg-white/90 border-lime-200 text-lime-900 group-hover:border-lime-300"
-                                }`}
-                              >
-                                {t.id || t.name}
-                              </div>
-                              {tableOrderSummary[t.id]?.sentAt && (
-                                <div className="text-[10px] text-emerald-700 font-semibold">
-                                  {formatElapsed(tableOrderSummary[t.id].sentAt)}
+                                        <span className="truncate">{o.label || label}</span>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                          {(selectedSection.tables || []).length === 0 && (
-                            <div className="absolute inset-0 flex items-center justify-center text-sm text-lime-700">
-                              No tables configured in this section.
-                            </div>
-                          )}
+                              </div>
+                            ))}
+                            {(selectedSection.tables || []).map((t, idx) => {
+                              const hasCustom = typeof t.x === "number" && typeof t.y === "number";
+                              const cols = 5;
+                              const col = idx % cols;
+                              const row = Math.floor(idx / cols);
+                              const fallbackX = (col + 0.5) * (100 / cols);
+                              const fallbackY = 25 + row * 20;
+                              const x = hasCustom ? Math.min(95, Math.max(5, t.x)) : fallbackX;
+                              const y = hasCustom ? Math.min(90, Math.max(15, t.y)) : fallbackY;
+                              const hasOrder = Boolean(tableOrderSummary[t.id]?.hasItems);
+                              const iconSize = Number(t.size ?? 56) || 56;
+                              const rotation = Number(t.rotation ?? 0) || 0;
+                              const color = String(t.color || t.colorHex || t.iconColor || "").trim();
+                              const tableKey = String(t.id || t.name || `table-${idx}`);
+                              return (
+                                <button
+                                  key={tableKey}
+                                  data-floor-table="true"
+                                  className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none group cursor-pointer"
+                                  style={{ left: `${x}%`, top: `${y}%` }}
+                                  onClick={() => {
+                                    if (!guardSwitch() && selectedTable?.id !== t.id) return;
+                                    handleSelectTable(t, selectedSection);
+                                  }}
+                                >
+                                  <div
+                                    className={`rounded-2xl border shadow-sm transition px-2 py-2 ${
+                                      hasOrder
+                                        ? "bg-emerald-600/90 border-emerald-500 group-hover:bg-emerald-500/90"
+                                        : "bg-white/90 border-lime-200 group-hover:border-lime-300"
+                                    }`}
+                                  >
+                                    {(() => {
+                                      const { Free, Occupied } = getTableIcons(t.kind);
+                                      return (
+                                        <div
+                                          style={{
+                                            width: iconSize,
+                                            height: iconSize,
+                                            transform: `rotate(${rotation}deg)`,
+                                            color: color || undefined,
+                                          }}
+                                        >
+                                          {(() => {
+                                            const kind = String(t.kind || "mesa").toLowerCase();
+                                            const isCamastro = kind === "camastro";
+                                            const isTaburete =
+                                              kind === "taburete" || kind === "butaca" || kind === "stool" || kind === "barstool";
+                                            if (hasOrder) {
+                                              if (isCamastro && camastroOccupiedIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Camastro ocupado"
+                                                    src={CAMASTRO_OCCUPIED_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setCamastroOccupiedIconOk(false)}
+                                                  />
+                                                );
+                                              }
+                                              if (isTaburete && tabureteOccupiedIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Taburete ocupado"
+                                                    src={TABURETE_OCCUPIED_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setTabureteOccupiedIconOk(false)}
+                                                  />
+                                                );
+                                              }
+                                              if (occupiedIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Mesa ocupada"
+                                                    src={OCCUPIED_TABLE_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setOccupiedIconOk(false)}
+                                                  />
+                                                );
+                                              }
+                                            } else {
+                                              if (isCamastro && camastroFreeIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Camastro libre"
+                                                    src={CAMASTRO_FREE_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setCamastroFreeIconOk(false)}
+                                                  />
+                                                );
+                                              }
+                                              if (isTaburete && tabureteFreeIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Taburete libre"
+                                                    src={TABURETE_FREE_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setTabureteFreeIconOk(false)}
+                                                  />
+                                                );
+                                              }
+                                            }
+                                            const Icon = hasOrder ? Occupied : Free;
+                                            return <Icon className="w-full h-full" />;
+                                          })()}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                  <div
+                                    className={`text-sm font-bold rounded-lg px-2 py-0.5 border shadow-sm transition ${
+                                      hasOrder
+                                        ? "bg-emerald-600/90 border-emerald-500 text-white group-hover:bg-emerald-500/90"
+                                        : "bg-white/90 border-lime-200 text-lime-900 group-hover:border-lime-300"
+                                    }`}
+                                  >
+                                    {t.id || t.name}
+                                  </div>
+                                  {tableOrderSummary[t.id]?.sentAt && (
+                                    <div className="text-[10px] text-emerald-700 font-semibold">
+                                      {formatElapsed(tableOrderSummary[t.id].sentAt)}
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
+                        {(selectedSection.tables || []).length === 0 && (
+                          <div className="absolute inset-0 flex items-center justify-center text-sm text-lime-700">
+                            No tables configured in this section.
+                          </div>
+                        )}
+                      </div>
                       </div>
                     ) : (
                       <div className="text-sm text-lime-700">Select a section to view its tables.</div>
@@ -3201,7 +3821,7 @@ const subCategories = useMemo(() => {
                       </div>
                     )}
                     {(currentOrder.items || []).map((item, idx) => (
-                      <div key={String(item.id || item.code || `${item.name}-${idx}`)} className="border border-lime-100 rounded-xl p-3">
+                      <div key={getOrderItemKey(item) || String(item.id || item.code || `${item.name}-${idx}`)} className="border border-lime-100 rounded-xl p-3">
                         <div className="flex justify-between items-center gap-2">
                           <div>
                             <div className="font-semibold text-lime-900">{item.name}</div>
@@ -3210,7 +3830,7 @@ const subCategories = useMemo(() => {
                           <div className="flex items-center gap-2">
                             <button
                               className="h-8 w-8 rounded-lg bg-lime-50 text-lg disabled:opacity-50"
-                              onClick={() => updateQty(item.id, -1)}
+                              onClick={() => updateQty(getOrderItemKey(item), -1)}
                               disabled={isComandada}
                             >
                               -
@@ -3218,7 +3838,7 @@ const subCategories = useMemo(() => {
                             <div className="w-8 text-center font-semibold">{item.qty}</div>
                             <button
                               className="h-8 w-8 rounded-lg bg-purple-800 text-white text-lg"
-                              onClick={() => updateQty(item.id, 1)}
+                              onClick={() => updateQty(getOrderItemKey(item), 1)}
                             >
                               +
                             </button>
@@ -3250,7 +3870,7 @@ const subCategories = useMemo(() => {
                             )}
                             <button
                               className="text-xs text-red-600 hover:underline disabled:opacity-50"
-                              onClick={() => removeItem(item.id)}
+                              onClick={() => removeItem(getOrderItemKey(item))}
                               disabled={isComandada}
                             >
                               Quitar
@@ -3303,20 +3923,35 @@ const subCategories = useMemo(() => {
                     >
                       Subtotal
                     </button>
-              <button
-                      className="h-12 rounded-xl bg-red-600 text-white font-semibold disabled:bg-red-300"
-                      onClick={cancelCurrentOrder}
-                      disabled={!hasItems || !isComandada}
-                      title={isComandada ? "Anular orden" : "Solo orden comandada"}
-                    >
-                      Anular orden
-                    </button>
                   </div>
                 </div>
               </div>
           )}
         </div>
       </div>
+      {(sectionLauncher || !selectedTable) && (
+        <div className="fixed bottom-4 left-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[900px]">
+          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[10px] uppercase text-lime-500">Secciones</div>
+              <div className="text-sm font-semibold text-lime-900">Gestionar facturas</div>
+            </div>
+            <button
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+              onClick={openVoidInvoiceModal}
+            >
+              Anular factura
+            </button>
+            <button
+              className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600"
+              onClick={resetToLobby}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      )}
+
       {selectedTable && !sectionLauncher && (
         <div className="fixed bottom-4 left-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[900px]">
           <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-xl px-3 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">

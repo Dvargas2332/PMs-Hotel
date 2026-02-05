@@ -58,6 +58,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       { id: "restaurant.orders.move", name: "Mover Ã³rdenes entre mesas" },
       { id: "restaurant.orders.close", name: "Cerrar/pagar Ã³rdenes" },
       { id: "restaurant.orders.cancel", name: "Anular ordenes" },
+      { id: "restaurant.staff.write", name: "Gestionar cajeros y meseros" },
       { id: "restaurant.print", name: "Enviar a impresoras" },
       { id: "restaurant.shift.close", name: "Cerrar turno" },
       { id: "restaurant.config.write", name: "Configurar impresoras" },

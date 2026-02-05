@@ -431,7 +431,12 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
-    if (lastClose?.createdAt && doc.createdAt <= lastClose.createdAt) {
+    const order = await prisma.restaurantOrder.findFirst({
+      where: { id: doc.restaurantOrderId, hotelId },
+      select: { updatedAt: true },
+    });
+    const orderPaidAt = order?.updatedAt || doc.createdAt;
+    if (lastClose?.createdAt && orderPaidAt <= lastClose.createdAt) {
       return res.status(403).json({ message: "No se puede anular un documento de restaurante despuÃ©s del cierre Z" });
     }
   }

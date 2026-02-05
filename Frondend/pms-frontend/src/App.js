@@ -25,6 +25,7 @@ import RestaurantLobby from "./modulos/restaurant/RestaurantLobby";
 import RestaurantReportsPage from "./modulos/restaurant/RestaurantReportsPage";
 import RestaurantClosesPage from "./modulos/restaurant/RestaurantClosesPage";
 import RestaurantBillingHistoryPage from "./modulos/restaurant/RestaurantBillingHistoryPage";
+import RestaurantStaffPage from "./modulos/restaurant/RestaurantStaffPage";
 import Managementpage from "./pages/Management/ManagementPage";
 import Login from "./pages/Login";
 import ProtectedRoute from "./components/ProtectedRoutes";
@@ -151,6 +152,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <RestaurantBillingHistoryPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/restaurant/staff"
+          element={
+            <ProtectedRoute>
+              <RestaurantStaffPage />
             </ProtectedRoute>
           }
         />
