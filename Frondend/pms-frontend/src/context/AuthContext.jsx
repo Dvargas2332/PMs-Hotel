@@ -106,7 +106,7 @@ export function AuthProvider({ children }) {
 
     const u = {
       id: launcher.id,
-      username: launcher.username ?? launcher.email ?? "",
+      username: launcher.username || launcher.email || "",
       name: launcher.name || launcher.username || launcher.email || "",
       hotelId: launcher.hotelId,
       hotelName: launcher.hotelName,

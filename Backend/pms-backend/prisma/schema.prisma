@@ -633,11 +633,51 @@ model RestaurantRecipeLine {
 }
 
 // ⬇️ NUEVO
+model SaasClient {
+  id          String   @id @default(cuid())
+  name        String
+  companyId   String?
+  email       String?
+  phone1      String?
+  phone2      String?
+  ownerName   String?
+  managerName String?
+  managerId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hotels Hotel[]
+}
+
+model SaasBillingPayment {
+  id        String   @id @default(cuid())
+  hotelId   String
+  amount    Decimal  @default(0) @db.Decimal(12, 2)
+  currency  String   @default("USD")
+  paidAt    DateTime
+  note      String?
+  createdAt DateTime @default(now())
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@index([hotelId])
+  @@index([hotelId, paidAt])
+}
+
 model Hotel {
   id         String   @id @default(cuid())
+  number     Int      @unique @default(autoincrement())
   name       String
   membership String   @default("PLATINUM")
+  membershipMonthlyFee Decimal @default(0) @db.Decimal(12, 2)
   currency   String   @default("CRC")
+  phone1     String?
+  phone2     String?
+  ownerName  String?
+  managerName String?
+  companyId  String?
+  managerId  String?
+  clientId   String?
   fxBuy      Decimal  @default(0) @db.Decimal(12, 4)
   fxSell     Decimal  @default(0) @db.Decimal(12, 4)
   createdAt  DateTime @default(now())
@@ -693,6 +733,8 @@ model Hotel {
   cabysCodes                   CabysCode[]
   eInvoicingCatalogEntries     EInvoicingCatalogEntry[]
   RestaurantSectionObject      RestaurantSectionObject[]
+  saasClient                   SaasClient? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  saasBillingPayments          SaasBillingPayment[]
 }
 
 model EInvoicingConfig {
@@ -1175,7 +1217,7 @@ model EInvoicingCatalogEntry {
 }
 
 model AppRole {
-  id          String  @id
+  id          String
   name        String
   description String?
   hotelId     String
@@ -1185,7 +1227,7 @@ model AppRole {
   launcherAccounts LauncherAccount[]
   restaurantStaff  RestaurantStaff[] @relation("RestaurantStaffAccessRole")
 
-  @@unique([hotelId, id])
+  @@id([hotelId, id])
   @@index([hotelId])
 }
 
@@ -1201,7 +1243,7 @@ model RolePermission {
   permissionId String
   hotelId      String
 
-  role       AppRole    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  role       AppRole    @relation(fields: [roleId, hotelId], references: [id, hotelId], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   hotel      Hotel      @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 

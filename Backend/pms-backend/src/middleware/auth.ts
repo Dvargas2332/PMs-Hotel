@@ -10,6 +10,8 @@ export interface AuthUser {
   hotelId?: string;
   // Marcador para diferenciar logins del launcher de usuarios normales
   isLauncher?: boolean;
+  // Marcador para diferenciar logins del gestor SaaS
+  isGestor?: boolean;
 }
 
 export function auth(req: Request, res: Response, next: NextFunction) {
@@ -42,6 +44,15 @@ export function requireManagementUser(req: Request, res: Response, next: NextFun
   const user = req.user as AuthUser | undefined;
   if (!user) return res.status(401).json({ message: "No autenticado" });
   if (user.isLauncher) return res.status(403).json({ message: "No autorizado para management" });
+  next();
+}
+
+export function requireGestor(req: Request, res: Response, next: NextFunction) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  const isGestor = Boolean(user.isGestor) || (user.sub === "gestor" && user.hotelId === "saas-gestor");
+  if (!isGestor) return res.status(403).json({ message: "No autorizado" });
   next();
 }
 

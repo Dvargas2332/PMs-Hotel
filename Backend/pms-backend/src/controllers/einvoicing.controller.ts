@@ -610,9 +610,6 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
     if (!atv?.password) readinessIssues.push("ATV_PASSWORD_MISSING");
     if (!atv?.clientSecret) readinessIssues.push("ATV_CLIENT_SECRET_MISSING");
     if (!settings?.atv?.clientId) readinessIssues.push("ATV_CLIENT_ID_MISSING");
-    if (!atvEndpoints?.tokenUrl) readinessIssues.push("ATV_TOKEN_URL_MISSING");
-    if (!atvEndpoints?.sendUrl) readinessIssues.push("ATV_SEND_URL_MISSING");
-    if (!atvEndpoints?.statusUrl) readinessIssues.push("ATV_STATUS_URL_MISSING");
   }
 
   const redacted = {

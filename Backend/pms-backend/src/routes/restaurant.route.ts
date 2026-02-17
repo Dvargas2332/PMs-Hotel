@@ -14,6 +14,8 @@ import {
   printRestaurantOrder,
   updateRestaurantConfig,
   getRestaurantStats,
+  getRestaurantReport,
+  exportRestaurantReport,
   closeShift,
   getRestaurantShift,
   openRestaurantShift,
@@ -110,6 +112,8 @@ router.post("/shift/open", requirePermission("restaurant.access.pos", "restauran
 router.post("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), requirePermission("restaurant.shift.close"), closeShift);
 router.get("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), listCloses);
 router.get("/stats", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantStats);
+router.get("/report", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), getRestaurantReport);
+router.get("/report/export", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), exportRestaurantReport);
 router.get("/shift/invoices", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), listRestaurantShiftInvoices);
 router.get("/orders", requirePermission("restaurant.access.pos", "restaurant.access.history", "restaurant.pos.open"), listOrders);
 router.post("/order", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.write"), createOrUpdateOrder);

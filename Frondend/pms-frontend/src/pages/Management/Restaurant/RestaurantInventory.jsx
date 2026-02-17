@@ -227,10 +227,10 @@ export default function RestaurantInventory() {
                       Stock: {i.stock || 0} {i.unit || i.unidad || ""} | Min: {i.minimo || i.min || 0}{" "}
                       {i.unit || i.unidad || ""}
                     </div>
-                    <div className="text-xs text-gray-600">
-                      Costo: {i.cost || i.costo || 0} | IVA: {i.taxRate ?? "-"}% | Proveedor:{" "}
-                      {i.supplierName || i.proveedor || "-"}
-                    </div>
+                      <div className="text-xs text-gray-600">
+                        Costo: {i.cost || i.costo || 0} | IVA: {i.taxRate ?? "-"}% | Proveedor:{" "}
+                        {i.supplierName || i.proveedor || "-"}
+                      </div>
                   </div>
                 ))}
               </div>

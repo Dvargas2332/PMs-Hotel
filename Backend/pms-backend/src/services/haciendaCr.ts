@@ -1,18 +1,18 @@
 type HaciendaEnv = "sandbox" | "production";
 
 export type HaciendaEndpoints = {
-  tokenUrl: string;
-  sendUrl: string;
-  statusUrl: string; // may contain {{key}} placeholder
+  tokenUrl?: string;
+  sendUrl?: string;
+  statusUrl?: string; // may contain {{key}} placeholder
 };
 
 export type HaciendaApiConfig = {
   env: HaciendaEnv;
-  endpoints: HaciendaEndpoints;
+  endpoints?: HaciendaEndpoints;
   atv: {
     username: string;
     password: string;
-    clientId?: string;
+    clientId?: string; // api-stag | api-prod
     clientSecret: string;
   };
 };
@@ -35,17 +35,43 @@ function isPlaceholder(value: string | undefined | null) {
   );
 }
 
-export function validateHaciendaSandboxConfig(cfg: HaciendaApiConfig) {
+const DEFAULT_ENDPOINTS = {
+  sandbox: {
+    tokenUrl: "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token",
+    sendUrl: "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/",
+    statusUrl: "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/{{key}}",
+  },
+  production: {
+    tokenUrl: "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token",
+    sendUrl: "https://api.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/",
+    statusUrl: "https://api.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/{{key}}",
+  },
+} as const;
+
+function resolveEndpoints(cfg: HaciendaApiConfig) {
+  const env = cfg.env === "production" ? "production" : "sandbox";
+  const base = DEFAULT_ENDPOINTS[env];
+  const overrides = cfg.endpoints || {};
+  return {
+    tokenUrl: overrides.tokenUrl || base.tokenUrl,
+    sendUrl: overrides.sendUrl || base.sendUrl,
+    statusUrl: overrides.statusUrl || base.statusUrl,
+  };
+}
+
+export function validateHaciendaConfig(cfg: HaciendaApiConfig) {
   const issues: string[] = [];
-  if (cfg.env !== "sandbox") issues.push("ENV_NOT_SANDBOX");
-  if (isPlaceholder(cfg.endpoints.tokenUrl)) issues.push("TOKEN_URL_MISSING");
-  if (isPlaceholder(cfg.endpoints.sendUrl)) issues.push("SEND_URL_MISSING");
-  if (isPlaceholder(cfg.endpoints.statusUrl)) issues.push("STATUS_URL_MISSING");
+  const endpoints = resolveEndpoints(cfg);
+  if (isPlaceholder(endpoints.tokenUrl)) issues.push("TOKEN_URL_MISSING");
+  if (isPlaceholder(endpoints.sendUrl)) issues.push("SEND_URL_MISSING");
+  if (isPlaceholder(endpoints.statusUrl)) issues.push("STATUS_URL_MISSING");
   if (!cfg.atv.username?.trim()) issues.push("ATV_USERNAME_MISSING");
   if (!cfg.atv.password?.trim()) issues.push("ATV_PASSWORD_MISSING");
   if (!cfg.atv.clientSecret?.trim()) issues.push("ATV_CLIENT_SECRET_MISSING");
-  // clientId is optional for some flows, but we keep a warning if missing
   if (!cfg.atv.clientId?.trim()) issues.push("ATV_CLIENT_ID_MISSING");
+  if (cfg.atv.clientId && !["api-stag", "api-prod"].includes(cfg.atv.clientId)) {
+    issues.push("ATV_CLIENT_ID_INVALID");
+  }
   return issues;
 }
 
@@ -61,8 +87,8 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit & { 
   }
 }
 
-export async function getSandboxToken(cfg: HaciendaApiConfig): Promise<HaciendaToken> {
-  const issues = validateHaciendaSandboxConfig(cfg);
+export async function getHaciendaToken(cfg: HaciendaApiConfig, grantType: "password" | "refresh_token", refreshToken?: string): Promise<HaciendaToken> {
+  const issues = validateHaciendaConfig(cfg);
   if (issues.some((x) => x.endsWith("_URL_MISSING"))) {
     throw new Error(
       `Hacienda sandbox endpoints not configured (placeholders). Missing: ${issues
@@ -71,16 +97,21 @@ export async function getSandboxToken(cfg: HaciendaApiConfig): Promise<HaciendaT
     );
   }
 
-  // NOTE: Placeholder implementation. Replace body/headers according to Hacienda docs.
+  const endpoints = resolveEndpoints(cfg);
   const body = new URLSearchParams({
-    grant_type: "password",
-    username: cfg.atv.username,
-    password: cfg.atv.password,
-    client_id: cfg.atv.clientId || "PLACEHOLDER_CLIENT_ID",
+    grant_type: grantType,
+    client_id: cfg.atv.clientId || "api-stag",
     client_secret: cfg.atv.clientSecret,
   });
+  if (grantType === "password") {
+    body.set("username", cfg.atv.username);
+    body.set("password", cfg.atv.password);
+  } else if (grantType === "refresh_token") {
+    if (!refreshToken) throw new Error("Missing refresh_token");
+    body.set("refresh_token", refreshToken);
+  }
 
-  const res = await fetchWithTimeout(cfg.endpoints.tokenUrl, {
+  const res = await fetchWithTimeout(endpoints.tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
@@ -110,19 +141,43 @@ export async function getSandboxToken(cfg: HaciendaApiConfig): Promise<HaciendaT
   };
 }
 
-export async function sendSandboxDocument(cfg: HaciendaApiConfig, token: HaciendaToken, xmlSigned: string, key: string) {
-  if (isPlaceholder(cfg.endpoints.sendUrl)) {
+export async function sendHaciendaDocument(
+  cfg: HaciendaApiConfig,
+  token: HaciendaToken,
+  xmlSigned: string,
+  key: string,
+  opts: {
+    issuedAt: string;
+    issuerIdType: string;
+    issuerIdNumber: string;
+    receiverIdType?: string | null;
+    receiverIdNumber?: string | null;
+    callbackUrl?: string | null;
+  }
+) {
+  const endpoints = resolveEndpoints(cfg);
+  if (isPlaceholder(endpoints.sendUrl)) {
     throw new Error("Hacienda sendUrl not configured (placeholder).");
   }
 
-  // NOTE: Placeholder implementation. Replace payload shape according to Hacienda docs.
-  const payload = {
+  const payload: any = {
     clave: key,
-    xml: Buffer.from(xmlSigned, "utf8").toString("base64"),
-    sandbox: true,
+    fecha: opts.issuedAt,
+    emisor: {
+      tipoIdentificacion: opts.issuerIdType,
+      numeroIdentificacion: opts.issuerIdNumber,
+    },
+    comprobanteXml: Buffer.from(xmlSigned, "utf8").toString("base64"),
   };
+  if (opts.receiverIdType && opts.receiverIdNumber) {
+    payload.receptor = {
+      tipoIdentificacion: opts.receiverIdType,
+      numeroIdentificacion: opts.receiverIdNumber,
+    };
+  }
+  if (opts.callbackUrl) payload.callbackUrl = opts.callbackUrl;
 
-  const res = await fetchWithTimeout(cfg.endpoints.sendUrl, {
+  const res = await fetchWithTimeout(endpoints.sendUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -141,13 +196,14 @@ export async function sendSandboxDocument(cfg: HaciendaApiConfig, token: Haciend
   }
 }
 
-export async function getSandboxStatus(cfg: HaciendaApiConfig, token: HaciendaToken, key: string) {
-  if (isPlaceholder(cfg.endpoints.statusUrl)) {
+export async function getHaciendaStatus(cfg: HaciendaApiConfig, token: HaciendaToken, key: string) {
+  const endpoints = resolveEndpoints(cfg);
+  if (isPlaceholder(endpoints.statusUrl)) {
     throw new Error("Hacienda statusUrl not configured (placeholder).");
   }
-  const url = cfg.endpoints.statusUrl.includes("{{key}}")
-    ? cfg.endpoints.statusUrl.replaceAll("{{key}}", encodeURIComponent(key))
-    : cfg.endpoints.statusUrl;
+  const url = endpoints.statusUrl.includes("{{key}}")
+    ? endpoints.statusUrl.replaceAll("{{key}}", encodeURIComponent(key))
+    : endpoints.statusUrl;
 
   const res = await fetchWithTimeout(url, {
     method: "GET",
@@ -164,4 +220,3 @@ export async function getSandboxStatus(cfg: HaciendaApiConfig, token: HaciendaTo
     return text;
   }
 }
-

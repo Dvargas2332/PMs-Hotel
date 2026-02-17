@@ -61,7 +61,7 @@ export default function KdsPage() {
   }, [refresh]);
 
   useEffect(() => {
-    const endpoint = process.env.REACT_APP_API_URL || window.location.origin;
+    const endpoint = import.meta.env.VITE_API_URL || window.location.origin;
     const s = io(endpoint, { transports: ["websocket"] });
     socketRef.current = s;
     const reload = () => refresh();
@@ -243,7 +243,6 @@ export default function KdsPage() {
     </div>
   );
 }
-
 
 
 

@@ -160,11 +160,11 @@ export default function RestaurantClosesPage() {
             <div className="text-2xl font-bold">{formatMoney(stats?.systemTotal)}</div>
             <div className="text-xs text-black">Paid sales</div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="text-xs text-black">Open orders</div>
-            <div className="text-2xl font-bold">{stats?.openOrders ?? 0}</div>
-            <div className="text-xs text-black">Value: {formatMoney(stats?.openOrderValue)}</div>
-          </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-xs text-black">Open orders</div>
+              <div className="text-2xl font-bold">{stats?.openOrders ?? 0}</div>
+              <div className="text-xs text-black">Value: {formatMoney(stats?.openOrderValue)}</div>
+            </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="text-xs text-black">Last close</div>
             <div className="text-sm font-semibold">{stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : "-"}</div>
