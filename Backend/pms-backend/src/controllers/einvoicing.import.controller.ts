@@ -68,8 +68,10 @@ export async function importEInvoicingXml(req: Request, res: Response) {
     consecutive: parsed.consecutive,
     totals: parsed.totals,
     lines: parsed.lines,
+    emitterName: parsed.emitter?.name,
+    emitterId: parsed.emitter?.id,
+    issueDate: parsed.issueDate,
   });
 
   return res.json({ id: doc.id, reused: false });
 }
-

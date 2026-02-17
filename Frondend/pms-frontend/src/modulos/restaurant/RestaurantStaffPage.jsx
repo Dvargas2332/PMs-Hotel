@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, RefreshCw, UserPlus, UserX } from "lucide-react";
+import { RefreshCw, UserPlus, UserX } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
@@ -14,11 +14,13 @@ const emptyForm = {
   username: "",
   password: "",
   role: "WAITER",
+  accessRoleId: "",
   active: true,
 };
 
 export default function RestaurantStaffPage() {
   const navigate = useNavigate();
+  const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -26,6 +28,13 @@ export default function RestaurantStaffPage() {
   const [form, setForm] = useState({ ...emptyForm });
   const [editingId, setEditingId] = useState("");
   const [search, setSearch] = useState("");
+  const [roles, setRoles] = useState([]);
+  const shift = useMemo(() => {
+    const h = now.getHours();
+    if (h < 15) return "Morning shift";
+    if (h < 22) return "Afternoon shift";
+    return "Night shift";
+  }, [now]);
 
   const refresh = async () => {
     setLoading(true);
@@ -43,6 +52,20 @@ export default function RestaurantStaffPage() {
 
   useEffect(() => {
     refresh();
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    api
+      .get("/restaurant/staff/roles")
+      .then(({ data }) => {
+        if (Array.isArray(data)) setRoles(data);
+      })
+      .catch(() => {});
   }, []);
 
   const filtered = useMemo(() => {
@@ -71,6 +94,7 @@ export default function RestaurantStaffPage() {
         username: String(form.username || "").trim(),
         password: String(form.password || "").trim(),
         role: form.role,
+        accessRoleId: form.accessRoleId || undefined,
         active: form.active !== false,
       };
 
@@ -110,6 +134,7 @@ export default function RestaurantStaffPage() {
       username: row.username || "",
       password: "",
       role: row.role || "WAITER",
+      accessRoleId: row.accessRoleId || "",
       active: row.active !== false,
     });
   };
@@ -138,25 +163,26 @@ export default function RestaurantStaffPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
-      <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
-        <div className="flex items-center gap-2">
-          <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-lime-50 flex items-center gap-2 text-sm"
-            onClick={() => navigate("/restaurant")}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Lobby
-          </button>
-          <div>
-            <div className="text-xs uppercase text-black/70">Personal</div>
-            <div className="text-sm font-semibold">Cajeros y Meseros</div>
-          </div>
+    <div className="min-h-screen bg-gradient-to-br from-white to-lime-50 text-black">
+      <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-semibold text-white">Restaurant</span>
+          <span className="text-sm text-white/80">Cajeros y Meseros</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button className="h-9 px-3 rounded-lg bg-white hover:bg-lime-50 text-sm flex items-center gap-2" onClick={refresh}>
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        <div className="flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-4 text-sm font-semibold">
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
+              {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
+          </div>
+          <button
+            className="px-3 py-2 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
+            onClick={refresh}
+            disabled={loading}
+          >
+            <RefreshCw className={`w-4 h-4 inline mr-1 ${loading ? "animate-spin" : ""}`} />
             Actualizar
           </button>
           <RestaurantUserMenu />
@@ -167,40 +193,57 @@ export default function RestaurantStaffPage() {
         {error && <div className="text-sm text-red-600">{error}</div>}
 
         <div className="grid lg:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-black/10 bg-white p-4 space-y-3">
+          <div className="rounded-2xl border border-lime-200 bg-white/95 shadow p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Crear / Editar</div>
-              <UserPlus className="w-5 h-5 text-lime-700" />
+              <div className="text-sm font-semibold text-lime-900">Crear / Editar</div>
+              <div className="h-9 w-9 rounded-xl bg-lime-700 text-white flex items-center justify-center shadow">
+                <UserPlus className="w-5 h-5" />
+              </div>
             </div>
 
             <div className="space-y-2">
               <input
-                className="w-full h-10 rounded-lg border px-3 text-sm"
+                className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 placeholder="Nombre"
                 value={form.name}
                 onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               />
               <input
-                className="w-full h-10 rounded-lg border px-3 text-sm"
+                className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 placeholder="Usuario"
                 value={form.username}
                 onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
               />
               <input
-                className="w-full h-10 rounded-lg border px-3 text-sm"
+                className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 type="password"
                 placeholder={editingId ? "Nuevo password (opcional)" : "Password"}
                 value={form.password}
                 onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
               />
+              <div className="text-xs font-medium text-lime-700">Perfil</div>
               <select
-                className="w-full h-10 rounded-lg border px-3 text-sm bg-white"
+                className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 value={form.role}
                 onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
               >
                 {ROLE_OPTIONS.map((r) => (
                   <option key={r.value} value={r.value}>
                     {r.label}
+                  </option>
+                ))}
+              </select>
+              <div className="text-[11px] text-lime-700/80">Perfil de permisos (Cajero o Mesero).</div>
+              <div className="text-xs font-medium text-lime-700">Rol de permisos</div>
+              <select
+                className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
+                value={form.accessRoleId}
+                onChange={(e) => setForm((p) => ({ ...p, accessRoleId: e.target.value }))}
+              >
+                <option value="">Sin perfil</option>
+                {(roles || []).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name || r.id}
                   </option>
                 ))}
               </select>
@@ -216,23 +259,23 @@ export default function RestaurantStaffPage() {
 
             <div className="flex items-center gap-2">
               <button
-                className="flex-1 px-3 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:bg-lime-300"
+                className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                 onClick={submit}
                 disabled={saving}
               >
                 {saving ? "Guardando..." : editingId ? "Guardar cambios" : "Crear"}
               </button>
-              <button className="px-3 py-2 rounded-lg border text-sm" onClick={resetForm}>
+              <button className="px-3 py-2 rounded-lg border border-lime-200 text-sm text-lime-900" onClick={resetForm}>
                 Limpiar
               </button>
             </div>
           </div>
 
-          <div className="lg:col-span-2 rounded-2xl border border-black/10 bg-white p-4 space-y-3">
+          <div className="lg:col-span-2 rounded-2xl border border-lime-200 bg-white/95 shadow p-4 space-y-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold">Listado</div>
+              <div className="text-sm font-semibold text-lime-900">Listado</div>
               <input
-                className="h-9 rounded-lg border px-3 text-sm"
+                className="h-9 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 placeholder="Buscar..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -245,20 +288,22 @@ export default function RestaurantStaffPage() {
               <div className="max-h-[60vh] overflow-y-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs uppercase text-black/60 border-b">
+                    <tr className="text-left text-xs uppercase text-lime-700 border-b border-lime-200">
                       <th className="py-2 pr-2">Nombre</th>
                       <th className="py-2 pr-2">Usuario</th>
                       <th className="py-2 pr-2">Rol</th>
+                      <th className="py-2 pr-2">Perfil</th>
                       <th className="py-2 pr-2">Estado</th>
                       <th className="py-2 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map((row) => (
-                      <tr key={row.id} className="border-b last:border-b-0">
+                      <tr key={row.id} className="border-b border-lime-100 last:border-b-0 hover:bg-lime-50/50">
                         <td className="py-2 pr-2">{row.name}</td>
                         <td className="py-2 pr-2">{row.username}</td>
                         <td className="py-2 pr-2">{ROLE_OPTIONS.find((r) => r.value === row.role)?.label || row.role}</td>
+                        <td className="py-2 pr-2">{row.accessRoleName || row.accessRoleId || "-"}</td>
                         <td className="py-2 pr-2">
                           <span
                             className={`px-2 py-1 rounded-full text-xs ${
@@ -270,11 +315,14 @@ export default function RestaurantStaffPage() {
                         </td>
                         <td className="py-2 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            <button className="px-2 py-1 rounded-lg border text-xs" onClick={() => startEdit(row)}>
+                            <button
+                              className="px-2 py-1 rounded-lg border border-lime-200 text-xs text-lime-900 hover:bg-lime-50"
+                              onClick={() => startEdit(row)}
+                            >
                               Editar
                             </button>
                             <button
-                              className="px-2 py-1 rounded-lg border text-xs"
+                              className="px-2 py-1 rounded-lg border border-lime-200 text-xs text-lime-900 hover:bg-lime-50"
                               onClick={() => toggleActive(row)}
                             >
                               {row.active ? "Desactivar" : "Activar"}

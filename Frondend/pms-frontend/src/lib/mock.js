@@ -86,7 +86,6 @@ let DB = {
       id: "u1",
       name: "Agente 1",
       username: "fd1",
-      password: "1234",
       roles: ["FRONTDESK_AGENT"],
       pinPolicy: 4,
       active: true,
@@ -544,9 +543,10 @@ export const mockApi = {
       // Login de USUARIO interno: valida contra DB.usersFD
       const username = (payload?.username || "").trim();
       const password = String(payload?.password || "").trim();
-      const user = (DB.usersFD || []).find((u) => u.username === username);
+      const hotelId = String(payload?.hotelId || "").trim();
+      const user = (DB.usersFD || []).find((u) => u.username === username && (!hotelId || u.hotelId === hotelId));
       if (!user || !user.active) {
-        return makeResp({ error: "INVALID_USER" }, 401);
+        return makeResp({ error: "INVALID_CREDENTIALS" }, 401);
       }
       // Si el usuario tiene password definido en DB, valídalo (simple, demo)
       if (typeof user.password === "string" && user.password !== password) {

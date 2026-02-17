@@ -5,6 +5,8 @@ import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
+import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
+import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
 
 const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
@@ -2340,52 +2342,57 @@ export async function closeOrder(req: Request, res: Response) {
     });
     if (!updatedOrder) return null;
 
-    // Consume inventory based on recipes (per sold item qty).
-    // Recipe lines are stored in inventory unit; if a recipe line cannot be applied, we fail the close.
-    const itemIds = Array.from(new Set((updatedOrder.items || []).map((i) => String(i.itemId))));
-    if (itemIds.length) {
-      const recipes = await tx.restaurantRecipeLine.findMany({
-        where: { hotelId, restaurantItemId: { in: itemIds } },
-        include: { inventoryItem: { select: { id: true, unit: true, sku: true, desc: true, stock: true } } },
-      });
-      const byItem = new Map<string, typeof recipes>();
-      for (const r of recipes) {
-        const k = r.restaurantItemId;
-        const arr = byItem.get(k) || [];
-        arr.push(r);
-        byItem.set(k, arr);
-      }
+    // Consume inventory based on recipes (per sold item qty) when inventory is enabled.
+    const cfg = await getOrCreateRestaurantConfig(hotelId);
+    const inventoryEnabled =
+      cfg?.general && typeof cfg.general === "object" ? (cfg.general as any).inventoryEnabled !== false : true;
+    if (inventoryEnabled) {
+      // Recipe lines are stored in inventory unit; if a recipe line cannot be applied, we fail the close.
+      const itemIds = Array.from(new Set((updatedOrder.items || []).map((i) => String(i.itemId))));
+      if (itemIds.length) {
+        const recipes = await tx.restaurantRecipeLine.findMany({
+          where: { hotelId, restaurantItemId: { in: itemIds } },
+          include: { inventoryItem: { select: { id: true, unit: true, sku: true, desc: true, stock: true } } },
+        });
+        const byItem = new Map<string, typeof recipes>();
+        for (const r of recipes) {
+          const k = r.restaurantItemId;
+          const arr = byItem.get(k) || [];
+          arr.push(r);
+          byItem.set(k, arr);
+        }
 
-      for (const oi of updatedOrder.items) {
-        const soldQty = Number(oi.qty || 0);
-        if (!soldQty) continue;
-        const lines = byItem.get(String(oi.itemId)) || [];
-        for (const line of lines) {
-          const inv = line.inventoryItem;
-          const consumption = Number(line.qty) * soldQty;
-          if (!Number.isFinite(consumption) || consumption <= 0) continue;
+        for (const oi of updatedOrder.items) {
+          const soldQty = Number(oi.qty || 0);
+          if (!soldQty) continue;
+          const lines = byItem.get(String(oi.itemId)) || [];
+          for (const line of lines) {
+            const inv = line.inventoryItem;
+            const consumption = Number(line.qty) * soldQty;
+            if (!Number.isFinite(consumption) || consumption <= 0) continue;
 
-          // Ensure stock is enough (avoid negative/inconsistencies).
-          const updatedInv = await tx.restaurantInventoryItem.updateMany({
-            where: { id: inv.id, hotelId, stock: { gte: consumption } },
-            data: { stock: { decrement: consumption } },
-          });
-          if (updatedInv.count === 0) {
-            throw new Error(
-              `Stock insuficiente para ${inv.sku || inv.desc || inv.id}: requiere ${consumption} ${inv.unit}`
-            );
+            // Ensure stock is enough (avoid negative/inconsistencies).
+            const updatedInv = await tx.restaurantInventoryItem.updateMany({
+              where: { id: inv.id, hotelId, stock: { gte: consumption } },
+              data: { stock: { decrement: consumption } },
+            });
+            if (updatedInv.count === 0) {
+              throw new Error(
+                `Stock insuficiente para ${inv.sku || inv.desc || inv.id}: requiere ${consumption} ${inv.unit}`
+              );
+            }
+            await tx.restaurantInventoryMovement.create({
+              data: {
+                hotelId,
+                itemId: inv.id,
+                qtyDelta: -consumption,
+                reason: `Recipe consumption for order ${updatedOrder.id}`,
+                refType: "RESTAURANT_ORDER",
+                refId: updatedOrder.id,
+                createdBy: user.sub,
+              },
+            });
           }
-          await tx.restaurantInventoryMovement.create({
-            data: {
-              hotelId,
-              itemId: inv.id,
-              qtyDelta: -consumption,
-              reason: `Recipe consumption for order ${updatedOrder.id}`,
-              refType: "RESTAURANT_ORDER",
-              refId: updatedOrder.id,
-              createdBy: user.sub,
-            },
-          });
         }
       }
     }
@@ -2447,6 +2454,10 @@ export async function listInventory(req: Request, res: Response) {
       min: Number(i.min || 0),
       costo: Number(i.cost || 0),
       cost: Number(i.cost || 0),
+      taxRate: i.taxRate ? Number(i.taxRate) : null,
+      proveedor: i.supplierName || null,
+      supplierName: i.supplierName || null,
+      active: i.active !== false,
     }))
   );
 }
@@ -2462,6 +2473,10 @@ export async function createInventoryItem(req: Request, res: Response) {
   const stock = Number(req.body?.stock || 0);
   const min = Number(req.body?.minimo || req.body?.min || 0);
   const cost = Number(req.body?.costo || req.body?.cost || 0);
+  const taxRateRaw = req.body?.taxRate ?? req.body?.iva;
+  const taxRate = Number.isFinite(Number(taxRateRaw)) ? Number(taxRateRaw) : null;
+  const supplierName = String(req.body?.supplierName || req.body?.proveedor || "").trim() || null;
+  const active = req.body?.active !== false;
 
   if (!desc) return res.status(400).json({ message: "desc requerido" });
   if (!unit) return res.status(400).json({ message: "unidad requerida" });
@@ -2480,6 +2495,9 @@ export async function createInventoryItem(req: Request, res: Response) {
       stock,
       min,
       cost,
+      taxRate,
+      supplierName,
+      active,
     },
   });
 
@@ -2506,6 +2524,9 @@ export async function createInventoryItem(req: Request, res: Response) {
     stock: Number(created.stock || 0),
     minimo: Number(created.min || 0),
     costo: Number(created.cost || 0),
+    taxRate: created.taxRate ? Number(created.taxRate) : null,
+    proveedor: created.supplierName || null,
+    active: created.active !== false,
   });
 }
 
@@ -2518,6 +2539,132 @@ export async function deleteInventoryItem(req: Request, res: Response) {
 
   await prisma.restaurantInventoryItem.deleteMany({ where: { id: String(id), hotelId: user.hotelId } });
   return res.json({ ok: true });
+}
+
+export async function listInventoryInvoices(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const list = await prisma.restaurantInventoryInvoice.findMany({
+    where: { hotelId: user.hotelId },
+    include: {
+      lines: {
+        include: {
+          inventoryItem: { select: { id: true, sku: true, desc: true, unit: true } },
+        },
+      },
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take: 200,
+  });
+
+  res.json(
+    list.map((inv) => ({
+      id: inv.id,
+      supplierName: inv.supplierName,
+      proveedor: inv.supplierName,
+      docNumber: inv.docNumber,
+      docType: inv.docType,
+      source: inv.source,
+      issueDate: inv.issueDate,
+      total: inv.total ? Number(inv.total) : 0,
+      taxTotal: inv.taxTotal ? Number(inv.taxTotal) : 0,
+      createdAt: inv.createdAt,
+      lines: (inv.lines || []).map((l) => ({
+        id: l.id,
+        name: l.name,
+        qty: Number(l.qty || 0),
+        unit: l.unit,
+        cost: Number(l.cost || 0),
+        taxRate: l.taxRate ? Number(l.taxRate) : null,
+        taxAmount: l.taxAmount ? Number(l.taxAmount) : null,
+        lineTotal: l.lineTotal ? Number(l.lineTotal) : null,
+        inventoryItemId: l.inventoryItemId,
+        sku: l.inventoryItem?.sku || null,
+        desc: l.inventoryItem?.desc || null,
+      })),
+    }))
+  );
+}
+
+export async function createInventoryInvoice(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
+  const supplierName = String(body.supplierName || body.proveedor || "").trim();
+  const docNumber = String(body.docNumber || body.numero || "").trim() || undefined;
+  const docType = String(body.docType || body.tipo || "MANUAL").trim() || undefined;
+  const issueDate = body.issueDate || body.fecha || null;
+  const lines = Array.isArray(body.lines) ? body.lines : [];
+
+  if (!supplierName) return res.status(400).json({ message: "Proveedor requerido" });
+  if (!Array.isArray(lines) || lines.length === 0) return res.status(400).json({ message: "Lineas requeridas" });
+
+  try {
+    const invoice = await applyInventoryInvoice({
+      hotelId: user.hotelId,
+      supplierName,
+      docNumber,
+      docType,
+      source: "MANUAL",
+      issueDate,
+      lines,
+      createdBy: user.sub || null,
+    });
+    return res.status(201).json({ id: invoice.id });
+  } catch (err: any) {
+    return res.status(400).json({ message: err?.message || "No se pudo guardar la factura" });
+  }
+}
+
+export async function importInventoryInvoiceXml(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const xml = String((req.body as any)?.xml || "").trim();
+  if (!xml) return res.status(400).json({ message: "xml requerido" });
+
+  let parsed: ReturnType<typeof parseCrEInvoiceXml>;
+  try {
+    parsed = parseCrEInvoiceXml(xml);
+  } catch (err: any) {
+    return res.status(400).json({ message: err?.message || "XML invalido" });
+  }
+
+  if (!parsed.root) return res.status(400).json({ message: "XML invalido: no root" });
+
+  if (parsed.key) {
+    const existing = await prisma.restaurantInventoryInvoice.findFirst({
+      where: { hotelId: user.hotelId, externalKey: parsed.key },
+      select: { id: true },
+    });
+    if (existing) return res.json({ id: existing.id, reused: true });
+  }
+
+  const supplierName = String(parsed.emitter?.name || parsed.emitter?.id || "Proveedor XML").trim();
+  const lines = buildInventoryLinesFromXml(parsed.lines);
+  if (lines.length === 0) return res.status(400).json({ message: "XML sin lineas" });
+
+  try {
+    const invoice = await applyInventoryInvoice({
+      hotelId: user.hotelId,
+      supplierName,
+      docNumber: parsed.consecutive || parsed.key,
+      docType: parsed.docType,
+      source: "XML",
+      issueDate: parsed.issueDate || null,
+      externalKey: parsed.key,
+      lines,
+      createdBy: user.sub || null,
+    });
+    return res.status(201).json({ id: invoice.id, reused: false });
+  } catch (err: any) {
+    return res.status(400).json({ message: err?.message || "No se pudo importar la factura" });
+  }
 }
 
 // === Recipes ===
@@ -3414,6 +3561,64 @@ export async function listCloses(req: Request, res: Response) {
   res.json(closes);
 }
 
+const buildShiftPayload = (shift: any) => ({
+  id: shift.id,
+  openedAt: shift.openedAt,
+  closedAt: shift.closedAt ?? null,
+  openingAmount: asNumber((shift?.totals as any)?.openingAmount ?? (shift?.details as any)?.openingAmount),
+  note: shift?.note || "",
+});
+
+export async function getRestaurantShift(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const shift = await prisma.cashAudit.findFirst({
+    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
+
+  if (!shift) return res.json({ open: false });
+  res.json({ open: true, shift: buildShiftPayload(shift) });
+}
+
+export async function openRestaurantShift(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const existing = await prisma.cashAudit.findFirst({
+    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
+  if (existing) return res.json({ open: true, shift: buildShiftPayload(existing) });
+
+  const openingAmount = asNumber(req.body?.openingAmount ?? req.body?.amount ?? req.body?.monto);
+  if (openingAmount < 0) {
+    return res.status(400).json({ message: "El monto de apertura no puede ser negativo" });
+  }
+
+  const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
+
+  const created = await prisma.cashAudit.create({
+    data: {
+      hotelId: user.hotelId,
+      module: "RESTAURANT",
+      openedAt: new Date(),
+      closedAt: null,
+      totals: { openingAmount } as any,
+      details: undefined,
+      note: note || null,
+      createdById: user.sub,
+    },
+  });
+
+  res.status(201).json({ open: true, shift: buildShiftPayload(created) });
+}
+
 export async function closeShift(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -3423,6 +3628,14 @@ export async function closeShift(req: Request, res: Response) {
   const role = (user.role || "").toUpperCase();
   if (!["ADMIN", "MANAGER"].includes(role)) {
     return res.status(403).json({ message: "Solo ADMIN/MANAGER pueden cerrar turno" });
+  }
+
+  const openShift = await prisma.cashAudit.findFirst({
+    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
+  if (!openShift) {
+    return res.status(400).json({ message: "No hay turno abierto" });
   }
 
   const { totals, payments, note, breakdown } = req.body || {};
@@ -3495,6 +3708,17 @@ export async function closeShift(req: Request, res: Response) {
     },
   });
 
+  const openingAmount = asNumber((openShift?.totals as any)?.openingAmount ?? (openShift?.details as any)?.openingAmount);
+  await prisma.cashAudit.update({
+    where: { id: openShift.id },
+    data: {
+      closedAt: new Date(),
+      totals: { openingAmount, ...safeTotals } as any,
+      details: { payments: payments || {}, breakdown: breakdown || {}, closeId: close.id } as any,
+      note: (note || openShift.note || "").trim() || null,
+    },
+  });
+
   res.json({ ok: true, close });
 }
 
@@ -3514,6 +3738,8 @@ const sanitizeStaff = (staff: any) => ({
   name: staff.name,
   username: staff.username,
   role: staff.role,
+  accessRoleId: staff.accessRoleId || null,
+  accessRoleName: staff.accessRole?.name || null,
   active: staff.active,
   createdAt: staff.createdAt,
   updatedAt: staff.updatedAt,
@@ -3531,9 +3757,21 @@ export async function listRestaurantStaff(req: Request, res: Response) {
       hotelId,
       ...(role ? { role } : {}),
     },
+    include: { accessRole: { select: { id: true, name: true } } },
     orderBy: [{ createdAt: "desc" }],
   });
   res.json(list.map(sanitizeStaff));
+}
+
+export async function listRestaurantStaffRoles(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const roles = await prisma.appRole.findMany({
+    where: { hotelId: user.hotelId },
+    orderBy: { id: "asc" },
+  });
+  res.json(roles.map((r) => ({ id: r.id, name: r.name })));
 }
 
 export async function createRestaurantStaff(req: Request, res: Response) {
@@ -3547,6 +3785,7 @@ export async function createRestaurantStaff(req: Request, res: Response) {
   const username = normalizeStaffUsername(body.username || body.user || body.code);
   const password = String(body.password || "").trim();
   const role = normalizeStaffRole(body.role);
+  const accessRoleId = String(body.accessRoleId || body.roleId || "").trim();
   const active = body.active !== false;
 
   if (!name) return res.status(400).json({ message: "Nombre requerido" });
@@ -3556,6 +3795,11 @@ export async function createRestaurantStaff(req: Request, res: Response) {
 
   const existing = await prisma.restaurantStaff.findFirst({ where: { hotelId, username } });
   if (existing) return res.status(409).json({ message: "Usuario ya existe" });
+
+  if (accessRoleId) {
+    const roleExists = await prisma.appRole.findFirst({ where: { hotelId, id: accessRoleId } });
+    if (!roleExists) return res.status(400).json({ message: "Perfil de permisos inválido" });
+  }
 
   const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
   const passwordHash = await bcrypt.hash(password, rounds);
@@ -3568,7 +3812,9 @@ export async function createRestaurantStaff(req: Request, res: Response) {
       role,
       active,
       passwordHash,
+      accessRoleId: accessRoleId || null,
     } as any,
+    include: { accessRole: { select: { id: true, name: true } } },
   });
 
   res.status(201).json(sanitizeStaff(created));
@@ -3597,6 +3843,16 @@ export async function updateRestaurantStaff(req: Request, res: Response) {
     if (!role) return res.status(400).json({ message: "Rol invalido" });
     data.role = role;
   }
+  if ("accessRoleId" in body || "roleId" in body) {
+    const nextRoleId = String(body.accessRoleId || body.roleId || "").trim();
+    if (nextRoleId) {
+      const roleExists = await prisma.appRole.findFirst({ where: { hotelId, id: nextRoleId } });
+      if (!roleExists) return res.status(400).json({ message: "Perfil de permisos inválido" });
+      data.accessRoleId = nextRoleId;
+    } else {
+      data.accessRoleId = null;
+    }
+  }
 
   if (body.username || body.user || body.code) {
     const username = normalizeStaffUsername(body.username || body.user || body.code);
@@ -3620,6 +3876,7 @@ export async function updateRestaurantStaff(req: Request, res: Response) {
   const updated = await prisma.restaurantStaff.update({
     where: { id: existing.id },
     data,
+    include: { accessRole: { select: { id: true, name: true } } },
   });
   res.json(sanitizeStaff(updated));
 }
@@ -3649,8 +3906,10 @@ export async function loginRestaurantStaff(req: Request, res: Response) {
 
   const staff = await prisma.restaurantStaff.findFirst({
     where: { hotelId, username },
+    include: { accessRole: { select: { id: true, name: true } } },
   });
   if (!staff) return res.status(401).json({ message: "Credenciales invalidas" });
+  if (!STAFF_ROLES.has(staff.role)) return res.status(403).json({ message: "Rol no autorizado" });
   if (!staff.active) return res.status(403).json({ message: "Usuario inactivo" });
 
   const ok = await bcrypt.compare(password, staff.passwordHash);

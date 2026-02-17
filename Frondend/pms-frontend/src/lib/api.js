@@ -167,10 +167,11 @@ export const api = {
     const { data } = await post("/auth/login", { email, password });
     return data;
   },
-  async loginUser(username, password) {
+  async loginUser(username, password, hotelId) {
     // Login de usuario del launcher (tabla UserLauncher)
     const endpoint = USE_MOCK ? "/auth/user-login" : "/launcher/login";
-    const { data } = await post(endpoint, { username, password });
+    const payload = { username, password, ...(hotelId ? { hotelId } : {}) };
+    const { data } = await post(endpoint, payload);
     return data;
   },
   async register(name, email, password) {

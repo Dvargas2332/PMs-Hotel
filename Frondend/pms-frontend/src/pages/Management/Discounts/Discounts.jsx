@@ -163,6 +163,7 @@ export default function Discounts() {
           <Input
             placeholder="Value"
             type="number"
+            money={form.type === "money"}
             value={form.value}
             onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
           />

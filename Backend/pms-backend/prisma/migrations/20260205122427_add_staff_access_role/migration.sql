@@ -1,0 +1,1 @@
+-- Empty migration (file added to satisfy Prisma migrate deploy)

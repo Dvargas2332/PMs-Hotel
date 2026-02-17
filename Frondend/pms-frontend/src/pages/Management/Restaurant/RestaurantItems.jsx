@@ -5,6 +5,7 @@ import { Textarea } from "../../../components/ui/textarea";
 import { Checkbox } from "../../../components/ui/checkbox";
 import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
+import { parseMoneyInput } from "../../../lib/money";
 
 export default function RestaurantItems({ onItemsChange } = {}) {
   const empty = {
@@ -13,6 +14,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     subFamilyId: "",
     subSubFamilyId: "",
     price: "",
+    imageUrl: "",
     priceIncludesTaxesAndService: true,
     taxIds: [],
     notes: "",
@@ -36,6 +38,11 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   const [detailDraft, setDetailDraft] = useState({ label: "", priceDelta: "" });
   const [sizesEnabled, setSizesEnabled] = useState(false);
   const [detailsEnabled, setDetailsEnabled] = useState(false);
+
+  const pushAlert = (title, desc) => {
+    window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title, desc } }));
+  };
+  const getApiError = (err, fallback) => err?.response?.data?.message || err?.message || fallback;
 
   const notifyItems = useCallback(
     (next) => {
@@ -71,6 +78,61 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     load();
   }, [notifyItems]);
 
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const resizeImageDataUrl = async (dataUrl, maxDim = 512, quality = 0.86) => {
+    if (!dataUrl || typeof dataUrl !== "string") return "";
+    if (dataUrl.startsWith("data:image/svg+xml")) return dataUrl;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const w0 = Number(img.naturalWidth || img.width || 0) || 0;
+        const h0 = Number(img.naturalHeight || img.height || 0) || 0;
+        if (!w0 || !h0) return resolve(dataUrl);
+
+        const scale = Math.min(1, maxDim / Math.max(w0, h0));
+        const w = Math.max(1, Math.round(w0 * scale));
+        const h = Math.max(1, Math.round(h0 * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        try {
+          resolve(canvas.toDataURL("image/webp", quality));
+        } catch {
+          try {
+            resolve(canvas.toDataURL("image/jpeg", quality));
+          } catch {
+            resolve(dataUrl);
+          }
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
+  const handleImageFile = async (file) => {
+    if (!file) return;
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const resized = await resizeImageDataUrl(dataUrl, 512, 0.86);
+      setForm((f) => ({ ...f, imageUrl: resized || dataUrl }));
+    } catch {
+      pushAlert("Restaurant", "No se pudo cargar la imagen.");
+    }
+  };
+
   const addDraft = () => {
     if (!form.name || !form.familyId || !form.price) return;
     const draft = { ...form, id: `draft-${Date.now()}` };
@@ -86,27 +148,43 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     if (!drafts.length) return;
     try {
       setSaving(true);
-      const payload = drafts.map((d) => ({
-        ...d,
-        price: Number(d.price || 0),
-        taxIds: Array.isArray(d.taxIds) ? d.taxIds : [],
-        priceIncludesTaxesAndService: d.priceIncludesTaxesAndService !== false,
-        sizes: Array.isArray(d.sizes)
-          ? d.sizes.map((s, idx) => ({
-              id: String(s?.id || s?.label || s?.name || idx),
-              label: String(s?.label || s?.name || "").trim(),
-              price: Number(s?.price || 0),
-              isDefault: s?.isDefault === true,
-            }))
-          : [],
-        details: Array.isArray(d.details)
-          ? d.details.map((s, idx) => ({
-              id: String(s?.id || s?.label || s?.name || idx),
-              label: String(s?.label || s?.name || "").trim(),
-              priceDelta: Number(s?.priceDelta ?? s?.price ?? 0),
-            }))
-          : [],
-      }));
+      const payload = drafts.map((d) => {
+        const { id: _id, ...rest } = d;
+        const priceValue = parseMoneyInput(rest.price);
+        return {
+          ...rest,
+          familyId: String(rest.familyId || ""),
+          subFamilyId: rest.subFamilyId ? String(rest.subFamilyId) : null,
+          subSubFamilyId: rest.subSubFamilyId ? String(rest.subSubFamilyId) : null,
+          price: Number.isFinite(priceValue) ? priceValue : 0,
+          notes: String(rest.notes || "").trim() || null,
+          imageUrl: String(rest.imageUrl || "").trim() || null,
+          taxIds: Array.isArray(rest.taxIds) ? rest.taxIds : [],
+          active: rest.active !== false,
+          priceIncludesTaxesAndService: rest.priceIncludesTaxesAndService !== false,
+          sizes: Array.isArray(rest.sizes)
+            ? rest.sizes.map((s, idx) => {
+                const sizePrice = parseMoneyInput(s?.price);
+                return {
+                  id: String(s?.id || s?.label || s?.name || idx),
+                  label: String(s?.label || s?.name || "").trim(),
+                  price: Number.isFinite(sizePrice) ? sizePrice : 0,
+                  isDefault: s?.isDefault === true,
+                };
+              })
+            : [],
+          details: Array.isArray(rest.details)
+            ? rest.details.map((s, idx) => {
+                const delta = parseMoneyInput(s?.priceDelta ?? s?.price ?? 0);
+                return {
+                  id: String(s?.id || s?.label || s?.name || idx),
+                  label: String(s?.label || s?.name || "").trim(),
+                  priceDelta: Number.isFinite(delta) ? delta : 0,
+                };
+              })
+            : [],
+        };
+      });
       const { data } = await api.post("/restaurant/items", { items: payload });
       const savedList = Array.isArray(data) ? data : [data];
       setItems((prev) => {
@@ -116,6 +194,8 @@ export default function RestaurantItems({ onItemsChange } = {}) {
       });
       setDrafts([]);
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Items saved" } }));
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "No se pudo guardar los artículos."));
     } finally {
       setSaving(false);
     }
@@ -130,6 +210,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
       subFamilyId: String(it.subFamilyId || ""),
       subSubFamilyId: String(it.subSubFamilyId || ""),
       price: String(it.price ?? ""),
+      imageUrl: String(it.imageUrl || ""),
       taxIds: Array.isArray(it.taxIds) ? it.taxIds : [],
       notes: String(it.notes || ""),
       sizes: Array.isArray(it.sizes) ? it.sizes : [],
@@ -150,39 +231,51 @@ export default function RestaurantItems({ onItemsChange } = {}) {
 
   const saveEdit = async () => {
     if (!editingId) return;
+    const priceValue = parseMoneyInput(form.price);
     const payload = {
       name: form.name,
       familyId: form.familyId,
       subFamilyId: form.subFamilyId ? form.subFamilyId : null,
       subSubFamilyId: form.subSubFamilyId ? form.subSubFamilyId : null,
-      price: Number(form.price || 0),
+      price: Number.isFinite(priceValue) ? priceValue : 0,
       taxIds: Array.isArray(form.taxIds) ? form.taxIds : [],
-      notes: form.notes || null,
+      notes: String(form.notes || "").trim() || null,
+      imageUrl: String(form.imageUrl || "").trim() || null,
       active: form.active !== false,
       priceIncludesTaxesAndService: form.priceIncludesTaxesAndService !== false,
       sizes: Array.isArray(form.sizes)
-        ? form.sizes.map((s, idx) => ({
-            id: String(s?.id || s?.label || s?.name || idx),
-            label: String(s?.label || s?.name || "").trim(),
-            price: Number(s?.price || 0),
-            isDefault: s?.isDefault === true,
-          }))
+        ? form.sizes.map((s, idx) => {
+            const sizePrice = parseMoneyInput(s?.price);
+            return {
+              id: String(s?.id || s?.label || s?.name || idx),
+              label: String(s?.label || s?.name || "").trim(),
+              price: Number.isFinite(sizePrice) ? sizePrice : 0,
+              isDefault: s?.isDefault === true,
+            };
+          })
         : [],
       details: Array.isArray(form.details)
-        ? form.details.map((s, idx) => ({
-            id: String(s?.id || s?.label || s?.name || idx),
-            label: String(s?.label || s?.name || "").trim(),
-            priceDelta: Number(s?.priceDelta ?? s?.price ?? 0),
-          }))
+        ? form.details.map((s, idx) => {
+            const delta = parseMoneyInput(s?.priceDelta ?? s?.price ?? 0);
+            return {
+              id: String(s?.id || s?.label || s?.name || idx),
+              label: String(s?.label || s?.name || "").trim(),
+              priceDelta: Number.isFinite(delta) ? delta : 0,
+            };
+          })
         : [],
     };
-    const { data } = await api.patch(`/restaurant/items/${editingId}`, payload);
-    setItems((prev) => {
-      const next = prev.map((x) => (x.id === data.id ? data : x));
-      notifyItems(next);
-      return next;
-    });
-    cancelEdit();
+    try {
+      const { data } = await api.patch(`/restaurant/items/${editingId}`, payload);
+      setItems((prev) => {
+        const next = prev.map((x) => (x.id === data.id ? data : x));
+        notifyItems(next);
+        return next;
+      });
+      cancelEdit();
+    } catch (err) {
+      pushAlert("Restaurant", getApiError(err, "No se pudo guardar el artículo."));
+    }
   };
 
   const removeItem = (id) => {
@@ -393,11 +486,51 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           <Input
             placeholder="Price"
             type="number"
+            money
             className="h-8 text-[14px] px-2 placeholder:text-[14px] w-full min-w-0"
             value={form.price}
             onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
           />
           </div>
+        <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+          <Input
+            placeholder="Image URL (optional)"
+            className="h-8 text-[14px] px-2 placeholder:text-[14px] w-full min-w-0"
+            value={form.imageUrl || ""}
+            onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
+          />
+          <div className="flex items-center gap-2">
+            <label className="text-xs px-3 py-1 rounded-md border bg-white cursor-pointer hover:bg-slate-50">
+              Cargar imagen
+              <input
+                type="file"
+                accept="image/*,.svg"
+                className="hidden"
+                onChange={(e) => handleImageFile(e.target.files && e.target.files[0])}
+              />
+            </label>
+            {form.imageUrl ? (
+              <>
+                <img
+                  src={form.imageUrl}
+                  alt=""
+                  className="h-8 w-8 rounded-md object-cover border"
+                  onError={(ev) => {
+                    ev.currentTarget.style.display = "none";
+                  }}
+                />
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="border-red-200 text-red-700 hover:bg-red-50"
+                  onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}
+                >
+                  Quitar
+                </Button>
+              </>
+            ) : null}
+          </div>
+        </div>
         <div className="space-y-1">
           <div className="text-xs font-semibold text-slate-700">Caracteristicas adicionales</div>
           <div className="grid md:grid-cols-2 gap-2">
@@ -421,6 +554,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                     <Input
                       placeholder="Precio"
                       type="number"
+                      money
                       className="h-8 text-[11px] px-2 placeholder:text-[11px]"
                       value={sizeDraft.price}
                       onChange={(e) => setSizeDraft((s) => ({ ...s, price: e.target.value }))}
@@ -482,6 +616,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                     <Input
                       placeholder="Precio +"
                       type="number"
+                      money
                       className="h-8 text-[11px] px-2 placeholder:text-[11px]"
                       value={detailDraft.priceDelta}
                       onChange={(e) => setDetailDraft((d) => ({ ...d, priceDelta: e.target.value }))}

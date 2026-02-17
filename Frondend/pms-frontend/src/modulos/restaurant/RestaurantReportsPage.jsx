@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, RefreshCw, FilePlus2, Printer, Download } from "lucide-react";
+import { RefreshCw, FilePlus2, Printer, Download } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
@@ -238,13 +238,6 @@ export default function RestaurantReportsPage() {
     <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
       <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
         <div className="flex items-center gap-2">
-          <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
-            onClick={() => navigate("/restaurant")}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Lobby
-          </button>
           <div>
             <div className="text-xs uppercase text-black/80">Reports</div>
             <div className="text-sm font-semibold">Restaurant</div>
@@ -422,5 +415,4 @@ export default function RestaurantReportsPage() {
     </div>
   );
 }
-
 

@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, RefreshCw, CheckCircle2, Printer } from "lucide-react";
+import { RefreshCw, CheckCircle2, Printer } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import { useAuth } from "../../context/AuthContext";
+import { normalizeMoneyInput } from "../../lib/money";
 
 function asNumber(v) {
   const n = Number(v);
@@ -127,13 +128,6 @@ export default function RestaurantClosesPage() {
     <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
       <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
         <div className="flex items-center gap-2">
-          <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
-            onClick={() => navigate("/restaurant")}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Lobby
-          </button>
           <div>
             <div className="text-xs uppercase text-black/80">Closes</div>
             <div className="text-sm font-semibold">Restaurant</div>
@@ -184,6 +178,35 @@ export default function RestaurantClosesPage() {
             <div className="text-xs text-black mb-3">
               Enter the counted amounts by method. The system computes the actual total from paid sales.
             </div>
+            <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+              <div className="text-[11px] uppercase text-slate-500 mb-2">Cobros TPV</div>
+              <div className="grid grid-cols-2 gap-2 text-xs text-black">
+                <div className="flex items-center justify-between gap-2">
+                  <span>Efectivo</span>
+                  <span className="font-semibold">{formatMoney(stats?.byMethod?.cash)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Tarjeta</span>
+                  <span className="font-semibold">{formatMoney(stats?.byMethod?.card)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>SINPE</span>
+                  <span className="font-semibold">{formatMoney(stats?.byMethod?.sinpe)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Transferencia</span>
+                  <span className="font-semibold">{formatMoney(stats?.byMethod?.transfer)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Room charge</span>
+                  <span className="font-semibold">{formatMoney(stats?.byMethod?.room)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span>Total TPV</span>
+                  <span className="font-semibold">{formatMoney(stats?.systemTotal)}</span>
+                </div>
+              </div>
+            </div>
             <div className="flex gap-2 mb-3">
               <button
                 className={`px-3 py-2 rounded-lg border text-sm ${closeType === "X" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
@@ -205,37 +228,52 @@ export default function RestaurantClosesPage() {
               <input
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Cash"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,-]*"
                 value={form.cash}
                 onChange={(e) => setForm((f) => ({ ...f, cash: e.target.value }))} 
+                onBlur={(e) => setForm((f) => ({ ...f, cash: normalizeMoneyInput(e.target.value) }))}
               />
               <input
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Card"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,-]*"
                 value={form.card}
                 onChange={(e) => setForm((f) => ({ ...f, card: e.target.value }))} 
+                onBlur={(e) => setForm((f) => ({ ...f, card: normalizeMoneyInput(e.target.value) }))}
               />
               <input
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="SINPE"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,-]*"
                 value={form.sinpe}
                 onChange={(e) => setForm((f) => ({ ...f, sinpe: e.target.value }))}
+                onBlur={(e) => setForm((f) => ({ ...f, sinpe: normalizeMoneyInput(e.target.value) }))}
               />
               <input
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Transfer"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,-]*"
                 value={form.transfer}
                 onChange={(e) => setForm((f) => ({ ...f, transfer: e.target.value }))}
+                onBlur={(e) => setForm((f) => ({ ...f, transfer: normalizeMoneyInput(e.target.value) }))}
               />
               <input
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-black placeholder:text-black"
                 placeholder="Room charge"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,-]*"
                 value={form.room}
                 onChange={(e) => setForm((f) => ({ ...f, room: e.target.value }))}
+                onBlur={(e) => setForm((f) => ({ ...f, room: normalizeMoneyInput(e.target.value) }))}
               />
             </div>
 
@@ -324,9 +362,5 @@ export default function RestaurantClosesPage() {
     </div>
   );
 }
-
-
-
-
 
 

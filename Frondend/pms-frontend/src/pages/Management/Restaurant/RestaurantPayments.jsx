@@ -50,7 +50,7 @@ export default function RestaurantPayments() {
         <div className="grid md:grid-cols-3 gap-3">
           <Input placeholder="Base currency" value={paymentsCfg.monedaBase} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaBase: e.target.value }))} />
           <Input placeholder="Secondary currency" value={paymentsCfg.monedaSec} onChange={(e) => setPaymentsCfg((f) => ({ ...f, monedaSec: e.target.value }))} />
-          <Input placeholder="Exchange rate" type="number" value={paymentsCfg.tipoCambio} onChange={(e) => setPaymentsCfg((f) => ({ ...f, tipoCambio: e.target.value }))} />
+          <Input placeholder="Exchange rate" type="number" money value={paymentsCfg.tipoCambio} onChange={(e) => setPaymentsCfg((f) => ({ ...f, tipoCambio: e.target.value }))} />
         </div>
         <div className="space-y-2">
           <div className="text-sm font-medium">Available methods</div>

@@ -83,7 +83,8 @@ export function AuthProvider({ children }) {
 
   // Login de USUARIO DEL LAUNCHER (segundo nivel).
   const loginUser = useCallback(async (username, password) => {
-    const data = await api.loginUser(username, password);
+    const hotelId = hotel?.id || hotel?.hotelId || hotel?.hotel_id;
+    const data = await api.loginUser(username, password, hotelId);
     const launcher = data?.launcher ?? data?.user;
     const nextToken = data?.token;
     if (!launcher || !nextToken) return null;
@@ -116,7 +117,7 @@ export function AuthProvider({ children }) {
     };
     setUser(u);
     return u;
-  }, []);
+  }, [hotel]);
 
   const logout = useCallback(() => {
     // Cierra todo: hotel + usuario de launcher

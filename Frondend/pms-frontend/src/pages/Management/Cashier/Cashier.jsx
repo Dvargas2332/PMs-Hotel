@@ -31,7 +31,7 @@ export default function Cashier() {
           <Checkbox checked={cfg.reopenNeedsManager} onChange={v=>setCfg(s=>({...s,reopenNeedsManager:v}))} label="Reopening requires a manager" />
         </div>
         <div className="grid md:grid-cols-3 gap-2">
-          <Input placeholder="Difference tolerance" type="number" value={cfg.cashDiffTolerance}
+          <Input placeholder="Difference tolerance" type="number" money value={cfg.cashDiffTolerance}
             onChange={e=>setCfg(s=>({...s,cashDiffTolerance:Number(e.target.value||0)}))}/>
         </div>
         <Button onClick={save}>Save</Button>

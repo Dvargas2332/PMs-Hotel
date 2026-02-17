@@ -216,6 +216,7 @@ model RestaurantStaff {
   name         String
   username     String
   role         RestaurantStaffRole
+  accessRoleId String?
   active       Boolean             @default(true)
   passwordHash String
   createdAt    DateTime            @default(now())
@@ -223,6 +224,7 @@ model RestaurantStaff {
 
   hotel    Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   launcher LauncherAccount? @relation(fields: [launcherId], references: [id], onDelete: SetNull)
+  accessRole AppRole?       @relation("RestaurantStaffAccessRole", fields: [hotelId, accessRoleId], references: [hotelId, id], onDelete: SetNull)
 
   @@unique([hotelId, username])
   @@index([hotelId])
@@ -531,16 +533,64 @@ model RestaurantInventoryItem {
   stock     Decimal  @default(0) @db.Decimal(14, 4)
   min       Decimal  @default(0) @db.Decimal(14, 4)
   cost      Decimal  @default(0) @db.Decimal(14, 4)
+  taxRate   Decimal? @db.Decimal(5, 2)
+  supplierName String?
+  active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   hotel     Hotel                         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   movements RestaurantInventoryMovement[]
   recipes   RestaurantRecipeLine[]
+  invoices  RestaurantInventoryInvoiceLine[]
 
   @@unique([hotelId, number])
   @@unique([hotelId, sku])
   @@index([hotelId])
+}
+
+model RestaurantInventoryInvoice {
+  id           String   @id @default(cuid())
+  hotelId      String
+  supplierName String
+  docNumber    String?
+  docType      String?
+  source       String   @default("MANUAL")
+  issueDate    DateTime?
+  currency     String?
+  total        Decimal? @db.Decimal(14, 4)
+  taxTotal     Decimal? @db.Decimal(14, 4)
+  externalKey  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  lines RestaurantInventoryInvoiceLine[]
+
+  @@index([hotelId])
+}
+
+model RestaurantInventoryInvoiceLine {
+  id              String   @id @default(cuid())
+  hotelId         String
+  invoiceId       String
+  inventoryItemId String
+  name            String
+  qty             Decimal  @db.Decimal(14, 4)
+  unit            String
+  cost            Decimal  @db.Decimal(14, 4)
+  taxRate         Decimal? @db.Decimal(5, 2)
+  taxAmount       Decimal? @db.Decimal(14, 4)
+  lineTotal       Decimal? @db.Decimal(14, 4)
+  createdAt       DateTime @default(now())
+
+  hotel         Hotel                  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  invoice       RestaurantInventoryInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  inventoryItem RestaurantInventoryItem    @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@index([hotelId])
+  @@index([invoiceId])
+  @@index([inventoryItemId])
 }
 
 model RestaurantInventoryMovement {
@@ -627,6 +677,8 @@ model Hotel {
   restaurantItemTaxes          RestaurantItemTax[]
   restaurantInventoryItems     RestaurantInventoryItem[]
   restaurantInventoryMovements RestaurantInventoryMovement[]
+  restaurantInventoryInvoices  RestaurantInventoryInvoice[]
+  restaurantInventoryInvoiceLines RestaurantInventoryInvoiceLine[]
   restaurantRecipeLines        RestaurantRecipeLine[]
   restaurantStaff              RestaurantStaff[]
   reservationSequences         ReservationSequence[]
@@ -1131,6 +1183,7 @@ model AppRole {
   hotel            Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
   permissions      RolePermission[]
   launcherAccounts LauncherAccount[]
+  restaurantStaff  RestaurantStaff[] @relation("RestaurantStaffAccessRole")
 
   @@unique([hotelId, id])
   @@index([hotelId])

@@ -1,0 +1,556 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kazehana PMS | Hospitality Operations, Simplified</title>
+    <meta
+      name="description"
+      content="Kazehana PMS is a modern property management system for boutique hotels and restaurants."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@300;400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #102a2e;
+        --muted: #4b5b5e;
+        --accent: #e4572e;
+        --accent-soft: #f7c6b7;
+        --leaf: #2a7f62;
+        --sand: #f7f2ea;
+        --sky: #e3f1f1;
+        --card: #ffffff;
+        --shadow: 0 18px 45px rgba(16, 42, 46, 0.12);
+        --radius-lg: 24px;
+        --radius-md: 16px;
+        --radius-sm: 10px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Manrope", "Segoe UI", sans-serif;
+        color: var(--ink);
+        background: radial-gradient(circle at top, #fef9f2 0%, var(--sky) 45%, var(--sand) 100%);
+        min-height: 100vh;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .halo {
+        position: absolute;
+        width: 460px;
+        height: 460px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(42, 127, 98, 0.22), rgba(42, 127, 98, 0));
+        filter: blur(1px);
+        z-index: 0;
+      }
+
+      .halo.one {
+        top: -120px;
+        left: -80px;
+      }
+
+      .halo.two {
+        bottom: -160px;
+        right: -110px;
+        background: radial-gradient(circle, rgba(228, 87, 46, 0.22), rgba(228, 87, 46, 0));
+      }
+
+      header {
+        position: relative;
+        z-index: 1;
+        padding: 28px 7vw 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, var(--leaf), #9bd7c5);
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-family: "Fraunces", serif;
+        font-size: 20px;
+      }
+
+      nav {
+        display: flex;
+        gap: 26px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      nav a {
+        position: relative;
+      }
+
+      nav a::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        bottom: -6px;
+        width: 0;
+        height: 2px;
+        background: var(--accent);
+        transition: width 0.3s ease;
+      }
+
+      nav a:hover::after {
+        width: 100%;
+      }
+
+      .hero {
+        position: relative;
+        z-index: 1;
+        padding: 50px 7vw 90px;
+        display: grid;
+        gap: 48px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        align-items: center;
+      }
+
+      .hero h1 {
+        font-family: "Fraunces", serif;
+        font-size: clamp(2.5rem, 3.3vw + 1.5rem, 4.2rem);
+        margin: 0 0 20px;
+        line-height: 1.08;
+      }
+
+      .hero p {
+        font-size: 1.05rem;
+        color: var(--muted);
+        line-height: 1.7;
+        margin: 0 0 28px;
+        max-width: 520px;
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        border-radius: 999px;
+        padding: 14px 28px;
+        font-weight: 600;
+        border: 1px solid transparent;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .btn.primary {
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 16px 30px rgba(228, 87, 46, 0.26);
+      }
+
+      .btn.secondary {
+        background: transparent;
+        border-color: var(--ink);
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+      }
+
+      .hero-card {
+        background: var(--card);
+        border-radius: var(--radius-lg);
+        padding: 28px;
+        box-shadow: var(--shadow);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero-card::before {
+        content: "";
+        position: absolute;
+        top: -40px;
+        right: -60px;
+        width: 160px;
+        height: 160px;
+        background: radial-gradient(circle, rgba(228, 87, 46, 0.25), transparent 70%);
+      }
+
+      .metric-grid {
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        margin-top: 18px;
+      }
+
+      .metric {
+        padding: 16px;
+        border-radius: var(--radius-md);
+        background: #f7fbfb;
+      }
+
+      .metric h3 {
+        margin: 0 0 6px;
+        font-size: 1.25rem;
+      }
+
+      .section {
+        padding: 70px 7vw;
+        position: relative;
+        z-index: 1;
+      }
+
+      .section h2 {
+        font-family: "Fraunces", serif;
+        font-size: clamp(2rem, 1.6vw + 1.3rem, 3rem);
+        margin: 0 0 18px;
+      }
+
+      .section p.lead {
+        color: var(--muted);
+        max-width: 640px;
+        line-height: 1.7;
+        margin-top: 0;
+      }
+
+      .card-grid {
+        display: grid;
+        gap: 22px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        margin-top: 32px;
+      }
+
+      .card {
+        background: var(--card);
+        border-radius: var(--radius-md);
+        padding: 22px;
+        box-shadow: 0 12px 24px rgba(16, 42, 46, 0.1);
+        border: 1px solid rgba(16, 42, 46, 0.06);
+      }
+
+      .card h3 {
+        margin-top: 0;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 18px;
+        margin-top: 28px;
+      }
+
+      .timeline-item {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: auto 1fr;
+        background: #fefcf8;
+        border-radius: var(--radius-md);
+        padding: 18px 22px;
+        border: 1px solid rgba(228, 87, 46, 0.15);
+      }
+
+      .timeline-item span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        font-weight: 700;
+      }
+
+      .testimonial {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        margin-top: 32px;
+      }
+
+      .quote {
+        background: var(--card);
+        border-radius: var(--radius-md);
+        padding: 22px;
+        box-shadow: var(--shadow);
+      }
+
+      .quote p {
+        margin-top: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .cta {
+        background: linear-gradient(120deg, rgba(42, 127, 98, 0.12), rgba(228, 87, 46, 0.18));
+        border-radius: var(--radius-lg);
+        padding: 36px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      footer {
+        padding: 40px 7vw 60px;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      .fade-in {
+        opacity: 0;
+        transform: translateY(14px);
+        animation: fadeUp 0.7s ease forwards;
+      }
+
+      .fade-in.delay-1 {
+        animation-delay: 0.15s;
+      }
+
+      .fade-in.delay-2 {
+        animation-delay: 0.3s;
+      }
+
+      .fade-in.delay-3 {
+        animation-delay: 0.45s;
+      }
+
+      @keyframes fadeUp {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 780px) {
+        header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 16px;
+        }
+
+        nav {
+          flex-wrap: wrap;
+          gap: 14px;
+        }
+
+        .cta {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="halo one"></div>
+      <div class="halo two"></div>
+
+      <header>
+        <div class="brand">
+          <div class="brand-mark">K</div>
+          <span>Kazehana PMS</span>
+        </div>
+        <nav>
+          <a href="#platform">Platform</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#teams">Teams</a>
+          <a href="#contact">Contact</a>
+        </nav>
+      </header>
+
+      <section class="hero" id="platform">
+        <div>
+          <h1 class="fade-in">Operations clarity for boutique hospitality.</h1>
+          <p class="fade-in delay-1">
+            Kazehana PMS connects reservations, table flow, housekeeping, and
+            finance into one calm workspace. Stay ahead of arrivals, protect
+            margins, and keep every guest journey intentional.
+          </p>
+          <div class="hero-actions fade-in delay-2">
+            <a class="btn primary" href="#contact">Schedule a demo</a>
+            <a class="btn secondary" href="#workflow">Explore workflow</a>
+          </div>
+        </div>
+
+        <div class="hero-card fade-in delay-3">
+          <strong>Today at a glance</strong>
+          <div class="metric-grid">
+            <div class="metric">
+              <h3>92%</h3>
+              <span>Occupancy</span>
+            </div>
+            <div class="metric">
+              <h3>14</h3>
+              <span>Arrivals</span>
+            </div>
+            <div class="metric">
+              <h3>6</h3>
+              <span>VIP stays</span>
+            </div>
+            <div class="metric">
+              <h3>$48k</h3>
+              <span>Projected revenue</span>
+            </div>
+          </div>
+          <p style="margin-top: 20px; color: var(--muted);">
+            Real-time insights across rooms, restaurants, and spa services in one
+            view.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="teams">
+        <h2>Built for teams that move fast.</h2>
+        <p class="lead">
+          From front desk to F&B, every department gets a dashboard that surfaces
+          exactly what matters. No noise, no fragmented tools.
+        </p>
+
+        <div class="card-grid">
+          <div class="card">
+            <h3>Unified reservations</h3>
+            <p>
+              Manage room and table inventory in one place with live availability
+              updates and intelligent overbooking safeguards.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Housekeeping orchestration</h3>
+            <p>
+              Assign, track, and verify room readiness with automated alerts and
+              mobile-ready checklists.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Revenue signals</h3>
+            <p>
+              Tie add-ons, packages, and restaurant spend to each stay to reveal
+              the true value of every guest.
+            </p>
+          </div>
+          <div class="card">
+            <h3>Compliance ready</h3>
+            <p>
+              Export clean audit trails, nightly reports, and folios in seconds.
+              Stay confident during inspections.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="workflow">
+        <h2>Workflow that feels effortless.</h2>
+        <p class="lead">
+          Launch in weeks, not months. We map your property, build integrations,
+          and train your team with concierge-level support.
+        </p>
+
+        <div class="timeline">
+          <div class="timeline-item">
+            <span>1</span>
+            <div>
+              <strong>Discovery session</strong>
+              <p>
+                Align on your property mix, service style, and operational pain
+                points.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <span>2</span>
+            <div>
+              <strong>System build</strong>
+              <p>
+                Configure room types, restaurant layouts, integrations, and guest
+                messaging.
+              </p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <span>3</span>
+            <div>
+              <strong>Launch &amp; tune</strong>
+              <p>
+                Go live with a dedicated success lead and optimize through the
+                first 30 days.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Trusted by service-first operators.</h2>
+        <p class="lead">
+          Teams love the calm interface and the speed it brings to daily
+          decisions.
+        </p>
+
+        <div class="testimonial">
+          <div class="quote">
+            <p>
+              “We reduced late check-ins by 40% in the first month. The dashboard
+              makes every shift change seamless.”
+            </p>
+            <strong>Akari Boutique Hotel</strong>
+          </div>
+          <div class="quote">
+            <p>
+              “Our restaurant and rooms finally talk to each other. We plan menus
+              based on arrivals and it just works.”
+            </p>
+            <strong>Seabird Hospitality Group</strong>
+          </div>
+          <div class="quote">
+            <p>
+              “Training new staff takes days, not weeks. The workflows are
+              intuitive and guided.”
+            </p>
+            <strong>Maison Aira Retreat</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="contact">
+        <div class="cta">
+          <div>
+            <h2>Ready to see Kazehana in action?</h2>
+            <p class="lead" style="margin-bottom: 0;">
+              Share your property details and we will send a tailored demo deck
+              within 48 hours.
+            </p>
+          </div>
+          <a class="btn primary" href="mailto:hello@kazehana.io">Start the conversation</a>
+        </div>
+      </section>
+
+      <footer>
+        <div>© 2026 Kazehana PMS. Crafted for boutique hospitality teams.</div>
+      </footer>
+    </div>
+  </body>
+</html>

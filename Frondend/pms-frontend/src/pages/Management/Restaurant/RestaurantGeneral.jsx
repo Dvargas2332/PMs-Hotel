@@ -16,6 +16,7 @@ export default function RestaurantGeneral() {
     horario: "",
     resolucion: "",
     notas: "",
+    inventoryEnabled: true,
   });
   const [saving, setSaving] = useState(false);
 
@@ -45,6 +46,14 @@ export default function RestaurantGeneral() {
           <Input placeholder="Hours" value={info.horario} onChange={(e) => setInfo((f) => ({ ...f, horario: e.target.value }))} />
           <Input placeholder="Address" value={info.direccion} onChange={(e) => setInfo((f) => ({ ...f, direccion: e.target.value }))} />
         </div>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={info.inventoryEnabled !== false}
+            onChange={(e) => setInfo((f) => ({ ...f, inventoryEnabled: e.target.checked }))}
+          />
+          Activar inventario para restaurante
+        </label>
         <Textarea placeholder="Additional notes" value={info.notas} onChange={(e) => setInfo((f) => ({ ...f, notas: e.target.value }))} />
         <div className="flex justify-end">
           <Button

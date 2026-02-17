@@ -4,6 +4,7 @@ import { CheckCircle, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, T
 import { useAuth } from "../../context/AuthContext";
 import { api } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
+import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
@@ -313,6 +314,12 @@ const [subCategory, setSubCategory] = useState("");
   const [closeForm, setCloseForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [closeType, setCloseType] = useState("X");
+  const [shiftModalOpen, setShiftModalOpen] = useState(false);
+  const [shiftOpenForm, setShiftOpenForm] = useState({ amount: "", note: "" });
+  const [shiftOpenBusy, setShiftOpenBusy] = useState(false);
+  const [shiftOpenError, setShiftOpenError] = useState("");
+  const [shiftLoading, setShiftLoading] = useState(true);
   const [voidInvoiceModalOpen, setVoidInvoiceModalOpen] = useState(false);
   const [voidInvoiceForm, setVoidInvoiceForm] = useState({ username: "", password: "", reason: "" });
   const [voidInvoiceBusy, setVoidInvoiceBusy] = useState(false);
@@ -363,24 +370,22 @@ const [subCategory, setSubCategory] = useState("");
   const [roomCharge, setRoomCharge] = useState("");
   const [activeStaff, setActiveStaff] = useState(null);
   const activeStaffRef = useRef(null);
-  const [staffLoginOpen, setStaffLoginOpen] = useState(false);
+  const [staffLoginOpen, setStaffLoginOpen] = useState(true);
   const [staffLoginForm, setStaffLoginForm] = useState({ username: "", password: "" });
   const [staffLoginBusy, setStaffLoginBusy] = useState(false);
   const [staffLoginError, setStaffLoginError] = useState("");
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
+  const canCloseZ = useMemo(() => {
+    const perms = Array.isArray(user?.permissions) ? user.permissions : [];
+    return role === "ADMIN" || perms.includes("restaurant.shift.closeZ");
+  }, [role, user?.permissions]);
   const canMoveOrders = useMemo(() => {
     if (role === "ADMIN") return true;
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
     return perms.includes("restaurant.orders.move");
   }, [role, user?.permissions]);
-  const staffStorageKey = useMemo(() => {
-    const hotelId = hotel?.id || user?.hotelId || "";
-    const userId = user?.id || "";
-    if (!hotelId || !userId) return "";
-    return `restaurantStaff:${hotelId}:${userId}`;
-  }, [hotel?.id, user?.hotelId, user?.id]);
   const floorPanRef = useRef({ x: 0, y: 0 });
   const floorDragRef = useRef(null);
 
@@ -393,40 +398,8 @@ const [subCategory, setSubCategory] = useState("");
   }, [activeStaff]);
 
   useEffect(() => {
-    if (!staffStorageKey) {
-      setActiveStaff(null);
-      return;
-    }
-    try {
-      const raw = localStorage.getItem(staffStorageKey);
-      if (!raw) {
-        setActiveStaff(null);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object" && parsed.id) {
-        setActiveStaff(parsed);
-      } else {
-        setActiveStaff(null);
-      }
-    } catch {
-      setActiveStaff(null);
-    }
-  }, [staffStorageKey]);
-
-  useEffect(() => {
-    if (!staffStorageKey) return;
-    if (activeStaff) {
-      localStorage.setItem(staffStorageKey, JSON.stringify(activeStaff));
-    } else {
-      localStorage.removeItem(staffStorageKey);
-    }
-  }, [activeStaff, staffStorageKey]);
-
-  useEffect(() => {
-    if (!staffStorageKey) return;
     if (!activeStaff) setStaffLoginOpen(true);
-  }, [activeStaff, staffStorageKey]);
+  }, [activeStaff]);
 
   useEffect(() => {
     if (activeStaff) setStaffLoginOpen(false);
@@ -928,6 +901,60 @@ const subCategories = useMemo(() => {
       user: user?.name || user?.email || prev.user,
     }));
   }, [user?.name, user?.email]);
+
+  const refreshShiftStatus = useCallback(async () => {
+    setShiftLoading(true);
+    setShiftOpenError("");
+    try {
+      const { data } = await api.get("/restaurant/shift");
+      if (data?.open) {
+        setShiftModalOpen(false);
+        if (data?.shift?.openedAt) {
+          setOpenInfo((prev) => ({ ...prev, openedAt: data.shift.openedAt }));
+        }
+      } else {
+        setShiftModalOpen(true);
+      }
+    } catch (err) {
+      setShiftModalOpen(true);
+      const msg = err?.response?.data?.message || "No se pudo validar el turno.";
+      setShiftOpenError(msg);
+    } finally {
+      setShiftLoading(false);
+    }
+  }, []);
+
+  const openShift = useCallback(async () => {
+    if (shiftOpenBusy) return;
+    const amountValue = parseMoneyInput(shiftOpenForm.amount || 0);
+    if (!Number.isFinite(amountValue) || amountValue < 0) {
+      setShiftOpenError("Monto de apertura inválido.");
+      return;
+    }
+    setShiftOpenBusy(true);
+    setShiftOpenError("");
+    try {
+      const { data } = await api.post("/restaurant/shift/open", {
+        openingAmount: amountValue,
+        note: String(shiftOpenForm.note || "").trim() || undefined,
+      });
+      setShiftModalOpen(false);
+      setShiftOpenForm({ amount: "", note: "" });
+      if (data?.shift?.openedAt) {
+        setOpenInfo((prev) => ({ ...prev, openedAt: data.shift.openedAt }));
+      }
+      setShiftLoading(false);
+    } catch (err) {
+      const msg = err?.response?.data?.message || "No se pudo abrir el turno.";
+      setShiftOpenError(msg);
+    } finally {
+      setShiftOpenBusy(false);
+    }
+  }, [shiftOpenBusy, shiftOpenForm.amount, shiftOpenForm.note]);
+
+  useEffect(() => {
+    refreshShiftStatus();
+  }, [refreshShiftStatus]);
 
   const loadSections = useCallback(async () => {
     let loadingCleared = false;
@@ -2397,6 +2424,63 @@ const subCategories = useMemo(() => {
           </div>
         </div>
       )}
+      {shiftModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+            <div>
+              <div className="text-xs uppercase text-emerald-600">Apertura de turno</div>
+              <div className="text-lg font-semibold text-slate-900">Abrir caja</div>
+              <div className="text-xs text-slate-500">Debes abrir un turno para usar el TPV.</div>
+              <div className="text-[11px] text-slate-500 mt-1">
+                Moneda: {paymentsCfg.monedaBase} · TC {paymentsCfg.tipoCambio}
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <input
+                className="w-full max-w-[150px] rounded-lg border px-3 py-1.5 text-sm h-9"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
+                placeholder="Monto de apertura"
+                value={shiftOpenForm.amount}
+                onChange={(e) => setShiftOpenForm((f) => ({ ...f, amount: e.target.value }))}
+                onBlur={(e) =>
+                  setShiftOpenForm((f) => ({ ...f, amount: normalizeMoneyInput(e.target.value) }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") openShift();
+                }}
+              />
+              <input
+                className="h-min-[100px] w-max-[200px] rounded-lg border px-3 py-1.5 text-sm h-9"
+                placeholder="Nota (opcional)"
+                value={shiftOpenForm.note}
+                onChange={(e) => setShiftOpenForm((f) => ({ ...f, note: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") openShift();
+                }}
+              />
+            </div>
+            {shiftOpenError && <div className="text-xs text-red-600">{shiftOpenError}</div>}
+            <div className="flex items-center justify-between gap-2">
+              <button
+                className="px-4 py-2 rounded-lg border text-sm"
+                onClick={() => navigate("/restaurant")}
+                disabled={shiftOpenBusy}
+              >
+                Regresar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                onClick={openShift}
+                disabled={shiftOpenBusy || shiftLoading}
+              >
+                {shiftOpenBusy ? "Abriendo..." : shiftLoading ? "Verificando..." : "Abrir turno"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
         <div className="flex items-center gap-3">
           <span className="text-lg font-semibold text-white">Restaurant</span>
@@ -2417,7 +2501,7 @@ const subCategories = useMemo(() => {
               className="px-3 py-2 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
               onClick={() => setStaffLoginOpen(true)}
             >
-              {activeStaff ? `${staffRoleLabel(activeStaff.role)}: ${activeStaff.name}` : "Ingresar personal"}
+              {activeStaff ? `${staffRoleLabel(activeStaff.role)}: ${activeStaff.name}` : "Ingresar mesero/cajero"}
             </button>
             <RestaurantUserMenu
               onOpenCashStatus={() => {
@@ -2435,7 +2519,7 @@ const subCategories = useMemo(() => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs uppercase text-lime-600">Acceso TPV</div>
-                  <div className="text-lg font-semibold text-slate-900">Personal de restaurante</div>
+                  <div className="text-lg font-semibold text-slate-900">Meseros y cajeros</div>
                   <div className="text-xs text-slate-500">Ingresa usuario y password para continuar.</div>
                 </div>
                 {activeStaff && <RestaurantCloseXButton onClick={() => setStaffLoginOpen(false)} />}
@@ -2709,6 +2793,7 @@ const subCategories = useMemo(() => {
                     window.alert("You do not have permission to close cash. Ask an administrator.");
                     return;
                   }
+                  setCloseType("X");
                   setCloseModalOpen(true);
                 }}
               >
@@ -2726,6 +2811,9 @@ const subCategories = useMemo(() => {
               <div>
                 <div className="text-[10px] uppercase text-lime-500">Cash close</div>
                 <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
+                <div className="text-[11px] text-slate-500">
+                  Moneda: {paymentsCfg.monedaBase} · TC {paymentsCfg.tipoCambio}
+                </div>
               </div>
               <RestaurantCloseXButton onClick={() => setCloseModalOpen(false)} />
             </div>
@@ -2738,45 +2826,77 @@ const subCategories = useMemo(() => {
               </div>
             </div>
 
+            <div className="flex gap-2">
+              <button
+                className={`px-3 py-2 rounded-lg border text-xs ${closeType === "X" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
+                onClick={() => setCloseType("X")}
+              >
+                Cierre X (parcial)
+              </button>
+              <button
+                className={`px-3 py-2 rounded-lg border text-xs ${closeType === "Z" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
+                onClick={() => canCloseZ && setCloseType("Z")}
+                disabled={!canCloseZ}
+                title={canCloseZ ? "" : "No tienes permiso para cierre Z"}
+              >
+                Cierre Z (final)
+              </button>
+            </div>
+
             <div className="grid md:grid-cols-2 gap-3">
               <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
+                className="h-9 w-full rounded-lg border px-3 text-xs"
                 placeholder="Cash"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
                 value={closeForm.cash}
                 onChange={(e) => setCloseForm((f) => ({ ...f, cash: e.target.value }))}
+                onBlur={(e) => setCloseForm((f) => ({ ...f, cash: normalizeMoneyInput(e.target.value) }))}
               />
               <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
+                className="h-9 w-full rounded-lg border px-3 text-xs"
                 placeholder="Card"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
                 value={closeForm.card}
                 onChange={(e) => setCloseForm((f) => ({ ...f, card: e.target.value }))}
+                onBlur={(e) => setCloseForm((f) => ({ ...f, card: normalizeMoneyInput(e.target.value) }))}
               />
               <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
+                className="h-9 w-full rounded-lg border px-3 text-xs"
                 placeholder="SINPE"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
                 value={closeForm.sinpe}
                 onChange={(e) => setCloseForm((f) => ({ ...f, sinpe: e.target.value }))}
+                onBlur={(e) => setCloseForm((f) => ({ ...f, sinpe: normalizeMoneyInput(e.target.value) }))}
               />
               <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
+                className="h-9 w-full rounded-lg border px-3 text-xs"
                 placeholder="Bank transfer"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
                 value={closeForm.transfer}
                 onChange={(e) => setCloseForm((f) => ({ ...f, transfer: e.target.value }))}
+                onBlur={(e) => setCloseForm((f) => ({ ...f, transfer: normalizeMoneyInput(e.target.value) }))}
               />
               <input
-                className="h-11 w-full rounded-lg border px-3 text-sm"
+                className="h-9 w-full rounded-lg border px-3 text-xs"
                 placeholder="Room charge"
-                type="number"
+                type="text"
+                inputMode="decimal"
+                pattern="[0-9.,]*"
                 value={closeForm.room}
                 onChange={(e) => setCloseForm((f) => ({ ...f, room: e.target.value }))}
+                onBlur={(e) => setCloseForm((f) => ({ ...f, room: normalizeMoneyInput(e.target.value) }))}
               />
             </div>
             <textarea
-              className="w-full rounded-lg border px-3 py-2 text-sm min-h-[90px]"
+              className="h-min-[200px] w-max-[150px] rounded-lg border px-3 py-2 text-sm"
               placeholder="Close notes..."
               value={closeForm.notes}
               onChange={(e) => setCloseForm((f) => ({ ...f, notes: e.target.value }))}
@@ -2807,6 +2927,7 @@ const subCategories = useMemo(() => {
                       payments: closeForm,
                       note: closeForm.notes,
                       breakdown: stats.byMethod || {},
+                      type: closeType,
                     });
                     setCloseModalOpen(false);
                     setCloseOpen(false);
@@ -2818,6 +2939,7 @@ const subCategories = useMemo(() => {
                     setSelectedPaymentKeys([]);
                     setSplitPayments(false);
                     resetToLobby();
+                    setShiftModalOpen(true);
                     refreshStats();
                   } catch (e) {
                     window.alert("Could not record the cash close.");
@@ -3057,11 +3179,12 @@ const subCategories = useMemo(() => {
                             <input
                               className="h-11 w-full rounded-lg border px-3 text-sm"
                               placeholder="0.00"
-                              type="number"
-                              min="0"
-                              step="0.01"
+                              type="text"
+                              inputMode="decimal"
+                              pattern="[0-9.,-]*"
                               value={paymentForm[method.key] ?? ""}
                               onChange={(e) => updatePaymentAmount(method.key, e.target.value)}
+                              onBlur={(e) => updatePaymentAmount(method.key, normalizeMoneyInput(e.target.value))}
                             />
                           </div>
                         ))}
