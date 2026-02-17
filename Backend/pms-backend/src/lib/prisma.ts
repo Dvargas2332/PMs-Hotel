@@ -161,7 +161,8 @@ prisma.$use(async (params, next) => {
   const model = params.model ?? "";
   if (!TENANT_MODELS.has(model)) return next(params);
 
-  const args = (params.args ??= {});
+  params.args ??= {};
+  const args = params.args;
 
   // READS
   if (params.action === "findMany" || params.action === "findFirst" || params.action === "count") {

@@ -25,7 +25,7 @@ export async function register(req: Request, res: Response) {
 
     const hotel = await prisma.hotel.create({
       data: { name: hotelName || "Hotel Demo", currency: "CRC" },
-      select: { id: true, name: true, membership: true },
+      select: { id: true, number: true, name: true, membership: true },
     });
 
     await prisma.permission.createMany({ data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })), skipDuplicates: true });
@@ -78,7 +78,7 @@ export async function login(req: Request, res: Response) {
     const gestorEmail = String(process.env.GESTOR_EMAIL || "").trim().toLowerCase();
     const gestorPassword = String(process.env.GESTOR_PASSWORD || "").trim();
     if (gestorEmail && gestorPassword && identifier.toLowerCase() === gestorEmail && password === gestorPassword) {
-      const token = sign({ sub: "gestor", email: gestorEmail, role: "ADMIN", hotelId: "saas-gestor" });
+      const token = sign({ sub: "gestor", email: gestorEmail, role: "ADMIN", hotelId: "saas-gestor", isGestor: true });
       return res.json({
         token,
         user: {

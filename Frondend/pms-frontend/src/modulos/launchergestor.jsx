@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, LogOut, RefreshCcw } from "lucide-react";
+import { Building2, LogOut, RefreshCcw, Moon, Sun } from "lucide-react";
 
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -9,9 +9,10 @@ import { SimpleTable } from "../components/ui/table";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
-const MEMBERSHIPS = ["BASIC", "STANDARD", "PRO", "PLATINUM"];
+const MEMBERSHIPS = ["HBASIC", "RBASIC", "STANDARD", "PRO", "PLATINUM"];
 const MEMBERSHIP_LABELS = {
-  BASIC: "Básico",
+  HBASIC: "Hotel Basico",
+  RBASIC: "Restaurante Basico",
   STANDARD: "Estándar",
   PRO: "Pro",
   PLATINUM: "Platino",
@@ -44,7 +45,7 @@ const INITIAL_CLIENT_FORM = {
 const INITIAL_CREATE_FORM = {
   clientId: "",
   name: "",
-  membership: "BASIC",
+  membership: "HBASIC",
   membershipMonthlyFee: "",
   currency: "CRC",
   phone1: "",
@@ -53,9 +54,34 @@ const INITIAL_CREATE_FORM = {
   managerName: "",
   companyId: "",
   managerId: "",
+  hotelUserName: "",
+  hotelUserEmail: "",
+  hotelUserPassword: "",
   adminName: "Administrador",
   adminEmail: "",
   adminPassword: "",
+};
+
+const INITIAL_EDIT_FORM = {
+  clientId: "",
+  name: "",
+  membership: "HBASIC",
+  membershipMonthlyFee: "",
+  currency: "CRC",
+  phone1: "",
+  phone2: "",
+  ownerName: "",
+  managerName: "",
+  companyId: "",
+  managerId: "",
+};
+
+const INITIAL_ADMIN_FORM = {
+  id: "",
+  name: "",
+  email: "",
+  password: "",
+  confirmPassword: "",
 };
 
 function fmtDate(d) {
@@ -93,6 +119,12 @@ function fmtMoney(amount, currency) {
   }
 }
 
+function fmtHotelNumber(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num) || num <= 0) return "-";
+  return `H-${String(Math.trunc(num)).padStart(6, "0")}`;
+}
+
 function normalizeCurrency(v) {
   return String(v || "")
     .trim()
@@ -101,13 +133,36 @@ function normalizeCurrency(v) {
     .slice(0, 3);
 }
 
+function buildHotelEditForm(hotel) {
+  if (!hotel) return { ...INITIAL_EDIT_FORM };
+  return {
+    clientId: hotel.saasClientId || "",
+    name: hotel.name || "",
+    membership: hotel.membership || "HBASIC",
+    membershipMonthlyFee: hotel.membershipMonthlyFee ? String(hotel.membershipMonthlyFee) : "",
+    currency: hotel.currency || "CRC",
+    phone1: hotel.phone1 || "",
+    phone2: hotel.phone2 || "",
+    ownerName: hotel.ownerName || "",
+    managerName: hotel.managerName || "",
+    companyId: hotel.companyId || "",
+    managerId: hotel.managerId || "",
+  };
+}
+
 export default function Launchergestor() {
   const navigate = useNavigate();
   const { logout } = useAuth();
 
   const [panel, setPanel] = useState("billing"); // billing | database
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem("launchergestor_theme");
+    return saved === "dark" ? "dark" : "light";
+  });
 
   const [loadingClients, setLoadingClients] = useState(false);
+  const [listTab, setListTab] = useState("clients");
   const [clients, setClients] = useState([]);
   const [clientQ, setClientQ] = useState("");
   const [selectedClientId, setSelectedClientId] = useState("");
@@ -118,9 +173,17 @@ export default function Launchergestor() {
   const [hotels, setHotels] = useState([]);
   const [q, setQ] = useState("");
   const [selectedHotelId, setSelectedHotelId] = useState("");
+  const [editingHotel, setEditingHotel] = useState(false);
+  const [hotelEditForm, setHotelEditForm] = useState(() => ({ ...INITIAL_EDIT_FORM }));
+  const [savingHotel, setSavingHotel] = useState(false);
+  const [adminForm, setAdminForm] = useState(() => ({ ...INITIAL_ADMIN_FORM }));
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminSaving, setAdminSaving] = useState(false);
 
   const [createForm, setCreateForm] = useState(() => ({ ...INITIAL_CREATE_FORM }));
+  const [createTab, setCreateTab] = useState("hotel");
   const [creating, setCreating] = useState(false);
+  const [lastCreatedCredentials, setLastCreatedCredentials] = useState(null);
 
   const [billing, setBilling] = useState([]);
   const [billingLoading, setBillingLoading] = useState(false);
@@ -218,6 +281,26 @@ export default function Launchergestor() {
     }
   }, []);
 
+  const loadHotelAdmin = useCallback(async (hotelId) => {
+    if (!hotelId) return;
+    setAdminLoading(true);
+    try {
+      const { data } = await api.get(`/gestor/hotels/${encodeURIComponent(hotelId)}/admin`);
+      setAdminForm((prev) => ({
+        ...prev,
+        id: data?.id || "",
+        name: data?.name || "",
+        email: data?.email || "",
+        password: "",
+        confirmPassword: "",
+      }));
+    } catch {
+      setAdminForm({ ...INITIAL_ADMIN_FORM });
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadClients().catch(() => {});
     loadHotels().catch(() => {});
@@ -234,7 +317,8 @@ export default function Launchergestor() {
   useEffect(() => {
     if (!selectedHotelId) return;
     loadBilling(selectedHotelId).catch(() => {});
-  }, [selectedHotelId, loadBilling]);
+    loadHotelAdmin(selectedHotelId).catch(() => {});
+  }, [selectedHotelId, loadBilling, loadHotelAdmin]);
 
   useEffect(() => {
     if (!selectedHotel?.currency) return;
@@ -242,8 +326,14 @@ export default function Launchergestor() {
   }, [selectedHotel?.id, selectedHotel?.currency]);
 
   useEffect(() => {
+    if (editingHotel) return;
+    setHotelEditForm(buildHotelEditForm(selectedHotel));
+  }, [selectedHotel, editingHotel]);
+
+  useEffect(() => {
     // Evita que el navegador auto-rellene los inputs del "crear hotel" con credenciales guardadas.
     setCreateForm({ ...INITIAL_CREATE_FORM });
+    setLastCreatedCredentials(null);
     const t = setTimeout(() => setCreateForm({ ...INITIAL_CREATE_FORM }), 350);
     return () => clearTimeout(t);
   }, []);
@@ -256,6 +346,16 @@ export default function Launchergestor() {
   const onLogout = () => {
     logout();
     navigate("/login");
+  };
+
+  const toggleTheme = () => {
+    setTheme((cur) => {
+      const next = cur === "dark" ? "light" : "dark";
+      try {
+        window.localStorage.setItem("launchergestor_theme", next);
+      } catch {}
+      return next;
+    });
   };
 
   const onCreateClient = async () => {
@@ -310,6 +410,9 @@ export default function Launchergestor() {
       managerName: String(createForm.managerName || "").trim() || undefined,
       companyId: String(createForm.companyId || "").trim() || undefined,
       managerId: String(createForm.managerId || "").trim() || undefined,
+      hotelUserName: String(createForm.hotelUserName || "").trim() || undefined,
+      hotelUserEmail: String(createForm.hotelUserEmail || "").trim() || undefined,
+      hotelUserPassword: String(createForm.hotelUserPassword || "") || undefined,
       adminName: String(createForm.adminName || "").trim() || "Administrador",
       adminEmail: String(createForm.adminEmail || "").trim(),
       adminPassword: String(createForm.adminPassword || ""),
@@ -318,13 +421,17 @@ export default function Launchergestor() {
     if (!payload.name) return alert("Nombre del hotel requerido");
     if (!payload.adminEmail) return alert("Email del administrador requerido");
     if (!payload.adminPassword || payload.adminPassword.length < 4) {
-      return alert("Contraseña del administrador (min 4)");
+      return alert("Contrasena del administrador (min 4)");
+    }
+    if (payload.hotelUserPassword && payload.hotelUserPassword.length < 4) {
+      return alert("Contrasena del usuario del hotel (min 4)");
     }
 
     setCreating(true);
     try {
       const { data } = await api.post("/gestor/hotels", payload);
       const createdHotel = data?.hotel;
+      setLastCreatedCredentials(data?.credentials || null);
       await loadHotels();
       if (createdHotel?.id) setSelectedHotelId(createdHotel.id);
       setCreateForm({ ...INITIAL_CREATE_FORM });
@@ -335,6 +442,32 @@ export default function Launchergestor() {
     }
   };
 
+  const onSaveAdmin = async () => {
+    if (!selectedHotelId || adminSaving) return;
+    const name = String(adminForm.name || "").trim();
+    const email = String(adminForm.email || "").trim().toLowerCase();
+    const password = String(adminForm.password || "");
+    const confirm = String(adminForm.confirmPassword || "");
+
+    if (!name) return alert("Nombre del administrador requerido");
+    if (!email) return alert("Email del administrador requerido");
+    if (password && password.length < 4) return alert("Contraseña inválida (min 4)");
+    if (password && password !== confirm) return alert("Las contraseñas no coinciden");
+
+    const payload = { name, email };
+    if (password) payload.password = password;
+
+    setAdminSaving(true);
+    try {
+      await api.put(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}/admin`, payload);
+      await loadHotelAdmin(selectedHotelId);
+      alert("Administrador actualizado");
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo actualizar el administrador");
+    } finally {
+      setAdminSaving(false);
+    }
+  };
   const onAddBilling = async () => {
     if (!selectedHotelId || billingSaving) return;
 
@@ -379,7 +512,51 @@ export default function Launchergestor() {
     }
   };
 
-  const importEndpoints = useMemo(
+    const onStartEditHotel = () => {
+    if (!selectedHotel) return;
+    setHotelEditForm(buildHotelEditForm(selectedHotel));
+    setEditingHotel(true);
+  };
+
+  const onCancelEditHotel = () => {
+    setEditingHotel(false);
+    setHotelEditForm(buildHotelEditForm(selectedHotel));
+  };
+
+  const onSaveEditHotel = async () => {
+    if (!selectedHotelId || savingHotel) return;
+    const membershipMonthlyFee = Number(hotelEditForm.membershipMonthlyFee || 0);
+    if (!hotelEditForm.name.trim()) return alert("Nombre del hotel requerido");
+    if (!Number.isFinite(membershipMonthlyFee) || membershipMonthlyFee < 0) {
+      return alert("Costo mensual inválido.");
+    }
+
+    const payload = {
+      clientId: String(hotelEditForm.clientId || "").trim() || null,
+      name: String(hotelEditForm.name || "").trim(),
+      membership: hotelEditForm.membership,
+      membershipMonthlyFee,
+      currency: normalizeCurrency(hotelEditForm.currency || "CRC") || "CRC",
+      phone1: String(hotelEditForm.phone1 || "").trim() || null,
+      phone2: String(hotelEditForm.phone2 || "").trim() || null,
+      ownerName: String(hotelEditForm.ownerName || "").trim() || null,
+      managerName: String(hotelEditForm.managerName || "").trim() || null,
+      companyId: String(hotelEditForm.companyId || "").trim() || null,
+      managerId: String(hotelEditForm.managerId || "").trim() || null,
+    };
+
+    setSavingHotel(true);
+    try {
+      await api.put(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}`, payload);
+      await loadHotels();
+      setEditingHotel(false);
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo actualizar el hotel");
+    } finally {
+      setSavingHotel(false);
+    }
+  };
+const importEndpoints = useMemo(
     () => ({
       fdRooms: (hotelId) => `/gestor/hotels/${encodeURIComponent(hotelId)}/import/frontdesk/rooms`,
       fdGuests: (hotelId) => `/gestor/hotels/${encodeURIComponent(hotelId)}/import/frontdesk/guests`,
@@ -415,7 +592,7 @@ export default function Launchergestor() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`min-h-screen bg-slate-50 ${theme === "dark" ? "lg-theme-dark" : "lg-theme-light"}`}>
       <div className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -423,6 +600,10 @@ export default function Launchergestor() {
             <div className="text-xs text-slate-500">Crear hoteles y registrar cobros mensuales.</div>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={toggleTheme}>
+              {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+              {theme === "dark" ? "Claro" : "Oscuro"}
+            </Button>
             <Button
               variant="outline"
               onClick={() => {
@@ -444,454 +625,563 @@ export default function Launchergestor() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">
             <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-slate-900 flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-indigo-600" />
-                  Clientes
-                </div>
-                <div className="text-xs text-slate-500">{filteredClients.length}</div>
-              </div>
-
-              <Input
-                placeholder="Buscar cliente..."
-                value={clientQ}
-                onChange={(e) => setClientQ(e.target.value)}
-                disabled={loadingClients}
-              />
-
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedClientId("")}
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${
-                    !selectedClientId ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"
+                  onClick={() => setListTab("clients")}
+                  className={`rounded-t-lg border px-3 py-1.5 text-xs -mb-px ${
+                    listTab === "clients"
+                      ? "border-slate-200 bg-white text-slate-900"
+                      : "border-transparent bg-slate-50 text-slate-500"
                   }`}
                 >
-                  Todos
+                  Clientes
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedClientId(CLIENT_FILTER_NONE)}
-                  className={`rounded-lg border px-3 py-1.5 text-xs ${
-                    selectedClientId === CLIENT_FILTER_NONE
-                      ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                      : "border-slate-200 bg-white text-slate-700"
+                  onClick={() => setListTab("hotels")}
+                  className={`rounded-t-lg border px-3 py-1.5 text-xs -mb-px ${
+                    listTab === "hotels"
+                      ? "border-slate-200 bg-white text-slate-900"
+                      : "border-transparent bg-slate-50 text-slate-500"
                   }`}
                 >
-                  Sin empresa
+                  Hoteles
+                </button>
+                <div className="ml-auto text-xs text-slate-500">
+                  {listTab === "clients" ? filteredClients.length : filteredHotels.length}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-3">
+                {listTab === "clients" ? (
+                  <>
+                    <Input
+                      placeholder="Buscar cliente..."
+                      value={clientQ}
+                      onChange={(e) => setClientQ(e.target.value)}
+                      disabled={loadingClients}
+                    />
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClientId("")}
+                        className={`rounded-lg border px-3 py-1.5 text-xs ${
+                          !selectedClientId ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        Todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedClientId(CLIENT_FILTER_NONE)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs ${
+                          selectedClientId === CLIENT_FILTER_NONE
+                            ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                            : "border-slate-200 bg-white text-slate-700"
+                        }`}
+                      >
+                        Sin empresa
+                      </button>
+                    </div>
+
+                    <div className="max-h-[260px] overflow-y-auto space-y-2 pr-1">
+                      {filteredClients.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setSelectedClientId(c.id)}
+                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
+                            selectedClientId === c.id ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white"
+                          }`}
+                        >
+                          <div className="font-semibold text-slate-900 truncate">{c.name}</div>
+                          <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
+                            <span className="truncate">{c.companyId || "Sin identificacion"}</span>
+                            <span>{Number(c.hotelsCount || 0)} hoteles</span>
+                          </div>
+                        </button>
+                      ))}
+                      {!loadingClients && filteredClients.length === 0 && (
+                        <div className="text-sm text-slate-500">No hay clientes.</div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs text-slate-500">
+                      Filtro:{" "}
+                      {selectedClientId
+                        ? selectedClientId === CLIENT_FILTER_NONE
+                          ? "Sin empresa"
+                          : selectedClient?.name || "Empresa"
+                        : "Todos"}
+                    </div>
+                    <Input placeholder="Buscar hotel..." value={q} onChange={(e) => setQ(e.target.value)} />
+                    <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
+                      {filteredHotels.map((h) => (
+                        <button
+                          key={h.id}
+                          type="button"
+                          onClick={() => setSelectedHotelId(h.id)}
+                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
+                            selectedHotelId === h.id ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+                          }`}
+                        >
+                          <div className="font-semibold text-slate-900 truncate">{h.name}</div>
+                            <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
+                              <span>{MEMBERSHIP_LABELS[h.membership] || h.membership}</span>
+                              <span>{fmtHotelNumber(h.number)}</span>
+                            </div>
+                          <div className="text-[11px] text-slate-400 truncate">Empresa: {h.saasClientName || "-"}</div>
+                        </button>
+                      ))}
+                      {!loadingHotels && filteredHotels.length === 0 && (
+                        <div className="text-sm text-slate-500">No hay hoteles.</div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </Card>
+<Card className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCreateTab("hotel")}
+                  className={`rounded-t-lg border px-3 py-1.5 text-xs -mb-px ${
+                    createTab === "hotel"
+                      ? "border-slate-200 bg-white text-slate-900"
+                      : "border-transparent bg-slate-50 text-slate-500"
+                  }`}
+                >
+                  Hotel crear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCreateTab("client")}
+                  className={`rounded-t-lg border px-3 py-1.5 text-xs -mb-px ${
+                    createTab === "client"
+                      ? "border-slate-200 bg-white text-slate-900"
+                      : "border-transparent bg-slate-50 text-slate-500"
+                  }`}
+                >
+                  Cliente crear
                 </button>
               </div>
 
-              <div className="max-h-[220px] overflow-y-auto space-y-2 pr-1">
-                {filteredClients.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setSelectedClientId(c.id)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
-                      selectedClientId === c.id ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white"
-                    }`}
-                  >
-                    <div className="font-semibold text-slate-900 truncate">{c.name}</div>
-                    <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
-                      <span className="truncate">{c.companyId || "Sin identificaci\u00f3n"}</span>
-                      <span>{Number(c.hotelsCount || 0)} hoteles</span>
-                    </div>
-                  </button>
-                ))}
-                {!loadingClients && filteredClients.length === 0 && (
-                  <div className="text-sm text-slate-500">No hay clientes.</div>
-                )}
-              </div>
-
-              <div className="border-t border-slate-200 pt-3 space-y-2">
-                <div className="font-semibold text-slate-900">Cliente crear</div>
-                <form
-                  autoComplete="off"
-                  className="grid grid-cols-1 gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    onCreateClient();
-                  }}
-                >
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Nombre de la empresa</div>
-                    <Input
-                      autoComplete="off"
-                      placeholder="Ej: Grupo Kazehana"
-                      value={clientForm.name}
-                      onChange={(e) => setClientForm((p) => ({ ...p, name: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Identificaci\u00f3n</div>
-                      <Input
-                        autoComplete="off"
-                        placeholder="C\u00e9dula jur\u00eddica"
-                        value={clientForm.companyId}
-                        onChange={(e) => setClientForm((p) => ({ ...p, companyId: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Email</div>
-                      <Input
-                        type="email"
-                        autoComplete="off"
-                        placeholder="Opcional"
-                        value={clientForm.email}
-                        onChange={(e) => setClientForm((p) => ({ ...p, email: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Tel\u00e9fono 1</div>
-                      <Input
-                        autoComplete="off"
-                        placeholder="Opcional"
-                        value={clientForm.phone1}
-                        onChange={(e) => setClientForm((p) => ({ ...p, phone1: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Tel\u00e9fono 2</div>
-                      <Input
-                        autoComplete="off"
-                        placeholder="Opcional"
-                        value={clientForm.phone2}
-                        onChange={(e) => setClientForm((p) => ({ ...p, phone2: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Due\u00f1o</div>
-                      <Input
-                        autoComplete="off"
-                        placeholder="Opcional"
-                        value={clientForm.ownerName}
-                        onChange={(e) => setClientForm((p) => ({ ...p, ownerName: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Encargado</div>
-                      <Input
-                        autoComplete="off"
-                        placeholder="Opcional"
-                        value={clientForm.managerName}
-                        onChange={(e) => setClientForm((p) => ({ ...p, managerName: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Identificaci\u00f3n encargado</div>
-                    <Input
-                      autoComplete="off"
-                      placeholder="Opcional"
-                      value={clientForm.managerId}
-                      onChange={(e) => setClientForm((p) => ({ ...p, managerId: e.target.value }))}
-                    />
-                  </div>
-
-                  <Button type="submit" disabled={creatingClient}>
-                    {creatingClient ? "Creando..." : "Crear cliente"}
-                  </Button>
-                </form>
-              </div>
-            </Card>
-
-            <Card className="p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-slate-900 flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-emerald-600" />
-                  Hoteles
-                </div>
-                <div className="text-xs text-slate-500">{filteredHotels.length}</div>
-              </div>
-              <div className="text-xs text-slate-500">
-                Filtro:{" "}
-                {selectedClientId
-                  ? selectedClientId === CLIENT_FILTER_NONE
-                    ? "Sin empresa"
-                    : selectedClient?.name || "Empresa"
-                  : "Todos"}
-              </div>
-              <Input placeholder="Buscar hotel..." value={q} onChange={(e) => setQ(e.target.value)} />
-              <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
-                {filteredHotels.map((h) => (
-                  <button
-                    key={h.id}
-                    type="button"
-                    onClick={() => setSelectedHotelId(h.id)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
-                      selectedHotelId === h.id ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
-                    }`}
-                  >
-                    <div className="font-semibold text-slate-900 truncate">{h.name}</div>
-                    <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
-                      <span>{MEMBERSHIP_LABELS[h.membership] || h.membership}</span>
-                      <span>{fmtDate(h.createdAt)}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate">
-                      Empresa: {h.saasClientName || "-"}
-                    </div>
-                  </button>
-                ))}
-                {!loadingHotels && filteredHotels.length === 0 && (
-                  <div className="text-sm text-slate-500">No hay hoteles.</div>
-                )}
-              </div>
-            </Card>
-
-            <Card className="p-4 space-y-3">
-              <div className="font-semibold text-slate-900">Hotel crear</div>
-              <form
-                autoComplete="off"
-                className="grid grid-cols-1 gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  onCreateHotel();
-                }}
-              >
-                {/* Trampa de autofill: evita que el navegador pegue el usuario master aquí */}
-                <input
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  className="hidden"
-                  type="text"
-                  name="username"
-                  autoComplete="username"
-                />
-                <input
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  className="hidden"
-                  type="email"
-                  name="email"
-                  autoComplete="email"
-                />
-                <input
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  className="hidden"
-                  type="password"
-                  name="password"
-                  autoComplete="current-password"
-                />
-
-                <div className="space-y-1">
-                  <div className="px-1 text-xs text-slate-600">Nombre del hotel</div>
-                  <Input
-                    name="hotelName"
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                {createTab === "client" ? (
+                  <form
                     autoComplete="off"
-                    placeholder="Ej: Kazehana"
-                    value={createForm.name}
-                    onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <div className="px-1 text-xs text-slate-600">Cliente (empresa)</div>
-                  <select
-                    name="hotelClientId"
-                    className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
-                    value={createForm.clientId}
-                    onChange={(e) => setCreateForm((p) => ({ ...p, clientId: e.target.value }))}
+                    className="grid grid-cols-1 gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      onCreateClient();
+                    }}
                   >
-                    <option value="">Selecciona una empresa...</option>
-                    {(clients || []).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Nombre de la empresa</div>
+                      <Input
+                        autoComplete="off"
+                        placeholder="Ej: Grupo Kazehana"
+                        value={clientForm.name}
+                        onChange={(e) => setClientForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Membresía</div>
-                    <select
-                      name="hotelMembership"
-                      className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
-                      value={createForm.membership}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, membership: e.target.value }))}
-                    >
-                      {MEMBERSHIPS.map((m) => (
-                        <option key={m} value={m}>
-                          {MEMBERSHIP_LABELS[m] || m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Identificacion</div>
+                        <Input
+                          autoComplete="off"
+                          placeholder="Cedula juridica"
+                          value={clientForm.companyId}
+                          onChange={(e) => setClientForm((p) => ({ ...p, companyId: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="px-1 text-slate-600 text-xs">Email</div>
+                        <Input
+                          type="email"
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={clientForm.email}
+                          onChange={(e) => setClientForm((p) => ({ ...p, email: e.target.value }))}
+                        />
+                      </div>
+                    </div>
 
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Moneda</div>
-                    <select
-                      name="hotelCurrency"
-                      className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
-                      value={createForm.currency}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, currency: e.target.value }))}
-                    >
-                      {CURRENCIES.map((c) => (
-                        <option key={c.code} value={c.code}>
-                          {c.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Telefono 1</div>
+                        <Input
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={clientForm.phone1}
+                          onChange={(e) => setClientForm((p) => ({ ...p, phone1: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Telefono 2</div>
+                        <Input
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={clientForm.phone2}
+                          onChange={(e) => setClientForm((p) => ({ ...p, phone2: e.target.value }))}
+                        />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Costo mensual ({createForm.currency})</div>
-                    <Input
-                      name="hotelMembershipMonthlyFee"
-                      money
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      autoComplete="off"
-                      placeholder="0.00"
-                      value={createForm.membershipMonthlyFee}
-                      onChange={(e) =>
-                        setCreateForm((p) => ({
-                          ...p,
-                          membershipMonthlyFee: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Dueno</div>
+                        <Input
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={clientForm.ownerName}
+                          onChange={(e) => setClientForm((p) => ({ ...p, ownerName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Encargado</div>
+                        <Input
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={clientForm.managerName}
+                          onChange={(e) => setClientForm((p) => ({ ...p, managerName: e.target.value }))}
+                        />
+                      </div>
+                    </div>
 
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Teléfono principal</div>
-                    <Input
-                      name="hotelPhone1"
-                      autoComplete="off"
-                      placeholder="Ej: +506 8888-8888"
-                      value={createForm.phone1}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, phone1: e.target.value }))}
-                    />
-                  </div>
-                </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Identificacion encargado</div>
+                      <Input
+                        autoComplete="off"
+                        placeholder="Opcional"
+                        value={clientForm.managerId}
+                        onChange={(e) => setClientForm((p) => ({ ...p, managerId: e.target.value }))}
+                      />
+                    </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Teléfono secundario</div>
-                    <Input
-                      name="hotelPhone2"
-                      autoComplete="off"
-                      placeholder="Opcional"
-                      value={createForm.phone2}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, phone2: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Identificación empresa</div>
-                    <Input
-                      name="hotelCompanyId"
-                      autoComplete="off"
-                      placeholder="Cédula jurídica"
-                      value={createForm.companyId}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, companyId: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Nombre del dueño</div>
-                    <Input
-                      name="hotelOwnerName"
-                      autoComplete="off"
-                      placeholder="Opcional"
-                      value={createForm.ownerName}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, ownerName: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Gerente / encargado</div>
-                    <Input
-                      name="hotelManagerName"
-                      autoComplete="off"
-                      placeholder="Opcional"
-                      value={createForm.managerName}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, managerName: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="px-1 text-xs text-slate-600">Identificación encargado</div>
-                  <Input
-                    name="hotelManagerId"
+                    <Button type="submit" disabled={creatingClient}>
+                      {creatingClient ? "Creando..." : "Crear cliente"}
+                    </Button>
+                  </form>
+                ) : (
+                  <form
                     autoComplete="off"
-                    placeholder="Cédula"
-                    value={createForm.managerId}
-                    onChange={(e) => setCreateForm((p) => ({ ...p, managerId: e.target.value }))}
-                  />
-                </div>
-
-                <div className="mt-1 border-t border-slate-200 pt-3 grid grid-cols-1 gap-2">
-                  <div className="text-sm font-semibold text-slate-900">Administrador del hotel</div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Nombre visible</div>
-                    <Input
-                      name="hotelAdminName"
-                      autoComplete="off"
-                      placeholder="Nombre del administrador"
-                      value={createForm.adminName}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, adminName: e.target.value }))}
+                    className="grid grid-cols-1 gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      onCreateHotel();
+                    }}
+                  >
+                    <input
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      className="hidden"
+                      type="text"
+                      name="username"
+                      autoComplete="username"
                     />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Email</div>
-                    <Input
-                      name="hotelAdminEmail"
+                    <input
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      className="hidden"
                       type="email"
-                      autoComplete="off"
-                      placeholder="Email del administrador"
-                      value={createForm.adminEmail}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, adminEmail: e.target.value }))}
+                      name="email"
+                      autoComplete="email"
                     />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Contraseña</div>
-                    <Input
-                      name="hotelAdminPassword"
+                    <input
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      className="hidden"
                       type="password"
-                      autoComplete="new-password"
-                      placeholder="Contraseña del administrador (min 4)"
-                      value={createForm.adminPassword}
-                      onChange={(e) => setCreateForm((p) => ({ ...p, adminPassword: e.target.value }))}
+                      name="password"
+                      autoComplete="current-password"
                     />
-                  </div>
-                </div>
 
-                <Button type="submit" disabled={creating || !createForm.clientId}>
-                  {creating ? "Creando..." : "Crear"}
-                </Button>
-              </form>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Nombre del hotel</div>
+                      <Input
+                        name="hotelName"
+                        autoComplete="off"
+                        placeholder="Ej: Kazehana"
+                        value={createForm.name}
+                        onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Cliente (empresa)</div>
+                      <select
+                        name="hotelClientId"
+                        className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                        value={createForm.clientId}
+                        onChange={(e) => setCreateForm((p) => ({ ...p, clientId: e.target.value }))}
+                      >
+                        <option value="">Selecciona una empresa...</option>
+                        {(clients || []).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Membresada</div>
+                        <select
+                          name="hotelMembership"
+                          className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                          value={createForm.membership}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, membership: e.target.value }))}
+                        >
+                          {MEMBERSHIPS.map((m) => (
+                            <option key={m} value={m}>
+                              {MEMBERSHIP_LABELS[m] || m}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Moneda</div>
+                        <select
+                          name="hotelCurrency"
+                          className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                          value={createForm.currency}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, currency: e.target.value }))}
+                        >
+                          {CURRENCIES.map((c) => (
+                            <option key={c.code} value={c.code}>
+                              {c.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Costo mensual ({createForm.currency})</div>
+                        <Input
+                          name="hotelMembershipMonthlyFee"
+                          money
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          autoComplete="off"
+                          placeholder="0.00"
+                          value={createForm.membershipMonthlyFee}
+                          onChange={(e) =>
+                            setCreateForm((p) => ({
+                              ...p,
+                              membershipMonthlyFee: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Telefono principal</div>
+                        <Input
+                          name="hotelPhone1"
+                          autoComplete="off"
+                          placeholder="Ej: +506 8888-8888"
+                          value={createForm.phone1}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, phone1: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Telefono secundario</div>
+                        <Input
+                          name="hotelPhone2"
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={createForm.phone2}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, phone2: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Identificacion empresa</div>
+                        <Input
+                          name="hotelCompanyId"
+                          autoComplete="off"
+                          placeholder="Cedula juridica"
+                          value={createForm.companyId}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, companyId: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Nombre del dueno</div>
+                        <Input
+                          name="hotelOwnerName"
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={createForm.ownerName}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, ownerName: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Gerente / encargado</div>
+                        <Input
+                          name="hotelManagerName"
+                          autoComplete="off"
+                          placeholder="Opcional"
+                          value={createForm.managerName}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, managerName: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Identificacion encargado</div>
+                      <Input
+                        name="hotelManagerId"
+                        autoComplete="off"
+                        placeholder="Cedula"
+                        value={createForm.managerId}
+                        onChange={(e) => setCreateForm((p) => ({ ...p, managerId: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="mt-1 border-t border-slate-200 pt-3 grid grid-cols-1 gap-2">
+                      <div className="text-sm font-semibold text-slate-900">Usuario del hotel (login principal)</div>
+                      <div className="text-xs text-slate-500">
+                        Si dejas el email o la contraseña vacíos, se generarán automáticamente.
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Nombre visible</div>
+                        <Input
+                          name="hotelUserName"
+                          autoComplete="off"
+                          placeholder="Usuario principal"
+                          value={createForm.hotelUserName}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, hotelUserName: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Email</div>
+                          <Input
+                            name="hotelUserEmail"
+                            type="email"
+                            autoComplete="off"
+                            placeholder="Opcional"
+                            value={createForm.hotelUserEmail}
+                            onChange={(e) => setCreateForm((p) => ({ ...p, hotelUserEmail: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Contraseña</div>
+                          <Input
+                            name="hotelUserPassword"
+                            type="password"
+                            autoComplete="new-password"
+                            placeholder="Opcional"
+                            value={createForm.hotelUserPassword}
+                            onChange={(e) => setCreateForm((p) => ({ ...p, hotelUserPassword: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-1 border-t border-slate-200 pt-3 grid grid-cols-1 gap-2">
+                      <div className="text-sm font-semibold text-slate-900">Administrador del launcher</div>
+
+                      <div className="space-y-1">
+                        <div className="px-1 text-xs text-slate-600">Nombre visible</div>
+                        <Input
+                          name="hotelAdminName"
+                          autoComplete="off"
+                          placeholder="Nombre del administrador"
+                          value={createForm.adminName}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, adminName: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Usuario / Email</div>
+                        <Input
+                          name="hotelAdminEmail"
+                          type="email"
+                          autoComplete="off"
+                          placeholder="Email del administrador"
+                          value={createForm.adminEmail}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, adminEmail: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Contraseña</div>
+                        <Input
+                          name="hotelAdminPassword"
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder="Contrasena del administrador (min 4)"
+                          value={createForm.adminPassword}
+                          onChange={(e) => setCreateForm((p) => ({ ...p, adminPassword: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    {lastCreatedCredentials ? (
+                      <Card className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900">
+                        <div className="text-sm font-semibold">Credenciales generadas</div>
+                        <div className="text-xs mt-2">
+                          Usuario del hotel:{" "}
+                          <span className="font-mono">
+                            {lastCreatedCredentials?.hotelUser?.email || "-"}
+                          </span>
+                        </div>
+                        <div className="text-xs">
+                          Contraseña:{" "}
+                          <span className="font-mono">
+                            {lastCreatedCredentials?.hotelUser?.password || "-"}
+                          </span>
+                        </div>
+                        <div className="text-xs mt-2">
+                          Launcher admin:{" "}
+                          <span className="font-mono">
+                            {lastCreatedCredentials?.launcherAdmin?.username || "-"}
+                          </span>
+                        </div>
+                        <div className="text-xs">
+                          Contraseña:{" "}
+                          <span className="font-mono">
+                            {lastCreatedCredentials?.launcherAdmin?.password || "-"}
+                          </span>
+                        </div>
+                      </Card>
+                    ) : null}
+
+                    <Button type="submit" disabled={creating || !createForm.clientId}>
+                      {creating ? "Creando..." : "Crear"}
+                    </Button>
+                  </form>
+                )}
+              </div>
             </Card>
-          </div>
-
-          <div className="lg:col-span-2 space-y-4">
+</div><div className="lg:col-span-2 space-y-4">
             <Card className="p-5 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-xl font-semibold text-slate-900">{selectedHotel?.name || "-"}</div>
-                  <div className="text-sm text-slate-500">
-                    ID: <span className="font-mono">{selectedHotel?.id || "-"}</span>
-                  </div>
+                  <div className="text-sm text-slate-500">Codigo: {fmtHotelNumber(selectedHotel?.number)}</div>
                   <div className="text-sm text-slate-500">
                     Empresa: <span className="font-medium text-slate-800">{selectedHotel?.saasClientName || "-"}</span>
                   </div>
@@ -920,6 +1210,10 @@ export default function Launchergestor() {
                     </button>
                   </div>
 
+                  <Button variant="outline" onClick={onStartEditHotel} disabled={!selectedHotelId}>
+                    Editar
+                  </Button>
+
                   {panel === "billing" ? (
                     <Button
                       variant="outline"
@@ -934,7 +1228,7 @@ export default function Launchergestor() {
 
               <div className="grid md:grid-cols-4 gap-3">
                 <Card className="p-3 bg-white border border-slate-200">
-                  <div className="text-xs text-slate-500">Membresía</div>
+                  <div className="text-xs text-slate-500">Membresia</div>
                   <div className="font-semibold text-slate-900">
                     {selectedHotel?.membership
                       ? MEMBERSHIP_LABELS[selectedHotel.membership] || selectedHotel.membership
@@ -959,6 +1253,192 @@ export default function Launchergestor() {
                 </Card>
               </div>
 
+              {editingHotel ? (
+                <Card className="p-4 space-y-3">
+                  <div className="text-sm font-semibold text-slate-900">Editar hotel</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Nombre</div>
+                      <Input
+                        value={hotelEditForm.name}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, name: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Cliente (empresa)</div>
+                      <select
+                        className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                        value={hotelEditForm.clientId || ""}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, clientId: e.target.value }))}
+                      >
+                        <option value="">Sin empresa</option>
+                        {(clients || []).map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Membresia</div>
+                      <select
+                        className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                        value={hotelEditForm.membership}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, membership: e.target.value }))}
+                      >
+                        {MEMBERSHIPS.map((m) => (
+                          <option key={m} value={m}>
+                            {MEMBERSHIP_LABELS[m] || m}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Moneda</div>
+                      <select
+                        className="h-10 w-full rounded-xl border px-3 text-sm bg-white"
+                        value={hotelEditForm.currency}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, currency: e.target.value }))}
+                      >
+                        {CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Costo mensual</div>
+                      <Input
+                        money
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={hotelEditForm.membershipMonthlyFee}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, membershipMonthlyFee: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Telefono principal</div>
+                      <Input
+                        value={hotelEditForm.phone1}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, phone1: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Telefono secundario</div>
+                      <Input
+                        value={hotelEditForm.phone2}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, phone2: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Nombre del dueno</div>
+                      <Input
+                        value={hotelEditForm.ownerName}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, ownerName: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Gerente / encargado</div>
+                      <Input
+                        value={hotelEditForm.managerName}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, managerName: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Identificación empresa</div>
+                      <Input
+                        value={hotelEditForm.companyId}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, companyId: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="px-1 text-xs text-slate-600">Identificación encargado</div>
+                      <Input
+                        value={hotelEditForm.managerId}
+                        onChange={(e) => setHotelEditForm((p) => ({ ...p, managerId: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button variant="outline" onClick={onCancelEditHotel}>
+                      Cancelar
+                    </Button>
+                    <Button onClick={onSaveEditHotel} disabled={savingHotel}>
+                      {savingHotel ? "Guardando..." : "Guardar cambios"}
+                    </Button>
+                  </div>
+                </Card>
+              ) : null}
+
+              {editingHotel ? (
+                <Card className="p-4 space-y-3">
+                  <div className="text-sm font-semibold text-slate-900">Administrador principal</div>
+                  {adminLoading ? (
+                    <div className="text-sm text-slate-500">Cargando...</div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Nombre</div>
+                          <Input
+                            value={adminForm.name}
+                            onChange={(e) => setAdminForm((p) => ({ ...p, name: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Email</div>
+                          <Input
+                            type="email"
+                            value={adminForm.email}
+                            onChange={(e) => setAdminForm((p) => ({ ...p, email: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Nueva contraseña</div>
+                          <Input
+                            type="password"
+                            value={adminForm.password}
+                            onChange={(e) => setAdminForm((p) => ({ ...p, password: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Confirmar contraseña</div>
+                          <Input
+                            type="password"
+                            value={adminForm.confirmPassword}
+                            onChange={(e) => setAdminForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end">
+                        <Button onClick={onSaveAdmin} disabled={adminSaving}>
+                          {adminSaving ? "Guardando..." : "Guardar administrador"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </Card>
+              ) : null}
+
               <div className="grid md:grid-cols-3 gap-3">
                 <Card className="p-3 bg-white border border-slate-200">
                   <div className="text-xs text-slate-500">Contacto</div>
@@ -970,7 +1450,7 @@ export default function Launchergestor() {
                 <Card className="p-3 bg-white border border-slate-200">
                   <div className="text-xs text-slate-500">Responsables</div>
                   <div className="text-sm text-slate-900">
-                    {selectedHotel?.ownerName ? <div>Dueño: {selectedHotel.ownerName}</div> : <div>-</div>}
+                    {selectedHotel?.ownerName ? <div>Dueno: {selectedHotel.ownerName}</div> : <div>-</div>}
                     {selectedHotel?.managerName ? <div>Encargado: {selectedHotel.managerName}</div> : null}
                   </div>
                 </Card>
@@ -1205,3 +1685,20 @@ export default function Launchergestor() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

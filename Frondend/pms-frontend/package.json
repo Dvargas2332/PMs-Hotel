@@ -15,11 +15,9 @@
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
     "@tippyjs/react": "^4.2.6",
-    "audit": "^0.0.6",
     "axios": "^1.12.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "fix": "^0.0.6",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.541.0",
     "middleware": "^1.0.0",
@@ -28,7 +26,6 @@
     "react-calendar-timeline": "^0.30.0-beta.4",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "react-scripts": "^5.0.1",
     "recharts": "^3.1.2",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.3.1",
@@ -38,10 +35,10 @@
     "zustand": "^5.0.8"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "start": "vite",
+    "build": "vite build",
+    "test": "vitest run",
+    "preview": "vite preview"
   },
   "eslintConfig": {
     "extends": [
@@ -62,7 +59,16 @@
     ]
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.21",
-    "postcss": "^8.5.6"
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "vite": "^7.1.5",
+    "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "jsdom": "^22.1.0",
+    "whatwg-url": "^12.0.1",
+    "tr46": "^4.1.1"
   }
 }

@@ -34,11 +34,11 @@ export async function launcherLogin(req: Request, res: Response) {
 
   // Optional: if a hotel token is provided, scope the launcher login to that hotel.
   const authHeader = req.headers.authorization || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const authToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
   let tokenHotelId: string | undefined;
-  if (token) {
+  if (authToken) {
     try {
-      const payload = verify<AuthUser>(token);
+      const payload = verify<AuthUser>(authToken);
       tokenHotelId = payload?.hotelId;
       if (!tokenHotelId) {
         return res.status(401).json({ message: "Credenciales invalidas" });

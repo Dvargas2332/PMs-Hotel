@@ -8,12 +8,13 @@ import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
-const OCCUPIED_TABLE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/table-occupied.png`;
-const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
-const CAMASTRO_OCCUPIED_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-occupied.png`;
-const TABURETE_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-free.png`;
-const TABURETE_OCCUPIED_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-occupied.png`;
-const BAR_DECOR_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/bar.svg`;
+const BASE_URL = import.meta.env.BASE_URL || "/";
+const OCCUPIED_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-occupied.png`;
+const CAMASTRO_FREE_ICON_URL = `${BASE_URL}assets/restaurant/camastro-free.png`;
+const CAMASTRO_OCCUPIED_ICON_URL = `${BASE_URL}assets/restaurant/camastro-occupied.png`;
+const TABURETE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/taburete-free.png`;
+const TABURETE_OCCUPIED_ICON_URL = `${BASE_URL}assets/restaurant/taburete-occupied.png`;
+const BAR_DECOR_ICON_URL = `${BASE_URL}assets/restaurant/bar.svg`;
 
 function formatMoney(n) {
   return `$${(Number(n) || 0).toFixed(2)}`;
@@ -1492,7 +1493,8 @@ const subCategories = useMemo(() => {
     setSectionLauncher(false);
   };
 
-  const getSplitItemKey = (item, idx) => getOrderItemKey(item) || String(item?.id ?? item?.code ?? item?.name ?? idx ?? "");
+  const getSplitItemKey = (item, idx) =>
+    getOrderItemKey(item) || String(item?.id ?? item?.code ?? item?.name ?? idx ?? "");
   const getItemQty = (item) => Math.max(0, Math.floor(Number(item?.qty || 0)));
 
   const openSplitOrderModal = () => {
@@ -1660,7 +1662,7 @@ const subCategories = useMemo(() => {
       const next = { ...prev };
       if (isSelected) {
         next[key] = "";
-      } else if (!String(next[key] ?? "").trim()) {
+        } else if (!String(next[key] ?? "").trim()) {
         const remaining = Math.max(0, totalDue - sumNumbers(prev));
         next[key] = remaining ? remaining.toFixed(2) : "";
       }
@@ -1782,20 +1784,20 @@ const subCategories = useMemo(() => {
 
         const cur = nextList[idx] || buildLocalOrder();
         const next = updater(cur);
-          const staffWaiterId = activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined;
-          const merged = {
-            ...cur,
-            ...next,
-            items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
-            covers: next?.covers ?? cur?.covers ?? covers,
-            note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
-            serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
-            roomId: next?.roomId || cur?.roomId || roomCharge || "",
-            status: typeof next?.status === "string" ? next.status : cur?.status || "",
-            sentItems: next?.sentItems || cur?.sentItems || {},
-            sentAt: next?.sentAt || cur?.sentAt || "",
-            waiterId: next?.waiterId || cur?.waiterId || staffWaiterId,
-          };
+        const staffWaiterId = activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined;
+        const merged = {
+          ...cur,
+          ...next,
+          items: Array.isArray(next?.items) ? next.items : Array.isArray(cur.items) ? cur.items : [],
+          covers: next?.covers ?? cur?.covers ?? covers,
+          note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
+          serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
+          roomId: next?.roomId || cur?.roomId || roomCharge || "",
+          status: typeof next?.status === "string" ? next.status : cur?.status || "",
+          sentItems: next?.sentItems || cur?.sentItems || {},
+          sentAt: next?.sentAt || cur?.sentAt || "",
+          waiterId: next?.waiterId || cur?.waiterId || staffWaiterId,
+        };
 
         nextList[idx] = merged;
         nextActiveKey = getOrderKey(merged);
@@ -1807,13 +1809,13 @@ const subCategories = useMemo(() => {
           createNew: !merged.id && !merged.orderId,
           sectionId: merged.sectionId || selectedSection?.id || null,
           tableId,
-            items: Array.isArray(merged.items) ? merged.items : [],
-            note: merged.note || "",
-            covers: merged.covers || 0,
-            serviceType: merged.serviceType || "DINE_IN",
-            roomId: merged.roomId || "",
-            waiterId: merged.waiterId || undefined,
-          });
+          items: Array.isArray(merged.items) ? merged.items : [],
+          note: merged.note || "",
+          covers: merged.covers || 0,
+          serviceType: merged.serviceType || "DINE_IN",
+          roomId: merged.roomId || "",
+          waiterId: merged.waiterId || undefined,
+        });
 
         return { ...prev, [tableId]: nextList };
       });
@@ -2033,7 +2035,7 @@ const subCategories = useMemo(() => {
     []
   );
   const getOrderItemKey = useCallback(
-    (item) => `${String(item?.id ?? item?.itemId ?? "")}::${String(item?.variantKey || "")}`,
+    (item) => `${String(item?.id ?? item?.itemId ?? "")}::${String(item?.variantKey ?? "")}`,
     []
   );
   const getItemSizes = useCallback((item) => (Array.isArray(item?.sizes) ? item.sizes : []), []);
@@ -2170,7 +2172,7 @@ const subCategories = useMemo(() => {
   const openPrintConfirm = useCallback(
     ({ title, payload, totals: previewTotals, onConfirm }) => {
       pendingPrintRef.current = onConfirm;
-      setPrintConfirmTitle(title || "Confirmar impresi??n");
+      setPrintConfirmTitle(title || "Confirmar impresi?n");
       setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
       setPrintConfirmOpen(true);
     },

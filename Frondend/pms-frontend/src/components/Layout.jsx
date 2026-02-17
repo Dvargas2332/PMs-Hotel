@@ -48,7 +48,8 @@ export default function Layout() {
     const onPush = (e) => {
       const item = e.detail;
       if (!item) return;
-      setAlerts((prev) => [{ id: crypto.randomUUID?.() ?? Date.now(), ...item }, ...prev]);
+      const id = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : String(Date.now());
+      setAlerts((prev) => [{ id, ...item }, ...prev]);
       setAlertsOpen(true);
     };
 
@@ -277,10 +278,10 @@ export default function Layout() {
                 {alerts.map((a) => {
                   const badge = TYPE_STYLES[a.type] || TYPE_STYLES.system;
                   return (
-                    <li key={a.id ?? a.title} className="rounded-lg border bg-white p-3">
+                    <li key={a.id || a.title} className="rounded-lg border bg-white p-3">
                       <div className="flex items-center justify-between">
                         <span className={`px-2 py-0.5 rounded text-xs ${badge}`}>
-                          {a.type ?? "system"}
+                          {a.type || "system"}
                         </span>
                         <span className="text-xs text-gray-500">
                           {a.at ? new Date(a.at).toLocaleTimeString() : ""}

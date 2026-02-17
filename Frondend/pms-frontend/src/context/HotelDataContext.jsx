@@ -25,8 +25,18 @@ const mapRoomStatus = (s) => {
 };
 const mapRoom = (room) => ({
   id: String(room.id),
-  number: room.number ?? room.title ?? String(room.id),
-  title: room.title ?? room.number ?? String(room.id),
+  number:
+    room.number != null
+      ? String(room.number)
+      : room.title != null
+        ? String(room.title)
+        : String(room.id),
+  title:
+    room.title != null
+      ? String(room.title)
+      : room.number != null
+        ? String(room.number)
+        : String(room.id),
   type: room.type,
   status: mapRoomStatus(room.status),
   rawStatus: room.status,
@@ -44,13 +54,13 @@ const mapReservation = (r) => {
     mealPlanId: r.mealPlanId,
     // Si no hay habitacion asignada, dejamos roomId en null para manejar lista de espera
     roomId: r.roomId ? String(r.roomId) : null,
-    roomNumber: r.room?.number ?? (r.roomId ? String(r.roomId) : null),
+    roomNumber: r.room?.number != null ? String(r.room.number) : null,
     guestId: r.guestId,
     guestName: guestName || r.guestId,
     checkInDate: toYMD(r.checkIn) || toYMD(r.checkInDate),
     checkOutDate: toYMD(r.checkOut) || toYMD(r.checkOutDate),
-    adults: r.adults ?? 2,
-    children: r.children ?? 0,
+    adults: r.adults != null ? Number(r.adults) : 2,
+    children: r.children != null ? Number(r.children) : 0,
     payments: Array.isArray(r.payments) ? r.payments : [],
     channel: r.channel || r.source || "",
     status: mapStatus(r.status),

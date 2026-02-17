@@ -672,7 +672,7 @@ export const mockApi = {
     if (path === "/restaurant/close") {
       const now = new Date().toISOString();
       const stats = restaurantStats();
-      const reported = asNumber(payload?.totals?.reported ?? payload?.reported);
+      const reported = asNumber(payload?.totals?.reported ?? payload?.reported ?? 0);
       const system = stats.systemTotal;
       const close = {
         id: payload.id || Math.random().toString(36).slice(2, 8),

@@ -43,7 +43,7 @@ const mapRemoteReservation = (r) => ({
 });
 const mapRemoteRoom = (r) => ({
   id: String(r.id),
-  title: r.title ?? r.number ?? String(r.id),
+  title: r.title || (r.number != null ? String(r.number) : String(r.id)),
   type: r.type,
 });
 
@@ -80,8 +80,8 @@ export default function Planning() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const roomsData = remoteRooms ?? rooms;
-  const reservationsData = remoteReservations ?? reservations;
+  const roomsData = remoteRooms || rooms;
+  const reservationsData = remoteReservations || reservations;
   const windowDays = useMemo(() => Math.max(1, viewEnd.diff(viewStart, "days")), [viewStart, viewEnd]);
   const isCompact = viewport.width < 1024;
   const timelineHeight = Math.max(300, viewport.height - 260);
@@ -103,7 +103,7 @@ export default function Planning() {
       list.forEach((r) => {
         result.push({
           id: String(r.id),
-          title: r.title ?? r.number ?? String(r.id),
+          title: r.title || (r.number != null ? String(r.number) : String(r.id)),
           type,
           isTypeHeader: false,
         });
@@ -115,7 +115,7 @@ export default function Planning() {
   const roomTitleById = useMemo(() => {
     const map = new Map();
     (roomsData || []).forEach((r) => {
-      map.set(String(r.id), r.title ?? r.number ?? String(r.id));
+      map.set(String(r.id), r.title || (r.number != null ? String(r.number) : String(r.id)));
     });
     return map;
   }, [roomsData]);

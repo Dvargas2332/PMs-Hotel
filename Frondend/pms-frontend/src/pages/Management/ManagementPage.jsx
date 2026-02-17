@@ -592,8 +592,8 @@ export default function ManagementPage() {
                   <div className="text-sm text-gray-600">No alerts.</div>
                 ) : (
                   <ul className="space-y-2">
-                    {alerts.map((a) => (
-                      <li key={a.id ?? a.title} className="border rounded-lg p-2 text-sm">
+                      {alerts.map((a) => (
+                        <li key={a.id ?? a.title} className="border rounded-lg p-2 text-sm">
                         <div className="font-medium text-gray-800">{a.title || "Alert"}</div>
                         {a.desc && <div className="text-gray-600 text-xs">{a.desc}</div>}
                         {a.at && <div className="text-gray-400 text-[11px] mt-1">{a.at}</div>}

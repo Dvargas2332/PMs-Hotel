@@ -65,4 +65,53 @@ input[type="number"]::-webkit-inner-spin-button {
 input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* ==== Launchergestor theme overrides (scoped) ==== */
+.lg-theme-dark {
+  background-color: #0a0f16;
+  color: #e5e7eb;
+}
+
+.lg-theme-dark .bg-slate-50 { background-color: #0a0f16 !important; }
+.lg-theme-dark .bg-white { background-color: #0f1a2b !important; }
+.lg-theme-dark .bg-neutral-50 { background-color: #121a2a !important; }
+.lg-theme-dark .border-slate-200 { border-color: #334155 !important; }
+.lg-theme-dark .border-neutral-200 { border-color: #334155 !important; }
+.lg-theme-dark .border-zinc-200 { border-color: #334155 !important; }
+.lg-theme-dark .text-slate-900 { color: #f8fafc !important; }
+.lg-theme-dark .text-slate-800 { color: #e2e8f0 !important; }
+.lg-theme-dark .text-slate-700 { color: #d0d7e2 !important; }
+.lg-theme-dark .text-slate-600 { color: #a3b2c7 !important; }
+.lg-theme-dark .text-slate-500 { color: #94a3b8 !important; }
+.lg-theme-dark .text-slate-400 { color: #7a8aa3 !important; }
+.lg-theme-dark .text-zinc-700 { color: #d0d7e2 !important; }
+
+.lg-theme-dark .bg-indigo-50 { background-color: #1c2638 !important; }
+.lg-theme-dark .border-indigo-300 { border-color: #475569 !important; }
+.lg-theme-dark .text-indigo-700 { color: #b4befe !important; }
+.lg-theme-dark .text-indigo-600 { color: #8ea0ff !important; }
+
+.lg-theme-dark .bg-emerald-50 { background-color: #12312a !important; }
+.lg-theme-dark .border-emerald-300 { border-color: #2b5b4a !important; }
+
+.lg-theme-dark .bg-zinc-900 { background-color: #1f2937 !important; }
+.lg-theme-dark .hover\\:bg-zinc-800:hover { background-color: #0f172a !important; }
+.lg-theme-dark .hover\\:bg-zinc-50:hover { background-color: #0f172a !important; }
+.lg-theme-dark .hover\\:bg-zinc-100:hover { background-color: #1f2937 !important; }
+.lg-theme-dark .hover\\:bg-slate-50:hover { background-color: #101827 !important; }
+.lg-theme-dark .hover\\:bg-slate-100:hover { background-color: #101827 !important; }
+
+.lg-theme-dark input,
+.lg-theme-dark select {
+  background-color: #0f172a;
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+.lg-theme-dark input::placeholder {
+  color: #7a8aa3;
+}
+
+.lg-theme-dark .file\\:bg-slate-100::file-selector-button { background-color: #1f2937 !important; }
+.lg-theme-dark .hover\\:file\\:bg-slate-200:hover::file-selector-button { background-color: #0f172a !important; }
   

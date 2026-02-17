@@ -16,17 +16,19 @@ export function startDailyChargesJob() {
       });
 
       for (const r of stays) {
-        const inv = r.invoice ?? await prisma.invoice.create({
-          data: {
-            reservationId: r.id,
-            guestId: r.guestId,
-            number: `INV-${today.toISOString().slice(0,10)}-${r.id.slice(0,6)}`,
-            status: "DRAFT",
-            hotelId: r.hotelId,
-            ...(r.room?.currency ? { currency: r.room.currency } : {}),
-          },
-          select: { id: true },
-        });
+        const inv =
+          r.invoice ??
+          (await prisma.invoice.create({
+            data: {
+              reservationId: r.id,
+              guestId: r.guestId,
+              number: `INV-${today.toISOString().slice(0, 10)}-${r.id.slice(0, 6)}`,
+              status: "DRAFT",
+              hotelId: r.hotelId,
+              ...(r.room?.currency ? { currency: r.room.currency } : {}),
+            },
+            select: { id: true },
+          }));
 
         const invoiceId = inv.id;
         const concept = `Alojamiento ${today.toISOString().slice(0,10)}`;

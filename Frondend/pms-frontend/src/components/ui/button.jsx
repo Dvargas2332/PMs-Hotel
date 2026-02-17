@@ -8,5 +8,11 @@ export function Button({ variant = "default", className = "", type = "button", .
     outline: "border border-zinc-200 bg-white hover:bg-zinc-50",
     ghost: "text-zinc-700 hover:bg-zinc-100",
   };
-  return <button type={type} className={`${base} ${variants[variant] ?? variants.default} ${className}`} {...props} />;
+  return (
+    <button
+      type={type}
+      className={`${base} ${variants[variant] ?? variants.default} ${className}`}
+      {...props}
+    />
+  );
 }

@@ -1456,9 +1456,10 @@ export default function RestaurantConfig() {
     );
   };
 
-  const CAMASTRO_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/camastro-free.png`;
-  const TABURETE_FREE_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/taburete-free.png`;
-  const BAR_DECOR_ICON_URL = `${process.env.PUBLIC_URL || ""}/assets/restaurant/bar.svg`;
+  const BASE_URL = import.meta.env.BASE_URL || "/";
+  const CAMASTRO_FREE_ICON_URL = `${BASE_URL}assets/restaurant/camastro-free.png`;
+  const TABURETE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/taburete-free.png`;
+  const BAR_DECOR_ICON_URL = `${BASE_URL}assets/restaurant/bar.svg`;
 
   const CamastroFreeIcon = ({ className = "" }) => {
     const [ok, setOk] = React.useState(true);
@@ -1830,7 +1831,7 @@ export default function RestaurantConfig() {
                   </Button>
                 </div>
                 <div className="text-xs text-slate-500">Arrastra la barra en el plano para ubicarla.</div>
-                {(barObjects || []).length === 0 && <div className="text-sm text-gray-600">No hay barras en esta secciÃ³n.</div>}
+                {(barObjects || []).length === 0 && <div className="text-sm text-gray-600">No hay barras en esta secci?n.</div>}
                 {(barObjects || []).length > 0 && (
                   <div className="space-y-2">
                     {barObjects.map((o) => {

@@ -262,7 +262,7 @@ export default function Contracts() {
                 >
                   <td className="py-2 pl-4">{x.id}</td>
                   <td>{x.channel}</td>
-                  <td>{((x.commission ?? 0) * 100).toFixed(2)}%</td>
+                    <td>{((x.commission ?? 0) * 100).toFixed(2)}%</td>
                   <td>{rpList || "—"}</td>
                   <td>{x.mealPlanId || "—"}</td>
                   <td className="pr-4 py-2 text-right space-x-1">

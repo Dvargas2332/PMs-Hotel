@@ -66,8 +66,8 @@ export function useHabitacionesMetrics() {
       const status = current ? "occupied" : baseStatus;
       return {
         id: roomId,
-        number: room.title ?? roomId,
-        type: room.type ?? room.category ?? "",
+        number: room.title || room.number || roomId,
+        type: room.type || room.category || "",
         status,
         guestName: current?.guestName || null,
       };

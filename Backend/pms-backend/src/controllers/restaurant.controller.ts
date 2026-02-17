@@ -7,6 +7,7 @@ import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
+import ExcelJS from "exceljs";
 
 const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
@@ -312,7 +313,7 @@ async function ensureFamilyCode(hotelId: string, familyId: string) {
       throw err;
     }
   }
-  throw new Error("No se pudo asignar el cÃ³digo de familia");
+  throw new Error("No se pudo asignar el c?digo de familia");
 }
 
 async function ensureSubFamilyCode(hotelId: string, subFamilyId: string) {
@@ -341,7 +342,7 @@ async function ensureSubFamilyCode(hotelId: string, subFamilyId: string) {
       throw err;
     }
   }
-  throw new Error("No se pudo asignar el cÃ³digo de subfamilia");
+  throw new Error("No se pudo asignar el c?digo de subfamilia");
 }
 
 async function ensureSubSubFamilyCode(hotelId: string, subSubFamilyId: string) {
@@ -370,7 +371,7 @@ async function ensureSubSubFamilyCode(hotelId: string, subSubFamilyId: string) {
       throw err;
     }
   }
-  throw new Error("No se pudo asignar el cÃ³digo de subsubfamilia");
+  throw new Error("No se pudo asignar el c?digo de subsubfamilia");
 }
 
 function buildItemPrefix(familyCode: string, subFamilyCode?: string | null, subSubFamilyCode?: string | null) {
@@ -478,7 +479,7 @@ export async function listSectionObjects(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const list = await prisma.restaurantSectionObject.findMany({
     where: { hotelId, sectionId: section.id },
@@ -500,7 +501,7 @@ export async function createSectionObject(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const kind = String(body.kind || "OTHER").toUpperCase();
@@ -541,7 +542,7 @@ export async function updateSectionObject(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const existing = await prisma.restaurantSectionObject.findFirst({
     where: { id: String(objectId), hotelId, sectionId: section.id },
@@ -581,7 +582,7 @@ export async function deleteSectionObject(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   await prisma.restaurantSectionObject.deleteMany({
     where: { id: String(objectId), hotelId, sectionId: section.id },
@@ -602,7 +603,7 @@ export async function updateTablePosition(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const internalTableId = toInternalId(hotelId, tableId);
   const table = await prisma.restaurantTable.findFirst({
@@ -640,7 +641,7 @@ export async function updateTableStyle(req: Request, res: Response) {
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
     select: { id: true },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const internalTableId = toInternalId(hotelId, tableId);
   const table = await prisma.restaurantTable.findFirst({
@@ -704,7 +705,7 @@ export async function saveSectionLayout(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const tables = Array.isArray(body.tables) ? body.tables : [];
@@ -806,7 +807,7 @@ export async function deleteSection(req: Request, res: Response) {
   const exists = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalId }, { id: sectionId }] },
   });
-  if (!exists) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!exists) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   await prisma.restaurantSection.deleteMany({
     where: { hotelId: user.hotelId, OR: [{ id: internalId }, { id: sectionId }] },
@@ -829,7 +830,7 @@ export async function addTableToSection(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const patch = {
     name,
@@ -874,7 +875,7 @@ export async function deleteTableFromSection(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const table = await prisma.restaurantTable.findFirst({
     where: {
@@ -1003,7 +1004,7 @@ export async function addMenuItem(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const item = await prisma.restaurantMenuItem.create({
     data: {
@@ -1018,7 +1019,7 @@ export async function addMenuItem(req: Request, res: Response) {
   res.json(item);
 }
 
-// ====== MenÃºs (nuevo) ======
+// ====== Men?s (nuevo) ======
 
 export async function listMenus(req: Request, res: Response) {
   // @ts-ignore
@@ -1089,7 +1090,7 @@ export async function updateMenu(req: Request, res: Response) {
   if (!menuId) return res.status(400).json({ message: "menuId requerido" });
 
   const existing = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!existing) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!existing) return res.status(404).json({ message: "Men? no encontrado" });
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const data: any = {};
@@ -1109,7 +1110,7 @@ export async function deleteMenu(req: Request, res: Response) {
   if (!menuId) return res.status(400).json({ message: "menuId requerido" });
 
   const existing = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!existing) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!existing) return res.status(404).json({ message: "Men? no encontrado" });
 
   await prisma.restaurantMenu.deleteMany({ where: { id: existing.id, hotelId: user.hotelId } });
   res.json({ ok: true });
@@ -1124,7 +1125,7 @@ export async function listMenuItems(req: Request, res: Response) {
   if (!menuId) return res.status(400).json({ message: "menuId requerido" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   const items = await prisma.restaurantMenuItem.findMany({
     where: { hotelId: user.hotelId, menuId: menu.id },
@@ -1143,7 +1144,7 @@ export async function addMenuItemToMenu(req: Request, res: Response) {
   if (!menuId || !name) return res.status(400).json({ message: "menuId y name requeridos" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   const item = await prisma.restaurantMenuItem.create({
     data: {
@@ -1170,13 +1171,13 @@ export async function deleteMenuItemFromMenu(req: Request, res: Response) {
   const item = await prisma.restaurantMenuItem.findFirst({
     where: { id: itemId, hotelId: user.hotelId, menuId },
   });
-  if (!item) return res.status(404).json({ message: "Ãtem no encontrado" });
+  if (!item) return res.status(404).json({ message: "?tem no encontrado" });
 
   await prisma.restaurantMenuItem.deleteMany({ where: { id: item.id, hotelId: user.hotelId } });
   res.json({ ok: true });
 }
 
-// ====== MenÃº (nuevo) -> ArtÃ­culos (entries) ======
+// ====== Men? (nuevo) -> Art?culos (entries) ======
 
 export async function listMenuEntries(req: Request, res: Response) {
   // @ts-ignore
@@ -1186,7 +1187,7 @@ export async function listMenuEntries(req: Request, res: Response) {
   if (!menuId) return res.status(400).json({ message: "menuId requerido" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   const entries = await prisma.restaurantMenuEntry.findMany({
     where: { hotelId: user.hotelId, menuId: menu.id },
@@ -1241,7 +1242,7 @@ export async function addMenuEntries(req: Request, res: Response) {
   if (!menuId) return res.status(400).json({ message: "menuId requerido" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const itemIdsRaw = Array.isArray(body.itemIds) ? body.itemIds : body.itemId ? [body.itemId] : [];
@@ -1255,7 +1256,7 @@ export async function addMenuEntries(req: Request, res: Response) {
   });
   const okSet = new Set(items.map((i) => i.id));
   const invalid = itemIds.filter((id: string) => !okSet.has(id));
-  if (invalid.length) return res.status(400).json({ message: `Ãtems invÃ¡lidos: ${invalid.join(", ")}` });
+  if (invalid.length) return res.status(400).json({ message: `?tems inv?lidos: ${invalid.join(", ")}` });
 
   const baseOrder = Number.isFinite(Number(body.sortOrderBase)) ? Number(body.sortOrderBase) : 0;
   await prisma.restaurantMenuEntry.createMany({
@@ -1287,7 +1288,7 @@ export async function deleteMenuEntry(req: Request, res: Response) {
   if (!menuId || !entryId) return res.status(400).json({ message: "menuId y entryId requeridos" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   await prisma.restaurantMenuEntry.deleteMany({ where: { id: entryId, hotelId: user.hotelId, menuId: menu.id } });
   res.json({ ok: true });
@@ -1304,7 +1305,7 @@ export async function listSectionMenuAssignments(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const list = await prisma.restaurantMenuAssignment.findMany({
     where: { hotelId: user.hotelId, sectionId: section.id },
@@ -1326,10 +1327,10 @@ export async function createSectionMenuAssignment(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const menu = await prisma.restaurantMenu.findFirst({ where: { id: menuId, hotelId: user.hotelId } });
-  if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+  if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
 
   const created = await prisma.restaurantMenuAssignment.create({
     data: {
@@ -1359,12 +1360,12 @@ export async function updateSectionMenuAssignment(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   const existing = await prisma.restaurantMenuAssignment.findFirst({
     where: { id: assignmentId, hotelId: user.hotelId, sectionId: section.id },
   });
-  if (!existing) return res.status(404).json({ message: "AsignaciÃ³n no encontrada" });
+  if (!existing) return res.status(404).json({ message: "Asignaci?n no encontrada" });
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const data: any = {};
@@ -1376,7 +1377,7 @@ export async function updateSectionMenuAssignment(req: Request, res: Response) {
   if ("active" in body) data.active = body.active !== false;
   if ("menuId" in body && String(body.menuId).trim()) {
     const menu = await prisma.restaurantMenu.findFirst({ where: { id: String(body.menuId), hotelId: user.hotelId } });
-    if (!menu) return res.status(404).json({ message: "MenÃº no encontrado" });
+    if (!menu) return res.status(404).json({ message: "Men? no encontrado" });
     data.menuId = menu.id;
   }
 
@@ -1399,7 +1400,7 @@ export async function deleteSectionMenuAssignment(req: Request, res: Response) {
   const section = await prisma.restaurantSection.findFirst({
     where: { hotelId: user.hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
   });
-  if (!section) return res.status(404).json({ message: "SecciÃ³n no encontrada" });
+  if (!section) return res.status(404).json({ message: "Secci?n no encontrada" });
 
   await prisma.restaurantMenuAssignment.deleteMany({
     where: { id: assignmentId, hotelId: user.hotelId, sectionId: section.id },
@@ -1416,7 +1417,7 @@ export async function deleteMenuItem(req: Request, res: Response) {
   if (!sectionId || !itemId) return res.status(400).json({ message: "sectionId y itemId requeridos" });
 
   const item = await prisma.restaurantMenuItem.findFirst({ where: { id: itemId, hotelId: user.hotelId } });
-  if (!item) return res.status(404).json({ message: "Ãtem no encontrado" });
+  if (!item) return res.status(404).json({ message: "?tem no encontrado" });
 
   await prisma.restaurantMenuItem.deleteMany({ where: { id: itemId, hotelId: user.hotelId } });
   res.json({ ok: true });
@@ -1510,7 +1511,7 @@ export async function deleteFamily(req: Request, res: Response) {
   await prisma.restaurantFamily.deleteMany({ where: { id: family.id, hotelId: user.hotelId } });
     res.json({ ok: true });
   } catch {
-    res.status(409).json({ message: "No se puede eliminar: hay artÃ­culos asociados" });
+    res.status(409).json({ message: "No se puede eliminar: hay art?culos asociados" });
   }
 }
 
@@ -1562,7 +1563,7 @@ export async function deleteSubFamily(req: Request, res: Response) {
     await prisma.restaurantSubFamily.deleteMany({ where: { id: sf.id, hotelId: user.hotelId } });
     res.json({ ok: true });
   } catch {
-    res.status(409).json({ message: "No se puede eliminar: hay artÃ­culos asociados" });
+    res.status(409).json({ message: "No se puede eliminar: hay art?culos asociados" });
   }
 }
 
@@ -1614,7 +1615,7 @@ export async function deleteSubSubFamily(req: Request, res: Response) {
     await prisma.restaurantSubSubFamily.deleteMany({ where: { id: ssf.id, hotelId: user.hotelId } });
     res.json({ ok: true });
   } catch {
-    res.status(409).json({ message: "No se puede eliminar: hay artÃ­culos asociados" });
+    res.status(409).json({ message: "No se puede eliminar: hay art?culos asociados" });
   }
 }
 
@@ -1789,7 +1790,7 @@ export async function updateItem(req: Request, res: Response) {
       where: { id, hotelId: user.hotelId },
       include: { family: true, subFamily: true, subSubFamily: true, taxes: true },
     });
-    if (!existing) return res.status(404).json({ message: "ArtÃ­culo no encontrado" });
+    if (!existing) return res.status(404).json({ message: "Art?culo no encontrado" });
 
     const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
 
@@ -1892,7 +1893,7 @@ export async function updateItem(req: Request, res: Response) {
               include: { family: true, subFamily: true, subSubFamily: true, taxes: { include: { tax: true } } },
             });
           });
-          if (!updated) return res.status(404).json({ message: "ArtÃ­culo no encontrado" });
+          if (!updated) return res.status(404).json({ message: "Art?culo no encontrado" });
           break;
         } catch (err: any) {
           if (err?.code === "P2002" && attempt < 5) continue;
@@ -1932,9 +1933,9 @@ export async function updateItem(req: Request, res: Response) {
     });
   } catch (err: any) {
     if (err?.code === "P2002") {
-      return res.status(409).json({ message: "Conflicto: cÃ³digo duplicado. Reintenta guardar." });
+      return res.status(409).json({ message: "Conflicto: c?digo duplicado. Reintenta guardar." });
     }
-    return res.status(500).json({ message: err?.message || "Error interno al actualizar artÃ­culo" });
+    return res.status(500).json({ message: err?.message || "Error interno al actualizar art?culo" });
   }
 }
 
@@ -1947,7 +1948,7 @@ export async function deleteItem(req: Request, res: Response) {
   if (!id) return res.status(400).json({ message: "id requerido" });
 
   const it = await prisma.restaurantItem.findFirst({ where: { id, hotelId: user.hotelId } });
-  if (!it) return res.status(404).json({ message: "ArtÃ­culo no encontrado" });
+  if (!it) return res.status(404).json({ message: "Art?culo no encontrado" });
 
   await prisma.restaurantItem.deleteMany({ where: { id: it.id, hotelId: user.hotelId } });
   res.json({ ok: true });
@@ -2100,7 +2101,9 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     ? (await prisma.restaurantSection.findFirst({
         where: { hotelId, OR: [{ id: internalSectionId }, { id: String(sectionId) }] },
         select: { id: true },
-      }))?.id ?? internalSectionId
+      }))?.id
+      ? internalSectionId
+      : undefined
     : undefined;
 
   const nextStatus: RestaurantOrderStatus = "OPEN";
@@ -2271,7 +2274,7 @@ export async function closeOrder(req: Request, res: Response) {
   const serviceToSave = asNumber(totals?.service) || asNumber(order.tip10);
   const paidAt = new Date();
 
-  // Cargo a habitaciÃ³n (FrontDesk): creamos un InvoiceItem en la factura del hospedaje.
+  // Cargo a habitaci?n (FrontDesk): creamos un InvoiceItem en la factura del hospedaje.
   const roomAmount = asNumber(payments?.room);
   const roomTarget = String(roomId || order.roomId || payments?.roomId || payments?.roomNumber || "");
   if (roomAmount > 0 && roomTarget) {
@@ -2279,7 +2282,7 @@ export async function closeOrder(req: Request, res: Response) {
       where: { hotelId, number: roomTarget },
       select: { id: true },
     });
-    if (!room) return res.status(400).json({ message: "HabitaciÃ³n no encontrada para cargo" });
+    if (!room) return res.status(400).json({ message: "Habitaci?n no encontrada para cargo" });
 
     const stay = await prisma.reservation.findFirst({
       where: {
@@ -2291,7 +2294,7 @@ export async function closeOrder(req: Request, res: Response) {
       },
       include: { invoice: { select: { id: true } } },
     });
-    if (!stay) return res.status(400).json({ message: "No hay estancia activa para esa habitaciÃ³n" });
+    if (!stay) return res.status(400).json({ message: "No hay estancia activa para esa habitaci?n" });
 
     const inv =
       stay.invoice ??
@@ -2480,7 +2483,7 @@ export async function createInventoryItem(req: Request, res: Response) {
 
   if (!desc) return res.status(400).json({ message: "desc requerido" });
   if (!unit) return res.status(400).json({ message: "unidad requerida" });
-  if (!isSupportedUnit(unit)) return res.status(400).json({ message: "unidad invÃ¡lida" });
+  if (!isSupportedUnit(unit)) return res.status(400).json({ message: "unidad inv?lida" });
 
   const number = await nextHotelSequence(user.hotelId, "restaurant_inventory");
   const sku = skuIn || `SKU-${padNumber(number, 6)}`;
@@ -2714,9 +2717,9 @@ export async function createRecipeLine(req: Request, res: Response) {
   const cantidad = Number(req.body?.cantidad || 0);
   const unidad = normalizeUnit(req.body?.unidad || "");
 
-  if (!codigo || !ingrediente) return res.status(400).json({ message: "cÃ³digo e ingrediente requeridos" });
-  if (!Number.isFinite(cantidad) || cantidad <= 0) return res.status(400).json({ message: "cantidad invÃ¡lida" });
-  if (unidad && !isSupportedUnit(unidad)) return res.status(400).json({ message: "unidad invÃ¡lida" });
+  if (!codigo || !ingrediente) return res.status(400).json({ message: "c?digo e ingrediente requeridos" });
+  if (!Number.isFinite(cantidad) || cantidad <= 0) return res.status(400).json({ message: "cantidad inv?lida" });
+  if (unidad && !isSupportedUnit(unidad)) return res.status(400).json({ message: "unidad inv?lida" });
 
   const restaurantItem = await prisma.restaurantItem.findFirst({
     where: {
@@ -2725,7 +2728,7 @@ export async function createRecipeLine(req: Request, res: Response) {
     },
     select: { id: true, code: true, name: true },
   });
-  if (!restaurantItem) return res.status(404).json({ message: "ArtÃ­culo de venta no encontrado (cÃ³digo)" });
+  if (!restaurantItem) return res.status(404).json({ message: "Art?culo de venta no encontrado (c?digo)" });
 
   const maybeNumber = Number.parseInt(ingrediente, 10);
   const inventoryItem = await prisma.restaurantInventoryItem.findFirst({
@@ -2818,7 +2821,7 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
     select: { createdAt: true },
   });
   if (lastClose?.createdAt && order.updatedAt <= lastClose.createdAt) {
-    return res.status(403).json({ message: "No se puede anular una orden despuÃ©s del cierre Z" });
+    return res.status(403).json({ message: "No se puede anular una orden despu?s del cierre Z" });
   }
 
   const cancelReason = String(reason || "").trim();
@@ -2976,7 +2979,7 @@ export async function voidRestaurantInvoice(req: Request, res: Response) {
   }
 
   const type = docType ? String(docType).toUpperCase() : "";
-  if (type && !["FE", "TE"].includes(type)) return res.status(400).json({ message: "docType invÃ¡lido" });
+  if (type && !["FE", "TE"].includes(type)) return res.status(400).json({ message: "docType inv?lido" });
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: {
@@ -2986,7 +2989,7 @@ export async function voidRestaurantInvoice(req: Request, res: Response) {
     },
     orderBy: { createdAt: "desc" },
   });
-  if (!doc) return res.status(404).json({ message: "No hay documento electrÃ³nico para anular" });
+  if (!doc) return res.status(404).json({ message: "No hay documento electr?nico para anular" });
 
   const order = await prisma.restaurantOrder.findFirst({
     where: { id: orderId, hotelId },
@@ -3000,7 +3003,7 @@ export async function voidRestaurantInvoice(req: Request, res: Response) {
   });
   const orderPaidAt = order?.updatedAt || doc.createdAt;
   if (lastClose?.createdAt && orderPaidAt <= lastClose.createdAt) {
-    return res.status(403).json({ message: "No se puede anular un documento despuÃ©s del cierre Z" });
+    return res.status(403).json({ message: "No se puede anular un documento despu?s del cierre Z" });
   }
 
 
@@ -3293,6 +3296,11 @@ export async function printRestaurantOrder(req: Request, res: Response) {
               ? "document"
               : null;
 
+  const typeCfg = printingTypeKey ? printing?.types?.[printingTypeKey] : null;
+  if (printingTypeKey && typeCfg && typeCfg.enabled === false) {
+    return res.status(403).json({ message: "Tipo de impresion deshabilitado por configuracion" });
+  }
+
   const defaultPrinterForType = () => {
     const pId = printingTypeKey ? printing?.types?.[printingTypeKey]?.printerId : null;
     return pId || cfg?.cashierPrinter || null;
@@ -3380,6 +3388,386 @@ export async function getRestaurantStats(req: Request, res: Response) {
     lastCloseAt: lastClose?.createdAt || null,
     byMethod,
   });
+}
+
+export async function getRestaurantReport(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  try {
+    const report = await buildRestaurantReport(user, req.query);
+    res.json(report);
+  } catch (err: any) {
+    const status = Number(err?.status || 500);
+    return res.status(status).json({ message: err?.message || "Error al generar reporte" });
+  }
+}
+
+export async function exportRestaurantReport(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const format = String((req.query.format as string | undefined) || "csv").toLowerCase();
+  if (!["csv", "xlsx"].includes(format)) {
+    return res.status(400).json({ message: "format invalido (csv|xlsx)" });
+  }
+
+  try {
+    const report = await buildRestaurantReport(user, req.query);
+    const stamp = Date.now();
+    if (format === "xlsx") {
+      const buf = await buildRestaurantReportXlsx(report);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename=\"restaurant-report-${stamp}.xlsx\"`);
+      return res.status(200).send(buf);
+    }
+
+    const csv = buildRestaurantReportCsv(report);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=\"restaurant-report-${stamp}.csv\"`);
+    return res.status(200).send(csv);
+  } catch (err: any) {
+    const status = Number(err?.status || 500);
+    return res.status(status).json({ message: err?.message || "Error al exportar reporte" });
+  }
+}
+
+async function buildRestaurantReport(user: AuthUser, query: any) {
+  const hotelId = user.hotelId;
+  const group = String((query?.group as string | undefined) || "article").trim();
+  const dateFromRaw = String((query?.dateFrom as string | undefined) || (query?.startDate as string | undefined) || "").trim();
+  const dateToRaw = String((query?.dateTo as string | undefined) || (query?.endDate as string | undefined) || "").trim();
+
+  const parseDate = (value: string, endOfDay = false) => {
+    if (!value) return null;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    if (endOfDay) d.setHours(23, 59, 59, 999);
+    return d;
+  };
+
+  const dateFrom = parseDate(dateFromRaw, false);
+  const dateTo = parseDate(dateToRaw, true);
+  if (dateFromRaw && !dateFrom) throw Object.assign(new Error("dateFrom invalida"), { status: 400 });
+  if (dateToRaw && !dateTo) throw Object.assign(new Error("dateTo invalida"), { status: 400 });
+
+  const closes = await prisma.restaurantClose.findMany({
+    where: { hotelId },
+    orderBy: { createdAt: "desc" },
+    take: 30,
+  });
+  const lastClose = closes[0] || null;
+
+  const paidWhere: any = { hotelId, status: "PAID" };
+  if (dateFrom || dateTo) {
+    paidWhere.updatedAt = {
+      ...(dateFrom ? { gte: dateFrom } : {}),
+      ...(dateTo ? { lte: dateTo } : {}),
+    };
+  } else if (lastClose?.createdAt) {
+    paidWhere.updatedAt = { gte: lastClose.createdAt };
+  }
+
+  const paidOrders = await prisma.restaurantOrder.findMany({
+    where: paidWhere,
+    select: {
+      id: true,
+      total: true,
+      tip10: true,
+      paymentBreakdown: true,
+      updatedAt: true,
+      createdAt: true,
+      cashierId: true,
+      waiterId: true,
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 5000,
+  });
+
+  const orderIdsForItems = paidOrders.map((o) => o.id);
+  const orderItemsForKpis = orderIdsForItems.length
+    ? await prisma.restaurantOrderItem.findMany({
+        where: { hotelId, orderId: { in: orderIdsForItems } },
+        select: { qty: true, price: true, orderId: true },
+      })
+    : [];
+
+  const systemTotal = paidOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
+  const ticketCount = paidOrders.length;
+  const ticketAvg = ticketCount > 0 ? systemTotal / ticketCount : 0;
+  const itemsQtyTotal = orderItemsForKpis.reduce((acc, it) => acc + asNumber(it.qty), 0);
+  const itemsPerTicket = ticketCount > 0 ? itemsQtyTotal / ticketCount : 0;
+
+  const salesByHour: Record<string, number> = {};
+  for (const order of paidOrders) {
+    const dt = order.updatedAt || order.createdAt;
+    if (!dt) continue;
+    const hour = new Date(dt).getHours();
+    const key = String(hour).padStart(2, "0") + ":00";
+    salesByHour[key] = (salesByHour[key] || 0) + asNumber(order.total);
+  }
+
+  const tipTotal = paidOrders.reduce((acc, o) => acc + asNumber((o as any).tip10), 0);
+  const byMethod: Record<string, number> = {};
+  for (const o of paidOrders) {
+    const pb = (o.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
+    for (const k of Object.keys(pb || {})) {
+      byMethod[k] = (byMethod[k] || 0) + asNumber(pb[k]);
+    }
+  }
+
+  const openOrders = await prisma.restaurantOrder.findMany({
+    where: { hotelId, status: "OPEN" },
+    select: { total: true },
+  });
+  const openOrderValue = openOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
+
+  const lastCloseReported = lastClose?.totals && typeof lastClose.totals === "object" ? asNumber((lastClose.totals as any).reported) : 0;
+  const lastCloseSystem = lastClose?.totals && typeof lastClose.totals === "object" ? asNumber((lastClose.totals as any).system) : 0;
+
+  const stats = {
+    systemTotal,
+    salesCount: paidOrders.length,
+    ticketAvg,
+    itemsPerTicket,
+    itemsQtyTotal,
+    salesByHour,
+    tipTotal,
+    byMethod,
+    openOrders: openOrders.length,
+    openOrderValue,
+    lastCloseAt: lastClose?.createdAt || null,
+    reportedTotal: lastCloseReported,
+    closeSystemTotal: lastCloseSystem,
+    closeDiff: lastCloseReported - lastCloseSystem,
+  };
+
+  const closesSorted = (closes || [])
+    .map((c) => ({ ...c, createdAt: c.createdAt ? new Date(c.createdAt) : null }))
+    .filter((c) => c.createdAt)
+    .sort((a, b) => (a.createdAt as any) - (b.createdAt as any));
+
+  const resolveCloseKey = (orderTime?: Date | null) => {
+    if (!orderTime) return "Sin cierre";
+    const match = closesSorted.find((c) => (c.createdAt as Date) >= orderTime);
+    if (!match) return "Sin cierre";
+    const label = `${match.turno ? `Turno ${match.turno} - ` : ""}${(match.createdAt as Date).toLocaleString()}`;
+    return `Cierre ${label}`;
+  };
+
+  const rows = new Map<string, { label: string; qty: number; total: number }>();
+  const addRow = (key: string, label: string, qty: number, total: number) => {
+    const prev = rows.get(key) || { label, qty: 0, total: 0 };
+    prev.qty += qty;
+    prev.total += total;
+    rows.set(key, prev);
+  };
+
+  const groupKey = String(group || "article").toLowerCase();
+
+  if (["date", "close", "cashier", "waiter"].includes(groupKey)) {
+    const staffIds = Array.from(
+      new Set(
+        paidOrders
+          .map((o) => (groupKey === "cashier" ? o.cashierId : o.waiterId))
+          .filter((x) => typeof x === "string" && x.trim())
+      )
+    ) as string[];
+    const staffList = staffIds.length
+      ? await prisma.restaurantStaff.findMany({
+          where: { hotelId, id: { in: staffIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const staffById = new Map(staffList.map((s) => [s.id, s.name]));
+
+    for (const order of paidOrders) {
+      const orderTime = order.updatedAt || order.createdAt;
+      const orderDateKey = orderTime ? new Date(orderTime).toISOString().slice(0, 10) : "Sin fecha";
+      const orderTotal = asNumber(order.total);
+      if (groupKey === "date") {
+        addRow(orderDateKey, orderDateKey, 1, orderTotal);
+        continue;
+      }
+      if (groupKey === "close") {
+        const key = resolveCloseKey(orderTime || null);
+        addRow(key, key, 1, orderTotal);
+        continue;
+      }
+      if (groupKey === "cashier") {
+        const cashierId = order.cashierId ? String(order.cashierId) : "";
+        const label = cashierId ? staffById.get(cashierId) || cashierId : "Sin cajero";
+        addRow(cashierId || label, label, 1, orderTotal);
+        continue;
+      }
+      if (groupKey === "waiter") {
+        const waiterId = order.waiterId ? String(order.waiterId) : "";
+        const label = waiterId ? staffById.get(waiterId) || waiterId : "Sin mesero";
+        addRow(waiterId || label, label, 1, orderTotal);
+        continue;
+      }
+    }
+  } else {
+    const orderIds = paidOrders.map((o) => o.id);
+    const orderItems = orderIds.length
+      ? await prisma.restaurantOrderItem.findMany({
+          where: { hotelId, orderId: { in: orderIds } },
+          select: { itemId: true, name: true, price: true, qty: true, orderId: true },
+        })
+      : [];
+    const itemIds = Array.from(new Set(orderItems.map((i) => String(i.itemId)).filter(Boolean)));
+    const catalog = itemIds.length
+      ? await prisma.restaurantItem.findMany({
+          where: { hotelId, id: { in: itemIds } },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            family: { select: { name: true } },
+            subFamily: { select: { name: true } },
+            subSubFamily: { select: { name: true } },
+          },
+        })
+      : [];
+    const itemById = new Map(catalog.map((i) => [i.id, i]));
+
+    for (const item of orderItems) {
+      const qty = asNumber(item.qty);
+      const total = asNumber(item.price) * qty;
+      const catalogItem = itemById.get(String(item.itemId));
+      const family = catalogItem?.family?.name || "Sin familia";
+      const subFamily = catalogItem?.subFamily?.name || "Sin subfamilia";
+      const subSubFamily = catalogItem?.subSubFamily?.name || "Sin subsubfamilia";
+      const code = catalogItem?.code ? String(catalogItem.code) : String(item.itemId || "");
+      const name = String(item.name || catalogItem?.name || "Producto");
+
+      if (groupKey === "family") {
+        addRow(family, family, qty, total);
+      } else if (groupKey === "subfamily") {
+        addRow(subFamily, subFamily, qty, total);
+      } else if (groupKey === "subsubfamily") {
+        addRow(subSubFamily, subSubFamily, qty, total);
+      } else if (groupKey === "product") {
+        addRow(name, name, qty, total);
+      } else {
+        const label = code ? `${code} - ${name}` : name;
+        addRow(label, label, qty, total);
+      }
+    }
+  }
+
+  const history = Array.from(rows.values()).sort((a, b) => b.total - a.total);
+
+  return {
+    range: {
+      mode: dateFrom || dateTo ? "range" : "since_last_close",
+      dateFrom: dateFrom ? dateFrom.toISOString() : null,
+      dateTo: dateTo ? dateTo.toISOString() : null,
+    },
+    stats,
+    closes,
+    history,
+  };
+}
+
+function buildRestaurantReportCsv(report: any) {
+  const rows: any[] = [];
+  const stats = report?.stats || {};
+  const paymentsByMethod = stats?.byMethod || {};
+  const historyRows = report?.history || [];
+  const closes = report?.closes || [];
+
+  rows.push(["Metric", "Value"]);
+  rows.push(["System sales", stats?.systemTotal ?? 0]);
+  rows.push(["Sales count", stats?.salesCount ?? 0]);
+  rows.push(["Ticket promedio", stats?.ticketAvg ?? 0]);
+  rows.push(["Items por ticket", stats?.itemsPerTicket ?? 0]);
+  rows.push(["Items vendidos", stats?.itemsQtyTotal ?? 0]);
+  rows.push(["Tips", stats?.tipTotal ?? 0]);
+  rows.push(["Open orders", stats?.openOrders ?? 0]);
+  rows.push(["Value on tables", stats?.openOrderValue ?? 0]);
+  rows.push(["Last close", stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : ""]);
+  rows.push([]);
+  rows.push(["Payments by method", "Amount"]);
+  Object.entries(paymentsByMethod || {}).forEach(([method, amount]) => rows.push([method, amount]));
+  rows.push([]);
+  rows.push(["Sales by hour", "Amount"]);
+  Object.entries(stats?.salesByHour || {})
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    .forEach(([hour, amount]) => rows.push([hour, amount]));
+  rows.push([]);
+  rows.push(["History", "Qty", "Total"]);
+  (historyRows || []).forEach((r: any) => rows.push([r.label, r.qty, r.total]));
+  rows.push([]);
+  rows.push(["Closes", "Turno", "System", "Reported", "Diff"]);
+  (closes || []).forEach((c: any) =>
+    rows.push([
+      c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
+      c.turno || "",
+      c.totals?.system ?? "",
+      c.totals?.reported ?? "",
+      c.totals?.diff ?? "",
+    ])
+  );
+
+  return rows
+    .map((r) => r.map((v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+}
+
+async function buildRestaurantReportXlsx(report: any) {
+  const wb = new ExcelJS.Workbook();
+  const stats = report?.stats || {};
+  const paymentsByMethod = stats?.byMethod || {};
+  const historyRows = report?.history || [];
+  const closes = report?.closes || [];
+
+  const kpis = wb.addWorksheet("KPIs");
+  kpis.addRow(["Metric", "Value"]);
+  kpis.addRows([
+    ["System sales", stats?.systemTotal ?? 0],
+    ["Sales count", stats?.salesCount ?? 0],
+    ["Ticket promedio", stats?.ticketAvg ?? 0],
+    ["Items por ticket", stats?.itemsPerTicket ?? 0],
+    ["Items vendidos", stats?.itemsQtyTotal ?? 0],
+    ["Tips", stats?.tipTotal ?? 0],
+    ["Open orders", stats?.openOrders ?? 0],
+    ["Value on tables", stats?.openOrderValue ?? 0],
+    ["Last close", stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : ""],
+  ]);
+
+  const payments = wb.addWorksheet("Payments");
+  payments.addRow(["Method", "Amount"]);
+  Object.entries(paymentsByMethod || {}).forEach(([method, amount]) => payments.addRow([method, amount]));
+
+  const hours = wb.addWorksheet("SalesByHour");
+  hours.addRow(["Hour", "Amount"]);
+  Object.entries(stats?.salesByHour || {})
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+    .forEach(([hour, amount]) => hours.addRow([hour, amount]));
+
+  const history = wb.addWorksheet("History");
+  history.addRow(["Group", "Qty", "Total"]);
+  (historyRows || []).forEach((r: any) => history.addRow([r.label, r.qty, r.total]));
+
+  const closesSheet = wb.addWorksheet("Closes");
+  closesSheet.addRow(["CreatedAt", "Turno", "System", "Reported", "Diff"]);
+  (closes || []).forEach((c: any) =>
+    closesSheet.addRow([
+      c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
+      c.turno || "",
+      c.totals?.system ?? "",
+      c.totals?.reported ?? "",
+      c.totals?.diff ?? "",
+    ])
+  );
+
+  const buffer = await wb.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 export async function listRestaurantShiftInvoices(req: Request, res: Response) {
@@ -3479,7 +3867,7 @@ export async function listKds(req: Request, res: Response) {
   const hotelId = user.hotelId;
 
   const area = String((req.query.area as string | undefined) || "KITCHEN").toUpperCase();
-  if (!["KITCHEN", "BAR"].includes(area)) return res.status(400).json({ message: "area invÃ¡lida" });
+  if (!["KITCHEN", "BAR"].includes(area)) return res.status(400).json({ message: "area inv?lida" });
 
   const items = await prisma.restaurantOrderItem.findMany({
     where: {
@@ -3525,20 +3913,20 @@ export async function updateKdsItem(req: Request, res: Response) {
 
   const nextStatus = String(req.body?.status || "").toUpperCase();
   if (!["NEW", "IN_KITCHEN", "READY", "SERVED"].includes(nextStatus)) {
-    return res.status(400).json({ message: "status invÃ¡lido" });
+    return res.status(400).json({ message: "status inv?lido" });
   }
 
   const item = await prisma.restaurantOrderItem.findFirst({
     where: { id: orderItemId, hotelId: user.hotelId, order: { hotelId: user.hotelId } },
     select: { id: true },
   });
-  if (!item) return res.status(404).json({ message: "Ãtem no encontrado" });
+  if (!item) return res.status(404).json({ message: "?tem no encontrado" });
 
   const written = await prisma.restaurantOrderItem.updateMany({
     where: { id: orderItemId, hotelId: user.hotelId },
     data: { status: nextStatus as any },
   });
-  if (written.count === 0) return res.status(404).json({ message: "Ãtem no encontrado" });
+  if (written.count === 0) return res.status(404).json({ message: "?tem no encontrado" });
   const updated = await prisma.restaurantOrderItem.findFirst({ where: { id: orderItemId, hotelId: user.hotelId } });
 
   res.json({ ok: true, item: updated });
@@ -3644,7 +4032,7 @@ export async function closeShift(req: Request, res: Response) {
     where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
   });
   if (openOrders > 0) {
-    return res.status(400).json({ message: "No se puede cerrar turno con ÃƒÂ³rdenes abiertas" });
+    return res.status(400).json({ message: "No se puede cerrar turno con ?rdenes abiertas" });
   }
 
   const totalsObj = totals && typeof totals === "object" ? (totals as any) : null;

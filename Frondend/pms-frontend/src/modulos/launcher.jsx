@@ -116,7 +116,11 @@ export default function Launcher() {
     const onPush = (e) => {
       const item = e.detail;
       if (!item) return;
-      setAlerts((prev) => [{ id: crypto.randomUUID?.() ?? Date.now(), ...item }, ...prev]);
+    const id =
+      typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : String(Date.now());
+    setAlerts((prev) => [{ id, ...item }, ...prev]);
       setAlertsOpen(true);
     };
     const onClear = () => setAlerts([]);

@@ -5,13 +5,13 @@ import { mockApi } from "./mock";
 // ===== Entorno CRA (.env) =====
 // REACT_APP_API_URL, REACT_APP_MOCK (1/true para activar mock)
 const USE_MOCK = ["1", "true", "yes"].includes(
-  String(process.env.REACT_APP_MOCK || "").toLowerCase()
+  String(import.meta.env.VITE_MOCK || "").toLowerCase()
 );
 
 // When false (default), 404/501 from backend are treated as real errors (no silent mock fallback).
 // Set REACT_APP_ALLOW_MOCK_FALLBACK=1 only for local development.
 const ALLOW_MOCK_FALLBACK = ["1", "true", "yes"].includes(
-  String(process.env.REACT_APP_ALLOW_MOCK_FALLBACK || "").toLowerCase()
+  String(import.meta.env.VITE_ALLOW_MOCK_FALLBACK || "").toLowerCase()
 );
 
 const DEFAULT_BASE =
@@ -22,7 +22,7 @@ const DEFAULT_BASE =
       : `${window.location.origin}/api`
     : "http://localhost:4000/api";
 
-const BASE = String(process.env.REACT_APP_API_URL || DEFAULT_BASE).replace(/\/+$/, "");
+const BASE = String(import.meta.env.VITE_API_URL || DEFAULT_BASE).replace(/\/+$/, "");
 
 // Prefijos que existen en el backend real (si alguno no esta, caera al mock)
 const BACKEND_PREFIXES = [
