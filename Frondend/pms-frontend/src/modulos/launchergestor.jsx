@@ -751,6 +751,7 @@ export default function Launchergestor() {
                     <div className="px-1 text-xs text-slate-600">Costo mensual ({createForm.currency})</div>
                     <Input
                       name="hotelMembershipMonthlyFee"
+                      money
                       type="number"
                       min="0"
                       step="0.01"
@@ -1002,6 +1003,7 @@ export default function Launchergestor() {
                     <div className="space-y-1">
                       <div className="text-xs text-slate-600">Monto</div>
                       <Input
+                        money
                         type="number"
                         min="0"
                         step="0.01"

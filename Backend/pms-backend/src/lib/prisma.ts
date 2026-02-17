@@ -99,6 +99,8 @@ const TENANT_MODELS = new Set([
   "RestaurantOrder",
   "RestaurantOrderItem",
   "RestaurantInventoryItem",
+  "RestaurantInventoryInvoice",
+  "RestaurantInventoryInvoiceLine",
   "RestaurantInventoryMovement",
   "RestaurantPrintJob",
   "RestaurantRecipeLine",

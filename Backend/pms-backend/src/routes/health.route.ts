@@ -15,7 +15,7 @@ router.get("/db", async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ ok: true, db: "up" });
   } catch (e) {
-    res.status(500).json({ ok: false, db: "down", error: String(e) });
+    res.status(500).json({ ok: false, db: "down" });
   }
 });
 

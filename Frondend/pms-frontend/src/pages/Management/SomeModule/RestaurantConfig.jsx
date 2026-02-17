@@ -8,6 +8,7 @@ import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
 import RestaurantItems from "../Restaurant/RestaurantItems";
 import RestaurantFamilies from "../Restaurant/RestaurantFamilies";
+import RestaurantInventory from "../Restaurant/RestaurantInventory";
 
 const NAV_TABS = [
   { id: "general", label: "Información general" },
@@ -232,14 +233,12 @@ export default function RestaurantConfig() {
   const [recipeLines, setRecipeLines] = useState([]);
   const [selectedRecipeItemId, setSelectedRecipeItemId] = useState("");
   const [recipeLineForm, setRecipeLineForm] = useState({ inventoryItemId: "", qty: "", unit: "" });
-  const [inventoryForm, setInventoryForm] = useState({ name: "", stock: "", min: "", cost: "", location: "" });
   const [inventory, setInventory] = useState([]);
   const [saving, setSaving] = useState({
     section: false,
     table: false,
     menuEntries: false,
     item: false,
-    inventory: false,
   });
 
   const selectedSection = useMemo(
@@ -2152,29 +2151,6 @@ export default function RestaurantConfig() {
     setRecipeLines((prev) => prev.filter((r) => r.id !== id));
   };
 
-  const addInventory = async () => {
-    if (saving.inventory || !inventoryForm.name) return;
-    setSaving((s) => ({ ...s, inventory: true }));
-    try {
-      const payload = {
-        ...inventoryForm,
-        stock: Number(inventoryForm.stock || 0),
-        min: Number(inventoryForm.min || 0),
-        cost: Number(inventoryForm.cost || 0),
-      };
-      const { data } = await api.post("/restaurant/inventory", payload);
-      setInventory((prev) => [...prev, data]);
-      setInventoryForm({ name: "", stock: "", min: "", cost: "", location: "" });
-    } finally {
-      setSaving((s) => ({ ...s, inventory: false }));
-    }
-  };
-
-  const removeInventory = async (id) => {
-    await api.delete(`/restaurant/inventory/${id}`);
-    setInventory((prev) => prev.filter((i) => i.id !== id));
-  };
-
   const updateSectionMeta = async (sectionId, payload) => {
     if (!sectionId) return;
     try {
@@ -3792,41 +3768,7 @@ export default function RestaurantConfig() {
       </Card>
     );
   };
-  const renderInventory = () => (
-    <Card className="p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="font-semibold text-lg">Inventory</h3>
-          <p className="text-sm text-gray-600">Track stock linked to recipes.</p>
-        </div>
-        <Button onClick={addInventory} disabled={saving.inventory}>{saving.inventory ? "Saving..." : "Add"}</Button>
-      </div>
-      <div className="grid md:grid-cols-5 gap-3">
-        <Input placeholder="Item" value={inventoryForm.name} onChange={(e) => setInventoryForm((f) => ({ ...f, name: e.target.value }))} />
-        <Input type="number" placeholder="Stock" value={inventoryForm.stock} onChange={(e) => setInventoryForm((f) => ({ ...f, stock: e.target.value }))} />
-        <Input type="number" placeholder="Min" value={inventoryForm.min} onChange={(e) => setInventoryForm((f) => ({ ...f, min: e.target.value }))} />
-        <Input type="number" placeholder="Cost" value={inventoryForm.cost} onChange={(e) => setInventoryForm((f) => ({ ...f, cost: e.target.value }))} />
-        <Input placeholder="Location" value={inventoryForm.location} onChange={(e) => setInventoryForm((f) => ({ ...f, location: e.target.value }))} />
-      </div>
-      <div className="grid md:grid-cols-2 gap-2">
-        {inventory.map((i) => (
-          <div key={i.id} className="border rounded-lg p-3 flex justify-between items-start">
-            <div className="text-sm">
-              <div className="font-semibold">{i.name}</div>
-              <div className="text-xs text-gray-500">Stock: {i.stock}</div>
-              <div className="text-xs text-gray-500">Min: {i.min}</div>
-              <div className="text-xs text-gray-500">Cost: {i.cost}</div>
-              <div className="text-xs text-gray-500">{i.location}</div>
-            </div>
-            <button className="text-xs text-red-600" onClick={() => removeInventory(i.id)}>
-              Delete
-            </button>
-          </div>
-        ))}
-        {inventory.length === 0 && <div className="text-sm text-gray-500">No inventory yet.</div>}
-      </div>
-    </Card>
-  );
+  const renderInventory = () => <RestaurantInventory />;
   const renderSectionsTabbed = () => (
     <div className="space-y-4">
       <Card className="p-3">

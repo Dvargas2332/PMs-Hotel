@@ -185,6 +185,7 @@ export default function Currency() {
         <Input
           className="h-9 text-sm"
           placeholder={`FX ${secondary || "USD"} (referencia)`}
+          money
           type="number"
           value={state.rates?.[secondary] ?? 0}
           onChange={(e) =>
@@ -200,6 +201,7 @@ export default function Currency() {
         <Input
           className="h-9 text-sm"
           placeholder={`Buy ${secondary || "USD"}`}
+          money
           type="number"
           value={state.buy ?? 0}
           onChange={(e) =>
@@ -209,6 +211,7 @@ export default function Currency() {
         <Input
           className="h-9 text-sm"
           placeholder={`Sell ${secondary || "USD"}`}
+          money
           type="number"
           value={state.sell ?? 0}
           onChange={(e) =>

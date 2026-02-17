@@ -218,7 +218,7 @@ export default function RatePlans() {
         </div>
         <div className="grid md:grid-cols-5 gap-2 items-end">
           <Input placeholder="Name (optional)" value={daily.name} onChange={(e)=>setDaily((f)=>({...f,name:e.target.value}))}/>
-          <Input placeholder="Price" type="number" value={daily.price} onChange={(e)=>setDaily((f)=>({...f,price:e.target.value}))}/>
+          <Input placeholder="Price" type="number" money value={daily.price} onChange={(e)=>setDaily((f)=>({...f,price:e.target.value}))}/>
           <Input placeholder="Currency" value={daily.currency} onChange={(e)=>setDaily((f)=>({...f,currency:e.target.value}))}/>
           <div className="grid grid-cols-2 gap-2">
             <Input type="date" value={daily.from} onChange={(e)=>setDaily((f)=>({...f,from:e.target.value}))}/>
@@ -244,7 +244,7 @@ export default function RatePlans() {
                 <Input placeholder="ID" value={form.id} onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))} />
                 <Input placeholder="Name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
                 <Input placeholder="Currency" value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} />
-                <Input placeholder="Base price" type="number" value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
+                <Input placeholder="Base price" type="number" money value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))} />
                 <Input placeholder="From" type="date" value={form.dateFrom} onChange={(e) => setForm((f) => ({ ...f, dateFrom: e.target.value }))} />
                 <Input placeholder="To" type="date" value={form.dateTo} onChange={(e) => setForm((f) => ({ ...f, dateTo: e.target.value }))} />
                 <div className="flex items-center gap-2">

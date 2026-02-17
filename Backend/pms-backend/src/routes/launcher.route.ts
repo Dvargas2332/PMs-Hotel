@@ -3,6 +3,7 @@
 import { Router } from "express";
 import { validate } from "../middleware/validate.js";
 import { auth, requireManagementUser } from "../middleware/auth.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 import {
   launcherLoginSchema,
   launcherAccountCreateSchema,
@@ -17,9 +18,10 @@ import {
 } from "../controllers/launcher.controller.js";
 
 const router = Router();
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: "launcher-login" });
 
 // Login del launcher (no requiere auth previo)
-router.post("/login", validate(launcherLoginSchema), launcherLogin);
+router.post("/login", loginLimiter, validate(launcherLoginSchema), launcherLogin);
 
 // Rutas de gestión de cuentas de launcher (management) - solo usuarios normales, no launcher.
 // Simplificado: solo verificamos que sea un usuario de management autenticado.
@@ -31,4 +33,3 @@ router.put("/:id", validate(launcherAccountUpdateSchema), updateLauncherAccount)
 router.delete("/:id", deleteLauncherAccount);
 
 export default router;
-

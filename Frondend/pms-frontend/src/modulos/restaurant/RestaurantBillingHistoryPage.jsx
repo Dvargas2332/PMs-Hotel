@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronLeft, RefreshCw, Printer } from "lucide-react";
+import { RefreshCw, Printer } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
@@ -184,13 +184,6 @@ export default function RestaurantBillingHistoryPage() {
     <div className="min-h-screen bg-white text-black">
       <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-slate-200 text-black shadow">
         <div className="flex items-center gap-2">
-          <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
-            onClick={() => navigate("/restaurant")}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            Lobby
-          </button>
           <div>
             <div className="text-xs uppercase text-black/80">Billing</div>
             <div className="text-sm font-semibold">History</div>
@@ -362,7 +355,6 @@ export default function RestaurantBillingHistoryPage() {
     </div>
   );
 }
-
 
 
 

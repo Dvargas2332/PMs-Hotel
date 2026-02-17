@@ -3,37 +3,71 @@
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
-import { sign } from "../lib/jwt.js";
+import { sign, verify } from "../lib/jwt.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 
+const mapLauncherAccount = (acc: any) => ({
+  id: acc.id,
+  userId: acc.username,
+  username: acc.username,
+  name: acc.name,
+  roleId: acc.roleId,
+  roleName: acc.role?.name ?? acc.roleId,
+  permissions: acc.role?.permissions?.map((p: any) => p.permissionId) ?? [],
+  hotelId: acc.hotelId,
+  createdAt: acc.createdAt,
+});
+
 // Login del launcher (primer login, independiente de User)
 export async function launcherLogin(req: Request, res: Response) {
-  const { username, password } = req.body as { username: string; password: string };
+  const { username, password, hotelId } = req.body as { username: string; password: string; hotelId?: string };
 
   if (!username || !password) {
     return res.status(400).json({ message: "Usuario y contrasena son requeridos" });
   }
 
   const normalizedUsername = username.trim().toLowerCase();
+  const rawHotelId = typeof hotelId === "string" ? hotelId.trim() : "";
+
+  // Optional: if a hotel token is provided, scope the launcher login to that hotel.
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  let tokenHotelId: string | undefined;
+  if (token) {
+    try {
+      const payload = verify<AuthUser>(token);
+      tokenHotelId = payload?.hotelId;
+      if (!tokenHotelId) {
+        return res.status(401).json({ message: "Credenciales invalidas" });
+      }
+    } catch {
+      return res.status(401).json({ message: "Credenciales invalidas" });
+    }
+  }
+
+  const scopedHotelId = tokenHotelId || rawHotelId;
+  if (!scopedHotelId) {
+    return res.status(400).json({ message: "Hotel requerido" });
+  }
+  if (tokenHotelId && rawHotelId && tokenHotelId !== rawHotelId) {
+    return res.status(401).json({ message: "Credenciales invalidas" });
+  }
 
   const account = await prisma.launcherAccount.findFirst({
-    where: { username: normalizedUsername },
+    where: { username: normalizedUsername, hotelId: scopedHotelId },
     include: { hotel: { select: { id: true, name: true } } },
   });
 
   if (!account) {
-    // Ayuda para depurar: usuario de launcher no encontrado
-    console.warn("[launcherLogin] account not found for username:", normalizedUsername);
-    return res.status(401).json({ message: "Launcher no encontrado" });
+    return res.status(401).json({ message: "Credenciales invalidas" });
   }
 
   const ok = await bcrypt.compare(password, account.password);
   if (!ok) {
-    console.warn("[launcherLogin] invalid password for username:", normalizedUsername);
-    return res.status(401).json({ message: "PIN incorrecto" });
+    return res.status(401).json({ message: "Credenciales invalidas" });
   }
 
   // Cada cuenta de launcher tiene un rol asociado (roleId)
@@ -108,15 +142,7 @@ export async function listLauncherAccounts(req: Request, res: Response) {
 
   // Adaptamos el shape a lo que necesita el Management:
   // listado de perfiles (usuarios de launcher) con los permisos de su rol.
-  const result = accounts.map((acc) => ({
-    id: acc.id,
-    userId: acc.username,
-    name: acc.name,
-    roleId: acc.roleId,
-    roleName: acc.role?.name ?? acc.roleId,
-    permissions: acc.role?.permissions.map((p) => p.permissionId) ?? [],
-    createdAt: acc.createdAt,
-  }));
+  const result = accounts.map(mapLauncherAccount);
 
   return res.json(result);
 }
@@ -147,8 +173,15 @@ export async function createLauncherAccount(req: Request, res: Response) {
         hotelId: user.hotelId,
         roleId: role.id,
       },
+      include: {
+        role: {
+          include: {
+            permissions: { select: { permissionId: true } },
+          },
+        },
+      },
     });
-    return res.status(201).json(account);
+    return res.status(201).json(mapLauncherAccount(account));
   } catch (err: any) {
     if (err?.code === "P2002") {
       return res.status(409).json({ message: "El usuario de launcher ya existe" });
@@ -194,8 +227,17 @@ export async function updateLauncherAccount(req: Request, res: Response) {
     data,
   });
   if (written.count === 0) return res.status(404).json({ message: "Cuenta de launcher no encontrada" });
-  const updated = await prisma.launcherAccount.findFirst({ where: { id: existing.id, hotelId } });
-  return res.json(updated);
+  const updated = await prisma.launcherAccount.findFirst({
+    where: { id: existing.id, hotelId },
+    include: {
+      role: {
+        include: {
+          permissions: { select: { permissionId: true } },
+        },
+      },
+    },
+  });
+  return res.json(updated ? mapLauncherAccount(updated) : updated);
 }
 
 export async function deleteLauncherAccount(req: Request, res: Response) {

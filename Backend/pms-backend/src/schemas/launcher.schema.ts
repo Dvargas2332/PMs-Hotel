@@ -10,6 +10,7 @@ export const launcherLoginSchema = z.object({
       .string()
       .min(4, "La contraseña debe tener al menos 4 dígitos")
       .regex(/^\d{4,}$/, "La contraseña debe tener al menos 4 dígitos numéricos"),
+    hotelId: z.string().min(1).optional(),
   }),
 });
 

@@ -6,7 +6,7 @@ import RestaurantUserMenu from "./RestaurantUserMenu";
 // Manually adjust tile size:
 const LOBBY_TILE_SIZE = "lg"; // "sm" | "md" | "lg"
 
-const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE }) => {
+const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE, actions }) => {
   const toneDecor = {
     lime: {
       border: "border-lime-200",
@@ -74,10 +74,12 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
   const s = sizes[size] || sizes.md;
   const d = toneDecor[tone] || toneDecor.lime;
 
+  const Root = actions?.length ? "div" : "button";
   return (
-    <button
+    <Root
       className={`group relative overflow-hidden rounded-2xl bg-white/95 border ${d.border} shadow-[0_8px_20px_rgba(16,185,129,0.18)] hover:shadow-[0_12px_28px_rgba(16,185,129,0.28)] hover:-translate-y-0.5 transition text-left ${s.root}`}
-      onClick={onClick}
+      onClick={actions?.length ? undefined : onClick}
+      type={actions?.length ? undefined : "button"}
     >
       <div className="absolute -top-6 -right-6 pointer-events-none">
         <Icon className={`w-28 h-28 ${d.watermark}`} />
@@ -91,10 +93,26 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
             <div className={`${s.title} font-semibold text-lime-900`}>{title}</div>
           </div>
           <div className={`${s.desc} text-slate-600`}>{desc}</div>
+          {actions?.length ? (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  className="px-3 py-2 rounded-lg border border-lime-200 bg-white text-sm font-semibold text-lime-900 hover:bg-lime-50"
+                  onClick={action.onClick}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
-        <ChevronRight className={`${s.chevron} text-lime-700 group-hover:translate-x-0.5 transition`} />
+        {!actions?.length && (
+          <ChevronRight className={`${s.chevron} text-lime-700 group-hover:translate-x-0.5 transition`} />
+        )}
       </div>
-    </button>
+    </Root>
   );
 };
 
@@ -130,12 +148,15 @@ export default function RestaurantLobby() {
       tone: "emerald",
     },
     {
-      title: "Historicos",
-      desc: "Facturacion e informes en un solo lugar.",
+      title: "Historicos y reimpresiones",
+      desc: "Facturacion, reportes y reimpresiones en un solo lugar.",
       icon: FileText,
       size: "lg",
-      onClick: () => navigate("/restaurant/reports"),
       tone: "indigo",
+      actions: [
+        { label: "Historicos", onClick: () => navigate("/restaurant/reports") },
+        { label: "Reimpresiones", onClick: () => navigate("/restaurant/billing") },
+      ],
     },
     {
       title: "Cajeros y Meseros",
@@ -160,14 +181,6 @@ export default function RestaurantLobby() {
       size: "lg",
       onClick: () => navigate("/management?view=restaurantInventory"),
       tone: "orange",
-    },
-    {
-      title: "Reimpresiones",
-      desc: "Reimpresiones, anulaciones y re-Reimpresiones.",
-      icon: FileText,
-      size: "lg",
-      onClick: () => navigate("/restaurant/billing"),
-      tone: "aqua",
     },
   ];
   const gridCols =
@@ -210,8 +223,6 @@ export default function RestaurantLobby() {
     </div>
   );
 }
-
-
 
 
 

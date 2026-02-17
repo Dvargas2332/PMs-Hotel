@@ -40,15 +40,6 @@ export default function RestaurantUserMenu({ onOpenCashStatus }) {
               <div className="text-xs font-normal text-slate-600">{user?.email || user?.username || ""}</div>
             </div>
           </button>
-          <button
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
-            onClick={() => {
-              setOpen(false);
-              navigate("/restaurant");
-            }}
-          >
-            <span>Lobby</span>
-          </button>
           {typeof onOpenCashStatus === "function" && (
             <button
               className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
@@ -60,6 +51,15 @@ export default function RestaurantUserMenu({ onOpenCashStatus }) {
               <span>Estado de caja</span>
             </button>
           )}
+          <button
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
+            onClick={() => {
+              setOpen(false);
+              navigate("/restaurant");
+            }}
+          >
+            <span>Lobby</span>
+          </button>
           <button
             className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
             onClick={() => {
