@@ -204,6 +204,14 @@ async function findPrimaryAdminUser(hotelId: string) {
   });
 }
 
+async function findPrimaryLauncherAdmin(hotelId: string) {
+  return prisma.launcherAccount.findFirst({
+    where: { hotelId, roleId: "ADMIN" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, username: true, createdAt: true },
+  });
+}
+
 export async function getHotelAdmin(req: Request, res: Response) {
   const hotelId = String(req.params.id || "").trim();
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
@@ -267,6 +275,72 @@ export async function updateHotelAdmin(req: Request, res: Response) {
   res.json(updated);
 }
 
+export async function getHotelLauncherAdmin(req: Request, res: Response) {
+  const hotelId = String(req.params.id || "").trim();
+  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true } });
+  if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  const admin = await findPrimaryLauncherAdmin(hotelId);
+  if (!admin) return res.status(404).json({ message: "Administrador de launcher no encontrado" });
+  res.json(admin);
+}
+
+export async function updateHotelLauncherAdmin(req: Request, res: Response) {
+  const hotelId = String(req.params.id || "").trim();
+  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true } });
+  if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  const admin = await findPrimaryLauncherAdmin(hotelId);
+  if (!admin) return res.status(404).json({ message: "Administrador de launcher no encontrado" });
+
+  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
+  const data: any = {};
+
+  if ("name" in body) {
+    const name = normalizeText(body.name);
+    if (!name) return res.status(400).json({ message: "Nombre requerido" });
+    data.name = name;
+  }
+
+  if ("username" in body) {
+    const username = normalizeText(body.username).toLowerCase();
+    if (!username) return res.status(400).json({ message: "Usuario requerido" });
+    const existing = await prisma.launcherAccount.findFirst({
+      where: { hotelId, username },
+      select: { id: true },
+    });
+    if (existing && existing.id !== admin.id) {
+      return res.status(409).json({ message: "Usuario ya registrado" });
+    }
+    data.username = username;
+  }
+
+  if ("password" in body) {
+    const password = String(body.password || "");
+    if (password && password.length < 4) {
+      return res.status(400).json({ message: "Contraseña inválida (min 4)" });
+    }
+    if (password) {
+      data.password = await bcrypt.hash(password, ROUNDS);
+    }
+  }
+
+  if (Object.keys(data).length === 0) {
+    return res.status(400).json({ message: "Sin cambios" });
+  }
+
+  const updated = await prisma.launcherAccount.update({
+    where: { id: admin.id },
+    data,
+    select: { id: true, name: true, username: true, createdAt: true },
+  });
+  res.json(updated);
+}
+
 export async function createHotel(req: Request, res: Response) {
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
 
@@ -284,10 +358,10 @@ export async function createHotel(req: Request, res: Response) {
   }
   const membership = normalizeMembershipTier(membershipRaw);
 
-  const adminEmail = String(body.adminEmail || "").trim().toLowerCase();
+  const adminUsername = String(body.adminUsername || body.adminEmail || "").trim().toLowerCase();
   const adminPassword = String(body.adminPassword || "");
   const adminName = String(body.adminName || "Administrador").trim();
-  if (!adminEmail) return res.status(400).json({ message: "Email del administrador requerido" });
+  if (!adminUsername) return res.status(400).json({ message: "Usuario del administrador requerido" });
   if (!adminPassword || adminPassword.length < 4) {
     return res.status(400).json({ message: "Contrase??a del administrador inv??lida" });
   }
@@ -332,7 +406,7 @@ export async function createHotel(req: Request, res: Response) {
     const launcherHash = await bcrypt.hash(adminPassword, ROUNDS);
     await tx.launcherAccount.create({
       data: {
-        username: adminEmail,
+        username: adminUsername,
         name: adminName || "Administrador",
         password: launcherHash,
         roleId: "ADMIN",
@@ -366,7 +440,7 @@ export async function createHotel(req: Request, res: Response) {
 
     createdCredentials = {
       hotelUser: { email: hotelUserEmail, password: hotelUserPassword },
-      launcherAdmin: { username: adminEmail, password: adminPassword },
+      launcherAdmin: { username: adminUsername, password: adminPassword },
     };
 
     return createdHotel;

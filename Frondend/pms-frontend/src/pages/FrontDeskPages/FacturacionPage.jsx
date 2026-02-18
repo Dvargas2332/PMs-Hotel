@@ -29,12 +29,13 @@ function einvoiceBadgeColor(status) {
   return "gray";
 }
 
-export default function FacturacionPage() {
+export default function BillingPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
   const [issuing, setIssuing] = useState({});
   const [currency, setCurrency] = useState({ code: "CRC", symbol: "", decimals: 0 });
+  const [activeStays, setActiveStays] = useState([]);
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -80,8 +81,19 @@ export default function FacturacionPage() {
     }
   };
 
+  const loadActiveStays = async () => {
+    try {
+      const { data } = await api.get("/reservations/active");
+      setActiveStays(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
+      setActiveStays([]);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
+    loadActiveStays();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -141,6 +153,61 @@ export default function FacturacionPage() {
       </div>
 
       <div className="bg-white border rounded-lg p-3 shadow-sm space-y-3">
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">Active check-ins for checkout</div>
+          {activeStays.length === 0 ? (
+            <div className="text-xs text-slate-500">No rooms currently checked in.</div>
+          ) : (
+            <div className="overflow-auto border rounded">
+              <table className="min-w-full text-xs">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="px-2 py-2 text-left">Room</th>
+                    <th className="px-2 py-2 text-left">Guest</th>
+                    <th className="px-2 py-2 text-left">Check-in</th>
+                    <th className="px-2 py-2 text-left">Check-out</th>
+                    <th className="px-2 py-2 text-left">Invoice</th>
+                    <th className="px-2 py-2 text-right">Total</th>
+                    <th className="px-2 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeStays.map((r) => {
+                    const guestName =
+                      `${r.guest?.firstName || ""} ${r.guest?.lastName || ""}`.trim() || r.guest?.email || "-";
+                    const roomLabel = r.room?.number || r.room?.type || "-";
+                    const inv = r.invoice || null;
+                    return (
+                      <tr key={r.id} className="border-t">
+                        <td className="px-2 py-2">{roomLabel}</td>
+                        <td className="px-2 py-2">{guestName}</td>
+                        <td className="px-2 py-2">
+                          {r.checkIn ? new Date(r.checkIn).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-2 py-2">
+                          {r.checkOut ? new Date(r.checkOut).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-2 py-2">{inv?.number || "-"}</td>
+                        <td className="px-2 py-2 text-right">
+                          {fmtCurrency(inv?.total || 0, currency)}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <button
+                            className="px-2 py-1 rounded border text-xs"
+                            onClick={() => navigate("/frontdesk/reservas")}
+                          >
+                            Go to checkout
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-6 gap-2 text-xs">
           <div className="flex flex-col gap-1">
             <span>From</span>
@@ -273,7 +340,7 @@ export default function FacturacionPage() {
                             className="px-2 py-1 rounded border text-[11px] hover:bg-slate-50"
                             disabled={Boolean(issuing[inv.id + ":FE"])}
                             onClick={() => issueEDoc(inv, "FE")}
-                            title="Create Factura Electrónica (FE)"
+                            title="Create Electronic Invoice (FE)"
                           >
                             {issuing[inv.id + ":FE"] ? "..." : "FE"}
                           </button>
@@ -285,7 +352,7 @@ export default function FacturacionPage() {
                             className="px-2 py-1 rounded border text-[11px] hover:bg-slate-50"
                             disabled={Boolean(issuing[inv.id + ":TE"])}
                             onClick={() => issueEDoc(inv, "TE")}
-                            title="Create Tiquete Electrónico (TE)"
+                            title="Create Electronic Ticket (TE)"
                           >
                             {issuing[inv.id + ":TE"] ? "..." : "TE"}
                           </button>

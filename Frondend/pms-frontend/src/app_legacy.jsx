@@ -12,7 +12,7 @@ import Dashboard from "./pages/FrontDeskPages/Dashboard";
 import ClientesPage from "./pages/FrontDeskPages/ClientesPage";
 import ConfiguracionPage from "./pages/FrontDeskPages/ConfiguracionPage";
 import ReservationsPage from "./pages/FrontDeskPages/ReservationsPage";
-import FacturacionPage from "./pages/FrontDeskPages/FacturacionPage";
+import BillingPage from "./pages/FrontDeskPages/FacturacionPage";
 import HabitacionesBoard from "./pages/FrontDeskPages/HabitacionesBoard";
 import ReportesPage from "./pages/FrontDeskPages/ReportesPage";
 
@@ -74,7 +74,7 @@ export default function App() {
           <Route path="reservas" element={<ReservationsPage />} />
           <Route path="clientes" element={<ClientesPage />} />
           <Route path="configuracion" element={<ConfiguracionPage />} />
-          <Route path="facturacion" element={<FacturacionPage />} />
+          <Route path="facturacion" element={<BillingPage />} />
           <Route path="habitaciones" element={<HabitacionesBoard />} />
           <Route path="reportes" element={<ReportesPage />} />
           <Route path="*" element={<Navigate to="." replace />} />

@@ -58,7 +58,7 @@ const INITIAL_CREATE_FORM = {
   hotelUserEmail: "",
   hotelUserPassword: "",
   adminName: "Administrador",
-  adminEmail: "",
+  adminUsername: "",
   adminPassword: "",
 };
 
@@ -179,6 +179,9 @@ export default function Launchergestor() {
   const [adminForm, setAdminForm] = useState(() => ({ ...INITIAL_ADMIN_FORM }));
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
+  const [launcherAdminForm, setLauncherAdminForm] = useState(() => ({ ...INITIAL_ADMIN_FORM }));
+  const [launcherAdminLoading, setLauncherAdminLoading] = useState(false);
+  const [launcherAdminSaving, setLauncherAdminSaving] = useState(false);
 
   const [createForm, setCreateForm] = useState(() => ({ ...INITIAL_CREATE_FORM }));
   const [createTab, setCreateTab] = useState("hotel");
@@ -301,6 +304,25 @@ export default function Launchergestor() {
     }
   }, []);
 
+  const loadLauncherAdmin = useCallback(async (hotelId) => {
+    if (!hotelId) return;
+    setLauncherAdminLoading(true);
+    try {
+      const { data } = await api.get(`/gestor/hotels/${encodeURIComponent(hotelId)}/launcher-admin`);
+      setLauncherAdminForm((prev) => ({
+        ...prev,
+        id: data?.id || "",
+        name: data?.name || "",
+        email: data?.username || "",
+        password: "",
+        confirmPassword: "",
+      }));
+    } catch {
+      setLauncherAdminForm({ ...INITIAL_ADMIN_FORM });
+    } finally {
+      setLauncherAdminLoading(false);
+    }
+  }, []);
   useEffect(() => {
     loadClients().catch(() => {});
     loadHotels().catch(() => {});
@@ -318,7 +340,8 @@ export default function Launchergestor() {
     if (!selectedHotelId) return;
     loadBilling(selectedHotelId).catch(() => {});
     loadHotelAdmin(selectedHotelId).catch(() => {});
-  }, [selectedHotelId, loadBilling, loadHotelAdmin]);
+    loadLauncherAdmin(selectedHotelId).catch(() => {});
+  }, [selectedHotelId, loadBilling, loadHotelAdmin, loadLauncherAdmin]);
 
   useEffect(() => {
     if (!selectedHotel?.currency) return;
@@ -414,12 +437,12 @@ export default function Launchergestor() {
       hotelUserEmail: String(createForm.hotelUserEmail || "").trim() || undefined,
       hotelUserPassword: String(createForm.hotelUserPassword || "") || undefined,
       adminName: String(createForm.adminName || "").trim() || "Administrador",
-      adminEmail: String(createForm.adminEmail || "").trim(),
+      adminUsername: String(createForm.adminUsername || "").trim(),
       adminPassword: String(createForm.adminPassword || ""),
     };
 
     if (!payload.name) return alert("Nombre del hotel requerido");
-    if (!payload.adminEmail) return alert("Email del administrador requerido");
+    if (!payload.adminUsername) return alert("Usuario del administrador requerido");
     if (!payload.adminPassword || payload.adminPassword.length < 4) {
       return alert("Contrasena del administrador (min 4)");
     }
@@ -499,6 +522,32 @@ export default function Launchergestor() {
     }
   };
 
+  const onSaveLauncherAdmin = async () => {
+    if (!selectedHotelId || launcherAdminSaving) return;
+    const name = String(launcherAdminForm.name || "").trim();
+    const username = String(launcherAdminForm.email || "").trim().toLowerCase();
+    const password = String(launcherAdminForm.password || "");
+    const confirm = String(launcherAdminForm.confirmPassword || "");
+
+    if (!name) return alert("Nombre del administrador requerido");
+    if (!username) return alert("Usuario del administrador requerido");
+    if (password && password.length < 4) return alert("Contrasena invalida (min 4)");
+    if (password && password !== confirm) return alert("Las contrasenas no coinciden");
+
+    const payload = { name, username };
+    if (password) payload.password = password;
+
+    setLauncherAdminSaving(true);
+    try {
+      await api.put(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}/launcher-admin`, payload);
+      await loadLauncherAdmin(selectedHotelId);
+      alert("Administrador de launcher actualizado");
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo actualizar el administrador");
+    } finally {
+      setLauncherAdminSaving(false);
+    }
+  };
   const onDeleteBilling = async (paymentId) => {
     if (!selectedHotelId || !paymentId) return;
     if (!window.confirm("¿Eliminar este cobro?")) return;
@@ -1115,15 +1164,14 @@ const importEndpoints = useMemo(
                       </div>
 
                       <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Usuario / Email</div>
-                        <Input
-                          name="hotelAdminEmail"
-                          type="email"
-                          autoComplete="off"
-                          placeholder="Email del administrador"
-                          value={createForm.adminEmail}
-                          onChange={(e) => setCreateForm((p) => ({ ...p, adminEmail: e.target.value }))}
-                        />
+                      <div className="px-1 text-xs text-slate-600">Usuario</div>
+                      <Input
+                        name="hotelAdminUsername"
+                        autoComplete="off"
+                        placeholder="Usuario del administrador"
+                        value={createForm.adminUsername}
+                        onChange={(e) => setCreateForm((p) => ({ ...p, adminUsername: e.target.value }))}
+                      />
                       </div>
 
                       <div className="space-y-1">
@@ -1432,6 +1480,59 @@ const importEndpoints = useMemo(
                       <div className="flex items-center justify-end">
                         <Button onClick={onSaveAdmin} disabled={adminSaving}>
                           {adminSaving ? "Guardando..." : "Guardar administrador"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </Card>
+              ) : null}
+
+              {editingHotel ? (
+                <Card className="p-4 space-y-3">
+                  <div className="text-sm font-semibold text-slate-900">Administrador del launcher</div>
+                  {launcherAdminLoading ? (
+                    <div className="text-sm text-slate-500">Cargando...</div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Nombre</div>
+                          <Input
+                            value={launcherAdminForm.name}
+                            onChange={(e) => setLauncherAdminForm((p) => ({ ...p, name: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Usuario</div>
+                          <Input
+                            value={launcherAdminForm.email}
+                            onChange={(e) => setLauncherAdminForm((p) => ({ ...p, email: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Nueva contrasena</div>
+                          <Input
+                            type="password"
+                            value={launcherAdminForm.password}
+                            onChange={(e) => setLauncherAdminForm((p) => ({ ...p, password: e.target.value }))}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="px-1 text-xs text-slate-600">Confirmar contrasena</div>
+                          <Input
+                            type="password"
+                            value={launcherAdminForm.confirmPassword}
+                            onChange={(e) => setLauncherAdminForm((p) => ({ ...p, confirmPassword: e.target.value }))}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end">
+                        <Button onClick={onSaveLauncherAdmin} disabled={launcherAdminSaving}>
+                          {launcherAdminSaving ? "Guardando..." : "Guardar launcher admin"}
                         </Button>
                       </div>
                     </>

@@ -9,6 +9,8 @@ import {
   updateHotel,
   getHotelAdmin,
   updateHotelAdmin,
+  getHotelLauncherAdmin,
+  updateHotelLauncherAdmin,
   listHotelBilling,
   createHotelBilling,
   deleteHotelBilling,
@@ -32,6 +34,8 @@ router.post("/hotels", createHotel);
 router.put("/hotels/:id", updateHotel);
 router.get("/hotels/:id/admin", getHotelAdmin);
 router.put("/hotels/:id/admin", updateHotelAdmin);
+router.get("/hotels/:id/launcher-admin", getHotelLauncherAdmin);
+router.put("/hotels/:id/launcher-admin", updateHotelLauncherAdmin);
 
 router.get("/hotels/:id/billing", listHotelBilling);
 router.post("/hotels/:id/billing", createHotelBilling);

@@ -109,6 +109,22 @@ export async function listReservations(req: Request, res: Response) {
   res.json(data);
 }
 
+export async function listActiveCheckins(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const data = await prisma.reservation.findMany({
+    where: { hotelId: user.hotelId, status: ReservationStatus.CHECKED_IN },
+    orderBy: { checkIn: "asc" },
+    include: {
+      room: true,
+      guest: true,
+      invoice: { select: { id: true, number: true, total: true, status: true, currency: true, createdAt: true } },
+    },
+  });
+  res.json(data);
+}
+
 export async function checkIn(req: Request, res: Response) {
   const { id } = req.params;
   // @ts-ignore
@@ -128,6 +144,21 @@ export async function checkIn(req: Request, res: Response) {
   });
   if (r?.roomId) {
     await prisma.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "OCCUPIED" } });
+  }
+  if (r) {
+    const invoiceNumber = `INV-${r.id}`;
+    await prisma.invoice.upsert({
+      where: { reservationId: r.id },
+      update: {},
+      create: {
+        reservationId: r.id,
+        guestId: r.guestId,
+        number: invoiceNumber,
+        status: "DRAFT",
+        currency: r.room?.currency || "CRC",
+        hotelId,
+      },
+    });
   }
   res.json(r);
 }

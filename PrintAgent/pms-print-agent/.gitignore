@@ -1,8 +1,0 @@
-.env
-node_modules
-dist
-installer/Output
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*

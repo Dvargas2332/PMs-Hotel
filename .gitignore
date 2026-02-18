@@ -27,3 +27,12 @@ local_pgdata
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# apps/binaries not tracked in this repo
+restaurant-pos-android/
+PrintAgent/pms-print-agent/
+API_Hacienda-4.4/
+
+# local secrets / keys
+pms-proyect-key.pem
+pms-ec2.txt
