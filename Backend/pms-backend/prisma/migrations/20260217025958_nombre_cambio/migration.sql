@@ -8,7 +8,7 @@
 ALTER TABLE "RolePermission" DROP CONSTRAINT "RolePermission_roleId_fkey";
 
 -- DropIndex
-DROP INDEX "AppRole_hotelId_id_key";
+DROP INDEX "AppRole_hotelId_id_key" CASCADE;
 
 -- AlterTable
 ALTER TABLE "AppRole" DROP CONSTRAINT "AppRole_pkey",
