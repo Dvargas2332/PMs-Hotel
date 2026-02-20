@@ -165,20 +165,20 @@ router.post("/sections/:sectionId/menus", requirePermission("restaurant.menu.wri
 router.patch("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write"), updateSectionMenuAssignment);
 router.delete("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write"), deleteSectionMenuAssignment);
 
-router.get("/families", requirePermission("restaurant.read"), listFamilies);
+router.get("/families", listFamilies);
 router.post("/families", requirePermission("restaurant.families.write"), createFamily);
 router.patch("/families/:id", requirePermission("restaurant.families.write"), updateFamily);
 router.delete("/families/:id", requirePermission("restaurant.families.write"), deleteFamily);
 
-router.get("/subfamilies", requirePermission("restaurant.read"), listSubFamilies);
+router.get("/subfamilies", listSubFamilies);
 router.post("/subfamilies", requirePermission("restaurant.families.write"), createSubFamily);
 router.delete("/subfamilies/:id", requirePermission("restaurant.families.write"), deleteSubFamily);
 
-router.get("/subsubfamilies", requirePermission("restaurant.read"), listSubSubFamilies);
+router.get("/subsubfamilies", listSubSubFamilies);
 router.post("/subsubfamilies", requirePermission("restaurant.families.write"), createSubSubFamily);
 router.delete("/subsubfamilies/:id", requirePermission("restaurant.families.write"), deleteSubSubFamily);
 
-router.get("/items", requirePermission("restaurant.read"), listItems);
+router.get("/items", listItems);
 router.post("/items", requirePermission("restaurant.items.write"), createItems);
 router.patch("/items/:id", requirePermission("restaurant.items.write"), updateItem);
 router.delete("/items/:id", requirePermission("restaurant.items.write"), deleteItem);

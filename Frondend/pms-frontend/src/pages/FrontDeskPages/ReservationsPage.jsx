@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
-import { useHotelData } from "../../context/HotelDataContext";
+import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";

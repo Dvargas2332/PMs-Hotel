@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { useHotelData } from "../../context/HotelDataContext";
+import { useHotelData } from "../../context/useHotelData";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
 

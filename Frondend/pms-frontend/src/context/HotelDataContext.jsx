@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useMemo, useState, useCallback, useEffect } from "react";
+import React, { createContext, useMemo, useState, useCallback, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "../lib/api";
+import { useAuth } from "./AuthContext";
 
 // Estructuras esperadas:
 // settings: { checkIn:'HH:mm:ss', checkOut:'HH:mm:ss', timeZone:'America/Costa_Rica' }
 // room: { id: string, title: string, status: 'available'|'occupied'|'dirty'|'blocked'|'maintenance' }
 // reservation: { id, roomId, guestName, checkInDate:'YYYY-MM-DD', checkOutDate:'YYYY-MM-DD', status? }
 
-const HotelDataContext = createContext(null);
+export const HotelDataContext = createContext(null);
 
 const STATUS_LABELS = {
   PENDING: "Pendiente",
@@ -97,6 +99,12 @@ const toYMD = (v) => {
 };
 
 export function HotelDataProvider({ children }) {
+  const { token, hotel } = useAuth();
+  const location = useLocation();
+  const pathname = location?.pathname || "";
+  const shouldAutoLoad =
+    Boolean(token && hotel) &&
+    (pathname.startsWith("/frontdesk") || pathname.startsWith("/management/frontdesk"));
   const [settings, setSettings] = useState({
     checkIn: "15:00:00",
     checkOut: "11:00:00",
@@ -360,9 +368,10 @@ export function HotelDataProvider({ children }) {
   );
 
   useEffect(() => {
+    if (!shouldAutoLoad) return;
     if (initialized) return;
     refreshAll().catch(() => setInitialized(true));
-  }, [initialized, refreshAll]);
+  }, [initialized, refreshAll, shouldAutoLoad]);
 
   const value = useMemo(
     () => ({
@@ -419,8 +428,3 @@ export function HotelDataProvider({ children }) {
   return <HotelDataContext.Provider value={value}>{children}</HotelDataContext.Provider>;
 }
 
-export function useHotelData() {
-  const ctx = useContext(HotelDataContext);
-  if (!ctx) throw new Error("useHotelData debe usarse dentro de <HotelDataProvider>");
-  return ctx;
-}

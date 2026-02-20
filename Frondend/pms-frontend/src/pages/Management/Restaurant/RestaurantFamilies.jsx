@@ -18,6 +18,8 @@ export default function RestaurantFamilies() {
   const [familyCabysSearch, setFamilyCabysSearch] = useState("");
   const [familyCabysLoading, setFamilyCabysLoading] = useState(false);
   const [familyCabysResults, setFamilyCabysResults] = useState([]);
+  const [cabysModalOpen, setCabysModalOpen] = useState(false);
+  const [cabysModalQuery, setCabysModalQuery] = useState("");
 
   const pushAlert = (title, desc) => {
     window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title, desc } }));
@@ -156,15 +158,21 @@ export default function RestaurantFamilies() {
     }
   };
 
-  const saveFamilyCabys = async () => {
+  const saveFamilyCabys = async (value) => {
     if (!selectedFamilyId) return;
-    const cabys = String(familyCabys || "").trim();
+    const cabys = String(value ?? familyCabys ?? "").trim();
     try {
       const { data } = await api.patch(`/restaurant/families/${selectedFamilyId}`, { cabys: cabys || null });
       setFamilies((prev) => prev.map((f) => (f.id === selectedFamilyId ? data : f)));
     } catch (err) {
       pushAlert("Restaurant", getApiError(err, "Could not save family CABYS."));
     }
+  };
+
+  const runCabysSearch = () => {
+    setCabysModalQuery(String(familyCabys || "").trim());
+    setFamilyCabysSearch(String(familyCabys || "").trim());
+    setCabysModalOpen(true);
   };
 
   const removeFamily = async (id) => {
@@ -243,43 +251,18 @@ export default function RestaurantFamilies() {
                     onChange={(e) => {
                       const v = e.target.value;
                       setFamilyCabys(v);
-                      setFamilyCabysSearch(v);
                     }}
                     className="h-8 text-[14px] px-2 placeholder:text-[14px]"
                   />
-                  {(familyCabysLoading || (familyCabysResults || []).length > 0) &&
-                    String(familyCabysSearch || "").trim().length >= 3 && (
-                      <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow max-h-64 overflow-y-auto">
-                        {familyCabysLoading && <div className="px-3 py-2 text-xs text-slate-600">Searching...</div>}
-                        {!familyCabysLoading && (familyCabysResults || []).length === 0 && (
-                          <div className="px-3 py-2 text-xs text-slate-600">No results.</div>
-                        )}
-                        {(familyCabysResults || []).map((r) => (
-                          <button
-                            key={r.id}
-                            type="button"
-                            className="w-full px-3 py-2 text-left hover:bg-slate-50"
-                            onClick={() => {
-                              setFamilyCabys(String(r.id));
-                              setFamilyCabysSearch("");
-                              setFamilyCabysResults([]);
-                            }}
-                          >
-                            <div className="text-xs font-semibold text-slate-900">{r.id}</div>
-                            <div className="text-[11px] text-slate-600 line-clamp-2">{r.description}</div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
                   className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                  onClick={saveFamilyCabys}
+                  onClick={runCabysSearch}
                   disabled={!selectedFamilyId}
                 >
-                  Save CABYS
+                  Search CABYS
                 </Button>
               </div>
               <div className="max-h-[320px] overflow-y-auto space-y-1 pr-1">
@@ -296,17 +279,25 @@ export default function RestaurantFamilies() {
                       {f.name}
                       {f.cabys ? <span className="ml-2 text-[11px] font-semibold text-slate-500">{f.cabys}</span> : null}
                     </span>
-                    <button
-                      type="button"
+                    <span
+                      role="button"
+                      tabIndex={0}
                       className="text-xs text-red-600 hover:underline"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         removeFamily(f.id);
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeFamily(f.id);
+                        }
+                      }}
                     >
                       Delete
-                    </button>
+                    </span>
                   </button>
                 ))}
                 {(families || []).length === 0 && <div className="text-sm text-gray-500">No families yet.</div>}
@@ -358,17 +349,25 @@ export default function RestaurantFamilies() {
                     onClick={() => setSelectedSubFamilyId(sf.id)}
                   >
                     <span className="text-sm font-semibold truncate">{sf.name}</span>
-                    <button
-                      type="button"
+                    <span
+                      role="button"
+                      tabIndex={0}
                       className="text-xs text-red-600 hover:underline"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
                         removeSubFamily(sf.id);
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeSubFamily(sf.id);
+                        }
+                      }}
                     >
                       Delete
-                    </button>
+                    </span>
                   </button>
                 ))}
                 {!selectedFamilyId && <div className="text-sm text-gray-500">Select a family first.</div>}
@@ -433,6 +432,70 @@ export default function RestaurantFamilies() {
           </div>
         </div>
       </Card>
+
+      {cabysModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border">
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div>
+                <div className="text-sm font-semibold">Search CABYS catalog</div>
+                <div className="text-xs text-slate-500">Search by activity name or CABYS code.</div>
+              </div>
+              <button
+                type="button"
+                className="h-9 w-9 rounded-lg border bg-white hover:bg-slate-50 flex items-center justify-center"
+                onClick={() => setCabysModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Type CABYS code or activity name..."
+                  value={cabysModalQuery}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setCabysModalQuery(v);
+                    setFamilyCabysSearch(v);
+                  }}
+                  className="h-9"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setFamilyCabysSearch(String(cabysModalQuery || "").trim())}
+                >
+                  Search
+                </Button>
+              </div>
+              <div className="border rounded-lg max-h-[420px] overflow-y-auto">
+                {familyCabysLoading && <div className="px-3 py-2 text-sm text-slate-600">Searching...</div>}
+                {!familyCabysLoading && (familyCabysResults || []).length === 0 && (
+                  <div className="px-3 py-2 text-sm text-slate-600">No results.</div>
+                )}
+                {(familyCabysResults || []).map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className="w-full px-3 py-2 text-left hover:bg-slate-50 border-b last:border-b-0"
+                    onClick={() => {
+                      const code = String(r.id);
+                      setFamilyCabys(code);
+                      setFamilyCabysSearch("");
+                      setFamilyCabysResults([]);
+                      saveFamilyCabys(code);
+                      setCabysModalOpen(false);
+                    }}
+                  >
+                    <div className="text-sm font-semibold text-slate-900">{r.id}</div>
+                    <div className="text-xs text-slate-600 line-clamp-2">{r.description}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

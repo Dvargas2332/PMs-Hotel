@@ -84,6 +84,18 @@ const INITIAL_ADMIN_FORM = {
   confirmPassword: "",
 };
 
+const INITIAL_SMTP_FORM = {
+  host: "",
+  port: "587",
+  user: "",
+  pass: "",
+  secure: false,
+  from: "",
+  to: "",
+  replyTo: "",
+  passSet: false,
+};
+
 function fmtDate(d) {
   try {
     return new Date(d).toLocaleString();
@@ -184,6 +196,11 @@ export default function Launchergestor() {
   const [launcherAdminForm, setLauncherAdminForm] = useState(() => ({ ...INITIAL_ADMIN_FORM }));
   const [launcherAdminLoading, setLauncherAdminLoading] = useState(false);
   const [launcherAdminSaving, setLauncherAdminSaving] = useState(false);
+  const [smtpForm, setSmtpForm] = useState(() => ({ ...INITIAL_SMTP_FORM }));
+  const [smtpLoading, setSmtpLoading] = useState(false);
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpStatus, setSmtpStatus] = useState("");
+  const [showSmtp, setShowSmtp] = useState(false);
 
   const [createForm, setCreateForm] = useState(() => ({ ...INITIAL_CREATE_FORM }));
   const [createTab, setCreateTab] = useState("hotel");
@@ -210,6 +227,63 @@ export default function Launchergestor() {
   });
   const [importing, setImporting] = useState({});
   const [lastImport, setLastImport] = useState(null);
+
+  const loadSaasConfig = useCallback(async () => {
+    setSmtpLoading(true);
+    setSmtpStatus("");
+    try {
+      const { data } = await api.get("/gestor/saas-config");
+      const smtp = data?.smtp || {};
+      setSmtpForm((prev) => ({
+        ...prev,
+        ...INITIAL_SMTP_FORM,
+        ...smtp,
+        pass: "",
+      }));
+    } catch (err) {
+      setSmtpStatus("No se pudo cargar la configuración SMTP.");
+    } finally {
+      setSmtpLoading(false);
+    }
+  }, []);
+
+  const onSaveSmtp = useCallback(async () => {
+    setSmtpSaving(true);
+    setSmtpStatus("");
+    try {
+      const payload = {
+        smtp: {
+          host: smtpForm.host,
+          port: Number(smtpForm.port || 0),
+          user: smtpForm.user,
+          secure: Boolean(smtpForm.secure),
+          from: smtpForm.from,
+          to: smtpForm.to,
+          replyTo: smtpForm.replyTo,
+        },
+      };
+      if (smtpForm.pass) payload.smtp.pass = smtpForm.pass;
+      const { data } = await api.put("/gestor/saas-config", payload);
+      const smtp = data?.smtp || {};
+      setSmtpForm((prev) => ({
+        ...prev,
+        ...INITIAL_SMTP_FORM,
+        ...smtp,
+        pass: "",
+      }));
+      setSmtpStatus("Configuración guardada.");
+    } catch (err) {
+      setSmtpStatus("No se pudo guardar la configuración SMTP.");
+    } finally {
+      setSmtpSaving(false);
+    }
+  }, [smtpForm]);
+
+  useEffect(() => {
+    if (showSmtp) {
+      loadSaasConfig();
+    }
+  }, [showSmtp, loadSaasConfig]);
 
   const filteredClients = useMemo(() => {
     const term = String(clientQ || "").trim().toLowerCase();
@@ -686,6 +760,9 @@ const importEndpoints = useMemo(
               {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
               {theme === "dark" ? "Claro" : "Oscuro"}
             </Button>
+            <Button variant="outline" onClick={() => setShowSmtp((v) => !v)}>
+              Configurar SMTP
+            </Button>
             <Button
               variant="outline"
               onClick={() => {
@@ -703,6 +780,106 @@ const importEndpoints = useMemo(
             </Button>
           </div>
         </div>
+
+        {showSmtp ? (
+          <Card className="p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">SMTP global</div>
+                <div className="text-xs text-slate-500">
+                  Configura el correo del gestor para enviar mensajes y recibir solicitudes del sitio web.
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => setShowSmtp(false)}>
+                Cerrar
+              </Button>
+            </div>
+
+            {smtpLoading ? (
+              <div className="text-sm text-slate-500">Cargando configuraciÃ³n...</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">Host</div>
+                    <Input
+                      value={smtpForm.host}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, host: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">Puerto</div>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={smtpForm.port}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, port: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">Usuario</div>
+                    <Input
+                      value={smtpForm.user}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, user: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">ContraseÃ±a</div>
+                    <Input
+                      type="password"
+                      value={smtpForm.pass}
+                      placeholder={smtpForm.passSet ? "******** (ya guardada)" : ""}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, pass: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">From</div>
+                    <Input
+                      value={smtpForm.from}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, from: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">To</div>
+                    <Input
+                      value={smtpForm.to}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, to: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="px-1 text-xs text-slate-600">Reply-To</div>
+                    <Input
+                      value={smtpForm.replyTo}
+                      onChange={(e) => setSmtpForm((p) => ({ ...p, replyTo: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(smtpForm.secure)}
+                    onChange={(e) => setSmtpForm((p) => ({ ...p, secure: e.target.checked }))}
+                  />
+                  Usar SSL/TLS (secure)
+                </label>
+
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs text-slate-500">{smtpStatus || " "}</div>
+                  <Button onClick={onSaveSmtp} disabled={smtpSaving}>
+                    {smtpSaving ? "Guardando..." : "Guardar SMTP"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </Card>
+        ) : null}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">
@@ -1840,7 +2017,6 @@ const importEndpoints = useMemo(
                       {lastImport.updated ?? 0} actualizados, {lastImport.errors ?? 0} errores.
                     </div>
                   ) : null}
-                </div>
               )}
             </Card>
           </div>

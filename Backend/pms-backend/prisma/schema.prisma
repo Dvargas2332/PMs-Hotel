@@ -664,6 +664,13 @@ model SaasBillingPayment {
   @@index([hotelId, paidAt])
 }
 
+model SaasConfig {
+  key       String   @id
+  smtp      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model Hotel {
   id         String   @id @default(cuid())
   number     Int      @unique @default(autoincrement())

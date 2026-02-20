@@ -1524,7 +1524,7 @@ export default function RestaurantConfig() {
 
   const renderFloorplan = () => (
     <div className="space-y-4">
-      <Card className="p-4 space-y-3">
+      <Card className="p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-xs uppercase text-gray-500">Floorplan</div>
@@ -2417,8 +2417,8 @@ export default function RestaurantConfig() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-4">
-          <div className="space-y-3">
+        <div className="grid lg:grid-cols-12 gap-4">
+          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
             <div className="text-sm font-semibold">Menus</div>
             <div className="flex gap-2">
               <Input placeholder="New menu name" value={menuName} onChange={(e) => setMenuName(e.target.value)} />
@@ -2454,15 +2454,16 @@ export default function RestaurantConfig() {
                 {(sections || []).length === 0 && <div className="text-sm text-gray-500">No sections yet.</div>}
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-2 max-h-56 overflow-auto pr-1">
               {(menus || []).map((m) => (
                 <button
                   key={m.id}
-                  className={`px-3 py-2 rounded-lg border text-sm ${selectedMenuId === m.id ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
+                  className={`px-3 py-2 rounded-lg border text-sm text-left ${selectedMenuId === m.id ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
                   onClick={() => setSelectedMenuId(m.id)}
                   title={m.active === false ? "Inactive" : "Active"}
                 >
-                  {m.name}
+                  <div className="font-semibold truncate">{m.name}</div>
+                  <div className="text-[11px] text-slate-500">{m.active === false ? "Inactive" : "Active"}</div>
                 </button>
               ))}
               {menus.length === 0 && <div className="text-sm text-gray-500">No menus yet.</div>}
@@ -2497,7 +2498,7 @@ export default function RestaurantConfig() {
              )}
            </div>
 
-          <div className="space-y-3">
+          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
             <div className="text-sm font-semibold">Assign to section (schedule)</div>
             {!selectedSectionId ? (
               <div className="text-sm text-gray-500">Select a section first.</div>
@@ -2593,7 +2594,7 @@ export default function RestaurantConfig() {
             )}
           </div>
 
-          <div className="space-y-3">
+          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
             <div className="text-sm font-semibold">Menu items</div>
             {!selectedMenuId ? (
               <div className="text-sm text-gray-500">Select a menu to manage its items.</div>

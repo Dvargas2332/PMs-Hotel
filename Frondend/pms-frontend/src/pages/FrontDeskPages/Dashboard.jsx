@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { Search, CircleUser } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useHotelData } from "../../context/HotelDataContext";
+import { useHotelData } from "../../context/useHotelData";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
 

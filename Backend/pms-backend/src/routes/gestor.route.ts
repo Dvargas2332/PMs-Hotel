@@ -22,6 +22,9 @@ import {
   importRestaurantItems,
   importInventoryItems,
   importSuppliers,
+  submitFormInfoFromGestor,
+  getSaasConfig,
+  updateSaasConfig,
 } from "../controllers/gestor.controller.js";
 import upload from "../middleware/upload.js";
 
@@ -51,5 +54,10 @@ router.post("/hotels/:id/import/frontdesk/reservations", upload.single("file"), 
 router.post("/hotels/:id/import/restaurant/pos-items", upload.single("file"), importRestaurantItems);
 router.post("/hotels/:id/import/restaurant/inventory-items", upload.single("file"), importInventoryItems);
 router.post("/hotels/:id/import/restaurant/suppliers", upload.single("file"), importSuppliers);
+
+// Launcher Gestor -> Form Info (server-to-server)
+router.post("/forminfo", submitFormInfoFromGestor);
+router.get("/saas-config", getSaasConfig);
+router.put("/saas-config", updateSaasConfig);
 
 export default router;

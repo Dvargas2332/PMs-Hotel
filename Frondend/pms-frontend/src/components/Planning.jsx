@@ -3,7 +3,7 @@ import Timeline, { TimelineHeaders, DateHeader } from "react-calendar-timeline";
 import moment from "moment";
 import "moment/locale/es";
 import { X as XIcon } from "lucide-react";
-import { useHotelData } from "../context/HotelDataContext";
+import { useHotelData } from "../context/useHotelData";
 import "react-calendar-timeline/style.css";
 import "./Planning.css";
 import { api } from "../lib/api";

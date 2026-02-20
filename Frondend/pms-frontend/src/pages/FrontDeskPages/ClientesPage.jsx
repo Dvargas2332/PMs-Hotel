@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useHotelData } from "../../context/HotelDataContext";
+import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
 import { pushAlert } from "../../lib/uiAlerts";

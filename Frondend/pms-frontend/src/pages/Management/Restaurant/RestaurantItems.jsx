@@ -23,7 +23,6 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     active: true,
   };
   const [form, setForm] = useState(empty);
-  const [drafts, setDrafts] = useState([]);
   const [items, setItems] = useState([]);
   const [itemFilter, setItemFilter] = useState("");
   const [itemFilterDraft, setItemFilterDraft] = useState("");
@@ -32,7 +31,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   const [families, setFamilies] = useState([]);
   const [subFamilies, setSubFamilies] = useState([]);
   const [subSubFamilies, setSubSubFamilies] = useState([]);
-  const [saving, setSaving] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
   const [editingId, setEditingId] = useState("");
   const [sizeDraft, setSizeDraft] = useState({ label: "", price: "", isDefault: false });
   const [detailDraft, setDetailDraft] = useState({ label: "", priceDelta: "" });
@@ -44,39 +43,38 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   };
   const getApiError = (err, fallback) => err?.response?.data?.message || err?.message || fallback;
 
-  const notifyItems = useCallback(
-    (next) => {
-      if (typeof onItemsChange === "function") onItemsChange(next);
-      window.dispatchEvent(
-        new CustomEvent("pms:restaurant-items-updated", { detail: { items: Array.isArray(next) ? next : [] } })
-      );
-    },
-    [onItemsChange]
-  );
+  useEffect(() => {
+    if (typeof onItemsChange === "function") onItemsChange(items);
+    window.dispatchEvent(
+      new CustomEvent("pms:restaurant-items-updated", { detail: { items: Array.isArray(items) ? items : [] } })
+    );
+  }, [items, onItemsChange]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [f, sf, ssf, it, tx] = await Promise.all([
+        const results = await Promise.allSettled([
           api.get("/restaurant/families"),
           api.get("/restaurant/subfamilies"),
           api.get("/restaurant/subsubfamilies"),
           api.get("/restaurant/items"),
-          api.get("/taxes"),
+          api.get("/restaurant/taxes"),
         ]);
+
+        const [f, sf, ssf, it, tx] = results.map((r) => (r.status === "fulfilled" ? r.value : null));
+
         setFamilies(Array.isArray(f?.data) ? f.data : []);
         setSubFamilies(Array.isArray(sf?.data) ? sf.data : []);
         setSubSubFamilies(Array.isArray(ssf?.data) ? ssf.data : []);
         const list = Array.isArray(it?.data) ? it.data : [];
         setItems(list);
-        notifyItems(list);
         setTaxCatalog(Array.isArray(tx?.data) ? tx.data : []);
       } catch {
         // ignore
       }
     };
     load();
-  }, [notifyItems]);
+  }, []);
 
   const readFileAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -133,73 +131,68 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     }
   };
 
-  const addDraft = () => {
+  const saveItem = async () => {
+    if (editingId) return;
     if (!form.name || !form.familyId || !form.price) return;
-    const draft = { ...form, id: `draft-${Date.now()}` };
-    setDrafts((prev) => [...prev, draft]);
-    setForm(empty);
-    setSizesEnabled(false);
-    setDetailsEnabled(false);
-  };
 
-  const removeDraft = (id) => setDrafts((prev) => prev.filter((d) => d.id !== id));
+    const selectedFamily = (families || []).find((f) => String(f.id) === String(form.familyId));
+    if (!selectedFamily?.cabys) {
+      pushAlert("Restaurant", "La familia seleccionada no tiene CABYS configurado.");
+      return;
+    }
 
-  const saveDrafts = async () => {
-    if (!drafts.length) return;
+    const priceValue = parseMoneyInput(form.price);
+    const payload = {
+      name: String(form.name || "").trim(),
+      familyId: String(form.familyId || ""),
+      subFamilyId: form.subFamilyId ? String(form.subFamilyId) : null,
+      subSubFamilyId: form.subSubFamilyId ? String(form.subSubFamilyId) : null,
+      price: Number.isFinite(priceValue) ? priceValue : 0,
+      notes: String(form.notes || "").trim() || null,
+      imageUrl: String(form.imageUrl || "").trim() || null,
+      taxIds: Array.isArray(form.taxIds) ? form.taxIds : [],
+      active: form.active !== false,
+      priceIncludesTaxesAndService: form.priceIncludesTaxesAndService !== false,
+      sizes: Array.isArray(form.sizes)
+        ? form.sizes.map((s, idx) => {
+            const sizePrice = parseMoneyInput(s?.price);
+            return {
+              id: String(s?.id || s?.label || s?.name || idx),
+              label: String(s?.label || s?.name || "").trim(),
+              price: Number.isFinite(sizePrice) ? sizePrice : 0,
+              isDefault: s?.isDefault === true,
+            };
+          })
+        : [],
+      details: Array.isArray(form.details)
+        ? form.details.map((s, idx) => {
+            const delta = parseMoneyInput(s?.priceDelta ?? s?.price ?? 0);
+            return {
+              id: String(s?.id || s?.label || s?.name || idx),
+              label: String(s?.label || s?.name || "").trim(),
+              priceDelta: Number.isFinite(delta) ? delta : 0,
+            };
+          })
+        : [],
+    };
+
     try {
-      setSaving(true);
-      const payload = drafts.map((d) => {
-        const { id: _id, ...rest } = d;
-        const priceValue = parseMoneyInput(rest.price);
-        return {
-          ...rest,
-          familyId: String(rest.familyId || ""),
-          subFamilyId: rest.subFamilyId ? String(rest.subFamilyId) : null,
-          subSubFamilyId: rest.subSubFamilyId ? String(rest.subSubFamilyId) : null,
-          price: Number.isFinite(priceValue) ? priceValue : 0,
-          notes: String(rest.notes || "").trim() || null,
-          imageUrl: String(rest.imageUrl || "").trim() || null,
-          taxIds: Array.isArray(rest.taxIds) ? rest.taxIds : [],
-          active: rest.active !== false,
-          priceIncludesTaxesAndService: rest.priceIncludesTaxesAndService !== false,
-          sizes: Array.isArray(rest.sizes)
-            ? rest.sizes.map((s, idx) => {
-                const sizePrice = parseMoneyInput(s?.price);
-                return {
-                  id: String(s?.id || s?.label || s?.name || idx),
-                  label: String(s?.label || s?.name || "").trim(),
-                  price: Number.isFinite(sizePrice) ? sizePrice : 0,
-                  isDefault: s?.isDefault === true,
-                };
-              })
-            : [],
-          details: Array.isArray(rest.details)
-            ? rest.details.map((s, idx) => {
-                const delta = parseMoneyInput(s?.priceDelta ?? s?.price ?? 0);
-                return {
-                  id: String(s?.id || s?.label || s?.name || idx),
-                  label: String(s?.label || s?.name || "").trim(),
-                  priceDelta: Number.isFinite(delta) ? delta : 0,
-                };
-              })
-            : [],
-        };
-      });
-      const { data } = await api.post("/restaurant/items", { items: payload });
+      setSavingItem(true);
+      const { data } = await api.post("/restaurant/items", { items: [payload] });
       const savedList = Array.isArray(data) ? data : [data];
-      setItems((prev) => {
-        const next = [...prev, ...savedList];
-        notifyItems(next);
-        return next;
-      });
-      setDrafts([]);
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Items saved" } }));
+      const saved = savedList[0];
+      setItems((prev) => [...prev, ...(saved ? [saved] : [])]);
+      setForm(empty);
+      setSizesEnabled(false);
+      setDetailsEnabled(false);
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Item saved" } }));
     } catch (err) {
-      pushAlert("Restaurant", getApiError(err, "No se pudo guardar los artículos."));
+      pushAlert("Restaurant", getApiError(err, "No se pudo guardar el art??culo."));
     } finally {
-      setSaving(false);
+      setSavingItem(false);
     }
   };
+
 
   const startEdit = (it) => {
     if (!it?.id) return;
@@ -267,11 +260,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     };
     try {
       const { data } = await api.patch(`/restaurant/items/${editingId}`, payload);
-      setItems((prev) => {
-        const next = prev.map((x) => (x.id === data.id ? data : x));
-        notifyItems(next);
-        return next;
-      });
+      setItems((prev) => prev.map((x) => (x.id === data.id ? data : x)));
       cancelEdit();
     } catch (err) {
       pushAlert("Restaurant", getApiError(err, "No se pudo guardar el artículo."));
@@ -280,11 +269,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
 
   const removeItem = (id) => {
     api.delete(`/restaurant/items/${id}`).finally(() => {
-      setItems((prev) => {
-        const next = prev.filter((i) => i.id !== id);
-        notifyItems(next);
-        return next;
-      });
+      setItems((prev) => prev.filter((i) => i.id !== id));
     });
   };
 
@@ -402,20 +387,11 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           <div className="flex gap-2">
             <Button
               size="sm"
-              variant="outline"
-              className="border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-100 disabled:cursor-not-allowed"
-              onClick={() => setDrafts([])}
-              disabled={!drafts.length}
-            >
-              Clear drafts
-            </Button>
-            <Button
-              size="sm"
               className="bg-white border border-slate-200 text-slate-900 hover:bg-slate-50 disabled:opacity-100 disabled:cursor-not-allowed"
-              disabled={!drafts.length || saving}
-              onClick={saveDrafts}
+              disabled={savingItem || !form.name || !form.familyId || !form.price}
+              onClick={saveItem}
             >
-              {saving ? "Saving..." : "Save items"}
+              {savingItem ? "Saving..." : "Save item"}
             </Button>
           </div>
         </div>
@@ -698,58 +674,18 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           />
           Price includes taxes and service
         </label>
-        <div className="flex justify-end">
-          {editingId ? (
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={cancelEdit}>
-                Cancel
-              </Button>
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={saveEdit}>
-                Save changes
-              </Button>
-            </div>
-          ) : (
-            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={addDraft}>
-              Add to draft
+        {editingId ? (
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={cancelEdit}>
+              Cancel
             </Button>
-          )}
-        </div>
+            <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={saveEdit}>
+              Save changes
+            </Button>
+          </div>
+        ) : null}
         </div>
       </Card>
-
-      {drafts.length > 0 && (
-        <Card className="p-4 space-y-2 border border-indigo-900/10 shadow-sm">
-          <div className="text-sm font-semibold">Drafts ({drafts.length})</div>
-          <div className="grid md:grid-cols-2 gap-2">
-            {drafts.map((d) => (
-              <div key={d.id} className="border rounded-md px-3 py-2 flex justify-between items-start gap-2">
-                <div className="text-sm">
-                  <div className="font-semibold">{d.name}</div>
-                  <div className="text-xs text-gray-600">
-                    {familiesById.get(d.familyId)?.name || ""}
-                    {d.subFamilyId ? ` / ${subFamiliesById.get(d.subFamilyId)?.name || ""}` : ""}
-                    {d.subSubFamilyId ? ` / ${subSubFamiliesById.get(d.subSubFamilyId)?.name || ""}` : ""}
-                  </div>
-                  <div className="text-xs text-gray-600">CABYS: {familiesById.get(d.familyId)?.cabys || "-"}</div>
-                  <div className="text-xs text-gray-600">Taxes: {(d.taxIds || []).length}</div>
-                  <div className="text-xs text-gray-600">Price: {Number(d.price || 0).toFixed(2)}</div>
-                  {d.notes && <div className="text-xs text-gray-600 mt-1">Notes: {d.notes}</div>}
-                  <div className="text-xs mt-1">{d.active ? "Active" : "Inactive"}</div>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-red-200 text-red-700 hover:bg-red-50"
-                  onClick={() => removeDraft(d.id)}
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
       <Card className="p-4 flex flex-col flex-1 min-h-0 border border-indigo-900/20 shadow-sm">
         <div className="rounded-lg bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-indigo-50 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm font-semibold">

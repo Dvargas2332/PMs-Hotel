@@ -5,7 +5,7 @@ import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
 import { SimpleTable } from "../../../components/ui/table";
 import { api } from "../../../lib/api";
-import { useHotelData } from "../../../context/HotelDataContext";
+import { useHotelData } from "../../../context/useHotelData";
 
 const STATUS_OPTIONS = [
   { value: "AVAILABLE", label: "Disponible" },

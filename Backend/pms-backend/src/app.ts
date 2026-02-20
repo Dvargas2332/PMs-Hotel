@@ -18,6 +18,7 @@ import rolesRoutes from "./routes/roles.route.js";
 import permissionsRoutes from "./routes/permissions.route.js";
 import restaurantRoutes from "./routes/restaurant.route.js";
 import taxesRoutes from "./routes/taxes.route.js";
+import frontdeskTaxesRoutes from "./routes/frontdeskTaxes.route.js";
 import reportRoutes from "./routes/report.route.js";
 import invoiceRoutes from "./routes/invoice.route.js";
 import ratePlansRoutes from "./routes/ratePlans.route.js";
@@ -30,6 +31,7 @@ import launcherRoutes from "./routes/launcher.route.js";
 import einvoicingRoutes from "./routes/einvoicing.route.js";
 import gestorRoutes from "./routes/gestor.route.js";
 import versionRoutes from "./routes/version.route.js";
+import forminfoRoutes from "./routes/forminfo.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -43,9 +45,22 @@ const app = express();
 
 // e-invoicing configurations may include base64 certificates; allow larger JSON payloads.
 app.use(express.json({ limit: "15mb" }));
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  process.env.STATIC_WEBSITE_URL,
+  "http://localhost:3000",
+  "https://kazehanacloud.com",
+  "https://www.kazehanacloud.com",
+  "https://form.kazehanacloud.com",
+].filter(Boolean) as string[];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    origin(origin, callback) {
+      if (!origin) return callback(null, true); // curl / server-to-server
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("CORS blocked"));
+    },
     credentials: false, // usamos Bearer, no cookies
   })
 );
@@ -59,6 +74,7 @@ api.use("/health", healthRouter);   // → /api/health y /api/health/db
 api.use("/version", versionRoutes);
 api.use("/auth", authRouter); // p.ej. POST /api/auth/login
 api.use("/launcher", launcherRoutes);
+api.use("/forminfo", forminfoRoutes);
 
 // Gestor SaaS (sin tenant scoping)
 api.use("/gestor", auth, requireGestor, gestorRoutes);
@@ -74,7 +90,9 @@ api.use("/hotel", requireMembership("management"), hotelRoutes);
 api.use("/roles", requireMembership("management"), rolesRoutes);
 api.use("/permissions", requireMembership("management"), permissionsRoutes);
 api.use("/restaurant", requireMembership("restaurant"), restaurantRoutes);
-api.use("/taxes", requireMembership("accounting"), taxesRoutes);
+// Taxes catalog is used by restaurant items too
+api.use("/taxes", requireMembership("accounting", "restaurant"), taxesRoutes);
+api.use("/frontdesk/taxes", requireMembership("frontdesk"), frontdeskTaxesRoutes);
 api.use("/reports", requireMembership("accounting"), reportRoutes);
 api.use("/invoices", requireMembership("frontdesk", "accounting", "einvoicing"), invoiceRoutes);
 api.use("/ratePlans", requireMembership("frontdesk"), ratePlansRoutes);

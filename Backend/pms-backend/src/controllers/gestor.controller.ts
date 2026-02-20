@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import { allowedModulesForMembership, isMembershipTier, normalizeMembershipTier } from "../config/membership.js";
 import { nextHotelSequence } from "../lib/sequences.js";
+import { processFormInfo, type FormPayload } from "./forminfo.controller.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
 const DEFAULT_USER_PASSWORD_LEN = 10;
@@ -84,6 +85,36 @@ function parseCsv(content: string) {
     rows.push(row);
   }
   return rows;
+}
+
+const SAAS_CONFIG_KEY = "GLOBAL";
+
+function normalizeSmtpPayload(body: any, existing: any) {
+  const src = body && typeof body === "object" ? body : {};
+  const smtp = src.smtp && typeof src.smtp === "object" ? src.smtp : src;
+  const next: any = {};
+
+  if ("host" in smtp) next.host = normalizeText(smtp.host);
+  if ("port" in smtp) {
+    const p = Number(smtp.port || 0);
+    next.port = Number.isFinite(p) && p > 0 ? p : null;
+  }
+  if ("user" in smtp) next.user = normalizeText(smtp.user);
+  if ("secure" in smtp) next.secure = Boolean(smtp.secure);
+  if ("from" in smtp) next.from = normalizeText(smtp.from);
+  if ("to" in smtp) next.to = normalizeText(smtp.to);
+  if ("replyTo" in smtp) next.replyTo = normalizeText(smtp.replyTo);
+
+  const clearPass = Boolean(smtp.clearPass);
+  if (clearPass) {
+    next.pass = null;
+  } else if ("pass" in smtp && String(smtp.pass || "").trim().length > 0) {
+    next.pass = String(smtp.pass || "").trim();
+  } else if (existing?.pass) {
+    next.pass = existing.pass;
+  }
+
+  return next;
 }
 
 function readUploadCsv(req: Request) {
@@ -837,4 +868,47 @@ export async function importInventoryItems(req: Request, res: Response) {
 
 export async function importSuppliers(_req: Request, res: Response) {
   return res.status(501).json({ message: "Importación de proveedores no soportada (no hay modelo de proveedores)." });
+}
+
+// Launcher Gestor: reenvio interno a forminfo (sin exponer API key al frontend)
+export async function submitFormInfoFromGestor(req: Request, res: Response) {
+  const body = (req.body || {}) as FormPayload;
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown")
+    .split(",")[0]
+    .trim();
+
+  const result = await processFormInfo(body, ip);
+  if (result.status !== 200) return res.status(result.status).json({ message: result.message });
+  return res.json({ ok: true });
+}
+
+export async function getSaasConfig(_req: Request, res: Response) {
+  const config = await prisma.saasConfig.findUnique({ where: { key: SAAS_CONFIG_KEY } });
+  const smtp = (config?.smtp || {}) as any;
+  const safeSmtp = { ...smtp };
+  if ("pass" in safeSmtp) {
+    delete safeSmtp.pass;
+    safeSmtp.passSet = true;
+  }
+  res.json({ key: SAAS_CONFIG_KEY, smtp: safeSmtp });
+}
+
+export async function updateSaasConfig(req: Request, res: Response) {
+  const existing = await prisma.saasConfig.findUnique({ where: { key: SAAS_CONFIG_KEY } });
+  const existingSmtp = (existing?.smtp || {}) as any;
+  const nextSmtp = normalizeSmtpPayload(req.body, existingSmtp);
+
+  const saved = await prisma.saasConfig.upsert({
+    where: { key: SAAS_CONFIG_KEY },
+    update: { smtp: nextSmtp },
+    create: { key: SAAS_CONFIG_KEY, smtp: nextSmtp },
+  });
+
+  const smtp = (saved.smtp || {}) as any;
+  const safeSmtp = { ...smtp };
+  if ("pass" in safeSmtp) {
+    delete safeSmtp.pass;
+    safeSmtp.passSet = true;
+  }
+  res.json({ key: SAAS_CONFIG_KEY, smtp: safeSmtp });
 }
