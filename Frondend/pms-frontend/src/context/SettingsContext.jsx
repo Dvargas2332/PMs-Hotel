@@ -1,7 +1,9 @@
 //src/context/SettingsContext
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api } from "../lib/api";
+import { useAuth } from "./AuthContext";
 
 const SettingsCtx = createContext(null);
 const LS_KEY = "pms.settings.cache.v1";
@@ -10,8 +12,18 @@ export function SettingsProvider({ children }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { token, hotel } = useAuth();
+  const location = useLocation();
+  const pathname = location?.pathname || "";
+  const isLauncherGestor = pathname.startsWith("/launchergestor");
+  const isLogin = pathname.startsWith("/login");
+  const shouldLoad = Boolean(token && hotel && !isLauncherGestor && !isLogin);
 
   const load = useCallback(async () => {
+    if (!shouldLoad) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -25,9 +37,10 @@ export function SettingsProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [shouldLoad]);
 
   const update = useCallback(async (patch) => {
+    if (!shouldLoad) return settings;
     const optimistic = { ...(settings||{}), ...patch };
     setSettings(optimistic);
     localStorage.setItem(LS_KEY, JSON.stringify(optimistic));
@@ -35,7 +48,7 @@ export function SettingsProvider({ children }) {
     setSettings(data);
     localStorage.setItem(LS_KEY, JSON.stringify(data));
     return data;
-  }, [settings]);
+  }, [settings, shouldLoad]);
 
   useEffect(() => { load(); }, [load]);
 
