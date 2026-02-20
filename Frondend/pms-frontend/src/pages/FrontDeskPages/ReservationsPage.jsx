@@ -4,6 +4,7 @@ import { useHotelData } from "../../context/HotelDataContext";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
+import { useLanguage } from "../../context/LanguageContext";
 
 const STATUS_META = {
   Confirmada: { bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
@@ -18,9 +19,9 @@ const STATUS_META = {
   CANCELED: { bg: "bg-rose-100 text-rose-800 border-rose-200" },
 };
 
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status, label }) => {
   const meta = STATUS_META[status] || { bg: "bg-gray-100 text-gray-700 border-gray-200" };
-  return <span className={`px-2 py-1 rounded border text-xs font-medium ${meta.bg}`}>{status || "N/A"}</span>;
+  return <span className={`px-2 py-1 rounded border text-xs font-medium ${meta.bg}`}>{label || status || t("common.na")}</span>;
 };
 
   const emptyForm = {
@@ -76,6 +77,7 @@ function ActionButton({ onClick, children, disabled, tone = "gray" }) {
 }
 
 export default function ReservationsPage() {
+  const { t } = useLanguage();
   const {
     reservations,
     rooms,
@@ -95,6 +97,7 @@ export default function ReservationsPage() {
   const [form, setForm] = useState(emptyForm);
   const [ratePlans, setRatePlans] = useState([]);
   const [mealPlans, setMealPlans] = useState([]);
+  const [contracts, setContracts] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [showRowEditor, setShowRowEditor] = useState(false);
   const [rowSaved, setRowSaved] = useState(false);
@@ -103,6 +106,17 @@ export default function ReservationsPage() {
   const [showGuestPicker, setShowGuestPicker] = useState(false);
   const [guestQuery, setGuestQuery] = useState("");
   const [guestType, setGuestType] = useState("PERSON"); // PERSON | COMPANY
+
+  const statusLabel = (status) => {
+    const raw = String(status || "");
+    const upper = raw.toUpperCase();
+    if (["CONFIRMED", "CONFIRMADA"].includes(upper)) return t("frontdesk.reservations.status.confirmed");
+    if (["PENDING", "PENDIENTE"].includes(upper)) return t("frontdesk.reservations.status.pending");
+    if (["CHECKED_IN", "CHECK-IN", "CHECKIN"].includes(upper)) return t("frontdesk.reservations.status.checkin");
+    if (["CHECKED_OUT", "CHECK-OUT", "CHECKOUT"].includes(upper)) return t("frontdesk.reservations.status.checkout");
+    if (["CANCELED", "CANCELADA"].includes(upper)) return t("frontdesk.reservations.status.canceled");
+    return raw || t("common.na");
+  };
 
   const currentPlan = useMemo(
     () => ratePlans.find((r) => String(r.id) === String(form.ratePlanId)),
@@ -133,8 +147,8 @@ export default function ReservationsPage() {
         value = `${y}-${m}-${d}`;
         pushAlert({
           type: "system",
-          title: "Fecha Desde inválida",
-          desc: "La fecha Desde no puede ser menor al día en curso.",
+          title: t("frontdesk.reservations.fromInvalidTitle"),
+          desc: t("frontdesk.reservations.fromInvalidDesc"),
         });
       }
     }
@@ -234,29 +248,29 @@ export default function ReservationsPage() {
         const d = String(min.getDate()).padStart(2, "0");
         const minStr = `${y}-${m}-${d}`;
 
-        // Si el usuario elige una fecha menor o igual a "Desde", forzar siempre al día siguiente
+        // Si el usuario elige una fecha menor o igual a "Desde", forzar siempre al d??a siguiente
         if (!v || parseLocal(v) <= from) {
           pushAlert({
             type: "system",
-            title: "Fecha Hasta inválida",
-            desc: "La fecha Hasta debe ser al menos un día después de Desde.",
+            title: t("frontdesk.reservations.toInvalidTitle"),
+            desc: t("frontdesk.reservations.toInvalidDesc"),
           });
           return { ...f, checkOutDate: minStr };
         }
         return { ...f, checkOutDate: v };
       }
-      // Si aún no hay "Desde", simplemente guardamos lo seleccionado
+      // Si a??n no hay "Desde", simplemente guardamos lo seleccionado
       return { ...f, checkOutDate: v };
     });
   };
 
   const handleDepositClick = () => {
     const current = form.depositAmount ? String(form.depositAmount) : "";
-    const input = window.prompt("Deposito de confirmacion", current);
+    const input = window.prompt(t("frontdesk.reservations.depositPromptTitle"), current);
     if (input === null) return;
     const num = input === "" ? "" : Number(input);
     if (Number.isNaN(num)) {
-      pushAlert({ type: "system", title: "Monto invalido", desc: "Revisa el monto de deposito ingresado." });
+      pushAlert({ type: "system", title: t("frontdesk.reservations.depositInvalidTitle"), desc: t("frontdesk.reservations.depositInvalidDesc") });
       return;
     }
     setForm((f) => ({ ...f, depositAmount: input === "" ? "" : num }));
@@ -276,6 +290,12 @@ export default function ReservationsPage() {
       .get("/api/mealPlans")
       .then(({ data }) => {
         if (Array.isArray(data)) setMealPlans(data);
+      })
+      .catch(() => {});
+    api
+      .get("/contracts")
+      .then(({ data }) => {
+        if (Array.isArray(data)) setContracts(data);
       })
       .catch(() => {});
   }, [refreshRooms, refreshGuests, refreshReservations]);
@@ -302,10 +322,10 @@ export default function ReservationsPage() {
       const hasFirst = !!row.firstName && row.firstName.trim().length > 0;
       const hasLast = !!row.lastName && row.lastName.trim().length > 0;
       if (!hasFirst && !hasLast) {
-        throw new Error("Add at least a name for the guest or select a profile.");
+        throw new Error(t("frontdesk.reservations.errors.guestNameMissing"));
       }
-      const firstName = (row.firstName || row.lastName || "Guest").trim();
-      const lastName = (row.lastName || row.firstName || "Reservation").trim();
+      const firstName = (row.firstName || row.lastName || t("frontdesk.reservations.guestFallbackFirst")).trim();
+      const lastName = (row.lastName || row.firstName || t("frontdesk.reservations.guestFallbackLast")).trim();
       const guest = await createGuest({
         firstName,
         lastName,
@@ -334,6 +354,7 @@ export default function ReservationsPage() {
       children: Number(row.children) || 0,
       infants: Number(row.infants) || 0,
       quantity: Number(row.quantity) || 1,
+      contractId: row.contractId || undefined,
       ratePlanId: row.ratePlanId || undefined,
       mealPlanId: row.mealPlanId || undefined,
       price: row.price || undefined,
@@ -361,16 +382,24 @@ export default function ReservationsPage() {
       if (!r.roomId || !r.checkInDate || !r.checkOutDate) {
         pushAlert({
           type: "system",
-          title: "Missing information",
-          desc: "Complete the room and date range before saving the reservation.",
+          title: t("frontdesk.reservations.errors.missingInfoTitle"),
+          desc: t("frontdesk.reservations.errors.missingRoomDates"),
         });
+        return;
+      }
+      if (!r.contractId) {
+        pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingContract") });
+        return;
+      }
+      if (!r.ratePlanId) {
+        pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingRatePlan") });
         return;
       }
       if (r.checkOutDate <= r.checkInDate) {
         pushAlert({
           type: "system",
-          title: "Invalid dates",
-          desc: "Check-out must be after check-in.",
+          title: t("frontdesk.reservations.errors.invalidDatesTitle"),
+          desc: t("frontdesk.reservations.errors.invalidDatesDesc"),
         });
         return;
       }
@@ -387,12 +416,12 @@ export default function ReservationsPage() {
       await refreshRooms();
       setRowSaved(false);
       setRowConfirmed(false);
-      setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId }));
+      setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId, contractId: f.contractId }));
       setSearch("");
       setShowRowEditor(false);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Could not create the reservation.";
-      pushAlert({ type: "system", title: "Error creating reservation", desc: msg });
+      const msg = err?.response?.data?.message || err?.message || t("frontdesk.reservations.errors.createFailedFallback");
+      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.createFailedTitle"), desc: msg });
     } finally {
       setCreating(false);
     }
@@ -402,16 +431,24 @@ export default function ReservationsPage() {
       if (!form.roomType || !form.roomId || !form.checkInDate || !form.checkOutDate) {
         pushAlert({
           type: "system",
-          title: "Missing information",
-          desc: "Select room type, room, and date range before saving the row.",
+          title: t("frontdesk.reservations.errors.missingInfoTitle"),
+          desc: t("frontdesk.reservations.errors.missingRowRoomDates"),
         });
         return;
       }
+    if (!form.contractId) {
+      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingContract") });
+      return;
+    }
+    if (!form.ratePlanId) {
+      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingRatePlan") });
+      return;
+    }
     if (form.checkOutDate <= form.checkInDate) {
       pushAlert({
         type: "system",
-        title: "Invalid dates",
-        desc: "Check-out must be after check-in.",
+        title: t("frontdesk.reservations.errors.invalidDatesTitle"),
+        desc: t("frontdesk.reservations.errors.invalidDatesDesc"),
       });
       return;
     }
@@ -443,7 +480,7 @@ export default function ReservationsPage() {
   };
 
   const resetForm = () => {
-    setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId }));
+    setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId, contractId: f.contractId }));
     setSelectedRow(null);
   };
 
@@ -451,7 +488,7 @@ export default function ReservationsPage() {
     if (!r) return;
     setSelectedRow(r.id);
     // Al seleccionar una reserva existente solo mostramos las filas guardadas;
-    // el editor de filas se abre únicamente con el botón "Crear" o "Editar".
+    // el editor de filas se abre ??nicamente con el bot??n "Crear" o "Editar".
     setShowRowEditor(false);
     setRowSaved(false);
     setDraftRows([]);
@@ -468,6 +505,7 @@ export default function ReservationsPage() {
       checkOutDate: r.checkOutDate || "",
       adults: r.adults || 2,
       children: r.children || 0,
+      contractId: r.contractId || "",
       ratePlanId: r.ratePlanId || "",
       mealPlanId: r.mealPlanId || form.mealPlanId || "",
       price: r.price || 0,
@@ -521,13 +559,13 @@ export default function ReservationsPage() {
     if (!form.email) {
       pushAlert({
         type: "payment",
-        title: "No contact email",
-        desc: "Add the guest email to send the reservation.",
+        title: t("frontdesk.reservations.errors.missingEmailTitle"),
+        desc: t("frontdesk.reservations.errors.missingEmailDesc"),
       });
       return;
     }
-    const subject = encodeURIComponent(`Reservation ${form.code || ""}`);
-    const body = encodeURIComponent("Your reservation details are attached.");
+    const subject = encodeURIComponent(t("frontdesk.reservations.emailSubject", { code: form.code || "" }));
+    const body = encodeURIComponent(t("frontdesk.reservations.emailBody"));
     window.location.href = `mailto:${form.email}?subject=${subject}&body=${body}`;
   };
 
@@ -536,8 +574,8 @@ export default function ReservationsPage() {
     if (!phone) {
       pushAlert({
         type: "payment",
-        title: "No phone number",
-        desc: "Add a phone number to send details via WhatsApp.",
+        title: t("frontdesk.reservations.errors.missingPhoneTitle"),
+        desc: t("frontdesk.reservations.errors.missingPhoneDesc"),
       });
       return;
     }
@@ -585,12 +623,12 @@ export default function ReservationsPage() {
   const roomsByType = useMemo(() => {
     const map = new Map();
     (rooms || []).forEach((r) => {
-      const key = r.type || "No type";
+      const key = r.type || t("frontdesk.reservations.noType");
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(r);
     });
     return Array.from(map.entries());
-  }, [rooms]);
+  }, [rooms, t]);
 
   const selectGuest = (g) => {
     setForm((f) => ({
@@ -609,7 +647,7 @@ export default function ReservationsPage() {
     if (selected) {
       setRowConfirmed(true);
       setReservations((list) =>
-        list.map((r) => (r.id === selectedRow ? { ...r, rawStatus: "CONFIRMED", status: "Confirmed" } : r))
+        list.map((r) => (r.id === selectedRow ? { ...r, rawStatus: "CONFIRMED", status: "CONFIRMED" } : r))
       );
       await refreshReservations();
       return;
@@ -621,9 +659,9 @@ export default function ReservationsPage() {
   const handleCancelAction = () => {
     const selected = reservations.find((r) => r.id === selectedRow);
     if (selected && canCancel(selected)) {
-      const ok = window.confirm("Are you sure you want to void this reservation?");
+      const ok = window.confirm(t("frontdesk.reservations.confirmVoid"));
       if (!ok) return;
-      const reason = window.prompt("Void reason:", "");
+      const reason = window.prompt(t("frontdesk.reservations.voidReasonPrompt"), "");
       if (reason === null || reason.trim() === "") return;
       cancelReservation(selectedRow, { reason });
       setSelectedRow(null);
@@ -640,15 +678,15 @@ export default function ReservationsPage() {
     >
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Reservations</h1>
-          <p className="text-sm text-slate-600">Mockup-style layout for fast entry.</p>
+          <h1 className="text-2xl font-bold text-slate-900">{t("frontdesk.reservations.title")}</h1>
+          <p className="text-sm text-slate-600">{t("frontdesk.reservations.subtitle")}</p>
         </div>
         <div className="flex gap-2 items-end">
           <PillInput
-            label="Search"
+            label={t("frontdesk.reservations.labels.search")}
             value={search}
             onChange={setSearch}
-            placeholder="Guest / code / room"
+            placeholder={t("frontdesk.reservations.placeholders.search")}
             containerClassName="min-w-[220px]"
           />
         </div>
@@ -657,7 +695,7 @@ export default function ReservationsPage() {
       <div className="flex flex-col lg:flex-row gap-4 items-start">
         {/* Created reservations sidebar */}
         <div className="w-full lg:w-64 rounded-2xl border bg-white shadow-sm p-3 space-y-2">
-          <div className="text-sm font-semibold text-slate-800">Created reservations</div>
+          <div className="text-sm font-semibold text-slate-800">{t("frontdesk.reservations.sidebarTitle")}</div>
           <div className="space-y-1 max-h-[400px] overflow-auto">
             {sidebarReservations.map((r) => (
               <button
@@ -672,11 +710,11 @@ export default function ReservationsPage() {
                 >
                   <div className="font-semibold">{r.code || r.id}</div>
                   <div className="text-xs text-slate-600">
-                    {r.guestName || `${r.guest?.firstName || ""} ${r.guest?.lastName || ""}`.trim() || "No name"}
+                    {r.guestName || `${r.guest?.firstName || ""} ${r.guest?.lastName || ""}`.trim() || t("frontdesk.reservations.noName")}
                   </div>
                 </button>
             ))}
-            {sidebarReservations.length === 0 && <div className="text-xs text-slate-500">No reservations to list.</div>}
+            {sidebarReservations.length === 0 && <div className="text-xs text-slate-500">{t("frontdesk.reservations.sidebarEmpty")}</div>}
           </div>
         </div>
 
@@ -688,22 +726,36 @@ export default function ReservationsPage() {
               {/* Izquierda */}
               <div className="flex-1 space-y-2">
                 <PillInput
-                  label="ID - OTAS"
+                  label={t("frontdesk.reservations.labels.ota")}
                   value={form.otaCode}
                   onChange={(v) => setForm((f) => ({ ...f, otaCode: v }))}
                   inputClassName="max-w-[160px]"
                   containerClassName="max-w-[200px]"
                 />
                 <PillSelect
-                  label="Rate plan"
+                  label={t("frontdesk.reservations.labels.contract")}
+                  value={form.contractId}
+                  onChange={(v) => {
+                    setForm((f) => ({ ...f, contractId: v, ratePlanId: "" }));
+                  }}
+                  options={[{ label: t("common.select"), value: "" }, ...contracts.map((c) => ({ label: c.channel || c.id, value: c.id }))]}
+                  selectClassName="max-w-[200px]"
+                />
+                <PillSelect
+                  label={t("frontdesk.reservations.labels.ratePlan")}
                   value={form.ratePlanId}
                   onChange={(v) => setForm((f) => ({ ...f, ratePlanId: v }))}
-                  options={[{ label: "N/A", value: "" }, ...ratePlans.map((r) => ({ label: r.name, value: r.id }))]}
+                  options={[{ label: t("common.na"), value: "" }, ...ratePlans.filter((r) => {
+                    if (!form.contractId) return true;
+                    const c = contracts.find((x) => String(x.id) === String(form.contractId));
+                    const ids = Array.isArray(c?.ratePlans) ? c.ratePlans : [];
+                    return ids.includes(String(r.id));
+                  }).map((r) => ({ label: r.name, value: r.id }))]}
                   selectClassName="max-w-[200px]"
                 />
                 <div className="flex items-end gap-[3px]">
                   <PillInput
-                    label="From"
+                    label={t("frontdesk.reservations.labels.from")}
                     type="date"
                     value={form.checkInDate}
                     onChange={handleDateFrom}
@@ -713,7 +765,7 @@ export default function ReservationsPage() {
                   />
                   <div className="h-10 w-px bg-slate-300 rounded-full" />
                   <PillInput
-                    label="To"
+                    label={t("frontdesk.reservations.labels.to")}
                     type="date"
                     value={form.checkOutDate}
                     onChange={handleDateTo}
@@ -728,17 +780,17 @@ export default function ReservationsPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-1 text-xs text-slate-600 max-w-[200px]">
-                   <span>Confirmation deposit</span>
+                  <span>{t("frontdesk.reservations.depositLabel")}</span>
                   <button
                     type="button"
                     onClick={handleDepositClick}
                     className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-800 hover:bg-slate-200 text-left"
                   >
-                     {form.depositAmount ? `CRC ${form.depositAmount}` : "Set deposit"}
+                     {form.depositAmount ? `CRC ${form.depositAmount}` : t("frontdesk.reservations.depositSet")}
                   </button>
                 </div>
                 <PillInput
-                  label="Discount"
+                  label={t("frontdesk.reservations.labels.discount")}
                   value={form.discount}
                   onChange={(v) => setForm((f) => ({ ...f, discount: v }))}
                   inputClassName="max-w-[200px]"
@@ -751,14 +803,14 @@ export default function ReservationsPage() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-3">
                   <PillInput
-                    label="Reservation ID"
+                    label={t("frontdesk.reservations.labels.reservationId")}
                     value={form.code}
                     onChange={(v) => setForm((f) => ({ ...f, code: v }))}
                     disabled
                     containerClassName="max-w-[110px]"
                   />
                   <PillInput
-                    label="Rooming"
+                    label={t("frontdesk.reservations.labels.rooming")}
                     value={form.rooming}
                     onChange={(v) => setForm((f) => ({ ...f, rooming: v }))}
                     disabled
@@ -768,47 +820,47 @@ export default function ReservationsPage() {
                 <div className="space-y-2 max-w-[620px]">
                   <div className="flex items-end gap-3">
                     <PillInput
-                      label="Full name"
+                      label={t("frontdesk.reservations.labels.fullName")}
                       value={`${form.firstName} ${form.lastName}`.trim()}
                       onChange={handleNameChange}
-                      placeholder="Select a profile or type a name"
+                      placeholder={t("frontdesk.reservations.placeholders.fullName")}
                       containerClassName="max-w-[350px]"
                     />
-                    <PillButton label="Profiles" onClick={handlePickProfile} />
+                    <PillButton label={t("frontdesk.reservations.labels.profiles")} onClick={handlePickProfile} />
                   </div>
                   <PillInput
-                    label="Email"
+                    label={t("frontdesk.reservations.labels.email")}
                     value={form.email}
                     onChange={(v) => setForm((f) => ({ ...f, email: v }))}
-                    placeholder="Type here"
+                    placeholder={t("frontdesk.reservations.placeholders.typeHere")}
                     containerClassName="max-w-[350px]"
                   />
                   <PillInput
-                    label="Phone number"
+                    label={t("frontdesk.reservations.labels.phone")}
                     value={form.phone}
                     onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
-                    placeholder="Type here"
+                    placeholder={t("frontdesk.reservations.placeholders.typeHere")}
                     prefix="+"
                     containerClassName="max-w-[220px]"
                   />
                 </div>
-                <div className="text-xs text-slate-500">Created date and user</div>
+                <div className="text-xs text-slate-500">{t("frontdesk.reservations.metaCreated")}</div>
               </div>
 
               {/* Derecha */}
               <div className="flex-1 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <PillInput
-                    label="Cardholder name"
+                    label={t("frontdesk.reservations.labels.cardholder")}
                     value={form.paymentMethod}
                     onChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
-                    placeholder="Cardholder name"
+                    placeholder={t("frontdesk.reservations.placeholders.cardholder")}
                   />
                   <PillInput
-                    label="Card number"
+                    label={t("frontdesk.reservations.labels.cardNumber")}
                     value={form.currency}
                     onChange={(v) => setForm((f) => ({ ...f, currency: v }))}
-                    placeholder="Card number"
+                    placeholder={t("frontdesk.reservations.placeholders.cardNumber")}
                   />
                 </div>
               </div>
@@ -817,10 +869,10 @@ export default function ReservationsPage() {
             {/* Tabla estilo maqueta unida al bloque superior */}
             <div className="border-t border-emerald-100 pt-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-800">
-                  <div className="text-xs font-semibold">Rooms</div>
+                  <div className="text-xs font-semibold">{t("frontdesk.reservations.roomsTitle")}</div>
                   <div className="flex gap-2 flex-wrap">
                     <PillButton
-                      label="Create"
+                      label={t("frontdesk.reservations.actions.create")}
                       onClick={() => {
                         setShowRowEditor(true);
                         // Al crear una nueva reserva, limpiamos seleccion y borradores anteriores
@@ -837,16 +889,16 @@ export default function ReservationsPage() {
                 <table className="min-w-full text-sm border border-slate-200">
                   <thead className="text-xs uppercase text-slate-600 bg-emerald-50">
                     <tr>
-                      <th className="px-2 py-1 border-x border-slate-200">Qty</th>
-                        <th className="px-2 py-1 border-x border-slate-200">Room type</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Meal plan</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Adults</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Children</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Infants</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Price + Tax</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Room</th>
-                      <th className="px-2 py-1 border-x border-slate-200">Status</th>
-                      <th className="px-2 py-1 text-right border-x border-slate-200">Actions</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.qty")}</th>
+                        <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.roomType")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.mealPlan")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.adults")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.children")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.infants")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.priceTax")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.room")}</th>
+                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.status")}</th>
+                      <th className="px-2 py-1 text-right border-x border-slate-200">{t("common.actions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -875,7 +927,7 @@ export default function ReservationsPage() {
                               }
                               disabled={rowSaved}
                             >
-                              <option value="">Select type</option>
+                              <option value="">{t("frontdesk.reservations.selectType")}</option>
                               {roomsByType.map(([type]) => (
                                 <option key={type} value={type}>
                                   {type}
@@ -890,7 +942,7 @@ export default function ReservationsPage() {
                             onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}
                             disabled={rowSaved}
                           >
-                            <option value="">Select</option>
+                            <option value="">{t("common.select")}</option>
                             {mealPlans.map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.name}
@@ -939,7 +991,7 @@ export default function ReservationsPage() {
                               disabled={rowSaved || !form.roomType}
                             >
                               <option value="">
-                                {form.roomType ? "Select room" : "Select a room type first"}
+                                {form.roomType ? t("frontdesk.reservations.selectRoom") : t("frontdesk.reservations.selectRoomTypeFirst")}
                               </option>
                               {rooms
                                 .filter((r) => (form.roomType ? r.type === form.roomType : false))
@@ -951,7 +1003,7 @@ export default function ReservationsPage() {
                             </select>
                           </td>
                         <td className="px-2 py-2">
-                          {rowConfirmed ? <StatusBadge status="CONFIRMED" /> : <span className="text-xs text-slate-400"></span>}
+                          {rowConfirmed ? <StatusBadge status="CONFIRMED" label={statusLabel("CONFIRMED")} /> : <span className="text-xs text-slate-400"></span>}
                         </td>
                         <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
                           <ActionButton tone="green" disabled={creating || rowSaved} onClick={handleSaveRow}>
@@ -971,9 +1023,9 @@ export default function ReservationsPage() {
                             tone="red"
                             disabled={!selectedRow}
                             onClick={() => {
-                              const ok = window.confirm("Are you sure you want to delete this row / reservation?");
+                              const ok = window.confirm(t("frontdesk.reservations.confirmDeleteRow"));
                               if (!ok || !selectedRow) return;
-                              const reason = window.prompt("Cancellation reason:", "");
+                              const reason = window.prompt(t("frontdesk.reservations.cancelReasonPrompt"), "");
                               if (reason === null || reason.trim() === "") return;
                               cancelReservation(selectedRow, { reason });
                               setSelectedRow(null);
@@ -988,9 +1040,9 @@ export default function ReservationsPage() {
                     {tableReservations.map((r) => (
                       <tr key={r.id} className={`border-t border-slate-200 ${selectedRow === r.id ? "bg-emerald-50" : ""}`}>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">{r.room?.type || "N/A"}</td>
+                        <td className="px-2 py-2 border-x border-slate-200">{r.room?.type || t("common.na")}</td>
                         <td className="px-2 py-2 border-x border-slate-200">
-                          {r.mealPlan?.name || mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || r.ratePlan?.name || "N/A"}
+                          {r.mealPlan?.name || mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || r.ratePlan?.name || t("common.na")}
                         </td>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
@@ -999,7 +1051,7 @@ export default function ReservationsPage() {
                         <td className="px-2 py-2 border-x border-slate-200">{r.roomNumber || r.roomId}</td>
                         <td className="px-2 py-2 border-x border-slate-200">
                           {(r.rawStatus || r.status || "").toUpperCase() === "CONFIRMED" ? (
-                            <StatusBadge status={r.status || r.rawStatus} />
+                            <StatusBadge status={r.status || r.rawStatus} label={statusLabel(r.status || r.rawStatus)} />
                           ) : (
                             <span className="text-xs text-slate-400"></span>
                           )}
@@ -1018,10 +1070,10 @@ export default function ReservationsPage() {
                       <tr key={`draft-${idx}`} className="border-t border-slate-200 bg-amber-50">
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
                         <td className="px-2 py-2 border-x border-slate-200">
-                          {rooms.find((room) => String(room.id) === String(r.roomId))?.type || "N/A"}
+                          {rooms.find((room) => String(room.id) === String(r.roomId))?.type || t("common.na")}
                         </td>
                         <td className="px-2 py-2 border-x border-slate-200">
-                          {mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || "N/A"}
+                          {mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || t("common.na")}
                         </td>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
                         <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
@@ -1031,7 +1083,7 @@ export default function ReservationsPage() {
                           {rooms.find((room) => String(room.id) === String(r.roomId))?.number || r.roomId}
                         </td>
                         <td className="px-2 py-2 border-x border-slate-200">
-                          <span className="text-xs text-amber-700">Draft</span>
+                          <span className="text-xs text-amber-700">{t("frontdesk.reservations.draft")}</span>
                         </td>
                         <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
                           <ActionButton
@@ -1068,7 +1120,7 @@ export default function ReservationsPage() {
               </div>
               <div className="grid grid-cols-6 gap-[8px] text-xs text-slate-700 w-fit justify-start">
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Room</span>
+                  <span>{t("frontdesk.reservations.table.room")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
@@ -1077,7 +1129,7 @@ export default function ReservationsPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Regimen</span>
+                  <span>{t("frontdesk.reservations.regimen")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
@@ -1086,7 +1138,7 @@ export default function ReservationsPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Descuento</span>
+                  <span>{t("frontdesk.reservations.discount")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
@@ -1095,7 +1147,7 @@ export default function ReservationsPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Impuesto</span>
+                  <span>{t("frontdesk.reservations.tax")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
@@ -1104,7 +1156,7 @@ export default function ReservationsPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Deposito</span>
+                  <span>{t("frontdesk.reservations.deposit")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
@@ -1113,7 +1165,7 @@ export default function ReservationsPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>Total</span>
+                  <span>{t("frontdesk.reservations.total")}</span>
                   <input
                     type="number"
                     className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-blue-50 border-blue-200"
@@ -1128,13 +1180,13 @@ export default function ReservationsPage() {
           {/* Barra de acciones rapidas */}
           <div className="flex flex-wrap gap-3 justify-end">
             {[
-              { key: "new", title: "New reservation", color: "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-800", icon: IconPlus, onClick: resetForm },
-              { key: "save", title: "Save", color: "bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-300 text-emerald-900", icon: IconSave, onClick: handleCreate },
-              { key: "email", title: "Email", color: "bg-gradient-to-br from-sky-50 to-sky-100 border-sky-200 text-sky-800", icon: IconMail, onClick: handleEmail },
-              { key: "whatsapp", title: "WhatsApp", color: "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-800", icon: IconWhatsapp, onClick: handleWhatsapp },
-              { key: "print", title: "Print", color: "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-800", icon: IconPrinter, onClick: handlePrint },
-              { key: "confirm", title: "Confirm", color: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-800", icon: IconCheck, onClick: handleConfirmAction },
-              { key: "cancel", title: "Cancel", color: "bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-800", icon: IconClose, onClick: handleCancelAction },
+              { key: "new", title: t("frontdesk.reservations.actions.new"), color: "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-800", icon: IconPlus, onClick: resetForm },
+              { key: "save", title: t("common.save"), color: "bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-300 text-emerald-900", icon: IconSave, onClick: handleCreate },
+              { key: "email", title: t("common.email"), color: "bg-gradient-to-br from-sky-50 to-sky-100 border-sky-200 text-sky-800", icon: IconMail, onClick: handleEmail },
+              { key: "whatsapp", title: t("frontdesk.reservations.actions.whatsapp"), color: "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-800", icon: IconWhatsapp, onClick: handleWhatsapp },
+              { key: "print", title: t("common.print"), color: "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-800", icon: IconPrinter, onClick: handlePrint },
+              { key: "confirm", title: t("common.confirm"), color: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-800", icon: IconCheck, onClick: handleConfirmAction },
+              { key: "cancel", title: t("common.cancel"), color: "bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-800", icon: IconClose, onClick: handleCancelAction },
             ].map(({ key, title, color, icon: Icon, onClick }) => (
               <button
                 key={key}
@@ -1157,9 +1209,9 @@ export default function ReservationsPage() {
             <div className="bg-white rounded-xl shadow-2xl w-[95vw] max-w-3xl max-h-[80vh] overflow-hidden border">
               <div className="px-4 py-3 border-b flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-slate-800">Select guest profile</h3>
+                  <h3 className="font-semibold text-slate-800">{t("frontdesk.reservations.guestPicker.title")}</h3>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
-                    <span>Type:</span>
+                    <span>{t("frontdesk.reservations.guestPicker.typeLabel")}</span>
                     <button
                       type="button"
                       className={`px-2 py-1 rounded-full border text-[11px] ${
@@ -1169,7 +1221,7 @@ export default function ReservationsPage() {
                       }`}
                       onClick={() => setGuestType("PERSON")}
                     >
-                      Individuals
+                      {t("frontdesk.reservations.guestPicker.individuals")}
                     </button>
                     <button
                       type="button"
@@ -1180,7 +1232,7 @@ export default function ReservationsPage() {
                       }`}
                       onClick={() => setGuestType("COMPANY")}
                     >
-                      Companies
+                      {t("frontdesk.reservations.guestPicker.companies")}
                     </button>
                   </div>
                 </div>
@@ -1188,7 +1240,7 @@ export default function ReservationsPage() {
                   type="button"
                   className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 text-lg leading-none flex items-center justify-center hover:bg-slate-200"
                   onClick={() => setShowGuestPicker(false)}
-                  aria-label="Close"
+                  aria-label={t("common.close")}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1196,7 +1248,7 @@ export default function ReservationsPage() {
               <div className="p-4 space-y-3">
                 <input
                   className="w-full border rounded px-3 py-2 text-sm"
-                  placeholder="Search by name, company, email, phone or document"
+                  placeholder={t("frontdesk.reservations.placeholders.guestSearch")}
                   value={guestQuery}
                   onChange={(e) => setGuestQuery(e.target.value)}
                 />
@@ -1204,11 +1256,11 @@ export default function ReservationsPage() {
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-slate-500 border-b">
-                        <th className="p-2">{guestType === "COMPANY" ? "Company" : "Name"}</th>
-                        <th className="p-2">{guestType === "COMPANY" ? "Contact" : "Email"}</th>
-                        <th className="p-2">Phone</th>
-                        <th className="p-2">Document</th>
-                        <th className="p-2 text-right">Actions</th>
+                        <th className="p-2">{guestType === "COMPANY" ? t("frontdesk.reservations.guestPicker.companyFallback") : t("common.name")}</th>
+                        <th className="p-2">{guestType === "COMPANY" ? t("frontdesk.reservations.guestPicker.contact") : t("common.email")}</th>
+                        <th className="p-2">{t("common.phone")}</th>
+                        <th className="p-2">{t("frontdesk.reservations.guestPicker.document")}</th>
+                        <th className="p-2 text-right">{t("common.actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1216,30 +1268,30 @@ export default function ReservationsPage() {
                         <tr key={g.id} className="border-b hover:bg-slate-50">
                           <td className="p-2">
                             {guestType === "COMPANY"
-                              ? g.company || "Company"
-                              : `${g.firstName || ""} ${g.lastName || ""}`.trim() || "No name"}
+                              ? g.company || t("frontdesk.reservations.guestPicker.companyFallback")
+                              : `${g.firstName || ""} ${g.lastName || ""}`.trim() || t("frontdesk.reservations.noName")}
                           </td>
                           <td className="p-2">
                             {guestType === "COMPANY" ? (
                               `${g.firstName || ""} ${g.lastName || ""}`.trim() || (
-                                <span className="text-slate-400">No contact</span>
+                                <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noContact")}</span>
                               )
                             ) : (
-                              g.email || <span className="text-slate-400">No email</span>
+                              g.email || <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noEmail")}</span>
                             )}
                           </td>
-                          <td className="p-2">{g.phone || <span className="text-slate-400">No phone</span>}</td>
+                          <td className="p-2">{g.phone || <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noPhone")}</span>}</td>
                           <td className="p-2 text-xs">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">N/A</span>}
+                              : <span className="text-slate-400">{t("common.na")}</span>}
                           </td>
                           <td className="p-2 text-right">
                             <button
                               className="px-3 py-1 rounded border bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs"
                               onClick={() => selectGuest(g)}
                             >
-                              Use profile
+                              {t("frontdesk.reservations.guestPicker.useProfile")}
                             </button>
                           </td>
                         </tr>
@@ -1247,7 +1299,7 @@ export default function ReservationsPage() {
                       {!filteredGuests.length && (
                         <tr>
                           <td className="p-3 text-center text-slate-500" colSpan={5}>
-                            No profiles available.
+                            {t("frontdesk.reservations.guestPicker.empty")}
                           </td>
                         </tr>
                       )}
@@ -1389,3 +1441,4 @@ function IconSave() {
     </svg>
   );
 }
+

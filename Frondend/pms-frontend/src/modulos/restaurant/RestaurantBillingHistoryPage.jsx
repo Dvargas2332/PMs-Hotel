@@ -142,7 +142,11 @@ export default function RestaurantBillingHistoryPage() {
       await logBillingEvent("reprint", order, {});
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Billing", desc: "Reprint sent" } }));
     } catch {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Billing", desc: "Could not reprint" } }));
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Billing", desc: "Could not reprint", kind: "einvoice.error" },
+        })
+      );
     } finally {
       setActingId("");
     }
@@ -174,7 +178,11 @@ export default function RestaurantBillingHistoryPage() {
       await refreshDocsForOrder(issueOrder.id);
     } catch (err) {
       const msg = err?.response?.data?.message || "Could not issue electronic document.";
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Electronic invoicing", desc: msg } }));
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Electronic invoicing", desc: msg, kind: "einvoice.error" },
+        })
+      );
     } finally {
       setIssuing(false);
     }
@@ -355,7 +363,6 @@ export default function RestaurantBillingHistoryPage() {
     </div>
   );
 }
-
 
 
 

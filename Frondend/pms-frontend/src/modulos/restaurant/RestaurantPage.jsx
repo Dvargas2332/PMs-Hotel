@@ -378,6 +378,10 @@ const [subCategory, setSubCategory] = useState("");
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
+  const quickCashSections = useMemo(
+    () => (sections || []).filter((s) => s?.quickCashEnabled),
+    [sections]
+  );
   const canCloseZ = useMemo(() => {
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
     return role === "ADMIN" || perms.includes("restaurant.shift.closeZ");
@@ -1250,6 +1254,34 @@ const subCategories = useMemo(() => {
     setTablePickerOpen(false);
   };
 
+  const startQuickCash = (section) => {
+    if (!section) return;
+    if (shiftLoading) return;
+    if (shiftModalOpen) {
+      setShiftModalOpen(true);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "Open shift before using Quick Cash." },
+        })
+      );
+      return;
+    }
+    const sectionId = String(section?.id || "");
+    if (!sectionId) return;
+    const quickTableId = `QC-${sectionId}`;
+    const quickTableName = section?.name ? `${section.name} - Quick` : `Quick ${sectionId}`;
+    handleSelectTable(
+      {
+        id: quickTableId,
+        name: quickTableName,
+        seats: 1,
+        quickCash: true,
+        sectionId,
+      },
+      section
+    );
+  };
+
   const moveToTable = async (toTable) => {
     if (!selectedTable?.id || !toTable?.id) return;
     if (!canMoveOrders) {
@@ -1697,7 +1729,11 @@ const subCategories = useMemo(() => {
       finalizePaymentAndExit();
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir.";
-      window.alert(msg);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant billing", desc: msg, kind: "einvoice.error" },
+        })
+      );
     } finally {
       setPaymentPrintBusy(false);
     }
@@ -3500,6 +3536,10 @@ const subCategories = useMemo(() => {
                           key={String(sec.id || sec.name || `sec-${secIdx}`)}
                           className="rounded-md bg-gradient-to-br from-lime-100 to-purple-50 border border-lime-100 shadow hover:shadow-md transition p-2 text-left cursor-pointer aspect-square flex flex-col"
                           onClick={() => {
+                            if (sec?.quickCashEnabled) {
+                              startQuickCash(sec);
+                              return;
+                            }
                             setSelectedSection(sec);
                             setSelectedTable(null);
                             setSectionLauncher(false);

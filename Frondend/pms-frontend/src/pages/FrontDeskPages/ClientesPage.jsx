@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
+import { useLanguage } from "../../context/LanguageContext";
 
 const emptyForm = {
   firstName: "",
@@ -27,6 +28,7 @@ const emptyForm = {
 };
 
 export default function ClientesPage() {
+  const { t } = useLanguage();
   const { guests, loading, refreshGuests, createGuest, updateGuest } = useHotelData();
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
@@ -130,16 +132,16 @@ export default function ClientesPage() {
     if (!form.firstName || !form.lastName) {
       pushAlert({
         type: "system",
-        title: "Datos incompletos",
-        desc: "First and last name are required to create a guest.",
+        title: t("frontdesk.guests.errors.incompleteTitle"),
+        desc: t("frontdesk.guests.errors.incompleteDesc"),
       });
       return;
     }
     if (form.isCompany && !form.company.trim()) {
       pushAlert({
         type: "system",
-        title: "Missing company name",
-        desc: "For corporate customers you must provide the company name.",
+        title: t("frontdesk.guests.errors.companyMissingTitle"),
+        desc: t("frontdesk.guests.errors.companyMissingDesc"),
       });
       return;
     }
@@ -153,8 +155,8 @@ export default function ClientesPage() {
       setEditId(null);
       setSearch("");
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Could not save guest";
-      pushAlert({ type: "system", title: "Save error", desc: msg });
+      const msg = err?.response?.data?.message || err?.message || t("frontdesk.guests.errors.saveFailedFallback");
+      pushAlert({ type: "system", title: t("frontdesk.guests.errors.saveFailedTitle"), desc: msg });
     }
   };
 
@@ -189,17 +191,17 @@ export default function ClientesPage() {
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Guests</h1>
-          <p className="text-sm text-slate-600">Listado conectado al backend /guests.</p>
+          <h1 className="text-2xl font-bold text-slate-900">{t("frontdesk.guests.title")}</h1>
+          <p className="text-sm text-slate-600">{t("frontdesk.guests.subtitle")}</p>
         </div>
         
       </div>
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold">{editId ? "Edit guest" : "Create guest"}</h2>
+          <h2 className="text-lg font-semibold">{editId ? t("frontdesk.guests.editTitle") : t("frontdesk.guests.createTitle")}</h2>
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-500">Type:</span>
+            <span className="text-slate-500">{t("frontdesk.guests.typeLabel")}</span>
             <button
               type="button"
               className={`px-3 py-1 rounded-full border text-xs ${
@@ -209,7 +211,7 @@ export default function ClientesPage() {
               }`}
               onClick={() => setForm((f) => ({ ...f, isCompany: false }))}
             >
-              Individual
+              {t("frontdesk.guests.typeIndividual")}
             </button>
             <button
               type="button"
@@ -220,13 +222,13 @@ export default function ClientesPage() {
               }`}
               onClick={() => setForm((f) => ({ ...f, isCompany: true }))}
             >
-              Corporate
+              {t("frontdesk.guests.typeCorporate")}
             </button>
           </div>
         </div>
         <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">First name</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.firstName")}</label>
             <input
               className="w-full max-w-[300px] border rounded px-3 py-2"
               value={form.firstName}
@@ -235,7 +237,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Last name</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.lastName")}</label>
             <input
               className="w-full max-w-[300px] border rounded px-3 py-2"
               value={form.lastName}
@@ -244,7 +246,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Primary email</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.primaryEmail")}</label>
             <input
               type="email"
               className="w-full max-w-[300px] border rounded px-3 py-2"
@@ -253,7 +255,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Phone</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("common.phone")}</label>
             <input
               className="w-full max-w-[220px] border rounded px-3 py-2"
               value={form.phone}
@@ -261,7 +263,7 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">ID type</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.idType")}</label>
             <select
               className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
               value={form.idType}
@@ -274,16 +276,16 @@ export default function ClientesPage() {
                 }));
               }}
             >
-              <option value="">Seleccionar...</option>
-              <option value="CEDULA_FISICA">Cedula fisica</option>
-              <option value="CEDULA_JURIDICA">Cedula juridica</option>
-              <option value="PASAPORTE">Pasaporte</option>
-              <option value="DIMEX">DIMEX</option>
-              <option value="OTRO">Otro</option>
+              <option value="">{t("frontdesk.guests.selectOption")}</option>
+              <option value="CEDULA_FISICA">{t("frontdesk.guests.idTypePhysical")}</option>
+              <option value="CEDULA_JURIDICA">{t("frontdesk.guests.idTypeLegal")}</option>
+              <option value="PASAPORTE">{t("frontdesk.guests.idTypePassport")}</option>
+              <option value="DIMEX">{t("frontdesk.guests.idTypeDimex")}</option>
+              <option value="OTRO">{t("frontdesk.guests.idTypeOther")}</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">ID number</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.idNumber")}</label>
             <input
               className="w-full max-w-[220px] border rounded px-3 py-2"
               value={form.idNumber}
@@ -296,13 +298,13 @@ export default function ClientesPage() {
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Pais</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.country")}</label>
             <select
               className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
               value={form.country}
               onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, state: "", city: "" }))}
             >
-              <option value="">Seleccionar pais...</option>
+              <option value="">{t("frontdesk.guests.selectCountry")}</option>
               {countries.map((c) => (
                 <option key={c.code} value={c.name}>
                   {c.name}
@@ -311,14 +313,14 @@ export default function ClientesPage() {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Estado / Provincia</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.state")}</label>
             {form.country && regions.length > 0 ? (
               <select
                 className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
                 value={form.state}
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, city: "" }))}
               >
-                <option value="">Seleccionar estado / provincia...</option>
+                <option value="">{t("frontdesk.guests.selectState")}</option>
                 {regions.map((r) => (
                   <option key={r.id} value={r.name}>
                     {r.name}
@@ -330,19 +332,19 @@ export default function ClientesPage() {
                 className="w-full max-w-[220px] border rounded px-3 py-2"
                 value={form.state}
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
-                placeholder="Estado / provincia"
+                placeholder={t("frontdesk.guests.statePlaceholder")}
               />
             )}
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Ciudad</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.city")}</label>
             {form.country && cities.length > 0 ? (
               <select
                 className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
               >
-                <option value="">Seleccionar ciudad...</option>
+                <option value="">{t("frontdesk.guests.selectCity")}</option>
                 {cities.map((c) => (
                   <option key={c.id} value={c.name}>
                     {c.name}
@@ -354,12 +356,12 @@ export default function ClientesPage() {
                 className="w-full max-w-[220px] border rounded px-3 py-2"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
-                placeholder="Ciudad"
+                placeholder={t("frontdesk.guests.cityPlaceholder")}
               />
             )}
           </div>
           <div className="md:col-span-2">
-            <label className="block text-xs text-slate-500 mb-1">Address</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.address")}</label>
             <input
               className="w-full border rounded px-3 py-2"
               value={form.address}
@@ -368,19 +370,19 @@ export default function ClientesPage() {
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1">
-              {form.isCompany ? "Company name" : "Company (optional)"}
+              {form.isCompany ? t("frontdesk.guests.companyName") : t("frontdesk.guests.companyOptional")}
             </label>
             <input
               className="w-full border rounded px-3 py-2"
               value={form.company}
               onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
-              placeholder={form.isCompany ? "e.g. ACME Corp" : ""}
+              placeholder={form.isCompany ? t("frontdesk.guests.companyPlaceholder") : ""}
             />
           </div>
           {form.isCompany && (
             <>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Legal name</label>
+                <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.legalName")}</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.legalName}
@@ -388,7 +390,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Manager name</label>
+                <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.managerName")}</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.managerName}
@@ -396,7 +398,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Business activity</label>
+                <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.businessActivity")}</label>
                 <input
                   className="w-full border rounded px-3 py-2"
                   value={form.economicActivity}
@@ -406,7 +408,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Alternate email 1</label>
+                <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.altEmail1")}</label>
                 <input
                   type="email"
                   className="w-full border rounded px-3 py-2"
@@ -415,7 +417,7 @@ export default function ClientesPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Alternate email 2</label>
+                <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.altEmail2")}</label>
                 <input
                   type="email"
                   className="w-full border rounded px-3 py-2"
@@ -426,7 +428,7 @@ export default function ClientesPage() {
             </>
           )}
           <div className="md:col-span-2">
-            <label className="block text-xs text-slate-500 mb-1">Notas</label>
+            <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.notes")}</label>
             <textarea
               className="w-full border rounded px-3 py-2"
               rows={2}
@@ -443,14 +445,14 @@ export default function ClientesPage() {
                 setForm(emptyForm);
               }}
             >
-              Limpiar
+              {t("common.clear")}
             </button>
             <button
               type="submit"
               disabled={loading.action}
               className="px-4 py-2 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-500"
             >
-              {editId ? "Update" : "Create"}
+              {editId ? t("common.update") : t("common.create")}
             </button>
           </div>
         </form>
@@ -458,10 +460,10 @@ export default function ClientesPage() {
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="text-lg font-semibold">Guest lists</h2>
+          <h2 className="text-lg font-semibold">{t("frontdesk.guests.listsTitle")}</h2>
           <input
             className="border rounded px-3 py-2 text-sm w-full md:w-64"
-            placeholder="Search by name, email, phone, or ID"
+            placeholder={t("frontdesk.guests.searchPlaceholder")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -475,17 +477,17 @@ export default function ClientesPage() {
               {/* Clientes normales */}
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  Individual guests ({personas.length})
+                  {t("frontdesk.guests.individualList")} ({personas.length})
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">Name</th>
-                        <th className="p-2">ID</th>
-                        <th className="p-2">Email</th>
-                        <th className="p-2">Phone</th>
-                        <th className="p-2 text-right">Actions</th>
+                        <th className="p-2">{t("common.name")}</th>
+                        <th className="p-2">{t("frontdesk.guests.idShort")}</th>
+                        <th className="p-2">{t("common.email")}</th>
+                        <th className="p-2">{t("common.phone")}</th>
+                        <th className="p-2 text-right">{t("common.actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -502,20 +504,20 @@ export default function ClientesPage() {
                           <td className="p-2 text-xs">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">No ID</span>}
+                              : <span className="text-slate-400">{t("frontdesk.guests.noId")}</span>}
                           </td>
                           <td className="p-2">
-                            {g.email || <span className="text-slate-400">No email</span>}
+                            {g.email || <span className="text-slate-400">{t("frontdesk.guests.noEmail")}</span>}
                           </td>
                           <td className="p-2">
-                            {g.phone || <span className="text-slate-400">No phone</span>}
+                            {g.phone || <span className="text-slate-400">{t("frontdesk.guests.noPhone")}</span>}
                           </td>
                           <td className="p-2 text-right">
                             <button
                               className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
                               onClick={() => onEdit(g)}
                             >
-                              Edit
+                              {t("common.edit")}
                             </button>
                           </td>
                         </tr>
@@ -523,7 +525,7 @@ export default function ClientesPage() {
                       {personas.length === 0 && (
                         <tr>
                           <td className="p-3 text-center text-slate-500" colSpan={5}>
-                            No matching individual guests.
+                            {t("frontdesk.guests.noIndividuals")}
                           </td>
                         </tr>
                       )}
@@ -535,44 +537,44 @@ export default function ClientesPage() {
               {/* Clientes empresariales */}
               <div className="space-y-2 mt-6">
                 <h3 className="text-sm font-semibold text-slate-800">
-                  Corporate customers ({empresas.length})
+                  {t("frontdesk.guests.corporateList")} ({empresas.length})
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">Company</th>
-                        <th className="p-2">Contact</th>
-                        <th className="p-2">ID</th>
-                        <th className="p-2">Email</th>
-                        <th className="p-2">Phone</th>
-                        <th className="p-2 text-right">Actions</th>
+                        <th className="p-2">{t("frontdesk.guests.company")}</th>
+                        <th className="p-2">{t("frontdesk.guests.contact")}</th>
+                        <th className="p-2">{t("frontdesk.guests.idShort")}</th>
+                        <th className="p-2">{t("common.email")}</th>
+                        <th className="p-2">{t("common.phone")}</th>
+                        <th className="p-2 text-right">{t("common.actions")}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {empresas.map((g) => (
                         <tr key={g.id} className="border-t">
-                          <td className="p-2 font-medium">{g.company || "Company"}</td>
+                          <td className="p-2 font-medium">{g.company || t("frontdesk.guests.companyFallback")}</td>
                           <td className="p-2 text-xs">
-                            {[g.firstName, g.lastName].filter(Boolean).join(" ") || "No contact"}
+                            {[g.firstName, g.lastName].filter(Boolean).join(" ") || t("frontdesk.guests.noContact")}
                           </td>
                           <td className="p-2 text-xs">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">No ID</span>}
+                              : <span className="text-slate-400">{t("frontdesk.guests.noId")}</span>}
                           </td>
                           <td className="p-2">
-                            {g.email || <span className="text-slate-400">No email</span>}
+                            {g.email || <span className="text-slate-400">{t("frontdesk.guests.noEmail")}</span>}
                           </td>
                           <td className="p-2">
-                            {g.phone || <span className="text-slate-400">No phone</span>}
+                            {g.phone || <span className="text-slate-400">{t("frontdesk.guests.noPhone")}</span>}
                           </td>
                           <td className="p-2 text-right">
                             <button
                               className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
                               onClick={() => onEdit(g)}
                             >
-                              Edit
+                              {t("common.edit")}
                             </button>
                           </td>
                         </tr>
@@ -580,7 +582,7 @@ export default function ClientesPage() {
                       {empresas.length === 0 && (
                         <tr>
                           <td className="p-3 text-center text-slate-500" colSpan={6}>
-                            No companies match the search.
+                            {t("frontdesk.guests.noCompanies")}
                           </td>
                         </tr>
                       )}

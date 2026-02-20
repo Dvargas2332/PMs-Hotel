@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
+import { useLanguage } from "../../context/LanguageContext";
 
 function Badge({ color = "gray", children }) {
   const cls = {
@@ -30,6 +31,7 @@ function einvoiceBadgeColor(status) {
 }
 
 export default function BillingPage() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [historyItems, setHistoryItems] = useState([]);
@@ -74,7 +76,7 @@ export default function BillingPage() {
       setHistoryItems(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
-      pushAlert({ type: "system", title: "Billing", desc: "Could not load invoices." });
+      pushAlert({ type: "system", title: t("frontdesk.billing.title"), desc: t("frontdesk.billing.errors.loadFailed") });
       setHistoryItems([]);
     } finally {
       setLoading(false);
@@ -113,13 +115,13 @@ export default function BillingPage() {
       });
       pushAlert({
         type: "system",
-        title: "Electronic invoicing",
-        desc: `${docType} created with status ${data?.status || "DRAFT"}.`,
+        title: t("frontdesk.billing.einvoiceTitle"),
+        desc: t("frontdesk.billing.einvoiceCreated", { docType, status: data?.status || "DRAFT" }),
       });
       await loadHistory();
     } catch (err) {
-      const msg = err?.response?.data?.message || "Could not create electronic document.";
-      pushAlert({ type: "system", title: "Electronic invoicing", desc: msg });
+      const msg = err?.response?.data?.message || t("frontdesk.billing.errors.einvoiceFailedFallback");
+      pushAlert({ type: "system", title: t("frontdesk.billing.einvoiceTitle"), desc: msg });
     } finally {
       setIssuing((s) => {
         const next = { ...s };
@@ -134,41 +136,41 @@ export default function BillingPage() {
   return (
     <div className="p-4 min-h-screen text-sm" style={{ background: frontdeskTheme.background.app }}>
       <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-bold">Billing</h1>
+        <h1 className="text-xl font-bold">{t("frontdesk.billing.title")}</h1>
         <div className="flex gap-2">
           <button
             className="px-3 py-1.5 rounded border bg-white hover:bg-slate-50"
             onClick={() => navigate("/e-invoicing")}
           >
-            Electronic invoicing
+            {t("frontdesk.billing.einvoiceTitle")}
           </button>
           <button
             className="px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-500 disabled:bg-emerald-600/40"
             onClick={loadHistory}
             disabled={loading}
           >
-            {loading ? "Loading..." : "Refresh"}
+            {loading ? t("common.loading") : t("common.refresh")}
           </button>
         </div>
       </div>
 
       <div className="bg-white border rounded-lg p-3 shadow-sm space-y-3">
         <div className="space-y-2">
-          <div className="text-sm font-semibold">Active check-ins for checkout</div>
+          <div className="text-sm font-semibold">{t("frontdesk.billing.activeCheckins")}</div>
           {activeStays.length === 0 ? (
-            <div className="text-xs text-slate-500">No rooms currently checked in.</div>
+            <div className="text-xs text-slate-500">{t("frontdesk.billing.noActiveCheckins")}</div>
           ) : (
             <div className="overflow-auto border rounded">
               <table className="min-w-full text-xs">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
-                    <th className="px-2 py-2 text-left">Room</th>
-                    <th className="px-2 py-2 text-left">Guest</th>
-                    <th className="px-2 py-2 text-left">Check-in</th>
-                    <th className="px-2 py-2 text-left">Check-out</th>
-                    <th className="px-2 py-2 text-left">Invoice</th>
-                    <th className="px-2 py-2 text-right">Total</th>
-                    <th className="px-2 py-2 text-right">Action</th>
+                    <th className="px-2 py-2 text-left">{t("common.room")}</th>
+                    <th className="px-2 py-2 text-left">{t("common.guest")}</th>
+                    <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.checkin")}</th>
+                    <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.checkout")}</th>
+                    <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.invoice")}</th>
+                    <th className="px-2 py-2 text-right">{t("common.total")}</th>
+                    <th className="px-2 py-2 text-right">{t("frontdesk.billing.table.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -196,7 +198,7 @@ export default function BillingPage() {
                             className="px-2 py-1 rounded border text-xs"
                             onClick={() => navigate("/frontdesk/reservas")}
                           >
-                            Go to checkout
+                            {t("frontdesk.billing.goToCheckout")}
                           </button>
                         </td>
                       </tr>
@@ -210,69 +212,69 @@ export default function BillingPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-6 gap-2 text-xs">
           <div className="flex flex-col gap-1">
-            <span>From</span>
+            <span>{t("common.from")}</span>
             <input
               className="border rounded px-2 py-1"
               value={filters.dateFrom}
               onChange={(e) => setFilters((f) => ({ ...f, dateFrom: e.target.value }))}
-              placeholder="YYYY-MM-DD"
+              placeholder={t("common.dateYMD")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span>To</span>
+            <span>{t("common.to")}</span>
             <input
               className="border rounded px-2 py-1"
               value={filters.dateTo}
               onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
-              placeholder="YYYY-MM-DD"
+              placeholder={t("common.dateYMD")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span>Invoice #</span>
+            <span>{t("frontdesk.billing.table.invoice")}</span>
             <input
               className="border rounded px-2 py-1"
               value={filters.number}
               onChange={(e) => setFilters((f) => ({ ...f, number: e.target.value }))}
-              placeholder="Search"
+              placeholder={t("common.search")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span>Guest</span>
+            <span>{t("common.guest")}</span>
             <input
               className="border rounded px-2 py-1"
               value={filters.guest}
               onChange={(e) => setFilters((f) => ({ ...f, guest: e.target.value }))}
-              placeholder="Name/email"
+              placeholder={t("frontdesk.billing.filters.guestPlaceholder")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span>Room</span>
+            <span>{t("common.room")}</span>
             <input
               className="border rounded px-2 py-1"
               value={filters.room}
               onChange={(e) => setFilters((f) => ({ ...f, room: e.target.value }))}
-              placeholder="Room"
+              placeholder={t("common.room")}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <span>Status</span>
+            <span>{t("common.status")}</span>
             <select
               className="border rounded px-2 py-1"
               value={filters.status}
               onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
             >
-              <option value="">All</option>
-              <option value="ISSUED">ISSUED</option>
-              <option value="DRAFT">DRAFT</option>
-              <option value="CANCELED">CANCELED</option>
-              <option value="REFUNDED">REFUNDED</option>
+              <option value="">{t("common.all")}</option>
+              <option value="ISSUED">{t("frontdesk.billing.status.issued")}</option>
+              <option value="DRAFT">{t("frontdesk.billing.status.draft")}</option>
+              <option value="CANCELED">{t("frontdesk.billing.status.canceled")}</option>
+              <option value="REFUNDED">{t("frontdesk.billing.status.refunded")}</option>
             </select>
           </div>
         </div>
 
         <div className="flex gap-2 justify-end">
           <button className="px-3 py-1.5 rounded border text-xs" onClick={loadHistory} disabled={loading}>
-            Apply filters
+            {t("common.applyFilters")}
           </button>
           <button
             className="px-3 py-1.5 rounded border text-xs"
@@ -282,7 +284,7 @@ export default function BillingPage() {
             }}
             disabled={loading}
           >
-            Clear
+            {t("common.clear")}
           </button>
         </div>
 
@@ -290,13 +292,13 @@ export default function BillingPage() {
           <table className="min-w-full text-xs">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                <th className="px-2 py-2 text-left">Date</th>
-                <th className="px-2 py-2 text-left">Invoice #</th>
-                <th className="px-2 py-2 text-left">Customer</th>
-                <th className="px-2 py-2 text-left">Room</th>
-                <th className="px-2 py-2 text-left">Status</th>
-                <th className="px-2 py-2 text-left">E-Doc</th>
-                <th className="px-2 py-2 text-right">Total</th>
+                <th className="px-2 py-2 text-left">{t("common.date")}</th>
+                <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.invoice")}</th>
+                <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.customer")}</th>
+                <th className="px-2 py-2 text-left">{t("common.room")}</th>
+                <th className="px-2 py-2 text-left">{t("common.status")}</th>
+                <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.edoc")}</th>
+                <th className="px-2 py-2 text-right">{t("common.total")}</th>
               </tr>
             </thead>
             <tbody>
@@ -340,7 +342,7 @@ export default function BillingPage() {
                             className="px-2 py-1 rounded border text-[11px] hover:bg-slate-50"
                             disabled={Boolean(issuing[inv.id + ":FE"])}
                             onClick={() => issueEDoc(inv, "FE")}
-                            title="Create Electronic Invoice (FE)"
+                            title={t("frontdesk.billing.einvoiceCreate", { docType: "FE" })}
                           >
                             {issuing[inv.id + ":FE"] ? "..." : "FE"}
                           </button>
@@ -352,7 +354,7 @@ export default function BillingPage() {
                             className="px-2 py-1 rounded border text-[11px] hover:bg-slate-50"
                             disabled={Boolean(issuing[inv.id + ":TE"])}
                             onClick={() => issueEDoc(inv, "TE")}
-                            title="Create Electronic Ticket (TE)"
+                            title={t("frontdesk.billing.einvoiceCreate", { docType: "TE" })}
                           >
                             {issuing[inv.id + ":TE"] ? "..." : "TE"}
                           </button>
@@ -368,7 +370,7 @@ export default function BillingPage() {
               {!tableRows.length && !loading && (
                 <tr>
                   <td className="px-2 py-4 text-center text-slate-500" colSpan={7}>
-                    No invoices match the filters.
+                    {t("frontdesk.billing.noInvoices")}
                   </td>
                 </tr>
               )}

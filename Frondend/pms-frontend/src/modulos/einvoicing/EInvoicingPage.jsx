@@ -156,6 +156,18 @@ export default function EInvoicingPage() {
   const [generalTab, setGeneralTab] = React.useState("core"); // core | connections | forms | smtp | atv | certificate
   const [secretMeta, setSecretMeta] = React.useState({ smtp: {}, atv: {}, crypto: {} });
   const [secrets, setSecrets] = React.useState({ smtp: {}, atv: {}, crypto: {} });
+  const haciendaEndpoints =
+    String(cfg.environment || "sandbox").toLowerCase() === "production"
+      ? {
+          tokenUrl: "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut/protocol/openid-connect/token",
+          sendUrl: "https://api.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/",
+          statusUrl: "https://api.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/{clave}",
+        }
+      : {
+          tokenUrl: "https://idp.comprobanteselectronicos.go.cr/auth/realms/rut-stag/protocol/openid-connect/token",
+          sendUrl: "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/",
+          statusUrl: "https://api-sandbox.comprobanteselectronicos.go.cr/recepcion/v1/recepcion/{clave}",
+        };
 
   // Catalogs (CABYS + official catalogs loaded per-hotel)
   const [catalogTab, setCatalogTab] = React.useState("cabys"); // cabys | catalogs
@@ -1661,7 +1673,7 @@ export default function EInvoicingPage() {
                         <Card className="p-4 space-y-3">
                       <div className="font-semibold">Hacienda (ATV)</div>
                       <div className="text-sm text-slate-600">
-                        Manual mode or API credentials storage (for future automation).
+                        Each hotel must use its own ATV credentials and certificate to sign XMLs.
                       </div>
                       <select
                         className="h-10 rounded-lg border px-3 text-sm"
@@ -1676,107 +1688,66 @@ export default function EInvoicingPage() {
                         <option value="manual">Manual (ATV website)</option>
                         <option value="api">API</option>
                       </select>
+                      <div className="grid md:grid-cols-2 gap-2">
+                        <input
+                          className="h-10 rounded-lg border px-3 text-sm"
+                          placeholder="ATV username"
+                          value={cfg.settings?.atv?.username || ""}
+                          onChange={(e) =>
+                            setCfg((prev) => ({
+                              ...prev,
+                              settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), username: e.target.value } },
+                            }))
+                          }
+                        />
+                        <input
+                          className="h-10 rounded-lg border px-3 text-sm"
+                          placeholder={secretMeta?.atv?.hasPassword ? "ATV password (leave blank to keep)" : "ATV password"}
+                          type="password"
+                          onChange={(e) =>
+                            setSecrets((prev) => ({ ...prev, atv: { ...(prev.atv || {}), password: e.target.value } }))
+                          }
+                        />
+                        {String(cfg.settings?.atv?.mode || "manual") === "api" && (
+                          <>
+                            <input
+                              className="h-10 rounded-lg border px-3 text-sm"
+                              placeholder="Client ID (api-prod / api-stag)"
+                              value={cfg.settings?.atv?.clientId || ""}
+                              onChange={(e) =>
+                                setCfg((prev) => ({
+                                  ...prev,
+                                  settings: {
+                                    ...prev.settings,
+                                    atv: { ...(prev.settings?.atv || {}), clientId: e.target.value },
+                                  },
+                                }))
+                              }
+                            />
+                            <input
+                              className="h-10 rounded-lg border px-3 text-sm"
+                              placeholder={
+                                secretMeta?.atv?.hasClientSecret ? "Client secret (leave blank to keep)" : "Client secret"
+                              }
+                              type="password"
+                              onChange={(e) =>
+                                setSecrets((prev) => ({
+                                  ...prev,
+                                  atv: { ...(prev.atv || {}), clientSecret: e.target.value },
+                                }))
+                              }
+                            />
+                          </>
+                        )}
+                      </div>
                       {String(cfg.settings?.atv?.mode || "manual") === "api" && (
                         <>
-                          <input
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            placeholder="Client ID"
-                            value={cfg.settings?.atv?.clientId || ""}
-                            onChange={(e) =>
-                              setCfg((prev) => ({
-                                ...prev,
-                                settings: {
-                                  ...prev.settings,
-                                  atv: { ...(prev.settings?.atv || {}), clientId: e.target.value },
-                                },
-                              }))
-                            }
-                          />
-                          <input
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            placeholder="Token URL (sandbox)"
-                            value={cfg.settings?.atv?.endpoints?.tokenUrl || ""}
-                            onChange={(e) =>
-                              setCfg((prev) => ({
-                                ...prev,
-                                settings: {
-                                  ...prev.settings,
-                                  atv: {
-                                    ...(prev.settings?.atv || {}),
-                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), tokenUrl: e.target.value },
-                                  },
-                                },
-                              }))
-                            }
-                          />
-                          <input
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            placeholder="Send URL (sandbox)"
-                            value={cfg.settings?.atv?.endpoints?.sendUrl || ""}
-                            onChange={(e) =>
-                              setCfg((prev) => ({
-                                ...prev,
-                                settings: {
-                                  ...prev.settings,
-                                  atv: {
-                                    ...(prev.settings?.atv || {}),
-                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), sendUrl: e.target.value },
-                                  },
-                                },
-                              }))
-                            }
-                          />
-                          <input
-                            className="h-10 rounded-lg border px-3 text-sm"
-                            placeholder="Status URL (sandbox) - use {{key}}"
-                            value={cfg.settings?.atv?.endpoints?.statusUrl || ""}
-                            onChange={(e) =>
-                              setCfg((prev) => ({
-                                ...prev,
-                                settings: {
-                                  ...prev.settings,
-                                  atv: {
-                                    ...(prev.settings?.atv || {}),
-                                    endpoints: { ...(prev.settings?.atv?.endpoints || {}), statusUrl: e.target.value },
-                                  },
-                                },
-                              }))
-                            }
-                          />
+                          <div className="text-xs text-slate-600">Hacienda endpoints are fixed by environment.</div>
+                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.tokenUrl} disabled />
+                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.sendUrl} disabled />
+                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.statusUrl} disabled />
                         </>
                       )}
-                      <input
-                        className="h-10 rounded-lg border px-3 text-sm"
-                        placeholder="ATV username"
-                        value={cfg.settings?.atv?.username || ""}
-                        onChange={(e) =>
-                          setCfg((prev) => ({
-                            ...prev,
-                            settings: { ...prev.settings, atv: { ...(prev.settings?.atv || {}), username: e.target.value } },
-                          }))
-                        }
-                      />
-                      <input
-                        className="h-10 rounded-lg border px-3 text-sm"
-                        placeholder={secretMeta?.atv?.hasPassword ? "ATV password (leave blank to keep)" : "ATV password"}
-                        type="password"
-                        onChange={(e) =>
-                          setSecrets((prev) => ({ ...prev, atv: { ...(prev.atv || {}), password: e.target.value } }))
-                        }
-                      />
-                      <input
-                        className="h-10 rounded-lg border px-3 text-sm"
-                        placeholder={
-                          secretMeta?.atv?.hasClientSecret ? "Client secret (leave blank to keep)" : "Client secret"
-                        }
-                        type="password"
-                        onChange={(e) =>
-                          setSecrets((prev) => ({
-                            ...prev,
-                            atv: { ...(prev.atv || {}), clientSecret: e.target.value },
-                          }))
-                        }
-                      />
                       <textarea
                         className="min-h-[80px] rounded-lg border px-3 py-2 text-sm"
                         placeholder="Notes / manual steps"

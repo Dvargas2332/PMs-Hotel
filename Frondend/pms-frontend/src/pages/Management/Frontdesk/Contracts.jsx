@@ -72,6 +72,9 @@ export default function Contracts() {
   // -------- CRUD ----------
   const onCreate = async () => {
     if (submitting) return;
+    if (!form.id.trim()) return alert("ID requerido");
+    if (!form.channel.trim()) return alert("Canal requerido");
+    if (!Array.isArray(form.ratePlanIds) || form.ratePlanIds.length === 0) return alert("Seleccione al menos un tarifario");
     setSubmitting(true);
     try {
       const payload = normalize(form);
@@ -99,6 +102,8 @@ export default function Contracts() {
 
   const onUpdate = async () => {
     if (!selectedId || submitting) return;
+    if (!form.channel.trim()) return alert("Canal requerido");
+    if (!Array.isArray(form.ratePlanIds) || form.ratePlanIds.length === 0) return alert("Seleccione al menos un tarifario");
     setSubmitting(true);
     try {
       const payload = normalize(form);
@@ -143,11 +148,21 @@ export default function Contracts() {
           value={form.id}
           onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
         />
-        <Input
-          placeholder="Channel (e.g. Booking.com)"
-          value={form.channel}
-          onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
-        />
+        <div className="flex flex-col">
+          <label className="text-sm mb-1">Channel</label>
+          <Input
+            list="basic-channels"
+            placeholder="Channel (e.g. Booking.com)"
+            value={form.channel}
+            onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))}
+          />
+          <datalist id="basic-channels">
+            {BASIC_CHANNELS.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+          <p className="text-xs text-gray-500 mt-1">You can type any custom channel name.</p>
+        </div>
 
         <div className="grid grid-cols-2 gap-2">
           <Input
@@ -194,7 +209,7 @@ export default function Contracts() {
             ))}
           </select>
           <p className="text-xs text-gray-500 mt-1">
-            Hold Ctrl/Cmd to select multiple.
+            Hold Ctrl/Cmd to select multiple. At least one is required.
           </p>
         </div>
 

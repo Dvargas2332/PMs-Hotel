@@ -15,7 +15,7 @@ export function SettingsProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get("/api/settings");
+      const { data } = await api.get("/hotel");
       setSettings(data);
       localStorage.setItem(LS_KEY, JSON.stringify(data));
     } catch (e) {
@@ -31,7 +31,7 @@ export function SettingsProvider({ children }) {
     const optimistic = { ...(settings||{}), ...patch };
     setSettings(optimistic);
     localStorage.setItem(LS_KEY, JSON.stringify(optimistic));
-    const { data } = await api.put("/api/settings", patch);
+    const { data } = await api.put("/hotel", patch);
     setSettings(data);
     localStorage.setItem(LS_KEY, JSON.stringify(data));
     return data;

@@ -51,6 +51,8 @@ const mapReservation = (r) => {
     code: r.code,
     rooming: r.rooming,
     otaCode: r.otaCode,
+    contractId: r.contractId,
+    ratePlanId: r.ratePlanId,
     mealPlanId: r.mealPlanId,
     // Si no hay habitacion asignada, dejamos roomId en null para manejar lista de espera
     roomId: r.roomId ? String(r.roomId) : null,
@@ -68,6 +70,9 @@ const mapReservation = (r) => {
     createdAt: r.createdAt,
     room: r.room,
     guest: r.guest,
+    contract: r.contract,
+    ratePlan: r.ratePlan,
+    mealPlan: r.mealPlan,
   };
 };
 const mapGuest = (g) => ({
@@ -249,6 +254,7 @@ export function HotelDataProvider({ children }) {
       status = "CONFIRMED",
       source = "FRONTDESK",
       channel = "DIRECT",
+      contractId,
       ratePlanId,
       price,
       priceRoom,
@@ -279,6 +285,7 @@ export function HotelDataProvider({ children }) {
           status,
           source,
           channel,
+          contractId: contractId ? String(contractId) : undefined,
           ratePlanId: ratePlanId ? Number(ratePlanId) || ratePlanId : undefined,
           price: price === 0 || price ? Number(price) : undefined,
           priceRoom: priceRoom === 0 || priceRoom ? Number(priceRoom) : undefined,

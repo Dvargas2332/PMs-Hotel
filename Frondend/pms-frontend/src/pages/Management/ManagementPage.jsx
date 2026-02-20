@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import { SimpleTable } from "../../components/ui/table";
 import { Select } from "../../components/ui/select";
 import { api } from "../../lib/api";
+import { filterAllowedAlerts, isAllowedAlert } from "../../lib/alertFilter";
 
 // Frontdesk
 import RoomTypes from "./Frontdesk/RoomTypes";
@@ -158,11 +159,30 @@ function LauncherProfiles() {
         <h3 className="font-medium">Login profiles</h3>
         
 
-        <div className="space-y-3">
+        <form className="space-y-3" autoComplete="off">
+          <input
+            type="text"
+            name="fake_username"
+            autoComplete="username"
+            className="hidden"
+            tabIndex={-1}
+          />
+          <input
+            type="password"
+            name="fake_password"
+            autoComplete="new-password"
+            className="hidden"
+            tabIndex={-1}
+          />
           <div className="space-y-1">
             <label className="text-xs text-slate-500">User (login ID)</label>
             <Input
               placeholder="e.g. frontdesk1"
+              autoComplete="new-password"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              name={editingId ? "launcher_userid_edit" : "launcher_userid_new"}
               value={form.userId}
               onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
             />
@@ -193,11 +213,12 @@ function LauncherProfiles() {
             <Input
               type="password"
               placeholder={editingId ? "Leave blank to keep unchanged" : "Numeric PIN (e.g. 1234)"}
+              autoComplete={editingId ? "new-password" : "new-password"}
               value={form.password}
               onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
             />
           </div>
-        </div>
+        </form>
 
         <div className="flex gap-2 pt-2">
           <Button type="button" onClick={handleSave} disabled={saving || loading}>
@@ -308,7 +329,7 @@ const VIEWS = {
 export default function ManagementPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, hotel } = useAuth();
   const [selected, setSelected] = useState("profiles");
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -321,10 +342,10 @@ export default function ManagementPage() {
     const onToggle = () => setAlertsOpen((v) => !v);
     const onOpen = () => setAlertsOpen(true);
     const onClose = () => setAlertsOpen(false);
-    const onSet = (e) => setAlerts(Array.isArray(e.detail) ? e.detail : []);
+    const onSet = (e) => setAlerts(filterAllowedAlerts(Array.isArray(e.detail) ? e.detail : []));
     const onPush = (e) => {
       const item = e.detail;
-      if (!item) return;
+      if (!item || !isAllowedAlert(item)) return;
       setAlerts((prev) => [{ id: item.id || crypto.randomUUID?.() || Date.now(), ...item }, ...prev]);
       setAlertsOpen(true);
     };
@@ -379,63 +400,86 @@ export default function ManagementPage() {
     }
   }, [pendingGeneralSave, selected]);
 
+
+  const allowedModules = useMemo(() => {
+    const list = hotel?.allowedModules;
+    if (!Array.isArray(list) || list.length == 0) return null;
+    return new Set(list.map((m) => String(m).toLowerCase()));
+  }, [hotel?.allowedModules]);
+
+  const isModuleEnabled = (code) => {
+    if (!code) return true;
+    if (!allowedModules) return true;
+    return allowedModules.has(String(code).toLowerCase());
+  };
   const menu = useMemo(
     () => [
       {
         title: "Perfiles",
         key: "profiles",
-        items: [{ id: "profiles", label: "Perfiles" }],
+        items: [{ id: "profiles", label: "Perfiles", requires: "management" }],
       },
       {
-        title: "Auditoría",
+        title: "Auditoria",
         key: "audit",
-        items: [{ id: "usageLog", label: "Registro de uso de módulos" }],
+        items: [{ id: "usageLog", label: "Registro de uso de modulos", requires: "management" }],
       },
       {
         title: "Frontdesk",
         key: "frontdesk",
         items: [
-          { id: "roomTypes", label: "Tipos de habitación y habitaciones" },
-          { id: "rates", label: "Planes tarifarios" },
-          { id: "contracts", label: "Contratos (Directos / OTAs)" },
-          { id: "mealPlans", label: "Regímenes de alojamiento" },
-          { id: "billingSystem", label: "Facturación" },
-          { id: "paymentMethods", label: "Formas de pago" },
-          { id: "discounts", label: "Descuentos" },
-          { id: "taxes", label: "Impuestos" },
-          { id: "currency", label: "Monedas y tipo de cambio" },
-          { id: "printers", label: "Impresoras" },
-          { id: "cashClosures", label: "Cierres de caja" },
-          { id: "hotelInfo", label: "Información general del hotel" },
+          { id: "roomTypes", label: "Tipos de habitacion y habitaciones", requires: "frontdesk" },
+          { id: "rates", label: "Planes tarifarios", requires: "frontdesk" },
+          { id: "contracts", label: "Contratos (Directos / OTAs)", requires: "frontdesk" },
+          { id: "mealPlans", label: "Regimenes de alojamiento", requires: "frontdesk" },
+          { id: "billingSystem", label: "Facturacion", requires: "frontdesk" },
+          { id: "paymentMethods", label: "Formas de pago", requires: "frontdesk" },
+          { id: "discounts", label: "Descuentos", requires: "frontdesk" },
+          { id: "taxes", label: "Impuestos", requires: "frontdesk" },
+          { id: "currency", label: "Monedas y tipo de cambio", requires: "frontdesk" },
+          { id: "printers", label: "Impresoras", requires: "frontdesk" },
+          { id: "cashClosures", label: "Cierres de caja", requires: "frontdesk" },
+          { id: "hotelInfo", label: "Informacion general del hotel", requires: "frontdesk" },
         ],
       },
       {
         title: "Restaurante",
         key: "restaurant",
         items: [
-          { id: "restaurantConfig", label: "Configuración" },
+          { id: "restaurantConfig", label: "Configuracion", requires: "restaurant" },
         ],
       },
       {
         title: "Accounting",
         key: "accounting",
         items: [
-          { id: "accountingConfig", label: "Parámetros contables" },
+          { id: "accountingConfig", label: "Parametros contables", requires: "accounting" },
         ],
       },
       {
         title: "Channel Manager",
         key: "channel",
-        items: [{ id: "channelManager", label: "Conexión OTAs / Channel Manager" }],
+        items: [
+          { id: "channelManager", label: "Conexión OTAs / Channel Manager", requires: "channel_manager" },
+        ],
       },
     ],
     []
   );
 
+  const filteredMenu = useMemo(() => {
+    return menu
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => isModuleEnabled(item.requires)),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [menu, allowedModules]);
+
   const selectedGroupKey = useMemo(() => {
-    for (const g of menu) if (g.items.some((i) => i.id === selected)) return g.key;
+    for (const g of filteredMenu) if (g.items.some((i) => i.id === selected)) return g.key;
     return null;
-  }, [menu, selected]);
+  }, [filteredMenu, selected]);
 
   const [expanded, setExpanded] = useState(() => new Set(selectedGroupKey ? [selectedGroupKey] : []));
   const toggleGroup = (key) =>
@@ -454,12 +498,20 @@ export default function ManagementPage() {
     setSelected((cur) => (cur === view ? cur : view));
     setExpanded((prev) => {
       const next = new Set(prev);
-      for (const g of menu) {
+      for (const g of filteredMenu) {
         if (g.items.some((i) => i.id === view)) next.add(g.key);
       }
       return next;
     });
-  }, [location.search, menu]);
+  }, [location.search, filteredMenu]);
+
+  useEffect(() => {
+    if (!filteredMenu.length) return;
+    const isValid = filteredMenu.some((g) => g.items.some((i) => i.id === selected));
+    if (!isValid) {
+      setSelected(filteredMenu[0].items[0].id);
+    }
+  }, [filteredMenu, selected]);
 
   const renderSection = () => {
     const Comp = VIEWS[selected];
@@ -479,15 +531,17 @@ export default function ManagementPage() {
         </div>
 
         <nav className="flex-1 overflow-y-auto">
-          <div className="p-3">
-            <button
-              onClick={handleGeneralInfo}
-              className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 text-sm font-semibold shadow-sm"
-            >
-              Informacion general
-            </button>
-          </div>
-          {menu.map((group) => {
+          {isModuleEnabled("frontdesk") && (
+            <div className="p-3">
+              <button
+                onClick={handleGeneralInfo}
+                className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 text-sm font-semibold shadow-sm"
+              >
+                Informacion general
+              </button>
+            </div>
+          )}
+          {filteredMenu.map((group) => {
             const isOpen = expanded.has(group.key);
 
             // Grupo "Perfiles" sin submenu: el título actúa como botón directo

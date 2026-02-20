@@ -168,6 +168,7 @@ export default function Launchergestor() {
   const [selectedClientId, setSelectedClientId] = useState("");
   const [clientForm, setClientForm] = useState(() => ({ ...INITIAL_CLIENT_FORM }));
   const [creatingClient, setCreatingClient] = useState(false);
+  const [deletingClientId, setDeletingClientId] = useState("");
 
   const [loadingHotels, setLoadingHotels] = useState(false);
   const [hotels, setHotels] = useState([]);
@@ -176,6 +177,7 @@ export default function Launchergestor() {
   const [editingHotel, setEditingHotel] = useState(false);
   const [hotelEditForm, setHotelEditForm] = useState(() => ({ ...INITIAL_EDIT_FORM }));
   const [savingHotel, setSavingHotel] = useState(false);
+  const [deletingHotelId, setDeletingHotelId] = useState("");
   const [adminForm, setAdminForm] = useState(() => ({ ...INITIAL_ADMIN_FORM }));
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
@@ -491,6 +493,37 @@ export default function Launchergestor() {
       setAdminSaving(false);
     }
   };
+
+  const onDeleteClient = async (clientId) => {
+    if (!clientId || deletingClientId) return;
+    if (!window.confirm("¿Eliminar este cliente? Esta acción no se puede deshacer.")) return;
+    setDeletingClientId(clientId);
+    try {
+      await api.delete(`/gestor/clients/${encodeURIComponent(clientId)}`);
+      if (selectedClientId === clientId) setSelectedClientId("");
+      await loadClients();
+      await loadHotels();
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo eliminar el cliente");
+    } finally {
+      setDeletingClientId("");
+    }
+  };
+
+  const onDeleteHotel = async (hotelId) => {
+    if (!hotelId || deletingHotelId) return;
+    if (!window.confirm("¿Eliminar este hotel? Esta acción no se puede deshacer.")) return;
+    setDeletingHotelId(hotelId);
+    try {
+      await api.delete(`/gestor/hotels/${encodeURIComponent(hotelId)}`);
+      if (selectedHotelId === hotelId) setSelectedHotelId("");
+      await loadHotels();
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo eliminar el hotel");
+    } finally {
+      setDeletingHotelId("");
+    }
+  };
   const onAddBilling = async () => {
     if (!selectedHotelId || billingSaving) return;
 
@@ -737,20 +770,35 @@ const importEndpoints = useMemo(
 
                     <div className="max-h-[260px] overflow-y-auto space-y-2 pr-1">
                       {filteredClients.map((c) => (
-                        <button
+                        <div
                           key={c.id}
-                          type="button"
-                          onClick={() => setSelectedClientId(c.id)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
+                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-3 ${
                             selectedClientId === c.id ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-white"
                           }`}
                         >
-                          <div className="font-semibold text-slate-900 truncate">{c.name}</div>
-                          <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
-                            <span className="truncate">{c.companyId || "Sin identificacion"}</span>
-                            <span>{Number(c.hotelsCount || 0)} hoteles</span>
-                          </div>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedClientId(c.id)}
+                            className="flex-1 text-left"
+                          >
+                            <div className="font-semibold text-slate-900 truncate">{c.name}</div>
+                            <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
+                              <span className="truncate">{c.companyId || "Sin identificacion"}</span>
+                              <span>{Number(c.hotelsCount || 0)} hoteles</span>
+                            </div>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteClient(c.id);
+                            }}
+                            disabled={Boolean(deletingClientId)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
                       ))}
                       {!loadingClients && filteredClients.length === 0 && (
                         <div className="text-sm text-slate-500">No hay clientes.</div>
@@ -770,21 +818,36 @@ const importEndpoints = useMemo(
                     <Input placeholder="Buscar hotel..." value={q} onChange={(e) => setQ(e.target.value)} />
                     <div className="max-h-[360px] overflow-y-auto space-y-2 pr-1">
                       {filteredHotels.map((h) => (
-                        <button
+                        <div
                           key={h.id}
-                          type="button"
-                          onClick={() => setSelectedHotelId(h.id)}
-                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 ${
+                          className={`w-full rounded-xl border px-3 py-2 text-left hover:bg-slate-50 flex items-center gap-3 ${
                             selectedHotelId === h.id ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
                           }`}
                         >
-                          <div className="font-semibold text-slate-900 truncate">{h.name}</div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedHotelId(h.id)}
+                            className="flex-1 text-left"
+                          >
+                            <div className="font-semibold text-slate-900 truncate">{h.name}</div>
                             <div className="text-[11px] text-slate-500 flex items-center justify-between gap-2">
                               <span>{MEMBERSHIP_LABELS[h.membership] || h.membership}</span>
                               <span>{fmtHotelNumber(h.number)}</span>
                             </div>
-                          <div className="text-[11px] text-slate-400 truncate">Empresa: {h.saasClientName || "-"}</div>
-                        </button>
+                            <div className="text-[11px] text-slate-400 truncate">Empresa: {h.saasClientName || "-"}</div>
+                          </button>
+                          <button
+                            type="button"
+                            className="text-[11px] text-rose-600 hover:underline disabled:opacity-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteHotel(h.id);
+                            }}
+                            disabled={Boolean(deletingHotelId)}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
                       ))}
                       {!loadingHotels && filteredHotels.length === 0 && (
                         <div className="text-sm text-slate-500">No hay hoteles.</div>

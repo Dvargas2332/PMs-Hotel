@@ -18,6 +18,8 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
+import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
+import { api } from "../lib/api";
 
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
@@ -35,6 +37,7 @@ export default function Launcher() {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [versionInfo, setVersionInfo] = useState(null);
   const [userLogin, setUserLogin] = useState({
     username: "",
     password: "",
@@ -110,12 +113,12 @@ export default function Launcher() {
     const onClose = () => setAlertsOpen(false);
     const onSet = (e) => {
       const list = Array.isArray(e.detail) ? e.detail : [];
-      setAlerts(list);
+      setAlerts(filterAllowedAlerts(list));
       setAlertsOpen(true);
     };
     const onPush = (e) => {
       const item = e.detail;
-      if (!item) return;
+      if (!item || !isAllowedAlert(item)) return;
     const id =
       typeof crypto?.randomUUID === "function"
         ? crypto.randomUUID()
@@ -139,6 +142,23 @@ export default function Launcher() {
       window.removeEventListener("pms:set-alerts", onSet);
       window.removeEventListener("pms:push-alert", onPush);
       window.removeEventListener("pms:clear-alerts", onClear);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get("/version")
+      .then((res) => {
+        if (!active) return;
+        setVersionInfo(res?.data || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setVersionInfo(null);
+      });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -422,7 +442,15 @@ export default function Launcher() {
         <footer className="mx-auto my-8 w-full max-w-6xl px-6 text-[11px] text-gray-600">
           <div className="flex items-center justify-between">
             <span>(©) {new Date().getFullYear()} Kazehana PMS</span>
-            <span className="hidden items-center gap-1 sm:inline-flex" />
+            <span className="hidden items-center gap-1 text-gray-500 sm:inline-flex">
+              {t("launcher.version.system")} v{versionInfo?.appVersion || "0.0.0"}
+              {versionInfo?.dbVersion ? (
+                <>
+                  <span className="px-1">•</span>
+                  {t("launcher.version.db")} {versionInfo.dbVersion}
+                </>
+              ) : null}
+            </span>
           </div>
         </footer>
       </div>

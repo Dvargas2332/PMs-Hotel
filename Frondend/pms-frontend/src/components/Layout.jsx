@@ -6,6 +6,7 @@ import useConfigStore from "../store/configStore";
 import { api } from "../lib/api";
 import { frontdeskTheme } from "../theme/frontdeskTheme";
 import { useLanguage } from "../context/LanguageContext";
+import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
 
 const TYPE_STYLES = {
   checkin:      "bg-emerald-100 text-emerald-900",
@@ -40,14 +41,14 @@ export default function Layout() {
     // Reemplazar lista completa
     const onSet = (e) => {
       const list = Array.isArray(e.detail) ? e.detail : [];
-      setAlerts(list);
+      setAlerts(filterAllowedAlerts(list));
       setAlertsOpen(true);
     };
 
     // Agregar una alerta
     const onPush = (e) => {
       const item = e.detail;
-      if (!item) return;
+      if (!item || !isAllowedAlert(item)) return;
       const id = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : String(Date.now());
       setAlerts((prev) => [{ id, ...item }, ...prev]);
       setAlertsOpen(true);
@@ -121,6 +122,7 @@ export default function Layout() {
       { to: ".", label: t("frontdesk.menu.dashboard"), end: true }, // index de /frontdesk
       { to: "planning", label: t("frontdesk.menu.planning") },
       { to: "reservas", label: t("frontdesk.menu.reservations") },
+      { to: "inhouse", label: t("frontdesk.menu.inhouse") },
       { to: "facturacion", label: t("frontdesk.menu.billing") },
       { to: "habitaciones", label: t("frontdesk.menu.rooms") },
       { to: "clientes", label: t("frontdesk.menu.guests") },

@@ -4,6 +4,7 @@ export function pushAlert({
   type = "system",
   title = "",
   desc = "",
+  kind = "",
 } = {}) {
   if (!title && desc) title = desc;
   window.dispatchEvent(
@@ -12,9 +13,9 @@ export function pushAlert({
         type,
         title,
         desc,
+        kind,
         at: new Date().toISOString(),
       },
     })
   );
 }
-

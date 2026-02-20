@@ -14,6 +14,7 @@ import { Search, CircleUser } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useHotelData } from "../../context/HotelDataContext";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
+import { useLanguage } from "../../context/LanguageContext";
 
 const Card = ({ className = "", children }) => (
   <div
@@ -95,6 +96,7 @@ const isCanceled = (status) => {
 };
 
 export default function Dashboard() {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const searchRef = useRef(null);
   const { rooms, reservations } = useHotelData();
@@ -156,7 +158,7 @@ export default function Dashboard() {
     return data;
   }, [activeReservations, today]);
 
-  // Ocupación últimos 6 meses (línea simple)
+  // Ocupaci??n ??ltimos 6 meses (l??nea simple)
   const occupancyLine = useMemo(() => {
     const arr = [];
     const base = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -182,7 +184,7 @@ export default function Dashboard() {
     return arr;
   }, [activeReservations, rooms.length, today]);
 
-  // Revenue últimos 30 días (simple, usando payments si existen)
+  // Revenue ??ltimos 30 d??as (simple, usando payments si existen)
   const revenue30d = useMemo(() => {
     const now = today;
     const cutoff = new Date(now);
@@ -205,14 +207,14 @@ export default function Dashboard() {
     const list = [];
     inHouseToday.forEach((r) =>
       list.push({
-        title: r.guestName || "Guest",
-        subtitle: "En casa",
+        title: r.guestName || t("frontdesk.dashboard.guestFallback"),
+        subtitle: t("frontdesk.dashboard.inHouseLabel"),
       })
     );
     departuresToday.forEach((r) =>
       list.push({
-        title: r.guestName || "Guest",
-        subtitle: "Departures today",
+        title: r.guestName || t("frontdesk.dashboard.guestFallback"),
+        subtitle: t("frontdesk.dashboard.departuresLabel"),
       })
     );
     return list.slice(0, 10);
@@ -234,7 +236,7 @@ export default function Dashboard() {
         {/* Top bar */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 text-slate-700">
-            <span className="font-semibold text-xl">Dashboard</span>
+            <span className="font-semibold text-xl">{t("frontdesk.dashboard.title")}</span>
           </div>
           <div className="flex items-center gap-3 relative">
             <div className="relative hidden md:block">
@@ -242,9 +244,9 @@ export default function Dashboard() {
               <input
                 ref={searchRef}
                 className="pl-9 pr-3 py-2 rounded-lg border bg-white text-sm outline-none focus:ring-2 focus:ring-sky-200"
-                placeholder="Search by name or reservation #"
+                placeholder={t("frontdesk.dashboard.searchPlaceholder")}
                 onKeyDown={handleSearchKey}
-                aria-label="Search reservations"
+                aria-label={t("frontdesk.dashboard.searchAria")}
               />
             </div>
           </div>
@@ -255,62 +257,62 @@ export default function Dashboard() {
           {/* KPIs */}
           <div className="col-span-12">
             <Card className="p-4">
-              <div className="font-semibold mb-3">KPI</div>
+              <div className="font-semibold mb-3">{t("frontdesk.dashboard.kpiTitle")}</div>
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <KPI
-                  label="Occupancy (today)"
+                  label={t("frontdesk.dashboard.occupancyToday")}
                   value={`${Math.round(
                     (inHouseToday.length / Math.max(1, rooms.length)) * 100
                   )}%`}
                 />
                 <KPI
-                  label="Arrivals today"
+                  label={t("frontdesk.dashboard.arrivalsToday")}
                   value={arrivalsToday.length}
-                  sub="Tap to view reservations"
+                  sub={t("frontdesk.dashboard.tapToView")}
                   onClick={() => navigate("/reservas")}
                 />
                 <KPI
-                  label="Departures today"
+                  label={t("frontdesk.dashboard.departuresToday")}
                   value={departuresToday.length}
-                  sub="Tap to view reservations"
+                  sub={t("frontdesk.dashboard.tapToView")}
                   onClick={() => navigate("/reservas")}
                 />
-                <KPI label="Rooms" value={rooms.length} />
+                <KPI label={t("frontdesk.dashboard.rooms")} value={rooms.length} />
                 <KPI
-                  label="En lista de espera"
+                  label={t("frontdesk.dashboard.waitlist")}
                   value={waitlistReservations.length}
-                  sub="Reservations without a room"
+                  sub={t("frontdesk.dashboard.waitlistSub")}
                 />
                 <KPI
-                  label="Ingresos 30d"
+                  label={t("frontdesk.dashboard.revenue30d")}
                   value={revenue30d.toFixed(2)}
-                  sub="Pagos reportados últimos 30 días"
+                  sub={t("frontdesk.dashboard.revenue30dSub")}
                 />
               </div>
             </Card>
           </div>
 
-          {/* Operación */}
+          {/* {t("frontdesk.dashboard.operation")} */}
           <div className="col-span-12">
             <Card className="p-4">
-              <div className="font-semibold mb-3">Operación</div>
+              <div className="font-semibold mb-3">{t("frontdesk.dashboard.operation")}</div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <KPI label="In-house (hab)" value={inHouseToday.length} />
-                <KPI label="Pax en hotel" value={paxInHouse} sub="Adultos + niños" />
+                <KPI label={t("frontdesk.dashboard.inHouseRooms")} value={inHouseToday.length} />
+                <KPI label={t("frontdesk.dashboard.paxInHouse")} value={paxInHouse} sub={t("frontdesk.dashboard.paxInHouseSub")} />
                 <KPI
-                  label="Occupied today"
+                  label={t("frontdesk.dashboard.occupiedToday")}
                   value={inHouseToday.length}
-                  sub="Rooms with active stays"
+                  sub={t("frontdesk.dashboard.subOccupied")}
                 />
                 <KPI
-                  label="Arrivals today"
+                  label={t("frontdesk.dashboard.arrivalsToday")}
                   value={arrivalsToday.length}
-                  sub="Rooms arriving today"
+                  sub={t("frontdesk.dashboard.subArrivals")}
                 />
                 <KPI
-                  label="Departures today"
+                  label={t("frontdesk.dashboard.departuresToday")}
                   value={departuresToday.length}
-                  sub="Rooms departing today"
+                  sub={t("frontdesk.dashboard.subDepartures")}
                 />
               </div>
             </Card>
@@ -319,7 +321,7 @@ export default function Dashboard() {
           {/* Next 7 days reservations */}
           <div className="col-span-12 sm:col-span-6 lg:col-span-4">
             <Card className="p-4 h-56">
-              <div className="font-semibold mb-3">Reservations (arrivals next 7 days)</div>
+              <div className="font-semibold mb-3">{t("frontdesk.dashboard.arrivalsNext7")}</div>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={reservationsBars} barSize={14}>
                   <XAxis dataKey="d" axisLine={false} tickLine={false} />
@@ -332,10 +334,10 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Ocupación 6 meses */}
+          {/* Ocupaci??n 6 meses */}
           <div className="col-span-12 sm:col-span-6 lg:col-span-4">
             <Card className="p-4 h-56">
-              <div className="font-semibold mb-3">Ocupación (6 meses)</div>
+              <div className="font-semibold mb-3">{t("frontdesk.dashboard.occupancy6m")}</div>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={occupancyLine}>
                   <XAxis dataKey="m" axisLine={false} tickLine={false} />
@@ -357,9 +359,9 @@ export default function Dashboard() {
           {/* Guests today */}
           <div className="col-span-12 lg:col-span-4">
             <Card className="p-4 h-full">
-              <div className="font-semibold mb-3">Guests today</div>
+              <div className="font-semibold mb-3">{t("frontdesk.dashboard.guestsToday")}</div>
               {todaysGuests.length === 0 && (
-                <div className="text-sm text-slate-500">No guests today.</div>
+              <div className="text-sm text-slate-500">{t("frontdesk.dashboard.noGuestsToday")}</div>
               )}
               {todaysGuests.map((g, idx) => (
                 <ListItem key={idx} title={g.title} subtitle={g.subtitle} />
@@ -377,3 +379,4 @@ export default function Dashboard() {
     </div>
   );
 }
+

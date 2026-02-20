@@ -15,6 +15,7 @@ import ReservationsPage from "./pages/FrontDeskPages/ReservationsPage";
 import BillingPage from "./pages/FrontDeskPages/FacturacionPage";
 import HabitacionesBoard from "./pages/FrontDeskPages/HabitacionesBoard";
 import ReportesPage from "./pages/FrontDeskPages/ReportesPage";
+import InHouseGuestsPage from "./pages/FrontDeskPages/InHouseGuestsPage";
 
 import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="planning" element={<Planning />} />
           <Route path="reservas" element={<ReservationsPage />} />
+          <Route path="inhouse" element={<InHouseGuestsPage />} />
           <Route path="clientes" element={<ClientesPage />} />
           <Route path="configuracion" element={<ConfiguracionPage />} />
           <Route path="facturacion" element={<BillingPage />} />

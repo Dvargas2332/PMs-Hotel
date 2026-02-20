@@ -6,8 +6,10 @@ import { Input } from "../../components/ui/input";
 import { Select } from "../../components/ui/select";
 import { SimpleTable } from "../../components/ui/table";
 import { api } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Roles() {
+  const { hotel } = useAuth();
   const [roles, setRoles] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [permissions, setPermissions] = useState([]);
@@ -18,6 +20,21 @@ export default function Roles() {
   // keep track of the selected profile option so dropdown can distinguish users with same role
   const [selectedProfileOption, setSelectedProfileOption] = useState("");
   const [editingId, setEditingId] = useState(null);
+
+  const allowedModules = useMemo(() => {
+    const list = hotel?.allowedModules;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return new Set(list.map((m) => String(m).toLowerCase()));
+  }, [hotel?.allowedModules]);
+
+  const isModuleEnabled = useCallback(
+    (code) => {
+      if (!code) return true;
+      if (!allowedModules) return true;
+      return allowedModules.has(String(code).toLowerCase());
+    },
+    [allowedModules]
+  );
 
   const load = useCallback(async () => {
     const [r, p, acc] = await Promise.all([
@@ -61,10 +78,74 @@ export default function Roles() {
     };
   }, [load]);
 
+  const filteredPermissions = useMemo(() => {
+    if (!allowedModules) return permissions;
+    return (permissions || []).filter((perm) => {
+      const [mod] = String(perm || "").split(".");
+      return isModuleEnabled(mod);
+    });
+  }, [permissions, allowedModules, isModuleEnabled]);
+
+  const filteredRoles = useMemo(() => {
+    if (!allowedModules) return roles;
+    return (roles || []).filter((role) => {
+      if (role.id === "ADMIN") return true;
+      const list = rolePerms[role.id];
+      if (!Array.isArray(list) || list.length === 0) return true;
+      if (list.includes("*")) return true;
+      return list.some((perm) => {
+        const [mod] = String(perm || "").split(".");
+        return isModuleEnabled(mod);
+      });
+    });
+  }, [roles, rolePerms, allowedModules, isModuleEnabled]);
+
+  const filteredProfiles = useMemo(() => {
+    if (!filteredRoles.length) return profiles;
+    const allowedIds = new Set(filteredRoles.map((r) => r.id));
+    return (profiles || []).filter((acc) => !acc.roleId || allowedIds.has(acc.roleId));
+  }, [profiles, filteredRoles]);
+
+  useEffect(() => {
+    if (!selectedRole) return;
+    const exists = filteredRoles.some((r) => r.id === selectedRole);
+    if (!exists) {
+      setSelectedRole("");
+      setSelectedProfileOption("");
+    }
+  }, [filteredRoles, selectedRole]);
+
   const resetForm = () => {
     setFormRole({ id: "", name: "", description: "", jobTitle: "" });
     setEditingId(null);
   };
+
+  const roleOptions = useMemo(() => {
+    const presets = [
+      { module: "frontdesk", id: "FRONTDESK", name: "Frontdesk" },
+      { module: "restaurant", id: "RESTAURANT", name: "Restaurant" },
+      { module: "accounting", id: "ACCOUNTING", name: "Accounting" },
+      { module: "einvoicing", id: "EINVOICING", name: "E-Invoicing" },
+      { module: "management", id: "MANAGEMENT", name: "Management" },
+    ];
+    const options = [{ value: "", label: "Select role ID..." }];
+    presets.forEach((r) => {
+      if (isModuleEnabled(r.module)) {
+        options.push({ value: r.id, label: r.name });
+      }
+    });
+    options.push({ value: "ADMIN", label: "Admin" });
+    return options;
+  }, [isModuleEnabled]);
+
+  const roleNameById = useMemo(() => {
+    const map = {};
+    roleOptions.forEach((opt) => {
+      if (!opt.value) return;
+      map[opt.value] = opt.label || opt.value;
+    });
+    return map;
+  }, [roleOptions]);
 
   const saveRole = async () => {
     if (!formRole.id || !formRole.name) return;
@@ -110,10 +191,16 @@ export default function Roles() {
         <Card className="space-y-3 p-5">
           <h3 className="font-medium">Roles</h3>
           <div className="flex gap-2">
-            <Input
-              placeholder="ID (e.g. FRONTDESK_AGENT)"
+            <Select
               value={formRole.id}
-              onChange={(e) => setFormRole((r) => ({ ...r, id: e.target.value }))}
+              onChange={(val) =>
+                setFormRole((r) => ({
+                  ...r,
+                  id: val,
+                  name: r.name ? r.name : roleNameById[val] || r.name,
+                }))
+              }
+              options={roleOptions}
             />
             <Input
               placeholder="Name"
@@ -146,7 +233,7 @@ export default function Roles() {
               { key: "description", label: "Description" },
               { key: "actions", label: "Actions" },
             ]}
-            rows={roles.map((r) => ({
+            rows={filteredRoles.map((r) => ({
               ...r,
               actions: (
                 <div className="flex gap-2">
@@ -184,7 +271,7 @@ export default function Roles() {
               options={[
                 { value: "", label: "Select..." },
                 // Solo perfiles de launcher (UserLauncher)
-                ...profiles.map((acc) => ({
+                ...filteredProfiles.map((acc) => ({
                   value: `${acc.id || acc.username || acc.roleId}:::${acc.roleId}`,
                   label: acc.name || acc.username || acc.roleId,
                 })),
@@ -198,7 +285,7 @@ export default function Roles() {
                   ADMIN has full permissions and cannot be restricted.
                 </div>
               )}
-              <PermissionsByModule permissions={permissions} selectedRole={selectedRole} rolePerms={rolePerms} setRolePerms={setRolePerms} />
+              <PermissionsByModule permissions={filteredPermissions} selectedRole={selectedRole} rolePerms={rolePerms} setRolePerms={setRolePerms} />
               <Button onClick={savePerms} disabled={selectedRole === "ADMIN"}>
                 Save permissions
               </Button>
@@ -211,6 +298,8 @@ export default function Roles() {
 }
 
 function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerms }) {
+  const [openModules, setOpenModules] = useState(() => new Set());
+
   const grouped = useMemo(() => {
     const groups = {};
     (permissions || []).forEach((p) => {
@@ -232,8 +321,13 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
   }, [permissions]);
 
   const prettyLabel = (perm) => {
-    if (perm.endsWith(".access")) return "Access module";
-    return perm;
+    const raw = String(perm || "");
+    const parts = raw.split(".");
+    if (parts.length <= 1) return raw;
+    const tail = parts.slice(1).join(" ").replace(/_/g, " ").trim();
+    if (!tail) return raw;
+    if (tail === "access") return "Access";
+    return tail;
   };
 
   const toggle = (perm, checked) => {
@@ -246,28 +340,76 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
     });
   };
 
+  const isModuleOpen = (mod) => openModules.has(mod);
+  const toggleModule = (mod) => {
+    setOpenModules((prev) => {
+      const next = new Set(prev);
+      next.has(mod) ? next.delete(mod) : next.add(mod);
+      return next;
+    });
+  };
+
+  const setAllInModule = (mod, checked) => {
+    if (selectedRole === "ADMIN") return;
+    const perms = grouped[mod] || [];
+    setRolePerms((prev) => {
+      const cur = new Set(prev[selectedRole] || []);
+      perms.forEach((p) => {
+        if (checked) cur.add(p);
+        else cur.delete(p);
+      });
+      return { ...prev, [selectedRole]: [...cur] };
+    });
+  };
+
   return (
     <div className="space-y-3">
       {Object.entries(grouped).map(([mod, perms]) => (
         <div key={mod} className="rounded-lg border p-3">
-          <div className="text-sm font-semibold mb-2 uppercase text-gray-700">{mod}</div>
-          <div className="grid md:grid-cols-2 gap-2">
-            {perms.map((p) => {
-              const list = rolePerms[selectedRole] || [];
-              const checked = selectedRole === "ADMIN" || list.includes("*") || list.includes(p);
-              return (
-                <label key={p} className="text-sm flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={selectedRole === "ADMIN"}
-                    onChange={(e) => toggle(p, e.target.checked)}
-                  />
-                  {prettyLabel(p)}
-                </label>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            className="w-full flex items-center justify-between text-sm font-semibold uppercase text-gray-700"
+            onClick={() => toggleModule(mod)}
+          >
+            <span>{mod}</span>
+            <span className="text-xs normal-case text-gray-500">{isModuleOpen(mod) ? "Hide" : "Show"}</span>
+          </button>
+          {isModuleOpen(mod) && (
+            <div className="mt-3 space-y-3">
+              <label className="text-sm flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  disabled={selectedRole === "ADMIN"}
+                  onChange={(e) => setAllInModule(mod, e.target.checked)}
+                  checked={
+                    selectedRole === "ADMIN" ||
+                    perms.every((p) => {
+                      const list = rolePerms[selectedRole] || [];
+                      return list.includes("*") || list.includes(p);
+                    })
+                  }
+                />
+                Select all
+              </label>
+              <div className="grid md:grid-cols-2 gap-2">
+                {perms.map((p) => {
+                  const list = rolePerms[selectedRole] || [];
+                  const checked = selectedRole === "ADMIN" || list.includes("*") || list.includes(p);
+                  return (
+                    <label key={p} className="text-sm flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={selectedRole === "ADMIN"}
+                        onChange={(e) => toggle(p, e.target.checked)}
+                      />
+                      {prettyLabel(p)}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>

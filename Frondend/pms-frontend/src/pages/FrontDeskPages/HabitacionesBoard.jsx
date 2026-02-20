@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useHotelData } from "../../context/HotelDataContext";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
+import { useLanguage } from "../../context/LanguageContext";
 
 /**
  * HabitacionesBoard
@@ -11,22 +12,22 @@ import { frontdeskTheme } from "../../theme/frontdeskTheme";
  */
 
 const STATUS_META = {
-  occupied:   { label: "Ocupada",      badge: "bg-red-100 text-red-800 border-red-200",       tile: "bg-red-50 border-red-200" },
-  available:  { label: "Libre",         badge: "bg-emerald-100 text-emerald-900 border-emerald-200", tile: "bg-emerald-50 border-emerald-200" },
-  clean:      { label: "Limpia",        badge: "bg-green-100 text-green-800 border-green-200", tile: "bg-green-50 border-green-200" },
-  dirty:      { label: "Sucia",         badge: "bg-amber-100 text-amber-900 border-amber-200",  tile: "bg-amber-50 border-amber-200" },
-  blocked:    { label: "Bloqueada",     badge: "bg-gray-200 text-gray-700 border-gray-300",   tile: "bg-gray-100 border-gray-300" },
-  maintenance:{ label: "Mantenimiento",  badge: "bg-yellow-100 text-yellow-800 border-yellow-200", tile: "bg-yellow-50 border-yellow-200" },
+  occupied: { labelKey: "frontdesk.rooms.status.occupied", badge: "bg-red-100 text-red-800 border-red-200", tile: "bg-red-50 border-red-200" },
+  available: { labelKey: "frontdesk.rooms.status.available", badge: "bg-emerald-100 text-emerald-900 border-emerald-200", tile: "bg-emerald-50 border-emerald-200" },
+  clean: { labelKey: "frontdesk.rooms.status.clean", badge: "bg-green-100 text-green-800 border-green-200", tile: "bg-green-50 border-green-200" },
+  dirty: { labelKey: "frontdesk.rooms.status.dirty", badge: "bg-amber-100 text-amber-900 border-amber-200", tile: "bg-amber-50 border-amber-200" },
+  blocked: { labelKey: "frontdesk.rooms.status.blocked", badge: "bg-gray-200 text-gray-700 border-gray-300", tile: "bg-gray-100 border-gray-300" },
+  maintenance: { labelKey: "frontdesk.rooms.status.maintenance", badge: "bg-yellow-100 text-yellow-800 border-yellow-200", tile: "bg-yellow-50 border-yellow-200" },
 };
 
 const FILTERS = [
-  { key: "all",        label: "Todas" },
-  { key: "occupied",   label: "Ocupadas" },
-  { key: "available",  label: "Libres" },
-  { key: "clean",      label: "Limpias" },
-  { key: "dirty",      label: "Sucias" },
-  { key: "blocked",    label: "Bloqueadas" },
-  { key: "maintenance",label: "Mantenimiento" },
+  { key: "all", labelKey: "frontdesk.rooms.filter.all" },
+  { key: "occupied", labelKey: "frontdesk.rooms.filter.occupied" },
+  { key: "available", labelKey: "frontdesk.rooms.filter.available" },
+  { key: "clean", labelKey: "frontdesk.rooms.filter.clean" },
+  { key: "dirty", labelKey: "frontdesk.rooms.filter.dirty" },
+  { key: "blocked", labelKey: "frontdesk.rooms.filter.blocked" },
+  { key: "maintenance", labelKey: "frontdesk.rooms.filter.maintenance" },
 ];
 
 // Utilidad para YYYY-MM-DD local (sin desfase de zona)
@@ -103,6 +104,7 @@ function SummaryCard({ title, value, className = "" }) {
 }
 
 export default function HabitacionesBoard() {
+  const { t } = useLanguage();
   const { roomsEnriched, arrivalsToday, departuresToday, counts } = useHabitacionesMetrics();
 
   // Búsqueda y filtros UI
@@ -139,11 +141,11 @@ export default function HabitacionesBoard() {
       style={{ background: frontdeskTheme.background.app }}
     >
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Rooms (Status)</h1>
+        <h1 className="text-2xl font-bold">{t("frontdesk.rooms.title")}</h1>
         <div className="flex gap-2">
           <input
             className="border rounded px-3 py-2 w-64"
-            placeholder="Search by #, type, or guest..."
+            placeholder={t("frontdesk.rooms.searchPlaceholder")}
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
@@ -152,14 +154,14 @@ export default function HabitacionesBoard() {
 
       {/* Resumen superior */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
-        <SummaryCard title="Ocupadas"      value={counts.occupied}   className="border-red-200" />
-        <SummaryCard title="Libres"         value={counts.available}  className="border-emerald-200" />
-        <SummaryCard title="Limpias"        value={counts.clean}      className="border-green-200" />
-        <SummaryCard title="Sucias"         value={counts.dirty}      className="border-amber-200" />
-        <SummaryCard title="Bloqueadas"     value={counts.blocked}    className="border-gray-300" />
-        <SummaryCard title="Mantenimiento"  value={counts.maintenance}className="border-yellow-200" />
-        <SummaryCard title="Arrivals today" value={arrivalsToday}     className="border-sky-200" />
-        <SummaryCard title="Departures today" value={departuresToday} className="border-indigo-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.occupied")} value={counts.occupied} className="border-red-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.available")} value={counts.available} className="border-emerald-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.clean")} value={counts.clean} className="border-green-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.dirty")} value={counts.dirty} className="border-amber-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.blocked")} value={counts.blocked} className="border-gray-300" />
+        <SummaryCard title={t("frontdesk.rooms.summary.maintenance")} value={counts.maintenance} className="border-yellow-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.arrivals")} value={arrivalsToday} className="border-sky-200" />
+        <SummaryCard title={t("frontdesk.rooms.summary.departures")} value={departuresToday} className="border-indigo-200" />
       </div>
 
       {/* Filtros rápidos */}
@@ -175,7 +177,7 @@ export default function HabitacionesBoard() {
             }
             onClick={() => setFilter(f.key)}
           >
-            {f.label}
+            {t(f.labelKey)}
           </button>
         ))}
       </div>
@@ -185,15 +187,15 @@ export default function HabitacionesBoard() {
         {Object.entries(STATUS_META).map(([k, m]) => (
           <span key={k} className="inline-flex items-center gap-2">
             <span className={`inline-block w-3 h-3 rounded ${m.badge.split(" ")[0]}`} />
-            {m.label}
+            {t(m.labelKey)}
           </span>
         ))}
       </div>
 
       {/* Grid de habitaciones */}
       {filteredRooms.length === 0 ? (
-          <div className="py-10 text-center text-gray-500 border rounded-xl bg-white">
-          No rooms match the filter.
+        <div className="py-10 text-center text-gray-500 border rounded-xl bg-white">
+          {t("frontdesk.rooms.empty")}
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -204,13 +206,13 @@ export default function HabitacionesBoard() {
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-2xl font-bold">#{r.number}</div>
                   <span className={`px-2 py-1 rounded-full border text-xs ${meta.badge}`}>
-                    {meta.label}
+                    {t(meta.labelKey)}
                   </span>
                 </div>
-                <div className="text-sm text-gray-600">{r.type || "—"}</div>
+                <div className="text-sm text-gray-600">{r.type || t("common.empty")}</div>
                 {r.guestName && (
                   <div className="mt-2 text-xs text-gray-700">
-                    Guest: <span className="font-medium">{r.guestName}</span>
+                    {t("frontdesk.rooms.guestLabel")} <span className="font-medium">{r.guestName}</span>
                   </div>
                 )}
               </div>
