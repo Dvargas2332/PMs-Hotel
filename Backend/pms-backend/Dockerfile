@@ -12,6 +12,7 @@ RUN npx prisma generate
 
 COPY tsconfig*.json ./
 COPY src ./src
+COPY prisma.config.ts ./
 RUN npm run build
 RUN npm prune --omit=dev
 
@@ -26,6 +27,7 @@ RUN apt-get update \
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/prisma.config.ts ./
 COPY --from=build /app/dist ./dist
 
 EXPOSE 4000
