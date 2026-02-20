@@ -12,8 +12,14 @@ function ensureDbSsl(url: string | undefined) {
     const parsed = new URL(url);
     const host = parsed.hostname;
     const needsSsl = host.endsWith("supabase.co") || host.endsWith("rds.amazonaws.com");
-    if (needsSsl && !parsed.searchParams.has("sslmode")) {
-      parsed.searchParams.set("sslmode", "require");
+    if (needsSsl) {
+      if (!parsed.searchParams.has("sslmode")) {
+        parsed.searchParams.set("sslmode", "require");
+      }
+      // Keep libpq semantics to avoid strict verify-full defaults in pg-connection-string
+      if (!parsed.searchParams.has("uselibpqcompat")) {
+        parsed.searchParams.set("uselibpqcompat", "true");
+      }
       return parsed.toString();
     }
     return url;
