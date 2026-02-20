@@ -6,11 +6,13 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { tenantStorage } from "./tenant.js";
 
-function ensureSupabaseSsl(url: string | undefined) {
+function ensureDbSsl(url: string | undefined) {
   if (!url) return url;
   try {
     const parsed = new URL(url);
-    if (parsed.hostname.endsWith("supabase.co") && !parsed.searchParams.has("sslmode")) {
+    const host = parsed.hostname;
+    const needsSsl = host.endsWith("supabase.co") || host.endsWith("rds.amazonaws.com");
+    if (needsSsl && !parsed.searchParams.has("sslmode")) {
       parsed.searchParams.set("sslmode", "require");
       return parsed.toString();
     }
@@ -59,7 +61,7 @@ function buildUrlFromSupabaseEnv() {
   const port = process.env.SUPABASE_DB_PORT ?? "5432";
   const db = process.env.SUPABASE_DB_NAME ?? "postgres";
   const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-  return ensureSupabaseSsl(url);
+  return ensureDbSsl(url);
 }
 
 if (!process.env.DATABASE_URL) {
@@ -67,8 +69,8 @@ if (!process.env.DATABASE_URL) {
   if (fallback) process.env.DATABASE_URL = fallback;
 }
 
-process.env.DATABASE_URL = ensureSupabaseSsl(process.env.DATABASE_URL);
-process.env.DIRECT_URL = ensureSupabaseSsl(process.env.DIRECT_URL ?? process.env.DATABASE_URL);
+process.env.DATABASE_URL = ensureDbSsl(process.env.DATABASE_URL);
+process.env.DIRECT_URL = ensureDbSsl(process.env.DIRECT_URL ?? process.env.DATABASE_URL);
 validateDatabaseUrl(process.env.DATABASE_URL);
 
 const TENANT_MODELS = new Set([
@@ -139,7 +141,8 @@ function mustUseScopedUnique(action: string, model: string, where: any) {
 
 const parsedDbUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
 const sslMode = parsedDbUrl?.searchParams.get("sslmode");
-const needsSsl = Boolean(sslMode && sslMode.toLowerCase() !== "disable");
+const hostNeedsSsl = parsedDbUrl ? parsedDbUrl.hostname.endsWith("rds.amazonaws.com") || parsedDbUrl.hostname.endsWith("supabase.co") : false;
+const needsSsl = Boolean(hostNeedsSsl || (sslMode && sslMode.toLowerCase() !== "disable"));
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
