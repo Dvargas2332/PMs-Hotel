@@ -2,6 +2,8 @@
 
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 import { tenantStorage } from "./tenant.js";
 
 function ensureSupabaseSsl(url: string | undefined) {
@@ -135,7 +137,95 @@ function mustUseScopedUnique(action: string, model: string, where: any) {
   return true;
 }
 
-export const prisma = new PrismaClient();
+const parsedDbUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
+const sslMode = parsedDbUrl?.searchParams.get("sslmode");
+const needsSsl = Boolean(sslMode && sslMode.toLowerCase() !== "disable");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+});
+const adapter = new PrismaPg(pool);
+const basePrisma = new PrismaClient({ adapter });
+
+const prisma = basePrisma.$extends({
+  query: {
+    $allModels: {
+      async $allOperations({ model, operation, args, query }) {
+        const ctx = tenantStorage.getStore();
+        const hotelId = ctx?.hotelId;
+        if (ctx?.bypass || !hotelId) return query(args);
+        if (!TENANT_MODELS.has(model)) return query(args);
+
+        const nextArgs = (args ?? {}) as any;
+
+        // READS
+        if (operation === "findMany" || operation === "findFirst" || operation === "count") {
+          nextArgs.where = addHotelScope(nextArgs.where, hotelId);
+          return query(nextArgs);
+        }
+        if (operation === "aggregate" || operation === "groupBy") {
+          nextArgs.where = addHotelScope(nextArgs.where, hotelId);
+          return query(nextArgs);
+        }
+        if (operation === "findUnique" || operation === "findUniqueOrThrow") {
+          if (mustUseScopedUnique(operation, model, nextArgs.where)) {
+            throw new Error(
+              `[tenant] ${model}.${operation} requiere scoping por hotelId. Usa findFirst({ where: { id, hotelId } }) o un unique compuesto que incluya hotelId.`
+            );
+          }
+          return query(nextArgs);
+        }
+
+        // WRITES
+        if (operation === "create") {
+          if (nextArgs.data && typeof nextArgs.data === "object") {
+            if ("hotelId" in nextArgs.data && nextArgs.data.hotelId && nextArgs.data.hotelId !== hotelId) {
+              throw new Error(`[tenant] ${model}.create: hotelId no coincide con el tenant actual.`);
+            }
+            if ("hotelId" in nextArgs.data) nextArgs.data.hotelId = hotelId;
+          }
+          return query(nextArgs);
+        }
+        if (operation === "createMany") {
+          const data = nextArgs.data;
+          if (Array.isArray(data)) {
+            nextArgs.data = data.map((row) => {
+              if (row && typeof row === "object" && "hotelId" in row) {
+                if (row.hotelId && row.hotelId !== hotelId) {
+                  throw new Error(`[tenant] ${model}.createMany: hotelId no coincide con el tenant actual.`);
+                }
+                return { ...row, hotelId };
+              }
+              return row;
+            });
+          }
+          return query(nextArgs);
+        }
+
+        if (operation === "updateMany" || operation === "deleteMany") {
+          nextArgs.where = addHotelScope(nextArgs.where, hotelId);
+          return query(nextArgs);
+        }
+
+        if (operation === "update" || operation === "delete" || operation === "upsert") {
+          if (mustUseScopedUnique(operation, model, nextArgs.where)) {
+            throw new Error(
+              `[tenant] ${model}.${operation} requiere scoping por hotelId. Usa updateMany/deleteMany con where { id, hotelId } o un unique compuesto que incluya hotelId.`
+            );
+          }
+          if (operation === "upsert" && nextArgs.create && typeof nextArgs.create === "object" && "hotelId" in nextArgs.create) {
+            nextArgs.create.hotelId = hotelId;
+          }
+          return query(nextArgs);
+        }
+
+        return query(nextArgs);
+      },
+    },
+  },
+});
+
+export { prisma };
 export default prisma;
 
 function safeDbHint() {
@@ -154,81 +244,7 @@ function safeDbHint() {
 
 console.log("[DB] DATABASE_URL:", safeDbHint());
 
-prisma.$use(async (params, next) => {
-  const ctx = tenantStorage.getStore();
-  const hotelId = ctx?.hotelId;
-  if (ctx?.bypass || !hotelId) return next(params);
-  const model = params.model ?? "";
-  if (!TENANT_MODELS.has(model)) return next(params);
-
-  params.args ??= {};
-  const args = params.args;
-
-  // READS
-  if (params.action === "findMany" || params.action === "findFirst" || params.action === "count") {
-    args.where = addHotelScope(args.where, hotelId);
-    return next(params);
-  }
-  if (params.action === "aggregate" || params.action === "groupBy") {
-    args.where = addHotelScope(args.where, hotelId);
-    return next(params);
-  }
-  if (params.action === "findUnique") {
-    if (mustUseScopedUnique(params.action, model, args.where)) {
-      throw new Error(
-        `[tenant] ${model}.${params.action} requiere scoping por hotelId. Usa findFirst({ where: { id, hotelId } }) o un unique compuesto que incluya hotelId.`
-      );
-    }
-    return next(params);
-  }
-
-  // WRITES
-  if (params.action === "create") {
-    if (args.data && typeof args.data === "object") {
-      if ("hotelId" in args.data && args.data.hotelId && args.data.hotelId !== hotelId) {
-        throw new Error(`[tenant] ${model}.create: hotelId no coincide con el tenant actual.`);
-      }
-      if ("hotelId" in args.data) args.data.hotelId = hotelId;
-    }
-    return next(params);
-  }
-  if (params.action === "createMany") {
-    const data = args.data;
-    if (Array.isArray(data)) {
-      args.data = data.map((row) => {
-        if (row && typeof row === "object" && "hotelId" in row) {
-          if (row.hotelId && row.hotelId !== hotelId) {
-            throw new Error(`[tenant] ${model}.createMany: hotelId no coincide con el tenant actual.`);
-          }
-          return { ...row, hotelId };
-        }
-        return row;
-      });
-    }
-    return next(params);
-  }
-
-  if (params.action === "updateMany" || params.action === "deleteMany") {
-    args.where = addHotelScope(args.where, hotelId);
-    return next(params);
-  }
-
-  if (params.action === "update" || params.action === "delete" || params.action === "upsert") {
-    if (mustUseScopedUnique(params.action, model, args.where)) {
-      throw new Error(
-        `[tenant] ${model}.${params.action} requiere scoping por hotelId. Usa updateMany/deleteMany con where { id, hotelId } o un unique compuesto que incluya hotelId.`
-      );
-    }
-    // ensure writes also carry tenant scoping when possible
-    if (params.action === "upsert" && args.create && typeof args.create === "object" && "hotelId" in args.create) {
-      args.create.hotelId = hotelId;
-    }
-    return next(params);
-  }
-
-  return next(params);
-});
-
 process.on("beforeExit", async () => {
   await prisma.$disconnect();
+  await pool.end();
 });

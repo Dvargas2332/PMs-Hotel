@@ -3,6 +3,8 @@ import prisma from "../lib/prisma.js";
 import { convertQty, isSupportedUnit, normalizeUnit, canConvert } from "../lib/units.js";
 import { padNumber } from "../lib/sequences.js";
 
+type DbClient = Prisma.TransactionClient | typeof prisma;
+
 type InventoryInvoiceLineInput = {
   name?: string;
   desc?: string;
@@ -64,7 +66,7 @@ const normalizeLine = (line: InventoryInvoiceLineInput) => {
   return { name, sku, qty, unit, cost, taxRate };
 };
 
-const nextInventoryNumber = async (tx: Prisma.TransactionClient, hotelId: string) => {
+const nextInventoryNumber = async (tx: DbClient, hotelId: string) => {
   const existing = await tx.hotelSequence.findFirst({
     where: { hotelId, key: "restaurant_inventory" },
     select: { id: true, nextNumber: true },
@@ -84,7 +86,7 @@ const nextInventoryNumber = async (tx: Prisma.TransactionClient, hotelId: string
 };
 
 const resolveInventoryItem = async (
-  tx: Prisma.TransactionClient,
+  tx: DbClient,
   hotelId: string,
   supplierName: string,
   line: ReturnType<typeof normalizeLine>
@@ -147,7 +149,8 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
         : null;
 
   return prisma.$transaction(async (tx) => {
-    const invoice = await tx.restaurantInventoryInvoice.create({
+    const db = tx as DbClient;
+    const invoice = await db.restaurantInventoryInvoice.create({
       data: {
         hotelId: input.hotelId,
         supplierName,
@@ -177,7 +180,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
         throw new Error(`Costo inválido para ${line.name}`);
       }
 
-      const item = await resolveInventoryItem(tx, input.hotelId, supplierName, line);
+      const item = await resolveInventoryItem(db, input.hotelId, supplierName, line);
       const lineUnit = line.unit || item.unit;
       const itemUnit = item.unit;
 
@@ -194,7 +197,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
       const qtyInItemUnit = convertQty(line.qty, lineUnit, itemUnit);
       const costPerItemUnit = computeCostPerInventoryUnit(line.cost, line.qty, qtyInItemUnit);
 
-      await tx.restaurantInventoryItem.updateMany({
+      await db.restaurantInventoryItem.updateMany({
         where: { id: item.id, hotelId: input.hotelId },
         data: {
           stock: { increment: qtyInItemUnit },
@@ -204,7 +207,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
         },
       });
 
-      await tx.restaurantInventoryMovement.create({
+      await db.restaurantInventoryMovement.create({
         data: {
           hotelId: input.hotelId,
           itemId: item.id,
@@ -222,7 +225,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
       total += lineTotal;
       taxTotal += lineTax;
 
-      await tx.restaurantInventoryInvoiceLine.create({
+      await db.restaurantInventoryInvoiceLine.create({
         data: {
           hotelId: input.hotelId,
           invoiceId: invoice.id,
@@ -238,7 +241,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
       });
     }
 
-    await tx.restaurantInventoryInvoice.updateMany({
+    await db.restaurantInventoryInvoice.updateMany({
       where: { id: invoice.id, hotelId: input.hotelId },
       data: {
         total,
