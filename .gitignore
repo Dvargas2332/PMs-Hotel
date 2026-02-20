@@ -24,6 +24,7 @@ local_pgdata
 .env.production.local
 .env
 **/.env
+.env.prod
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

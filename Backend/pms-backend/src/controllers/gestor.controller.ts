@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import prisma from "../lib/prisma.js";
+import { Prisma } from "@prisma/client";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import { allowedModulesForMembership, isMembershipTier, normalizeMembershipTier } from "../config/membership.js";
 import { nextHotelSequence } from "../lib/sequences.js";
@@ -154,6 +155,22 @@ export async function updateClient(req: Request, res: Response) {
   res.json(updated);
 }
 
+export async function deleteClient(req: Request, res: Response) {
+  const id = String(req.params.id || "").trim();
+  if (!id) return res.status(400).json({ message: "Cliente requerido" });
+
+  const hotelsCount = await prisma.hotel.count({ where: { clientId: id } });
+  if (hotelsCount > 0) {
+    return res.status(409).json({
+      message: "No se puede eliminar el cliente porque tiene hoteles asociados.",
+      hotelsCount,
+    });
+  }
+
+  await prisma.saasClient.delete({ where: { id } });
+  res.json({ ok: true });
+}
+
 export async function listHotels(_req: Request, res: Response) {
   const list = await prisma.hotel.findMany({
     orderBy: { createdAt: "desc" },
@@ -194,6 +211,67 @@ export async function listHotels(_req: Request, res: Response) {
       managerId: h.managerId,
     }))
   );
+}
+
+export async function deleteHotel(req: Request, res: Response) {
+  const id = String(req.params.id || "").trim();
+  if (!id) return res.status(400).json({ message: "Hotel requerido" });
+
+  const hotel = await prisma.hotel.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  const [
+    roomsCount,
+    roomTypesCount,
+    reservationsCount,
+    usersCount,
+    guestsCount,
+    invoicesCount,
+    restaurantOrdersCount,
+    restaurantItemsCount,
+    paymentsCount,
+  ] = await prisma.$transaction([
+    prisma.room.count({ where: { hotelId: id } }),
+    prisma.roomType.count({ where: { hotelId: id } }),
+    prisma.reservation.count({ where: { hotelId: id } }),
+    prisma.user.count({ where: { hotelId: id } }),
+    prisma.guest.count({ where: { hotelId: id } }),
+    prisma.invoice.count({ where: { hotelId: id } }),
+    prisma.restaurantOrder.count({ where: { hotelId: id } }),
+    prisma.restaurantItem.count({ where: { hotelId: id } }),
+    prisma.payment.count({ where: { hotelId: id } }),
+  ]);
+
+  const usage = {
+    roomsCount,
+    roomTypesCount,
+    reservationsCount,
+    usersCount,
+    guestsCount,
+    invoicesCount,
+    restaurantOrdersCount,
+    restaurantItemsCount,
+    paymentsCount,
+  };
+
+  const hasUsage = Object.values(usage).some((n) => Number(n) > 0);
+  if (hasUsage) {
+    return res.status(409).json({
+      message: "No se puede eliminar el hotel porque tiene datos asociados.",
+      usage,
+    });
+  }
+
+  try {
+    await prisma.hotel.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return res.status(409).json({ message: "No se puede eliminar el hotel por relaciones activas." });
+    }
+    console.error("deleteHotel error", err);
+    res.status(500).json({ message: "No se pudo eliminar el hotel." });
+  }
 }
 
 async function findPrimaryAdminUser(hotelId: string) {

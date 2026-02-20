@@ -781,7 +781,7 @@ export async function createSection(req: Request, res: Response) {
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
 
-  const { id, name } = req.body || {};
+  const { id, name, imageUrl, quickCashEnabled } = req.body || {};
   if (!id || !name) return res.status(400).json({ message: "id y name requeridos" });
 
   const externalId = String(id);
@@ -789,12 +789,49 @@ export async function createSection(req: Request, res: Response) {
   const internalId = toInternalId(hotelId, externalId);
   const section = await prisma.restaurantSection.upsert({
     where: { hotelId_id: { hotelId, id: internalId } },
-    update: { name },
-    create: { id: internalId, name, hotelId },
+    update: {
+      name,
+      imageUrl: imageUrl ? String(imageUrl) : null,
+      quickCashEnabled: Boolean(quickCashEnabled),
+    },
+    create: {
+      id: internalId,
+      name,
+      hotelId,
+      imageUrl: imageUrl ? String(imageUrl) : null,
+      quickCashEnabled: Boolean(quickCashEnabled),
+    },
   });
   res.json({ ...section, id: externalId });
 }
 
+export async function updateSection(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
+
+  const { sectionId } = req.params as { sectionId?: string };
+  if (!sectionId) return res.status(400).json({ message: "sectionId requerido" });
+
+  const internalId = toInternalId(hotelId, sectionId);
+  const existing = await prisma.restaurantSection.findFirst({
+    where: { hotelId, OR: [{ id: internalId }, { id: sectionId }] },
+  });
+  if (!existing) return res.status(404).json({ message: "Sección no encontrada" });
+
+  const { name, imageUrl, quickCashEnabled } = req.body || {};
+  const data: any = {};
+  if (typeof name === "string") data.name = name.trim();
+  if ("imageUrl" in (req.body || {})) data.imageUrl = imageUrl ? String(imageUrl) : null;
+  if ("quickCashEnabled" in (req.body || {})) data.quickCashEnabled = Boolean(quickCashEnabled);
+
+  const updated = await prisma.restaurantSection.update({
+    where: { id: existing.id },
+    data,
+  });
+  res.json({ ...updated, id: fromInternalId(hotelId, updated.id) });
+}
 export async function deleteSection(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;

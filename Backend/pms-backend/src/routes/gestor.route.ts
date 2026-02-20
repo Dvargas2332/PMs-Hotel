@@ -4,9 +4,11 @@ import {
   listClients,
   createClient,
   updateClient,
+  deleteClient,
   listHotels,
   createHotel,
   updateHotel,
+  deleteHotel,
   getHotelAdmin,
   updateHotelAdmin,
   getHotelLauncherAdmin,
@@ -28,10 +30,12 @@ const router = Router();
 router.get("/clients", listClients);
 router.post("/clients", createClient);
 router.put("/clients/:id", updateClient);
+router.delete("/clients/:id", deleteClient);
 
 router.get("/hotels", listHotels);
 router.post("/hotels", createHotel);
 router.put("/hotels/:id", updateHotel);
+router.delete("/hotels/:id", deleteHotel);
 router.get("/hotels/:id/admin", getHotelAdmin);
 router.put("/hotels/:id/admin", updateHotelAdmin);
 router.get("/hotels/:id/launcher-admin", getHotelLauncherAdmin);

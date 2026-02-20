@@ -20,12 +20,16 @@ import restaurantRoutes from "./routes/restaurant.route.js";
 import taxesRoutes from "./routes/taxes.route.js";
 import reportRoutes from "./routes/report.route.js";
 import invoiceRoutes from "./routes/invoice.route.js";
+import ratePlansRoutes from "./routes/ratePlans.route.js";
+import mealPlansRoutes from "./routes/mealPlans.route.js";
+import contractsRoutes from "./routes/contracts.route.js";
 import geoRoutes from "./routes/geo.route.js";
 import cashAuditRoutes from "./routes/cashAudit.route.js";
 import usersRoutes from "./routes/users.route.js";
 import launcherRoutes from "./routes/launcher.route.js";
 import einvoicingRoutes from "./routes/einvoicing.route.js";
 import gestorRoutes from "./routes/gestor.route.js";
+import versionRoutes from "./routes/version.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
@@ -52,6 +56,7 @@ app.use("/api", api);
 
 // Públicas
 api.use("/health", healthRouter);   // → /api/health y /api/health/db
+api.use("/version", versionRoutes);
 api.use("/auth", authRouter); // p.ej. POST /api/auth/login
 api.use("/launcher", launcherRoutes);
 
@@ -71,7 +76,10 @@ api.use("/permissions", requireMembership("management"), permissionsRoutes);
 api.use("/restaurant", requireMembership("restaurant"), restaurantRoutes);
 api.use("/taxes", requireMembership("accounting"), taxesRoutes);
 api.use("/reports", requireMembership("accounting"), reportRoutes);
-api.use("/invoices", requireMembership("accounting"), invoiceRoutes);
+api.use("/invoices", requireMembership("frontdesk", "accounting", "einvoicing"), invoiceRoutes);
+api.use("/ratePlans", requireMembership("frontdesk"), ratePlansRoutes);
+api.use("/mealPlans", requireMembership("frontdesk"), mealPlansRoutes);
+api.use("/contracts", requireMembership("frontdesk"), contractsRoutes);
 api.use("/einvoicing", requireMembership("einvoicing"), einvoicingRoutes);
 api.use("/geo", requireMembership("frontdesk"), geoRoutes);
 api.use("/cash-audits", requireMembership("frontdesk", "restaurant", "accounting"), cashAuditRoutes);

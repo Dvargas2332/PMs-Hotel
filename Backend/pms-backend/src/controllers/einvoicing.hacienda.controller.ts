@@ -2,12 +2,15 @@ import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import {
-  getHaciendaStatus,
-  getHaciendaToken,
-  sendHaciendaDocument,
   validateHaciendaConfig,
-  type HaciendaApiConfig,
-} from "../services/haciendaCr.js";
+  type MicrofacturaApiConfig,
+} from "../services/microfacturaConfig.js";
+import {
+  microfacturaSend,
+  microfacturaSignXml,
+  microfacturaStatus,
+  microfacturaToken,
+} from "../services/microfacturaCr.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -47,7 +50,7 @@ function normalizeReceiverIdentity(receiver: any) {
   return { idType, idNumber };
 }
 
-function resolveHaciendaConfig(cfg: any, settings: any, credentials: any): HaciendaApiConfig {
+function resolveMicrofacturaConfig(cfg: any, settings: any, credentials: any): MicrofacturaApiConfig {
   const env = String(cfg.environment || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";
   const atvSettings = (settings?.atv || {}) as any;
   const atvCreds = (credentials?.atv || {}) as any;
@@ -66,7 +69,15 @@ function resolveHaciendaConfig(cfg: any, settings: any, credentials: any): Hacie
 }
 
 function deriveStatusFromResponse(resp: any) {
-  const text = String(resp?.estado || resp?.status || resp?.ind_estado || resp?.state || "").toLowerCase();
+  const body = resp && typeof resp === "object" && "body" in resp ? (resp as any).body : resp;
+  const text = String(
+    body?.estado ||
+      body?.status ||
+      body?.ind_estado ||
+      body?.["ind-estado"] ||
+      body?.state ||
+      ""
+  ).toLowerCase();
   if (text.includes("acept")) return "ACCEPTED";
   if (text.includes("rech")) return "REJECTED";
   return null;
@@ -151,28 +162,33 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
   const env = String(cfg.environment || "sandbox").toLowerCase();
   const settings = (cfg.settings || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
-  const provider = String(cfg.provider || "hacienda-cr");
+  const provider = "microfacturacr";
 
-  // Directo con Hacienda (ATV API)
-  if (atvMode === "api" && provider === "hacienda-cr") {
+  // Microfactura (ATV API)
+  if (atvMode === "api" && provider === "microfacturacr") {
     const creds =
       ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
-    const apiCfg = resolveHaciendaConfig(cfg, settings, creds);
+    const crypto = (creds.crypto || {}) as any;
+    const apiCfg = resolveMicrofacturaConfig(cfg, settings, creds);
     const issues = validateHaciendaConfig(apiCfg);
     if (issues.length) {
       return res.status(400).json({
         message:
-          "Hacienda API no esta configurada. Completa ATV username/password/clientId/clientSecret y endpoints token/send/status en /e-invoicing.",
+          "Microfactura no está configurado. Completa ATV username/password/clientId/clientSecret en /e-invoicing.",
         issues,
+      });
+    }
+    if (!crypto?.certificateBase64 || !crypto?.certificatePassword) {
+      return res.status(400).json({
+        message:
+          "Certificado de firma requerido. Cada hotel debe configurar su certificado y contraseña para firmar XML antes de enviar.",
       });
     }
 
     const doc = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
     if (!doc) return res.status(404).json({ message: "Documento no encontrado" });
     if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
-    if (!doc.xmlSigned) {
-      return res.status(400).json({ message: "XML firmado requerido antes de enviar a Hacienda." });
-    }
+    // xmlSigned will be generated via microfactura signer if missing.
 
     const issuer = (settings?.issuer || {}) as any;
     const issuerIdNumber = String(issuer?.idNumber || "").trim();
@@ -189,14 +205,53 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
     });
 
     try {
-      const token = await getHaciendaToken(apiCfg, "password");
-      const sendResp = await sendHaciendaDocument(apiCfg, token, doc.xmlSigned, doc.key, {
-        issuedAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso(),
-        issuerIdType,
-        issuerIdNumber,
-        receiverIdType: receiverIdentity?.idType || undefined,
-        receiverIdNumber: receiverIdentity?.idNumber || undefined,
+      const tokenResp = await microfacturaToken({
+        clientId: apiCfg.atv.clientId || "api-stag",
+        clientSecret: apiCfg.atv.clientSecret,
+        username: apiCfg.atv.username,
+        password: apiCfg.atv.password,
+        grantType: "password",
+      });
+      const tokenPayload = (tokenResp as any)?.body || tokenResp;
+      const accessToken = String(tokenPayload?.access_token || tokenPayload?.accessToken || "");
+      if (!accessToken) {
+        throw new Error("Microfactura token response missing access_token");
+      }
+
+      let xmlSigned = doc.xmlSigned || "";
+      if (!xmlSigned) {
+        const payloadAny = (doc.payload || {}) as any;
+        const xmlBase64 = String(payloadAny?.xmlUnsignedBase64 || payloadAny?.xmlBase64 || "");
+        const xmlRaw = String(payloadAny?.xml || payloadAny?.xmlUnsigned || "");
+        if (!xmlBase64 && !xmlRaw) {
+          return res.status(400).json({
+            message: "No se encontro XML para firmar. Provee xml o xmlBase64 en el payload del documento.",
+          });
+        }
+        xmlSigned = await microfacturaSignXml({
+          xmlBase64: xmlBase64 || undefined,
+          xml: xmlRaw || undefined,
+          certBase64: String(crypto?.certificateBase64 || ""),
+          certPassword: String(crypto?.certificatePassword || ""),
+        });
+        await prisma.eInvoicingDocument.updateMany({
+          where: { id: doc.id, hotelId },
+          data: { xmlSigned },
+        });
+      }
+
+      const sendResp = await microfacturaSend({
+        token: accessToken,
+        clientId: apiCfg.atv.clientId || "api-stag",
+        clave: doc.key,
+        fecha: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso(),
+        emisor: { tipoIdentificacion: issuerIdType, numeroIdentificacion: issuerIdNumber },
+        receptor: receiverIdentity
+          ? { tipoIdentificacion: receiverIdentity.idType, numeroIdentificacion: receiverIdentity.idNumber }
+          : undefined,
+        comprobanteXmlBase64: xmlSigned,
         callbackUrl: settings?.atv?.callbackUrl || undefined,
+        consecutivoReceptor: (doc.payload as any)?.consecutivoReceptor || (doc.payload as any)?.receiverConsecutive || undefined,
       });
 
       await prisma.eInvoicingDocument.updateMany({
@@ -210,12 +265,16 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
           documentId: doc.id,
           type: "HACIENDA_RECEIPT",
           status: "RECEIVED",
-          message: "Sent to Hacienda.",
+          message: "Sent via Microfactura.",
           payload: { sendResp, at: nowIso() },
         },
       });
 
-      const statusResp = await getHaciendaStatus(apiCfg, token, doc.key);
+      const statusResp = await microfacturaStatus({
+        token: accessToken,
+        clientId: apiCfg.atv.clientId || "api-stag",
+        clave: doc.key,
+      });
       const derived = deriveStatusFromResponse(statusResp);
 
       await prisma.eInvoicingAcknowledgement.create({
@@ -252,7 +311,7 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
         });
       }
     } catch (err: any) {
-      return res.status(502).json({ message: err?.message || "Hacienda API call failed" });
+      return res.status(502).json({ message: err?.message || "Microfactura API call failed" });
     }
 
     const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
@@ -360,7 +419,7 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
   const env = String(cfg.environment || "sandbox").toLowerCase();
   const settings = (cfg.settings || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
-  const provider = String(cfg.provider || "hacienda-cr");
+  const provider = "microfacturacr";
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: { id, hotelId },
@@ -372,17 +431,32 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
     return res.json(doc);
   }
 
-  if (atvMode === "api" && provider === "hacienda-cr") {
+  if (atvMode === "api" && provider === "microfacturacr") {
     const creds =
       ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
-    const apiCfg = resolveHaciendaConfig(cfg, settings, creds);
+    const apiCfg = resolveMicrofacturaConfig(cfg, settings, creds);
     const issues = validateHaciendaConfig(apiCfg);
-    if (issues.length) return res.status(400).json({ message: "Hacienda API no configurada", issues });
+    if (issues.length) return res.status(400).json({ message: "Microfactura no configurado", issues });
     if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
 
     try {
-      const token = await getHaciendaToken(apiCfg, "password");
-      const statusResp = await getHaciendaStatus(apiCfg, token, doc.key);
+      const tokenResp = await microfacturaToken({
+        clientId: apiCfg.atv.clientId || "api-stag",
+        clientSecret: apiCfg.atv.clientSecret,
+        username: apiCfg.atv.username,
+        password: apiCfg.atv.password,
+        grantType: "password",
+      });
+      const tokenPayload = (tokenResp as any)?.body || tokenResp;
+      const accessToken = String(tokenPayload?.access_token || tokenPayload?.accessToken || "");
+      if (!accessToken) {
+        throw new Error("Microfactura token response missing access_token");
+      }
+      const statusResp = await microfacturaStatus({
+        token: accessToken,
+        clientId: apiCfg.atv.clientId || "api-stag",
+        clave: doc.key,
+      });
       const derived = deriveStatusFromResponse(statusResp);
       await prisma.eInvoicingAcknowledgement.create({
         data: {
@@ -410,7 +484,7 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
         });
       }
     } catch (err: any) {
-      return res.status(502).json({ message: err?.message || "Hacienda status call failed" });
+      return res.status(502).json({ message: err?.message || "Microfactura status call failed" });
     }
     const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
     return res.json(fresh);

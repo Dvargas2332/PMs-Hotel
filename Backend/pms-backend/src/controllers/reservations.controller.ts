@@ -19,7 +19,7 @@ export async function createReservation(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const { roomId, guestId, checkIn, checkOut, adults, children, code, rooming, otaCode } = req.body;
+  const { roomId, guestId, checkIn, checkOut, adults, children, code, rooming, otaCode, contractId, ratePlanId, mealPlanId } = req.body;
 
   const checkInDate = new Date(checkIn);
   const checkOutDate = new Date(checkOut);
@@ -31,6 +31,22 @@ export async function createReservation(req: Request, res: Response) {
   // Validar que el huésped pertenece al mismo hotel
   const guest = await prisma.guest.findFirst({ where: { id: guestId, hotelId: user.hotelId } });
   if (!guest) return res.status(404).json({ message: "Huesped no encontrado en este hotel" });
+
+  if (!contractId) {
+    return res.status(400).json({ message: "Contrato requerido" });
+  }
+  if (!ratePlanId) {
+    return res.status(400).json({ message: "Tarifario requerido" });
+  }
+
+  const contract = await prisma.contract.findFirst({
+    where: { id: contractId, hotelId: user.hotelId, active: true },
+  });
+  if (!contract) return res.status(404).json({ message: "Contrato no encontrado o inactivo" });
+  const rpList = Array.isArray((contract as any).ratePlans) ? (contract as any).ratePlans : [];
+  if (!rpList.map(String).includes(String(ratePlanId))) {
+    return res.status(400).json({ message: "El tarifario no pertenece al contrato seleccionado" });
+  }
 
   // Evitar sobreventa: misma habitación, mismo hotel y rango de fechas solapado.
   // Intervalos [checkIn, checkOut) permiten reservas back‑to‑back.
@@ -54,6 +70,9 @@ export async function createReservation(req: Request, res: Response) {
     code: finalCode,
     rooming: includeExtras ? rooming || null : undefined,
     otaCode: includeExtras ? otaCode || null : undefined,
+    contractId: includeExtras ? contractId || null : undefined,
+    ratePlanId: includeExtras ? ratePlanId || null : undefined,
+    mealPlanId: includeExtras ? mealPlanId || null : undefined,
     roomId,
     guestId,
     checkIn: checkInDate,
@@ -104,7 +123,7 @@ export async function listReservations(req: Request, res: Response) {
   const data = await prisma.reservation.findMany({
     where: { hotelId: user.hotelId },
     orderBy: { createdAt: "desc" },
-    include: { room: true, guest: true },
+    include: { room: true, guest: true, contract: true, ratePlan: true, mealPlan: true },
   });
   res.json(data);
 }
@@ -119,6 +138,9 @@ export async function listActiveCheckins(req: Request, res: Response) {
     include: {
       room: true,
       guest: true,
+      contract: true,
+      ratePlan: true,
+      mealPlan: true,
       invoice: { select: { id: true, number: true, total: true, status: true, currency: true, createdAt: true } },
     },
   });

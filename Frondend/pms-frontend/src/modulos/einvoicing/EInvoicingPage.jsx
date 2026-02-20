@@ -1385,9 +1385,8 @@ export default function EInvoicingPage() {
                         />
                         <input
                           className="h-10 rounded-lg border px-3 text-sm col-span-2"
-                          value={cfg.provider || "hacienda-cr"}
-                          onChange={(e) => setCfg((s) => ({ ...s, provider: e.target.value }))}
-                          placeholder="Provider"
+                          value="microfacturacr"
+                          disabled
                         />
                       </div>
                         </Card>

@@ -32,6 +32,7 @@ import {
   voidRestaurantInvoice,
   listSections,
   createSection,
+  updateSection,
   deleteSection,
   addTableToSection,
   deleteTableFromSection,
@@ -133,6 +134,7 @@ router.patch("/staff/:id", requirePermission("restaurant.staff.write"), updateRe
 router.delete("/staff/:id", requirePermission("restaurant.staff.write"), deleteRestaurantStaff);
 router.get("/sections", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.sections.write"), listSections);
 router.post("/sections", requirePermission("restaurant.sections.write"), createSection);
+router.patch("/sections/:sectionId", requirePermission("restaurant.sections.write"), updateSection);
 router.delete("/sections/:sectionId", requirePermission("restaurant.sections.write"), deleteSection);
 router.post("/sections/:sectionId/tables", requirePermission("restaurant.sections.write"), addTableToSection);
 router.delete("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write"), deleteTableFromSection);

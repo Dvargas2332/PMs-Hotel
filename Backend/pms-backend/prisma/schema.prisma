@@ -235,6 +235,8 @@ model RestaurantSection {
   id      String @id
   hotelId String
   name    String
+  imageUrl String?
+  quickCashEnabled Boolean @default(false)
 
   tables          RestaurantTable[]
   objects         RestaurantSectionObject[]
@@ -724,6 +726,9 @@ model Hotel {
   reservationSequences         ReservationSequence[]
   hotelSequences               HotelSequence[]
   launcherAccounts             LauncherAccount[]
+  ratePlans                    RatePlan[]
+  mealPlans                    MealPlan[]
+  contracts                    Contract[]
   roomDays                     RoomDay[]
   eInvoicingConfig             EInvoicingConfig?
   eInvoicingRequirements       EInvoicingRequirement[]
@@ -954,6 +959,9 @@ model Reservation {
   roomId     String
   guestId    String
   userId     String?
+  contractId String?
+  ratePlanId String?
+  mealPlanId String?
   checkIn    DateTime
   checkOut   DateTime
   adults     Int               @default(2)
@@ -967,6 +975,9 @@ model Reservation {
   room  Room  @relation(fields: [roomId], references: [id])
   guest Guest @relation(fields: [guestId], references: [id])
   user  User? @relation(fields: [userId], references: [id])
+  contract Contract? @relation("ContractReservations", fields: [hotelId, contractId], references: [hotelId, id], onDelete: SetNull)
+  ratePlan RatePlan? @relation("RatePlanReservations", fields: [hotelId, ratePlanId], references: [hotelId, id], onDelete: SetNull)
+  mealPlan MealPlan? @relation("MealPlanReservations", fields: [hotelId, mealPlanId], references: [hotelId, id], onDelete: SetNull)
 
   /// Relación 1–1 con Invoice (lado SIN FK)
   invoice         Invoice?         @relation("ReservationInvoice")
@@ -979,6 +990,59 @@ model Reservation {
 
   @@index([roomId])
   @@index([guestId])
+  @@index([hotelId])
+}
+
+model RatePlan {
+  id           String   @default(cuid())
+  name         String
+  currency     String   @default("CRC")
+  price        Decimal  @default(0) @db.Decimal(12, 2)
+  derived      Boolean  @default(false)
+  dateFrom     DateTime?
+  dateTo       DateTime?
+  restrictions Json?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservations Reservation[] @relation("RatePlanReservations")
+
+  @@id([hotelId, id])
+  @@index([hotelId])
+}
+
+model MealPlan {
+  id        String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservations Reservation[] @relation("MealPlanReservations")
+
+  @@id([hotelId, id])
+  @@index([hotelId])
+}
+
+model Contract {
+  id         String
+  channel    String
+  commission Decimal @default(0) @db.Decimal(6, 4)
+  active     Boolean @default(true)
+  ratePlans  Json?
+  mealPlanId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservations Reservation[] @relation("ContractReservations")
+
+  @@id([hotelId, id])
   @@index([hotelId])
 }
 

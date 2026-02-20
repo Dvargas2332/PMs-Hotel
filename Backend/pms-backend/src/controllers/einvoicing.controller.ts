@@ -537,11 +537,21 @@ function withSettingsDefaults(input: any) {
   for (const key of ["frontdesk", "restaurant", "accounting"]) {
     moduleBranding[key] = { ...(moduleBranding[key] || {}) };
   }
+  const moduleConnections =
+    settings.moduleConnections && typeof settings.moduleConnections === "object"
+      ? { ...(settings.moduleConnections as any) }
+      : {};
+  const defaultConnections = { frontdesk: true, restaurant: true, accounting: false };
+  for (const key of ["frontdesk", "restaurant", "accounting"]) {
+    const incoming = moduleConnections[key];
+    moduleConnections[key] = typeof incoming === "boolean" ? incoming : defaultConnections[key as keyof typeof defaultConnections];
+  }
   const printForms = Array.isArray(settings.printForms) ? settings.printForms : [];
   const hasPrintForms = printForms.length > 0;
 
   return {
     ...settings,
+    moduleConnections,
     moduleBranding,
     printForms: hasPrintForms ? printForms : DEFAULT_PRINT_FORMS,
   };
@@ -600,7 +610,7 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   if (!issuer?.idNumber) readinessIssues.push("ISSUER_ID_NUMBER_MISSING");
   if (!issuer?.countryCode) readinessIssues.push("ISSUER_COUNTRY_CODE_MISSING");
 
-  // These are needed for a full Hacienda submission flow (sign + send),
+  // These are needed for a full microfactura submission flow (sign + send),
   // but the current implementation stores documents as DRAFT and does not submit yet.
   if (!crypto?.certificateBase64) readinessIssues.push("CERTIFICATE_MISSING");
   if (!crypto?.certificatePassword) readinessIssues.push("CERTIFICATE_PASSWORD_MISSING");
@@ -643,7 +653,12 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   // Persist defaults once to keep config consistent per tenant.
   try {
     const currentSettings = (config.settings || {}) as any;
-    if (!Array.isArray(currentSettings?.printForms) || (currentSettings?.printForms || []).length === 0 || !currentSettings?.moduleBranding) {
+    if (
+      !Array.isArray(currentSettings?.printForms) ||
+      (currentSettings?.printForms || []).length === 0 ||
+      !currentSettings?.moduleBranding ||
+      !currentSettings?.moduleConnections
+    ) {
       await prisma.eInvoicingConfig.update({
         where: { hotelId },
         data: { settings: settings as any },
@@ -715,6 +730,10 @@ export async function updateEInvoicingConfig(req: Request, res: Response) {
   };
 
   const mergedCredentials = mergeSecrets(currentCreds, nextCredsInput);
+  const normalizedSettings =
+    payload.settings && typeof payload.settings === "object"
+      ? withSettingsDefaults(payload.settings)
+      : undefined;
 
   await prisma.eInvoicingConfig.upsert({
     where: { hotelId },
@@ -724,7 +743,7 @@ export async function updateEInvoicingConfig(req: Request, res: Response) {
       provider: payload.provider ?? undefined,
       environment: payload.environment ?? undefined,
       credentials: mergedCredentials,
-      settings: payload.settings ?? undefined,
+      settings: normalizedSettings ?? undefined,
     },
     create: {
       hotelId,
@@ -733,7 +752,7 @@ export async function updateEInvoicingConfig(req: Request, res: Response) {
       provider: payload.provider || "hacienda-cr",
       environment: payload.environment || "sandbox",
       credentials: mergedCredentials ?? {},
-      settings: payload.settings ?? {},
+      settings: normalizedSettings ?? {},
     },
   });
   // Return redacted config
