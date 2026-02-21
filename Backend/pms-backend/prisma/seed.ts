@@ -150,7 +150,7 @@ async function main() {
       taxes: { iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true } as any,
       payments: { monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: ["Efectivo", "Tarjeta", "SINPE", "Transferencia"], cargoHabitacion: true } as any,
       general: { nombreComercial: "Rest Demo", telefono: "+506 0000 0000", email: "rest@demo.com" } as any,
-      billing: { comprobante: "factura", margen: "0", propina: "10", autoFactura: true } as any,
+      billing: { ticketComprobante: "tiquete", invoiceComprobante: "factura", autoFactura: true } as any,
     },
     create: {
       hotelId: hotel.id,
@@ -159,7 +159,7 @@ async function main() {
       taxes: { iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true } as any,
       payments: { monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: ["Efectivo", "Tarjeta", "SINPE", "Transferencia"], cargoHabitacion: true } as any,
       general: { nombreComercial: "Rest Demo", telefono: "+506 0000 0000", email: "rest@demo.com" } as any,
-      billing: { comprobante: "factura", margen: "0", propina: "10", autoFactura: true } as any,
+      billing: { ticketComprobante: "tiquete", invoiceComprobante: "factura", autoFactura: true } as any,
     },
   });
 

@@ -512,9 +512,9 @@ const DEFAULT_PRINT_FORMS = [
   { id: "restaurant_closes_80mm_standard", module: "restaurant", docType: "CLOSES", paperType: "80mm", name: "Restaurant Close - 80mm" },
   { id: "restaurant_closes_58mm_standard", module: "restaurant", docType: "CLOSES", paperType: "58mm", name: "Restaurant Close - 58mm" },
   { id: "restaurant_closes_a4_standard", module: "restaurant", docType: "CLOSES", paperType: "A4", name: "Restaurant Close - A4" },
-  { id: "restaurant_document_80mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "80mm", name: "Restaurant Document - 80mm" },
-  { id: "restaurant_document_58mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "58mm", name: "Restaurant Document - 58mm" },
-  { id: "restaurant_document_a4_standard", module: "restaurant", docType: "DOCUMENT", paperType: "A4", name: "Restaurant Document - A4" },
+  { id: "restaurant_document_80mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "80mm", name: "Restaurant Subfactura - 80mm" },
+  { id: "restaurant_document_58mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "58mm", name: "Restaurant Subfactura - 58mm" },
+  { id: "restaurant_document_a4_standard", module: "restaurant", docType: "DOCUMENT", paperType: "A4", name: "Restaurant Subfactura - A4" },
 
   // Frontdesk
   { id: "frontdesk_te_80mm_standard", module: "frontdesk", docType: "TE", paperType: "80mm", name: "Front Desk Ticket (TE) - 80mm" },

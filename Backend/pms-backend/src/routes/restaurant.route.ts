@@ -109,8 +109,13 @@ router.get("/printers", requirePermission("restaurant.access.pos", "restaurant.p
 router.post("/print", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.print"), printRestaurantOrder);
 router.get("/shift", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantShift);
 router.post("/shift/open", requirePermission("restaurant.access.pos", "restaurant.pos.open"), openRestaurantShift);
-router.post("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), requirePermission("restaurant.shift.close"), closeShift);
-router.get("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open", "restaurant.shift.close"), listCloses);
+router.post(
+  "/close",
+  requirePermission("restaurant.access.closes", "restaurant.pos.open"),
+  requirePermission("restaurant.shift.closeX", "restaurant.shift.closeZ", "restaurant.shift.close"),
+  closeShift
+);
+router.get("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open"), listCloses);
 router.get("/stats", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantStats);
 router.get("/orders", requirePermission("restaurant.access.pos", "restaurant.access.history", "restaurant.pos.open"), listOrders);
 router.get(

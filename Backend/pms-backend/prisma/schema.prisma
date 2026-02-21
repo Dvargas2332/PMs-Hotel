@@ -146,6 +146,7 @@ model RestaurantClose {
   id        String   @id @default(cuid())
   hotelId   String
   turno     String
+  stage     String   @default("X")
   totals    Json
   payments  Json
   breakdown Json?

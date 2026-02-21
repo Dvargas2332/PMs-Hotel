@@ -2620,7 +2620,7 @@ export async function closeOrder(req: Request, res: Response) {
     const cfg = await getOrCreateRestaurantConfig(hotelId);
     const billing = cfg.billing && typeof cfg.billing === "object" ? (cfg.billing as any) : {};
     const autoFactura = billing?.autoFactura !== false;
-    const desiredDocType = resolveBillingDocType(billing?.comprobante) || "TE";
+    const desiredDocType = resolveBillingDocType(billing?.ticketComprobante ?? billing?.comprobante) || "TE";
     const docTypeToIssue: "TE" = "TE";
     if (autoFactura && desiredDocType) {
       await issueRestaurantDocForOrder({
@@ -3291,6 +3291,7 @@ export async function getRestaurantConfig(req: Request, res: Response) {
         paperType: "80mm",
         defaultDocType: "TE",
         types: {
+          comanda: { enabled: true, printerId: "", copies: 1 },
           ticket: { enabled: true, printerId: "", copies: 1 },
           electronicInvoice: { enabled: true, printerId: "", copies: 1 },
           closes: { enabled: true, printerId: "", copies: 1 },
@@ -3517,13 +3518,16 @@ export async function printRestaurantOrder(req: Request, res: Response) {
 
   const rawType = type ? String(type).trim().toUpperCase() : "KITCHEN_BAR";
   const normalizedType = rawType === "COMANDA" ? "KITCHEN_BAR" : rawType;
+  const isComandaType = rawType === "COMANDA" || normalizedType === "KITCHEN_BAR";
   const printingTypeKey =
-    normalizedType === "TICKET"
-      ? "ticket"
-      : normalizedType === "ELECTRONIC_INVOICE"
-        ? "electronicInvoice"
-        : normalizedType === "CLOSES"
-          ? "closes"
+    isComandaType
+      ? "comanda"
+      : normalizedType === "TICKET"
+        ? "ticket"
+        : normalizedType === "ELECTRONIC_INVOICE"
+          ? "electronicInvoice"
+          : normalizedType === "CLOSES"
+            ? "closes"
             : normalizedType === "DOCUMENT"
               ? "document"
               : null;
@@ -3779,7 +3783,17 @@ export async function closeShift(req: Request, res: Response) {
   try {
     const role = (user.role || "").toUpperCase();
     if (!["ADMIN", "MANAGER"].includes(role)) {
-      return res.status(403).json({ message: "Solo ADMIN/MANAGER pueden cerrar turno" });
+      const required = closeTypeRaw === "Z" ? "restaurant.shift.closeZ" : "restaurant.shift.closeX";
+      const legacy = "restaurant.shift.close";
+      const granted = await prisma.rolePermission.findFirst({
+        where: { hotelId: user.hotelId, roleId: user.role, permissionId: { in: [required, legacy] } },
+        select: { permissionId: true },
+      });
+      if (!granted) {
+        return res
+          .status(403)
+          .json({ message: closeTypeRaw === "Z" ? "No tienes permiso para cierre Z" : "No tienes permiso para cierre X" });
+      }
     }
 
     const openShift = await prisma.cashAudit.findFirst({
@@ -3791,6 +3805,10 @@ export async function closeShift(req: Request, res: Response) {
     }
 
     const { totals, payments, note, breakdown } = req.body || {};
+    const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
+    if (!["X", "Z"].includes(closeTypeRaw)) {
+      return res.status(400).json({ message: "Tipo de cierre invalido" });
+    }
 
     const openOrders = await prisma.restaurantOrder.count({
       where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
@@ -3855,6 +3873,7 @@ export async function closeShift(req: Request, res: Response) {
         data: {
           hotel: { connect: { id: user.hotelId } },
           turno: `T-${Date.now()}`,
+          stage: closeTypeRaw,
           totals: safeTotals as any,
           payments: (payments || {}) as any,
           breakdown: breakdown || {},
@@ -3863,25 +3882,43 @@ export async function closeShift(req: Request, res: Response) {
         },
       });
 
-      await tx.cashAudit.updateMany({
-        where: { id: openShift.id, hotelId: user.hotelId },
-        data: {
-          closedAt,
-          totals: { openingAmount, ...safeTotals } as any,
-          details: { payments: payments || {}, breakdown: breakdown || {}, closeId: createdClose.id } as any,
-          note: (note || openShift.note || "").trim() || null,
-        },
-      });
-
+      if (closeTypeRaw === "Z") {
+        await tx.cashAudit.updateMany({
+          where: { id: openShift.id, hotelId: user.hotelId },
+          data: {
+            closedAt,
+            totals: { openingAmount, ...safeTotals } as any,
+            details: { payments: payments || {}, breakdown: breakdown || {}, closeId: createdClose.id } as any,
+            note: (note || openShift.note || "").trim() || null,
+          },
+        });
+      } else {
+        await tx.cashAudit.updateMany({
+          where: { id: openShift.id, hotelId: user.hotelId },
+          data: {
+            details: {
+              ...((openShift?.details as any) || {}),
+              lastCloseX: {
+                totals: safeTotals,
+                payments: payments || {},
+                breakdown: breakdown || {},
+                closeId: createdClose.id,
+                createdAt: closedAt,
+              },
+            } as any,
+          },
+        });
+      }
 
       await recordOrderEvent(tx, {
         hotelId: user.hotelId || "",
         orderId: null,
-        eventType: "SHIFT_CLOSE",
+        eventType: closeTypeRaw === "Z" ? "SHIFT_CLOSE_Z" : "SHIFT_CLOSE_X",
         actorId: user.sub,
         payload: {
           shiftId: openShift.id,
           closeId: createdClose.id,
+          stage: closeTypeRaw,
           totals: safeTotals,
           payments: payments || {},
           breakdown: breakdown || {},

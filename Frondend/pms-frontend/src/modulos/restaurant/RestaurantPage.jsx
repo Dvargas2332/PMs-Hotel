@@ -321,6 +321,7 @@ const [subCategory, setSubCategory] = useState("");
     paperType: "80mm",
     defaultDocType: "TE",
     types: {
+      comanda: { enabled: true, printerId: "", copies: 1 },
       ticket: { enabled: true, printerId: "", copies: 1 },
       electronicInvoice: { enabled: true, printerId: "", copies: 1 },
       closes: { enabled: true, printerId: "", copies: 1 },
@@ -413,9 +414,13 @@ const [subCategory, setSubCategory] = useState("");
     () => (sections || []).filter((s) => s?.quickCashEnabled),
     [sections]
   );
+  const canCloseX = useMemo(() => {
+    const perms = Array.isArray(user?.permissions) ? user.permissions : [];
+    return role === "ADMIN" || perms.includes("restaurant.shift.closeX") || perms.includes("restaurant.shift.close");
+  }, [role, user?.permissions]);
   const canCloseZ = useMemo(() => {
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
-    return role === "ADMIN" || perms.includes("restaurant.shift.closeZ");
+    return role === "ADMIN" || perms.includes("restaurant.shift.closeZ") || perms.includes("restaurant.shift.close");
   }, [role, user?.permissions]);
   const canMoveOrders = useMemo(() => {
     if (role === "ADMIN") return true;
@@ -3314,8 +3319,8 @@ const subCategories = useMemo(() => {
                     className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold"
                     disabled={closeLoading}
                     onClick={async () => {
-                      if (!canViewTotals) {
-                        window.alert("No tienes permisos para cerrar caja.");
+                      if (!canCloseX) {
+                        window.alert("No tienes permiso para cierre X.");
                         return;
                       }
                       if (closeLoading) return;
@@ -3387,10 +3392,6 @@ const subCategories = useMemo(() => {
                     disabled={closeLoading || !canCloseZ || !closeAuditOk}
                     title={canCloseZ ? "" : "No tienes permiso para cierre Z"}
                     onClick={async () => {
-                      if (!canViewTotals) {
-                        window.alert("No tienes permisos para cerrar caja.");
-                        return;
-                      }
                       if (!canCloseZ) {
                         window.alert("No tienes permiso para cierre Z.");
                         return;
