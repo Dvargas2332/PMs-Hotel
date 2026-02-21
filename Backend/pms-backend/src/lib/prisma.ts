@@ -97,7 +97,6 @@ const TENANT_MODELS = new Set([
   "InvoiceItem",
   "LauncherAccount",
   "Payment",
-  "Report",
   "Reservation",
   "ReservationSequence",
   "AdvanceDeposit",

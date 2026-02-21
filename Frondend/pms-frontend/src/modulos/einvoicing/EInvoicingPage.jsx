@@ -1497,7 +1497,6 @@ export default function EInvoicingPage() {
                             <option value="TE">{t("einv.forms.docTypes.te")}</option>
                             <option value="FE">{t("einv.forms.docTypes.fe")}</option>
                             <option value="CLOSES">{t("einv.forms.docTypes.closes")}</option>
-                            <option value="SALES_REPORT">{t("einv.forms.docTypes.salesReport")}</option>
                             <option value="DOCUMENT">{t("einv.forms.docTypes.document")}</option>
                           </select>
                           <select

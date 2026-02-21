@@ -275,7 +275,9 @@ export default function Launcher() {
                       </div>
                     </div>
                   ) : (
-                    <form onSubmit={handleUserLoginSubmit} className="space-y-3">
+                    <form onSubmit={handleUserLoginSubmit} className="space-y-3" autoComplete="off">
+                      <input type="text" name="fake_username" autoComplete="username" className="hidden" />
+                      <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
                       <div>
                         <h2 className="text-sm font-semibold text-gray-800">
                         {t("launcher.userLoginTitle")}
@@ -287,12 +289,13 @@ export default function Launcher() {
                             {t("launcher.username")}
                           </label>
                           <Input
+                            name="launcher_username"
                             value={userLogin.username}
                             onChange={(e) =>
                               setUserLogin((prev) => ({ ...prev, username: e.target.value }))
                             }
                             placeholder="usuario"
-                            autoComplete="username"
+                            autoComplete="off"
                           />
                         </div>
                         <div className="max-w-[220px] space-y-1">
@@ -301,12 +304,13 @@ export default function Launcher() {
                           </label>
                           <Input
                             type="password"
+                            name="launcher_password"
                             value={userLogin.password}
                             onChange={(e) =>
                               setUserLogin((prev) => ({ ...prev, password: e.target.value }))
                             }
                             placeholder="********"
-                            autoComplete="current-password"
+                            autoComplete="new-password"
                           />
                         </div>
                       </div>

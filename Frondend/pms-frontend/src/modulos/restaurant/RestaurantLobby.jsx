@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ClipboardList, FileText, Boxes, UtensilsCrossed, ScrollText, ChevronRight, Users } from "lucide-react";
+import { Boxes, UtensilsCrossed, ScrollText, ChevronRight, Users } from "lucide-react";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
 // Manually adjust tile size:
@@ -148,31 +148,12 @@ export default function RestaurantLobby() {
       tone: "emerald",
     },
     {
-      title: "Historicos y reimpresiones",
-      desc: "Facturacion, reportes y reimpresiones en un solo lugar.",
-      icon: FileText,
-      size: "lg",
-      tone: "indigo",
-      actions: [
-        { label: "Historicos", onClick: () => navigate("/restaurant/reports") },
-        { label: "Reimpresiones", onClick: () => navigate("/restaurant/billing") },
-      ],
-    },
-    {
       title: "Cajeros y Meseros",
       desc: "Crea y administra personal con acceso al TPV.",
       icon: Users,
       size: "lg",
       onClick: () => navigate("/restaurant/staff"),
       tone: "emerald",
-    },
-    {
-      title: "Cierres",
-      desc: "Cierres de caja del restaurante y conciliacion.",
-      icon: ClipboardList,
-      size: "lg",
-      onClick: () => navigate("/restaurant/closes"),
-      tone: "orange",
     },
     {
       title: "Inventario",
@@ -223,6 +204,5 @@ export default function RestaurantLobby() {
     </div>
   );
 }
-
 
 

@@ -7,11 +7,16 @@ import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
-import ExcelJS from "exceljs";
 
 const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
   return Number.isFinite(n) ? n : 0;
+};
+
+const clampPercent = (v: unknown) => {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, n));
 };
 
 const ORDER_STATUS_ALIASES: Record<string, RestaurantOrderStatus> = {
@@ -776,6 +781,34 @@ export async function saveSectionLayout(req: Request, res: Response) {
   res.json({ ok: true });
 }
 
+export async function getSectionLayout(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
+
+  const { sectionId } = req.params as { sectionId?: string };
+  if (!sectionId) return res.status(400).json({ message: "sectionId requerido" });
+
+  const internalSectionId = toInternalId(hotelId, sectionId);
+  const section = await prisma.restaurantSection.findFirst({
+    where: { hotelId, OR: [{ id: internalSectionId }, { id: sectionId }] },
+    select: { id: true },
+  });
+  if (!section) return res.status(404).json({ message: "Sección no encontrada" });
+
+  const tables = await prisma.restaurantTable.findMany({
+    where: { hotelId, sectionId: section.id },
+  });
+  res.json({
+    tables: tables.map((t) => ({
+      ...t,
+      id: fromInternalId(hotelId, t.id),
+      sectionId: fromInternalId(hotelId, t.sectionId),
+    })),
+  });
+}
+
 export async function createSection(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -826,10 +859,15 @@ export async function updateSection(req: Request, res: Response) {
   if ("imageUrl" in (req.body || {})) data.imageUrl = imageUrl ? String(imageUrl) : null;
   if ("quickCashEnabled" in (req.body || {})) data.quickCashEnabled = Boolean(quickCashEnabled);
 
-  const updated = await prisma.restaurantSection.update({
-    where: { id: existing.id },
+  const written = await prisma.restaurantSection.updateMany({
+    where: { id: existing.id, hotelId },
     data,
   });
+  if (written.count === 0) return res.status(404).json({ message: "Sección no encontrada" });
+  const updated = await prisma.restaurantSection.findFirst({
+    where: { id: existing.id, hotelId },
+  });
+  if (!updated) return res.status(404).json({ message: "Sección no encontrada" });
   res.json({ ...updated, id: fromInternalId(hotelId, updated.id) });
 }
 export async function deleteSection(req: Request, res: Response) {
@@ -2034,16 +2072,73 @@ export async function listOrders(req: Request, res: Response) {
   );
 }
 
+export async function getOrderHistory(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const hotelId = user.hotelId;
+  const orderId = String((req.params as any)?.orderId || "").trim();
+  if (!orderId) return res.status(400).json({ message: "orderId requerido" });
+
+  const dateFromRaw = String((req.query as any)?.dateFrom || "").trim();
+  const dateToRaw = String((req.query as any)?.dateTo || "").trim();
+  const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
+  const dateTo = dateToRaw ? new Date(dateToRaw) : null;
+  if (dateTo) dateTo.setHours(23, 59, 59, 999);
+
+  const order = await prisma.restaurantOrder.findFirst({
+    where: { id: orderId, hotelId },
+    include: { items: true, discount: true },
+  });
+  if (!order) return res.status(404).json({ message: "Orden no encontrada" });
+
+  const eventWhere: Prisma.RestaurantOrderEventWhereInput = { hotelId, orderId };
+  if (dateFrom || dateTo) {
+    eventWhere.createdAt = {
+      ...(dateFrom ? { gte: dateFrom } : {}),
+      ...(dateTo ? { lte: dateTo } : {}),
+    };
+  }
+
+  const [events, documents, closes] = await prisma.$transaction([
+    prisma.restaurantOrderEvent.findMany({
+      where: eventWhere,
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.eInvoicingDocument.findMany({
+      where: { hotelId, restaurantOrderId: orderId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+    prisma.restaurantClose.findMany({
+      where: { hotelId },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+  ]);
+
+  res.json({
+    order: {
+      ...order,
+      sectionId: order.sectionId ? fromInternalId(hotelId, order.sectionId) : null,
+      tableId: fromInternalId(hotelId, order.tableId),
+    },
+    events,
+    documents,
+    closes,
+  });
+}
+
 export async function createOrUpdateOrder(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew, status, waiterId } = req.body as {
+  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew, status, waiterId, discountId, discountPercent } = req.body as {
     sectionId?: string;
     tableId: string;
-    items: { id?: string; itemId?: string; variantKey?: string; detailNote?: string; name: string; category?: string; price: number; qty: number }[];
+    items: { id?: string; itemId?: string; variantKey?: string; detailNote?: string; name: string; category?: string; price: number; qty: number; discountId?: string; discountPercent?: number }[];
     note?: string;
     covers?: number;
     serviceType?: string;
@@ -2054,6 +2149,8 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     forceNew?: boolean;
     status?: string;
     waiterId?: string;
+    discountId?: string;
+    discountPercent?: number;
   };
   if (!tableId || !Array.isArray(items)) return res.status(400).json({ message: "tableId e items requeridos" });
 
@@ -2109,17 +2206,21 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     (acc, i) => {
       const qty = Number(i.qty || 0);
       const price = Number(i.price || 0);
+      const itemId = String(i.itemId || i.id);
       const gross = price * qty;
-      const includes = includesById.get(String(i.id)) ?? true;
+      const itemDiscountRate = clampPercent(i.discountPercent) / 100;
+      const discountedGross = gross * (1 - itemDiscountRate);
+      acc.discountItems += gross - discountedGross;
+      const includes = includesById.get(itemId) ?? true;
       if (includes) {
         const denom = 1 + serviceRate + taxRate;
-        const net = denom > 0 ? gross / denom : gross;
+        const net = denom > 0 ? discountedGross / denom : discountedGross;
         acc.subtotal += net;
         acc.service += net * serviceRate;
         acc.tax += net * taxRate;
-        acc.total += gross;
+        acc.total += discountedGross;
       } else {
-        const net = gross;
+        const net = discountedGross;
         acc.subtotal += net;
         acc.service += net * serviceRate;
         acc.tax += net * taxRate;
@@ -2127,11 +2228,20 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
       }
       return acc;
     },
-    { subtotal: 0, service: 0, tax: 0, total: 0 }
+    { subtotal: 0, service: 0, tax: 0, total: 0, discountItems: 0 }
   );
 
-  const total = sums.total;
-  const service = sums.service;
+  const normalizedDiscountPercent = clampPercent(discountPercent);
+  const orderDiscountRate = normalizedDiscountPercent / 100;
+  const preTotal = sums.total;
+  const orderDiscountAmount = preTotal * orderDiscountRate;
+  const factor = preTotal > 0 ? (preTotal - orderDiscountAmount) / preTotal : 1;
+  const total = preTotal * factor;
+  const service = sums.service * factor;
+  const subtotal = sums.subtotal * factor;
+  const tax = sums.tax * factor;
+  const discountAmount = orderDiscountAmount + sums.discountItems;
+  const discountIdToSave = String(discountId || "").trim() || null;
   const inferredServiceType = String(serviceType || existing?.serviceType || "DINE_IN");
 
   const resolvedSectionId = internalSectionId
@@ -2158,6 +2268,9 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             covers: covers ?? existing.covers,
             serviceType: inferredServiceType,
             roomId: roomId ?? existing.roomId,
+            discountId: discountIdToSave,
+            discountPercent: normalizedDiscountPercent,
+            discountAmount,
             total,
             tip10: service,
             status: nextStatus,
@@ -2189,75 +2302,120 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
           const prev = existingMap.get(`${itemId}::${variantKey}`);
           const cat = (i.category || "").toLowerCase();
           const isBar = cat.includes("bebida") || cat.includes("bar");
-          const includes = includesById.get(String(itemId)) ?? true;
-          await tx.restaurantOrderItem.upsert({
-            where: { hotelId_orderId_itemId_variantKey: { hotelId, orderId: existing.id, itemId, variantKey } },
-            update: {
-              name: i.name,
-              category: i.category || "",
-              price: i.price,
-              qty: i.qty,
-              detailNote: i.detailNote ? String(i.detailNote) : null,
-              priceIncludesTaxesAndService: includes,
-              area: prev?.area ?? (isBar ? "BAR" : "KITCHEN"),
-              status: prev?.status ?? "NEW",
-            },
-            create: {
-              hotelId,
-              orderId: existing.id,
-              itemId,
-              variantKey,
-              name: i.name,
-              category: i.category || "",
-              price: i.price,
-              qty: i.qty,
-              detailNote: i.detailNote ? String(i.detailNote) : null,
-              priceIncludesTaxesAndService: includes,
-              area: isBar ? "BAR" : "KITCHEN",
-              status: "NEW",
-            },
-          });
-        }
+              const includes = includesById.get(String(itemId)) ?? true;
+              const itemDiscountPercent = clampPercent(i.discountPercent);
+              const itemDiscountId = String(i.discountId || "").trim() || null;
+              await tx.restaurantOrderItem.upsert({
+                where: { hotelId_orderId_itemId_variantKey: { hotelId, orderId: existing.id, itemId, variantKey } },
+                update: {
+                  name: i.name,
+                  category: i.category || "",
+                  price: i.price,
+                  qty: i.qty,
+                  detailNote: i.detailNote ? String(i.detailNote) : null,
+                  priceIncludesTaxesAndService: includes,
+                  discountId: itemDiscountId,
+                  discountPercent: itemDiscountPercent,
+                  area: prev?.area ?? (isBar ? "BAR" : "KITCHEN"),
+                  status: prev?.status ?? "NEW",
+                },
+                create: {
+                  hotelId,
+                  orderId: existing.id,
+                  itemId,
+                  variantKey,
+                  name: i.name,
+                  category: i.category || "",
+                  price: i.price,
+                  qty: i.qty,
+                  detailNote: i.detailNote ? String(i.detailNote) : null,
+                  priceIncludesTaxesAndService: includes,
+                  discountId: itemDiscountId,
+                  discountPercent: itemDiscountPercent,
+                  area: isBar ? "BAR" : "KITCHEN",
+                  status: "NEW",
+                },
+              });
+            }
+
+        await recordOrderEvent(tx, {
+          hotelId,
+          orderId: existing.id,
+          eventType: "ORDER_UPDATED",
+          actorId: user.sub,
+          payload: {
+            tableId: fromInternalId(hotelId, internalTableId),
+            sectionId: resolvedSectionId ? fromInternalId(hotelId, resolvedSectionId) : null,
+            totals: { subtotal, service, tax, total, discountAmount },
+            itemsCount: items.length,
+            note: note ?? existing.note ?? "",
+          } as any,
+        });
 
         return tx.restaurantOrder.findFirst({ where: { id: existing.id, hotelId }, include: { items: true } });
       })
-    : await prisma.restaurantOrder.create({
-        data: {
-          hotelId,
-          sectionId: resolvedSectionId || null,
-          tableId: internalTableId,
-          waiterId: resolvedWaiterId || null,
-          status: nextStatus,
-          note: note || "",
-          covers: covers || 0,
-          serviceType: inferredServiceType,
-          roomId: roomId || null,
-          total,
-          tip10: service,
-          items: {
-            create: items.map((i) => {
-              const itemId = String(i.itemId || i.id);
-              const variantKey = String(i.variantKey || "");
-              const cat = (i.category || "").toLowerCase();
-              const isBar = cat.includes("bebida") || cat.includes("bar");
-              const includes = includesById.get(String(itemId)) ?? true;
-              return {
-                hotelId,
-                itemId,
-                variantKey,
-                name: i.name,
-                category: i.category || "",
-                price: i.price,
-                qty: i.qty,
-                detailNote: i.detailNote ? String(i.detailNote) : null,
-                priceIncludesTaxesAndService: includes,
-                area: isBar ? "BAR" : "KITCHEN",
-                status: "NEW",
-              };
-            }),
+    : await prisma.$transaction(async (tx) => {
+        const created = await tx.restaurantOrder.create({
+          data: {
+            hotelId,
+            sectionId: resolvedSectionId || null,
+            tableId: internalTableId,
+            waiterId: resolvedWaiterId || null,
+            status: nextStatus,
+            note: note || "",
+            covers: covers || 0,
+            serviceType: inferredServiceType,
+            roomId: roomId || null,
+            discountId: discountIdToSave,
+            discountPercent: normalizedDiscountPercent,
+            discountAmount,
+            total,
+            tip10: service,
+            items: {
+              create: items.map((i) => {
+                const itemId = String(i.itemId || i.id);
+                const variantKey = String(i.variantKey || "");
+                const cat = (i.category || "").toLowerCase();
+                const isBar = cat.includes("bebida") || cat.includes("bar");
+                const includes = includesById.get(String(itemId)) ?? true;
+                const itemDiscountPercent = clampPercent(i.discountPercent);
+                const itemDiscountId = String(i.discountId || "").trim() || null;
+                return {
+                  hotelId,
+                  itemId,
+                  variantKey,
+                  name: i.name,
+                  category: i.category || "",
+                  price: i.price,
+                  qty: i.qty,
+                  detailNote: i.detailNote ? String(i.detailNote) : null,
+                  priceIncludesTaxesAndService: includes,
+                  discountId: itemDiscountId,
+                  discountPercent: itemDiscountPercent,
+                  area: isBar ? "BAR" : "KITCHEN",
+                  status: "NEW",
+                };
+              }),
+            },
           },
-        },
-        include: { items: true },
+          include: { items: true },
+        });
+
+        await recordOrderEvent(tx, {
+          hotelId,
+          orderId: created.id,
+          eventType: "ORDER_CREATED",
+          actorId: user.sub,
+          payload: {
+            tableId: fromInternalId(hotelId, internalTableId),
+            sectionId: resolvedSectionId ? fromInternalId(hotelId, resolvedSectionId) : null,
+            totals: { subtotal, service, tax, total, discountAmount },
+            itemsCount: items.length,
+            note: note || "",
+          } as any,
+        });
+
+        return created;
       });
 
   if (!order) return res.status(500).json({ message: "No se pudo crear/actualizar la orden" });
@@ -2381,6 +2539,23 @@ export async function closeOrder(req: Request, res: Response) {
       include: { items: true },
     });
     if (!updatedOrder) return null;
+
+    await recordOrderEvent(tx, {
+      hotelId,
+      orderId: updatedOrder.id,
+      eventType: "ORDER_PAID",
+      actorId: user.sub,
+      payload: {
+        tableId: fromInternalId(hotelId, updatedOrder.tableId),
+        sectionId: updatedOrder.sectionId ? fromInternalId(hotelId, updatedOrder.sectionId) : null,
+        totals: totals || { total: totalToSave, service: serviceToSave },
+        payments: payments || {},
+        note: note ?? updatedOrder.note ?? "",
+        serviceType: String(serviceType || updatedOrder.serviceType || "DINE_IN"),
+        roomId: roomTarget || updatedOrder.roomId || null,
+        cashierId: cashierIdToSave,
+      } as any,
+    });
 
     // Consume inventory based on recipes (per sold item qty) when inventory is enabled.
     const cfg = await getOrCreateRestaurantConfig(hotelId);
@@ -2864,9 +3039,18 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   const cancelReason = String(reason || "").trim();
   const nextNote = cancelReason ? `${order.note || ""}\n[CANCELED] ${cancelReason}`.trim() : order.note || "";
 
-  await prisma.restaurantOrder.updateMany({
-    where: { id: order.id, hotelId, status: { in: OPEN_ORDER_STATUSES } },
-    data: { status: "CLOSED", note: nextNote },
+  await prisma.$transaction(async (tx) => {
+    await tx.restaurantOrder.updateMany({
+      where: { id: order.id, hotelId, status: { in: OPEN_ORDER_STATUSES } },
+      data: { status: "CLOSED", note: nextNote },
+    });
+    await recordOrderEvent(tx, {
+      hotelId,
+      orderId: order.id,
+      eventType: "ORDER_VOID",
+      actorId: user.sub,
+      payload: { reason: cancelReason, note: nextNote } as any,
+    });
   });
 
   return res.json({ ok: true, id: order.id });
@@ -2969,18 +3153,32 @@ export async function reprintOrder(req: Request, res: Response) {
     area: i.area,
   }));
 
-  const job = await prisma.restaurantPrintJob.create({
-    data: {
+  const job = await prisma.$transaction(async (tx) => {
+    const created = await tx.restaurantPrintJob.create({
+      data: {
+        hotelId,
+        sectionId: order.sectionId,
+        tableId: order.tableId,
+        items,
+        note: order.note || "",
+        covers: order.covers || 0,
+        kitchenPrinter: cfg?.kitchenPrinter || null,
+        barPrinter: cfg?.barPrinter || null,
+        userId: user.sub,
+      },
+    });
+    await recordOrderEvent(tx, {
       hotelId,
-      sectionId: order.sectionId,
-      tableId: order.tableId,
-      items,
-      note: order.note || "",
-      covers: order.covers || 0,
-      kitchenPrinter: cfg?.kitchenPrinter || null,
-      barPrinter: cfg?.barPrinter || null,
-      userId: user.sub,
-    },
+      orderId: order.id,
+      eventType: "ORDER_REPRINT",
+      actorId: user.sub,
+      payload: {
+        tableId: fromInternalId(hotelId, order.tableId),
+        sectionId: order.sectionId ? fromInternalId(hotelId, order.sectionId) : null,
+        printJobId: created.id,
+      } as any,
+    });
+    return created;
   });
 
   const responseJob = {
@@ -3096,7 +3294,6 @@ export async function getRestaurantConfig(req: Request, res: Response) {
           ticket: { enabled: true, printerId: "", copies: 1 },
           electronicInvoice: { enabled: true, printerId: "", copies: 1 },
           closes: { enabled: true, printerId: "", copies: 1 },
-          salesReport: { enabled: true, printerId: "", copies: 1 },
           document: { enabled: true, printerId: "", copies: 1 },
         },
       },
@@ -3327,8 +3524,6 @@ export async function printRestaurantOrder(req: Request, res: Response) {
         ? "electronicInvoice"
         : normalizedType === "CLOSES"
           ? "closes"
-          : normalizedType === "SALES_REPORT"
-            ? "salesReport"
             : normalizedType === "DOCUMENT"
               ? "document"
               : null;
@@ -3425,475 +3620,6 @@ export async function getRestaurantStats(req: Request, res: Response) {
     lastCloseAt: lastClose?.createdAt || null,
     byMethod,
   });
-}
-
-export async function getRestaurantReport(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user) return res.status(401).json({ message: "No autenticado" });
-  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
-
-  try {
-    const report = await buildRestaurantReport(user, req.query);
-    res.json(report);
-  } catch (err: any) {
-    const status = Number(err?.status || 500);
-    return res.status(status).json({ message: err?.message || "Error al generar reporte" });
-  }
-}
-
-export async function exportRestaurantReport(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user) return res.status(401).json({ message: "No autenticado" });
-  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
-
-  const format = String((req.query.format as string | undefined) || "csv").toLowerCase();
-  if (!["csv", "xlsx"].includes(format)) {
-    return res.status(400).json({ message: "format invalido (csv|xlsx)" });
-  }
-
-  try {
-    const report = await buildRestaurantReport(user, req.query);
-    const stamp = Date.now();
-    if (format === "xlsx") {
-      const buf = await buildRestaurantReportXlsx(report);
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      res.setHeader("Content-Disposition", `attachment; filename=\"restaurant-report-${stamp}.xlsx\"`);
-      return res.status(200).send(buf);
-    }
-
-    const csv = buildRestaurantReportCsv(report);
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename=\"restaurant-report-${stamp}.csv\"`);
-    return res.status(200).send(csv);
-  } catch (err: any) {
-    const status = Number(err?.status || 500);
-    return res.status(status).json({ message: err?.message || "Error al exportar reporte" });
-  }
-}
-
-async function buildRestaurantReport(user: AuthUser, query: any) {
-  const hotelId = user.hotelId;
-  const group = String((query?.group as string | undefined) || "article").trim();
-  const dateFromRaw = String((query?.dateFrom as string | undefined) || (query?.startDate as string | undefined) || "").trim();
-  const dateToRaw = String((query?.dateTo as string | undefined) || (query?.endDate as string | undefined) || "").trim();
-
-  const parseDate = (value: string, endOfDay = false) => {
-    if (!value) return null;
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
-    if (endOfDay) d.setHours(23, 59, 59, 999);
-    return d;
-  };
-
-  const dateFrom = parseDate(dateFromRaw, false);
-  const dateTo = parseDate(dateToRaw, true);
-  if (dateFromRaw && !dateFrom) throw Object.assign(new Error("dateFrom invalida"), { status: 400 });
-  if (dateToRaw && !dateTo) throw Object.assign(new Error("dateTo invalida"), { status: 400 });
-
-  const closes = await prisma.restaurantClose.findMany({
-    where: { hotelId },
-    orderBy: { createdAt: "desc" },
-    take: 30,
-  });
-  const lastClose = closes[0] || null;
-
-  const paidWhere: any = { hotelId, status: "PAID" };
-  if (dateFrom || dateTo) {
-    paidWhere.updatedAt = {
-      ...(dateFrom ? { gte: dateFrom } : {}),
-      ...(dateTo ? { lte: dateTo } : {}),
-    };
-  } else if (lastClose?.createdAt) {
-    paidWhere.updatedAt = { gte: lastClose.createdAt };
-  }
-
-  const paidOrders = await prisma.restaurantOrder.findMany({
-    where: paidWhere,
-    select: {
-      id: true,
-      total: true,
-      tip10: true,
-      paymentBreakdown: true,
-      updatedAt: true,
-      createdAt: true,
-      cashierId: true,
-      waiterId: true,
-    },
-    orderBy: { updatedAt: "desc" },
-    take: 5000,
-  });
-
-  const orderIdsForItems = paidOrders.map((o) => o.id);
-  const orderItemsForKpis = orderIdsForItems.length
-    ? await prisma.restaurantOrderItem.findMany({
-        where: { hotelId, orderId: { in: orderIdsForItems } },
-        select: { qty: true, price: true, orderId: true },
-      })
-    : [];
-
-  const systemTotal = paidOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
-  const ticketCount = paidOrders.length;
-  const ticketAvg = ticketCount > 0 ? systemTotal / ticketCount : 0;
-  const itemsQtyTotal = orderItemsForKpis.reduce((acc, it) => acc + asNumber(it.qty), 0);
-  const itemsPerTicket = ticketCount > 0 ? itemsQtyTotal / ticketCount : 0;
-
-  const salesByHour: Record<string, number> = {};
-  for (const order of paidOrders) {
-    const dt = order.updatedAt || order.createdAt;
-    if (!dt) continue;
-    const hour = new Date(dt).getHours();
-    const key = String(hour).padStart(2, "0") + ":00";
-    salesByHour[key] = (salesByHour[key] || 0) + asNumber(order.total);
-  }
-
-  const tipTotal = paidOrders.reduce((acc, o) => acc + asNumber((o as any).tip10), 0);
-  const byMethod: Record<string, number> = {};
-  for (const o of paidOrders) {
-    const pb = (o.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
-    for (const k of Object.keys(pb || {})) {
-      byMethod[k] = (byMethod[k] || 0) + asNumber(pb[k]);
-    }
-  }
-
-  const openOrders = await prisma.restaurantOrder.findMany({
-    where: { hotelId, status: "OPEN" },
-    select: { total: true },
-  });
-  const openOrderValue = openOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
-
-  const lastCloseReported = lastClose?.totals && typeof lastClose.totals === "object" ? asNumber((lastClose.totals as any).reported) : 0;
-  const lastCloseSystem = lastClose?.totals && typeof lastClose.totals === "object" ? asNumber((lastClose.totals as any).system) : 0;
-
-  const stats = {
-    systemTotal,
-    salesCount: paidOrders.length,
-    ticketAvg,
-    itemsPerTicket,
-    itemsQtyTotal,
-    salesByHour,
-    tipTotal,
-    byMethod,
-    openOrders: openOrders.length,
-    openOrderValue,
-    lastCloseAt: lastClose?.createdAt || null,
-    reportedTotal: lastCloseReported,
-    closeSystemTotal: lastCloseSystem,
-    closeDiff: lastCloseReported - lastCloseSystem,
-  };
-
-  const closesSorted = (closes || [])
-    .map((c) => ({ ...c, createdAt: c.createdAt ? new Date(c.createdAt) : null }))
-    .filter((c) => c.createdAt)
-    .sort((a, b) => (a.createdAt as any) - (b.createdAt as any));
-
-  const resolveCloseKey = (orderTime?: Date | null) => {
-    if (!orderTime) return "Sin cierre";
-    const match = closesSorted.find((c) => (c.createdAt as Date) >= orderTime);
-    if (!match) return "Sin cierre";
-    const label = `${match.turno ? `Turno ${match.turno} - ` : ""}${(match.createdAt as Date).toLocaleString()}`;
-    return `Cierre ${label}`;
-  };
-
-  const rows = new Map<string, { label: string; qty: number; total: number }>();
-  const addRow = (key: string, label: string, qty: number, total: number) => {
-    const prev = rows.get(key) || { label, qty: 0, total: 0 };
-    prev.qty += qty;
-    prev.total += total;
-    rows.set(key, prev);
-  };
-
-  const groupKey = String(group || "article").toLowerCase();
-
-  if (["date", "close", "cashier", "waiter"].includes(groupKey)) {
-    const staffIds = Array.from(
-      new Set(
-        paidOrders
-          .map((o) => (groupKey === "cashier" ? o.cashierId : o.waiterId))
-          .filter((x) => typeof x === "string" && x.trim())
-      )
-    ) as string[];
-    const staffList = staffIds.length
-      ? await prisma.restaurantStaff.findMany({
-          where: { hotelId, id: { in: staffIds } },
-          select: { id: true, name: true },
-        })
-      : [];
-    const staffById = new Map(staffList.map((s) => [s.id, s.name]));
-
-    for (const order of paidOrders) {
-      const orderTime = order.updatedAt || order.createdAt;
-      const orderDateKey = orderTime ? new Date(orderTime).toISOString().slice(0, 10) : "Sin fecha";
-      const orderTotal = asNumber(order.total);
-      if (groupKey === "date") {
-        addRow(orderDateKey, orderDateKey, 1, orderTotal);
-        continue;
-      }
-      if (groupKey === "close") {
-        const key = resolveCloseKey(orderTime || null);
-        addRow(key, key, 1, orderTotal);
-        continue;
-      }
-      if (groupKey === "cashier") {
-        const cashierId = order.cashierId ? String(order.cashierId) : "";
-        const label = cashierId ? staffById.get(cashierId) || cashierId : "Sin cajero";
-        addRow(cashierId || label, label, 1, orderTotal);
-        continue;
-      }
-      if (groupKey === "waiter") {
-        const waiterId = order.waiterId ? String(order.waiterId) : "";
-        const label = waiterId ? staffById.get(waiterId) || waiterId : "Sin mesero";
-        addRow(waiterId || label, label, 1, orderTotal);
-        continue;
-      }
-    }
-  } else {
-    const orderIds = paidOrders.map((o) => o.id);
-    const orderItems = orderIds.length
-      ? await prisma.restaurantOrderItem.findMany({
-          where: { hotelId, orderId: { in: orderIds } },
-          select: { itemId: true, name: true, price: true, qty: true, orderId: true },
-        })
-      : [];
-    const itemIds = Array.from(new Set(orderItems.map((i) => String(i.itemId)).filter(Boolean)));
-    const catalog = itemIds.length
-      ? await prisma.restaurantItem.findMany({
-          where: { hotelId, id: { in: itemIds } },
-          select: {
-            id: true,
-            code: true,
-            name: true,
-            family: { select: { name: true } },
-            subFamily: { select: { name: true } },
-            subSubFamily: { select: { name: true } },
-          },
-        })
-      : [];
-    const itemById = new Map(catalog.map((i) => [i.id, i]));
-
-    for (const item of orderItems) {
-      const qty = asNumber(item.qty);
-      const total = asNumber(item.price) * qty;
-      const catalogItem = itemById.get(String(item.itemId));
-      const family = catalogItem?.family?.name || "Sin familia";
-      const subFamily = catalogItem?.subFamily?.name || "Sin subfamilia";
-      const subSubFamily = catalogItem?.subSubFamily?.name || "Sin subsubfamilia";
-      const code = catalogItem?.code ? String(catalogItem.code) : String(item.itemId || "");
-      const name = String(item.name || catalogItem?.name || "Producto");
-
-      if (groupKey === "family") {
-        addRow(family, family, qty, total);
-      } else if (groupKey === "subfamily") {
-        addRow(subFamily, subFamily, qty, total);
-      } else if (groupKey === "subsubfamily") {
-        addRow(subSubFamily, subSubFamily, qty, total);
-      } else if (groupKey === "product") {
-        addRow(name, name, qty, total);
-      } else {
-        const label = code ? `${code} - ${name}` : name;
-        addRow(label, label, qty, total);
-      }
-    }
-  }
-
-  const history = Array.from(rows.values()).sort((a, b) => b.total - a.total);
-
-  return {
-    range: {
-      mode: dateFrom || dateTo ? "range" : "since_last_close",
-      dateFrom: dateFrom ? dateFrom.toISOString() : null,
-      dateTo: dateTo ? dateTo.toISOString() : null,
-    },
-    stats,
-    closes,
-    history,
-  };
-}
-
-function buildRestaurantReportCsv(report: any) {
-  const rows: any[] = [];
-  const stats = report?.stats || {};
-  const paymentsByMethod = stats?.byMethod || {};
-  const historyRows = report?.history || [];
-  const closes = report?.closes || [];
-
-  rows.push(["Metric", "Value"]);
-  rows.push(["System sales", stats?.systemTotal ?? 0]);
-  rows.push(["Sales count", stats?.salesCount ?? 0]);
-  rows.push(["Ticket promedio", stats?.ticketAvg ?? 0]);
-  rows.push(["Items por ticket", stats?.itemsPerTicket ?? 0]);
-  rows.push(["Items vendidos", stats?.itemsQtyTotal ?? 0]);
-  rows.push(["Tips", stats?.tipTotal ?? 0]);
-  rows.push(["Open orders", stats?.openOrders ?? 0]);
-  rows.push(["Value on tables", stats?.openOrderValue ?? 0]);
-  rows.push(["Last close", stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : ""]);
-  rows.push([]);
-  rows.push(["Payments by method", "Amount"]);
-  Object.entries(paymentsByMethod || {}).forEach(([method, amount]) => rows.push([method, amount]));
-  rows.push([]);
-  rows.push(["Sales by hour", "Amount"]);
-  Object.entries(stats?.salesByHour || {})
-    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-    .forEach(([hour, amount]) => rows.push([hour, amount]));
-  rows.push([]);
-  rows.push(["History", "Qty", "Total"]);
-  (historyRows || []).forEach((r: any) => rows.push([r.label, r.qty, r.total]));
-  rows.push([]);
-  rows.push(["Closes", "Turno", "System", "Reported", "Diff"]);
-  (closes || []).forEach((c: any) =>
-    rows.push([
-      c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
-      c.turno || "",
-      c.totals?.system ?? "",
-      c.totals?.reported ?? "",
-      c.totals?.diff ?? "",
-    ])
-  );
-
-  return rows
-    .map((r) => r.map((v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-}
-
-async function buildRestaurantReportXlsx(report: any) {
-  const wb = new ExcelJS.Workbook();
-  const stats = report?.stats || {};
-  const paymentsByMethod = stats?.byMethod || {};
-  const historyRows = report?.history || [];
-  const closes = report?.closes || [];
-
-  const kpis = wb.addWorksheet("KPIs");
-  kpis.addRow(["Metric", "Value"]);
-  kpis.addRows([
-    ["System sales", stats?.systemTotal ?? 0],
-    ["Sales count", stats?.salesCount ?? 0],
-    ["Ticket promedio", stats?.ticketAvg ?? 0],
-    ["Items por ticket", stats?.itemsPerTicket ?? 0],
-    ["Items vendidos", stats?.itemsQtyTotal ?? 0],
-    ["Tips", stats?.tipTotal ?? 0],
-    ["Open orders", stats?.openOrders ?? 0],
-    ["Value on tables", stats?.openOrderValue ?? 0],
-    ["Last close", stats?.lastCloseAt ? new Date(stats.lastCloseAt).toLocaleString() : ""],
-  ]);
-
-  const payments = wb.addWorksheet("Payments");
-  payments.addRow(["Method", "Amount"]);
-  Object.entries(paymentsByMethod || {}).forEach(([method, amount]) => payments.addRow([method, amount]));
-
-  const hours = wb.addWorksheet("SalesByHour");
-  hours.addRow(["Hour", "Amount"]);
-  Object.entries(stats?.salesByHour || {})
-    .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-    .forEach(([hour, amount]) => hours.addRow([hour, amount]));
-
-  const history = wb.addWorksheet("History");
-  history.addRow(["Group", "Qty", "Total"]);
-  (historyRows || []).forEach((r: any) => history.addRow([r.label, r.qty, r.total]));
-
-  const closesSheet = wb.addWorksheet("Closes");
-  closesSheet.addRow(["CreatedAt", "Turno", "System", "Reported", "Diff"]);
-  (closes || []).forEach((c: any) =>
-    closesSheet.addRow([
-      c.createdAt ? new Date(c.createdAt).toLocaleString() : "",
-      c.turno || "",
-      c.totals?.system ?? "",
-      c.totals?.reported ?? "",
-      c.totals?.diff ?? "",
-    ])
-  );
-
-  const buffer = await wb.xlsx.writeBuffer();
-  return Buffer.from(buffer);
-}
-
-export async function listRestaurantShiftInvoices(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user) return res.status(401).json({ message: "No autenticado" });
-  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
-  const hotelId = user.hotelId;
-
-  const lastClose = await prisma.restaurantClose.findFirst({
-    where: { hotelId },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
-  });
-
-  const paidWhere: any = { hotelId, status: "PAID" };
-  if (lastClose?.createdAt) paidWhere.updatedAt = { gte: lastClose.createdAt };
-
-  const orders = await prisma.restaurantOrder.findMany({
-    where: paidWhere,
-    orderBy: { updatedAt: "desc" },
-    take: 500,
-    select: { id: true, tableId: true, total: true, updatedAt: true, createdAt: true, serviceType: true, roomId: true },
-  });
-
-  const orderIds = orders.map((o) => o.id);
-  const docs = orderIds.length
-    ? await prisma.eInvoicingDocument.findMany({
-        where: { hotelId, restaurantOrderId: { in: orderIds } },
-        orderBy: { createdAt: "desc" },
-        select: {
-          id: true,
-          restaurantOrderId: true,
-          docType: true,
-          status: true,
-          consecutive: true,
-          key: true,
-          createdAt: true,
-        },
-      })
-    : [];
-
-  const docByOrder = new Map<string, (typeof docs)[number]>();
-  for (const d of docs) {
-    if (d.restaurantOrderId && !docByOrder.has(d.restaurantOrderId)) docByOrder.set(d.restaurantOrderId, d);
-  }
-
-  // Backfill TE documents for paid orders that still don't have a document.
-  for (const order of orders) {
-    if (docByOrder.has(order.id)) continue;
-    try {
-      const created = await issueRestaurantDocForOrder({
-        hotelId,
-        order,
-        docType: "TE",
-        allowLocal: true,
-      });
-      if (created?.restaurantOrderId && !docByOrder.has(created.restaurantOrderId)) {
-        docByOrder.set(created.restaurantOrderId, created as any);
-      }
-    } catch (err) {
-      console.warn("[restaurant.shift] auto-doc backfill failed:", err);
-    }
-  }
-
-  res.json(
-    orders.map((order) => {
-      const doc = docByOrder.get(order.id);
-      return {
-        id: doc?.id || `order-${order.id}`,
-        restaurantOrderId: order.id,
-        docType: doc?.docType || "TE",
-        status: doc?.status || "NO_DOC",
-        consecutive: doc?.consecutive || "",
-        key: doc?.key || "",
-        createdAt: doc?.createdAt || order.updatedAt || order.createdAt,
-        hasDoc: Boolean(doc),
-        order: {
-          id: order.id,
-          tableId: fromInternalId(hotelId, order.tableId),
-          total: order.total,
-          updatedAt: order.updatedAt,
-          createdAt: order.createdAt,
-          serviceType: order.serviceType,
-          roomId: order.roomId,
-        },
-      };
-    })
-  );
 }
 
 export async function listKds(req: Request, res: Response) {
@@ -4022,8 +3748,8 @@ export async function openRestaurantShift(req: Request, res: Response) {
   if (existing) return res.json({ open: true, shift: buildShiftPayload(existing) });
 
   const openingAmount = asNumber(req.body?.openingAmount ?? req.body?.amount ?? req.body?.monto);
-  if (openingAmount < 0) {
-    return res.status(400).json({ message: "El monto de apertura no puede ser negativo" });
+  if (!Number.isFinite(openingAmount) || openingAmount <= 0) {
+    return res.status(400).json({ message: "Debes ingresar un monto de apertura mayor a 0" });
   }
 
   const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
@@ -4050,101 +3776,135 @@ export async function closeShift(req: Request, res: Response) {
   if (!user) return res.status(401).json({ message: "No autenticado" });
   if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
 
-  const role = (user.role || "").toUpperCase();
-  if (!["ADMIN", "MANAGER"].includes(role)) {
-    return res.status(403).json({ message: "Solo ADMIN/MANAGER pueden cerrar turno" });
+  try {
+    const role = (user.role || "").toUpperCase();
+    if (!["ADMIN", "MANAGER"].includes(role)) {
+      return res.status(403).json({ message: "Solo ADMIN/MANAGER pueden cerrar turno" });
+    }
+
+    const openShift = await prisma.cashAudit.findFirst({
+      where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
+      orderBy: { openedAt: "desc" },
+    });
+    if (!openShift) {
+      return res.status(400).json({ message: "No hay turno abierto" });
+    }
+
+    const { totals, payments, note, breakdown } = req.body || {};
+
+    const openOrders = await prisma.restaurantOrder.count({
+      where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
+    });
+    if (openOrders > 0) {
+      return res.status(400).json({ message: "No se puede cerrar turno con ?rdenes abiertas" });
+    }
+
+    const totalsObj = totals && typeof totals === "object" ? (totals as any) : null;
+    const paymentsObj = payments && typeof payments === "object" ? (payments as Record<string, unknown>) : null;
+    const hasTotalsDeclared =
+      totalsObj &&
+      (Object.prototype.hasOwnProperty.call(totalsObj, "reported") ||
+        Object.prototype.hasOwnProperty.call(totalsObj, "system"));
+    const hasPaymentsDeclared = paymentsObj && Object.keys(paymentsObj).length > 0;
+    if (!hasTotalsDeclared && !hasPaymentsDeclared) {
+      return res.status(400).json({ message: "Debes declarar un monto (>= 0)" });
+    }
+
+    const lastClose = await prisma.restaurantClose.findFirst({
+      where: { hotelId: user.hotelId },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    const paidWhere: any = { hotelId: user.hotelId, status: "PAID" };
+    if (lastClose?.createdAt) paidWhere.updatedAt = { gte: lastClose.createdAt };
+    const paidOrders = await prisma.restaurantOrder.findMany({
+      where: paidWhere,
+      select: { total: true },
+    });
+    const system = paidOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
+
+    const reportedFromTotals =
+      totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "reported")
+        ? asNumber(totalsObj.reported)
+        : undefined;
+    const systemFromTotals =
+      totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "system")
+        ? asNumber(totalsObj.system)
+        : undefined;
+    const reportedFromPayments = paymentsObj
+      ? Object.values(paymentsObj).reduce<number>((acc, v) => acc + asNumber(v), 0)
+      : 0;
+
+    const reported =
+      reportedFromTotals !== undefined
+        ? reportedFromTotals
+        : systemFromTotals !== undefined
+          ? systemFromTotals
+          : reportedFromPayments;
+
+    if (reported < 0) {
+      return res.status(400).json({ message: "El monto declarado no puede ser negativo" });
+    }
+
+    const safeTotals = { system, reported, diff: reported - system };
+
+    const closedAt = new Date();
+    const openingAmount = asNumber((openShift?.totals as any)?.openingAmount ?? (openShift?.details as any)?.openingAmount);
+    const close = await prisma.$transaction(async (tx) => {
+      const createdClose = await tx.restaurantClose.create({
+        data: {
+          hotel: { connect: { id: user.hotelId } },
+          turno: `T-${Date.now()}`,
+          totals: safeTotals as any,
+          payments: (payments || {}) as any,
+          breakdown: breakdown || {},
+          note: note || "",
+          userId: user.sub,
+        },
+      });
+
+      await tx.cashAudit.updateMany({
+        where: { id: openShift.id, hotelId: user.hotelId },
+        data: {
+          closedAt,
+          totals: { openingAmount, ...safeTotals } as any,
+          details: { payments: payments || {}, breakdown: breakdown || {}, closeId: createdClose.id } as any,
+          note: (note || openShift.note || "").trim() || null,
+        },
+      });
+
+
+      await recordOrderEvent(tx, {
+        hotelId: user.hotelId || "",
+        orderId: null,
+        eventType: "SHIFT_CLOSE",
+        actorId: user.sub,
+        payload: {
+          shiftId: openShift.id,
+          closeId: createdClose.id,
+          totals: safeTotals,
+          payments: payments || {},
+          breakdown: breakdown || {},
+          openingAmount,
+          openedAt: openShift.openedAt ?? null,
+          closedAt,
+        } as any,
+      });
+
+      return createdClose;
+    });
+
+    res.json({ ok: true, close });
+  } catch (err) {
+    console.error("[restaurant.closeShift] failed:", err);
+    const detail =
+      process.env.NODE_ENV === "production"
+        ? undefined
+        : err instanceof Error
+          ? err.message
+          : String(err);
+    res.status(500).json({ message: "No se pudo cerrar turno", detail });
   }
-
-  const openShift = await prisma.cashAudit.findFirst({
-    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
-    orderBy: { openedAt: "desc" },
-  });
-  if (!openShift) {
-    return res.status(400).json({ message: "No hay turno abierto" });
-  }
-
-  const { totals, payments, note, breakdown } = req.body || {};
-
-  const openOrders = await prisma.restaurantOrder.count({
-    where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
-  });
-  if (openOrders > 0) {
-    return res.status(400).json({ message: "No se puede cerrar turno con ?rdenes abiertas" });
-  }
-
-  const totalsObj = totals && typeof totals === "object" ? (totals as any) : null;
-  const paymentsObj = payments && typeof payments === "object" ? (payments as Record<string, unknown>) : null;
-  const hasTotalsDeclared =
-    totalsObj &&
-    (Object.prototype.hasOwnProperty.call(totalsObj, "reported") ||
-      Object.prototype.hasOwnProperty.call(totalsObj, "system"));
-  const hasPaymentsDeclared = paymentsObj && Object.keys(paymentsObj).length > 0;
-  if (!hasTotalsDeclared && !hasPaymentsDeclared) {
-    return res.status(400).json({ message: "Debes declarar un monto (>= 0)" });
-  }
-
-  const lastClose = await prisma.restaurantClose.findFirst({
-    where: { hotelId: user.hotelId },
-    orderBy: { createdAt: "desc" },
-    select: { createdAt: true },
-  });
-  const paidWhere: any = { hotelId: user.hotelId, status: "PAID" };
-  if (lastClose?.createdAt) paidWhere.updatedAt = { gte: lastClose.createdAt };
-  const paidOrders = await prisma.restaurantOrder.findMany({
-    where: paidWhere,
-    select: { total: true },
-  });
-  const system = paidOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
-
-  const reportedFromTotals =
-    totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "reported")
-      ? asNumber(totalsObj.reported)
-      : undefined;
-  const systemFromTotals =
-    totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "system")
-      ? asNumber(totalsObj.system)
-      : undefined;
-  const reportedFromPayments = paymentsObj
-    ? Object.values(paymentsObj).reduce<number>((acc, v) => acc + asNumber(v), 0)
-    : 0;
-
-  const reported =
-    reportedFromTotals !== undefined
-      ? reportedFromTotals
-      : systemFromTotals !== undefined
-        ? systemFromTotals
-        : reportedFromPayments;
-
-  if (reported < 0) {
-    return res.status(400).json({ message: "El monto declarado no puede ser negativo" });
-  }
-
-  const safeTotals = { system, reported, diff: reported - system };
-
-  const close = await prisma.restaurantClose.create({
-    data: {
-      hotelId: user.hotelId,
-      turno: `T-${Date.now()}`,
-      totals: safeTotals as any,
-      payments: (payments || {}) as any,
-      breakdown: breakdown || {},
-      note: note || "",
-      userId: user.sub,
-    },
-  });
-
-  const openingAmount = asNumber((openShift?.totals as any)?.openingAmount ?? (openShift?.details as any)?.openingAmount);
-  await prisma.cashAudit.update({
-    where: { id: openShift.id },
-    data: {
-      closedAt: new Date(),
-      totals: { openingAmount, ...safeTotals } as any,
-      details: { payments: payments || {}, breakdown: breakdown || {}, closeId: close.id } as any,
-      note: (note || openShift.note || "").trim() || null,
-    },
-  });
-
-  res.json({ ok: true, close });
 }
 
 const STAFF_ROLES = new Set<RestaurantStaffRole>(["CASHIER", "WAITER"]);
@@ -4157,6 +3917,21 @@ const normalizeStaffRole = (value: unknown): RestaurantStaffRole | undefined => 
 };
 
 const normalizeStaffUsername = (value: unknown) => String(value ?? "").trim().toLowerCase();
+
+const recordOrderEvent = async (
+  tx: { restaurantOrderEvent: { create: (args: Prisma.RestaurantOrderEventCreateArgs) => Promise<unknown> } },
+  opts: { hotelId: string; orderId?: string | null; eventType: string; actorId?: string | null; payload?: Prisma.InputJsonValue | null }
+) => {
+  await tx.restaurantOrderEvent.create({
+    data: {
+      hotelId: opts.hotelId,
+      orderId: opts.orderId || null,
+      eventType: opts.eventType,
+      actorId: opts.actorId || null,
+      payload: opts.payload ?? undefined,
+    },
+  });
+};
 
 const sanitizeStaff = (staff: any) => ({
   id: staff.id,

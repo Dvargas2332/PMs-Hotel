@@ -81,16 +81,20 @@ export default function Login({ onSuccess }) {
           </div>
 
           <Card className="p-6 shadow-lg border border-slate-200/80">
-            <form onSubmit={submit} className="space-y-4">
+            <form onSubmit={submit} className="space-y-4" autoComplete="off">
+              <input type="text" name="fake_username" autoComplete="username" className="hidden" />
+              <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
               <div className="space-y-1">
                 <label className="text-sm font-medium text-slate-700">{t("login.email")}</label>
                 <Input
                   type="text"
+                  name="login_email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t("login.emailPlaceholder")}
                   required
                   autoFocus
+                  autoComplete="off"
                 />
               </div>
 
@@ -100,10 +104,12 @@ export default function Login({ onSuccess }) {
                 </label>
                 <Input
                   type="password"
+                  name="login_password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={t("login.passwordPlaceholder")}
                   required
+                  autoComplete="new-password"
                 />
               </div>
 

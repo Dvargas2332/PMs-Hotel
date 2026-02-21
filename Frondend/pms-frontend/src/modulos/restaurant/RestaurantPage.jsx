@@ -16,8 +16,23 @@ const TABURETE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/taburete-free.png`;
 const TABURETE_OCCUPIED_ICON_URL = `${BASE_URL}assets/restaurant/taburete-occupied.png`;
 const BAR_DECOR_ICON_URL = `${BASE_URL}assets/restaurant/bar.svg`;
 
+let currencySymbol = "$";
+const resolveCurrencySymbol = (code) => {
+  const c = String(code || "").toUpperCase();
+  if (c === "CRC" || c === "₡") return "₡";
+  if (c === "USD" || c === "$") return "$";
+  if (c === "EUR" || c === "€") return "€";
+  if (c === "GBP" || c === "£") return "£";
+  if (c === "MXN") return "$";
+  return c ? `${c} ` : "$";
+};
+
 function formatMoney(n) {
-  return `$${(Number(n) || 0).toFixed(2)}`;
+  return `${currencySymbol}${(Number(n) || 0).toFixed(2)}`;
+}
+function asNumber(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function asInt(n, fallback = 0) {
@@ -69,6 +84,7 @@ function buildPrintPreviewText({ title, payload, totals }) {
     const service = t.service ?? t.servicio;
     if (service != null) lines.push(`Servicio: ${formatMoney(service)}`);
     if (tax != null) lines.push(`Impuesto: ${formatMoney(tax)}`);
+    if (t?.discountTotal) lines.push(`Descuento: ${formatMoney(t.discountTotal)}`);
     if (total != null) lines.push(`Total: ${formatMoney(total)}`);
   }
 
@@ -247,6 +263,8 @@ const buildLocalOrder = (overrides = {}) => ({
   status: "NEW",
   serviceType: "DINE_IN",
   roomId: "",
+  discountId: "",
+  discountPercent: 0,
   ...overrides,
 });
 
@@ -306,7 +324,6 @@ const [subCategory, setSubCategory] = useState("");
       ticket: { enabled: true, printerId: "", copies: 1 },
       electronicInvoice: { enabled: true, printerId: "", copies: 1 },
       closes: { enabled: true, printerId: "", copies: 1 },
-      salesReport: { enabled: true, printerId: "", copies: 1 },
       document: { enabled: true, printerId: "", copies: 1 },
     },
   });
@@ -315,9 +332,12 @@ const [subCategory, setSubCategory] = useState("");
   const [closeForm, setCloseForm] = useState({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
   const [closeLoading, setCloseLoading] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
-  const [closeType, setCloseType] = useState("X");
+  const [closeStage, setCloseStage] = useState("X");
+  const [closeAuditOk, setCloseAuditOk] = useState(false);
+  const [closeSnapshot, setCloseSnapshot] = useState(null);
   const [shiftModalOpen, setShiftModalOpen] = useState(false);
-  const [shiftOpenForm, setShiftOpenForm] = useState({ amount: "", note: "" });
+  const [shiftOpenForm, setShiftOpenForm] = useState({ amount: "", note: "", staffId: "" });
+  const [shiftKeypadTarget, setShiftKeypadTarget] = useState("password");
   const [shiftOpenBusy, setShiftOpenBusy] = useState(false);
   const [shiftOpenError, setShiftOpenError] = useState("");
   const [shiftLoading, setShiftLoading] = useState(true);
@@ -340,6 +360,7 @@ const [subCategory, setSubCategory] = useState("");
     permitirDescuentos: true,
     impuestoIncluido: true,
   });
+  const [discountsList, setDiscountsList] = useState([]);
   const [paymentsCfg, setPaymentsCfg] = useState({
     monedaBase: "CRC",
     monedaSec: "USD",
@@ -373,11 +394,21 @@ const [subCategory, setSubCategory] = useState("");
   const activeStaffRef = useRef(null);
   const [staffLoginOpen, setStaffLoginOpen] = useState(true);
   const [staffLoginForm, setStaffLoginForm] = useState({ username: "", password: "" });
+  const [staffOptions, setStaffOptions] = useState([]);
+  const [staffOptionsLoading, setStaffOptionsLoading] = useState(false);
   const [staffLoginBusy, setStaffLoginBusy] = useState(false);
   const [staffLoginError, setStaffLoginError] = useState("");
 
   const role = useMemo(() => (user?.role || "").toUpperCase(), [user?.role]);
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
+  const discountOptions = useMemo(
+    () =>
+      (discountsList || []).filter(
+        (d) => d && d.active !== false && String(d.type || "percent").toLowerCase() === "percent"
+      ),
+    [discountsList]
+  );
+  const discountById = useMemo(() => new Map(discountOptions.map((d) => [String(d.id), d])), [discountOptions]);
   const quickCashSections = useMemo(
     () => (sections || []).filter((s) => s?.quickCashEnabled),
     [sections]
@@ -409,6 +440,70 @@ const [subCategory, setSubCategory] = useState("");
   useEffect(() => {
     if (activeStaff) setStaffLoginOpen(false);
   }, [activeStaff]);
+
+  useEffect(() => {
+    currencySymbol = resolveCurrencySymbol(paymentsCfg.monedaBase);
+  }, [paymentsCfg.monedaBase]);
+
+  const loadStaffOptions = useCallback(async () => {
+    setStaffOptionsLoading(true);
+    try {
+      const { data } = await api.get("/restaurant/staff");
+      const list = Array.isArray(data) ? data : [];
+      setStaffOptions(list.filter((s) => s?.active !== false));
+    } catch {
+      setStaffOptions([]);
+    } finally {
+      setStaffOptionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (staffLoginOpen) {
+      loadStaffOptions();
+    }
+  }, [staffLoginOpen, loadStaffOptions]);
+  useEffect(() => {
+    if (shiftModalOpen) {
+      loadStaffOptions();
+    }
+  }, [shiftModalOpen, loadStaffOptions]);
+
+  const handleStaffDigit = useCallback((digit) => {
+    if (shiftModalOpen) {
+      if (shiftKeypadTarget === "amount") {
+        setShiftOpenForm((prev) => ({ ...prev, amount: `${prev.amount || ""}${digit}`.slice(0, 12) }));
+        return;
+      }
+      setStaffLoginForm((prev) => ({ ...prev, password: `${prev.password || ""}${digit}`.slice(0, 12) }));
+      return;
+    }
+    setStaffLoginForm((prev) => ({ ...prev, password: `${prev.password || ""}${digit}`.slice(0, 12) }));
+  }, [shiftKeypadTarget, shiftModalOpen]);
+
+  const handleStaffBackspace = useCallback(() => {
+    if (shiftModalOpen) {
+      if (shiftKeypadTarget === "amount") {
+        setShiftOpenForm((prev) => ({ ...prev, amount: (prev.amount || "").slice(0, -1) }));
+        return;
+      }
+      setStaffLoginForm((prev) => ({ ...prev, password: (prev.password || "").slice(0, -1) }));
+      return;
+    }
+    setStaffLoginForm((prev) => ({ ...prev, password: (prev.password || "").slice(0, -1) }));
+  }, [shiftKeypadTarget, shiftModalOpen]);
+
+  const handleStaffClear = useCallback(() => {
+    if (shiftModalOpen) {
+      if (shiftKeypadTarget === "amount") {
+        setShiftOpenForm((prev) => ({ ...prev, amount: "" }));
+        return;
+      }
+      setStaffLoginForm((prev) => ({ ...prev, password: "" }));
+      return;
+    }
+    setStaffLoginForm((prev) => ({ ...prev, password: "" }));
+  }, [shiftKeypadTarget, shiftModalOpen]);
 
   const formatElapsed = useCallback(
     (iso) => {
@@ -700,12 +795,12 @@ const subCategories = useMemo(() => {
   );
 
   const currentOrder = useMemo(() => {
-    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge };
+    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, discountId: "", discountPercent: 0 };
     const list = selectedTableOrders;
     const byKey = list.find((o) => getOrderKey(o) && getOrderKey(o) === activeOrderKey);
     const stored = byKey || list[0];
     if (!stored) {
-      return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge };
+      return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, discountId: "", discountPercent: 0 };
     }
     return {
       ...stored,
@@ -716,6 +811,8 @@ const subCategories = useMemo(() => {
       updatedAt: stored?.updatedAt,
       serviceType: stored?.serviceType || serviceType,
       roomId: stored?.roomId || roomCharge,
+      discountId: stored?.discountId || "",
+      discountPercent: Number(stored?.discountPercent || 0) || 0,
     };
   }, [selectedTable?.id, selectedTableOrders, activeOrderKey, covers, orderNote, serviceType, roomCharge]);
 
@@ -772,16 +869,19 @@ const subCategories = useMemo(() => {
         const qty = Number(i.qty || 0);
         const price = Number(i.price || 0);
         const gross = price * qty;
+        const itemDiscountRate = Math.min(100, Math.max(0, Number(i.discountPercent || 0))) / 100;
+        const discountedGross = gross * (1 - itemDiscountRate);
+        acc.discountItems += gross - discountedGross;
         const includes = i?.priceIncludesTaxesAndService !== false;
         if (includes) {
           const denom = 1 + serviceRate + taxRate;
-          const net = denom > 0 ? gross / denom : gross;
+          const net = denom > 0 ? discountedGross / denom : discountedGross;
           acc.subtotal += net;
           acc.service += net * serviceRate;
           acc.tax += net * taxRate;
-          acc.total += gross;
+          acc.total += discountedGross;
         } else {
-          const net = gross;
+          const net = discountedGross;
           acc.subtotal += net;
           acc.service += net * serviceRate;
           acc.tax += net * taxRate;
@@ -789,19 +889,63 @@ const subCategories = useMemo(() => {
         }
         return acc;
       },
-      { subtotal: 0, service: 0, tax: 0, total: 0 }
+      { subtotal: 0, service: 0, tax: 0, total: 0, discountItems: 0 }
     );
-    return sums;
-  }, [currentOrder.items, taxesCfg.iva, taxesCfg.servicio]);
+    const orderDiscountRate = Math.min(100, Math.max(0, Number(currentOrder.discountPercent || 0))) / 100;
+    const orderDiscount = sums.total * orderDiscountRate;
+    const factor = sums.total > 0 ? (sums.total - orderDiscount) / sums.total : 1;
+    return {
+      subtotal: sums.subtotal * factor,
+      service: sums.service * factor,
+      tax: sums.tax * factor,
+      total: sums.total * factor,
+      discountItems: sums.discountItems,
+      discountOrder: orderDiscount,
+      discountTotal: sums.discountItems + orderDiscount,
+    };
+  }, [currentOrder.items, currentOrder.discountPercent, taxesCfg.iva, taxesCfg.servicio]);
 
   const systemTotal = useMemo(() => {
     if (typeof stats.systemTotal === "number") return stats.systemTotal || 0;
+    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
+    const taxRate = Number(taxesCfg.iva || 0) / 100;
+    const computeOrderTotal = (order) => {
+      const sums = (order?.items || []).reduce(
+        (acc, i) => {
+          const qty = Number(i.qty || 0);
+          const price = Number(i.price || 0);
+          const gross = price * qty;
+          const itemDiscountRate = Math.min(100, Math.max(0, Number(i.discountPercent || 0))) / 100;
+          const discountedGross = gross * (1 - itemDiscountRate);
+          const includes = i?.priceIncludesTaxesAndService !== false;
+          if (includes) {
+            const denom = 1 + serviceRate + taxRate;
+            const net = denom > 0 ? discountedGross / denom : discountedGross;
+            acc.total += discountedGross;
+            acc.subtotal += net;
+            acc.service += net * serviceRate;
+            acc.tax += net * taxRate;
+          } else {
+            const net = discountedGross;
+            acc.subtotal += net;
+            acc.service += net * serviceRate;
+            acc.tax += net * taxRate;
+            acc.total += net + net * serviceRate + net * taxRate;
+          }
+          return acc;
+        },
+        { subtotal: 0, service: 0, tax: 0, total: 0 }
+      );
+      const orderDiscountRate = Math.min(100, Math.max(0, Number(order?.discountPercent || 0))) / 100;
+      const orderDiscount = sums.total * orderDiscountRate;
+      return sums.total - orderDiscount;
+    };
     return Object.values(ordersByTable).reduce((acc, entry) => {
       const list = normalizeOrderList(entry);
-      const tableSum = list.reduce((sum, o) => sum + (o.items || []).reduce((s, i) => s + i.price * i.qty, 0), 0);
+      const tableSum = list.reduce((sum, o) => sum + computeOrderTotal(o), 0);
       return acc + tableSum;
     }, 0);
-  }, [stats.systemTotal, ordersByTable]);
+  }, [stats.systemTotal, ordersByTable, taxesCfg.iva, taxesCfg.servicio]);
 
   const reportedTotal = useMemo(
     () => sumNumbers({ cash: closeForm.cash, card: closeForm.card, sinpe: closeForm.sinpe, transfer: closeForm.transfer, room: closeForm.room }),
@@ -813,6 +957,7 @@ const subCategories = useMemo(() => {
     const diff = reportedTotal - sys;
     return { system: sys, reported: reportedTotal, diff };
   }, [systemTotal, reportedTotal]);
+  const auditTotals = closeSnapshot?.totals || closeSummary;
 
   const paymentTotal = useMemo(() => sumNumbers(paymentForm), [paymentForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
@@ -861,6 +1006,52 @@ const subCategories = useMemo(() => {
 
     return methods;
   }, [paymentsCfg?.paymentMethods, paymentsCfg?.cobros, paymentsCfg?.cargoHabitacion]);
+
+  const closeMethodRows = useMemo(() => {
+    const byMethod = stats?.byMethod && typeof stats.byMethod === "object" ? stats.byMethod : {};
+    const labelMap = new Map((availablePaymentMethods || []).map((m) => [String(m.key), String(m.name || m.key)]));
+    return Object.entries(byMethod).map(([key, amount]) => ({
+      key,
+      label: labelMap.get(String(key)) || String(key),
+      amount: asNumber(amount),
+    }));
+  }, [stats?.byMethod, availablePaymentMethods]);
+  const closeInputDefs = useMemo(() => {
+    const labelMap = new Map((availablePaymentMethods || []).map((m) => [String(m.key), String(m.name || m.key)]));
+    const base = [
+      { key: "cash", label: labelMap.get("cash") || "Cash" },
+      { key: "card", label: labelMap.get("card") || "Card" },
+      { key: "sinpe", label: labelMap.get("sinpe") || "SINPE" },
+      { key: "transfer", label: labelMap.get("transfer") || "Bank transfer" },
+      { key: "room", label: labelMap.get("room") || "Room charge" },
+    ];
+    const enabledKeys = new Set((availablePaymentMethods || []).map((m) => String(m.key)));
+    if (paymentsCfg?.cargoHabitacion) enabledKeys.add("room");
+    return base.filter((item) => enabledKeys.has(item.key));
+  }, [availablePaymentMethods, paymentsCfg?.cargoHabitacion]);
+  const closeCompareRows = useMemo(() => {
+    const byMethod = stats?.byMethod && typeof stats.byMethod === "object" ? stats.byMethod : {};
+    return (closeInputDefs || []).map((item) => ({
+      key: item.key,
+      label: item.label,
+      amount: asNumber(byMethod[item.key] ?? 0),
+    }));
+  }, [closeInputDefs, stats?.byMethod]);
+
+  const auditRows = useMemo(() => {
+    const byMethod =
+      closeSnapshot?.byMethod && typeof closeSnapshot.byMethod === "object"
+        ? closeSnapshot.byMethod
+        : stats?.byMethod && typeof stats.byMethod === "object"
+          ? stats.byMethod
+          : {};
+    const labelMap = new Map((availablePaymentMethods || []).map((m) => [String(m.key), String(m.name || m.key)]));
+    return Object.entries(byMethod).map(([key, amount]) => ({
+      key,
+      label: labelMap.get(String(key)) || String(key),
+      amount: asNumber(amount),
+    }));
+  }, [closeSnapshot?.byMethod, stats?.byMethod, availablePaymentMethods]);
 
   const selectedPaymentMethods = useMemo(() => {
     if (!selectedPaymentKeys.length) return [];
@@ -929,22 +1120,35 @@ const subCategories = useMemo(() => {
     }
   }, []);
 
-  const openShift = useCallback(async () => {
+  const openShift = useCallback(async (staffIdOverride = "") => {
     if (shiftOpenBusy) return;
     const amountValue = parseMoneyInput(shiftOpenForm.amount || 0);
-    if (!Number.isFinite(amountValue) || amountValue < 0) {
-      setShiftOpenError("Monto de apertura inválido.");
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      setShiftOpenError("Debes ingresar un monto de apertura mayor a 0.");
       return;
     }
+    const staffId = String(staffIdOverride || shiftOpenForm.staffId || "").trim();
+    if (!staffId) {
+      setShiftOpenError("Selecciona un usuario para la apertura.");
+      return;
+    }
+    const staff = (staffOptions || []).find((s) => String(s?.id) === staffId);
     setShiftOpenBusy(true);
     setShiftOpenError("");
     try {
+      const noteParts = [];
+      if (staff) {
+        const roleLabel = staffRoleLabel(staff.role || "");
+        noteParts.push(`Apertura por ${staff.name || staff.username || "usuario"} (${roleLabel})`);
+      }
+      if (shiftOpenForm.note) noteParts.push(String(shiftOpenForm.note || "").trim());
+      const note = noteParts.filter(Boolean).join(" | ") || undefined;
       const { data } = await api.post("/restaurant/shift/open", {
         openingAmount: amountValue,
-        note: String(shiftOpenForm.note || "").trim() || undefined,
+        note,
       });
       setShiftModalOpen(false);
-      setShiftOpenForm({ amount: "", note: "" });
+      setShiftOpenForm({ amount: "", note: "", staffId: "" });
       if (data?.shift?.openedAt) {
         setOpenInfo((prev) => ({ ...prev, openedAt: data.shift.openedAt }));
       }
@@ -955,7 +1159,36 @@ const subCategories = useMemo(() => {
     } finally {
       setShiftOpenBusy(false);
     }
-  }, [shiftOpenBusy, shiftOpenForm.amount, shiftOpenForm.note]);
+  }, [shiftOpenBusy, shiftOpenForm.amount, shiftOpenForm.note, shiftOpenForm.staffId, staffOptions]);
+
+  const openShiftWithLogin = useCallback(async () => {
+    if (staffLoginBusy || shiftOpenBusy) return;
+    setStaffLoginError("");
+    setShiftOpenError("");
+    const username = String(staffLoginForm.username || "").trim();
+    const password = String(staffLoginForm.password || "").trim();
+    if (!username || !password) {
+      setStaffLoginError("Usuario y password requeridos.");
+      return;
+    }
+    setStaffLoginBusy(true);
+    try {
+      const { data } = await api.post("/restaurant/staff/login", { username, password });
+      setActiveStaff(data || null);
+      setStaffLoginForm({ username: "", password: "" });
+      const staff = (staffOptions || []).find((s) => String(s?.username || "") === username);
+      const staffId = staff?.id ? String(staff.id) : "";
+      if (staffId) {
+        setShiftOpenForm((f) => ({ ...f, staffId }));
+      }
+      await openShift(staffId);
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "No se pudo iniciar.";
+      setStaffLoginError(msg);
+    } finally {
+      setStaffLoginBusy(false);
+    }
+  }, [staffLoginBusy, shiftOpenBusy, staffLoginForm.username, staffLoginForm.password, staffOptions, openShift]);
 
   useEffect(() => {
     refreshShiftStatus();
@@ -1094,6 +1327,12 @@ const subCategories = useMemo(() => {
       }
     } catch {
       setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false, paymentMethods: [] });
+    }
+    try {
+      const { data } = await api.get("/discounts");
+      setDiscountsList(Array.isArray(data) ? data : []);
+    } catch {
+      setDiscountsList([]);
     }
   }, []);
 
@@ -1606,6 +1845,8 @@ const subCategories = useMemo(() => {
       covers: currentOrder.covers || covers || 0,
       serviceType: currentOrder.serviceType || serviceType || "DINE_IN",
       roomId: currentOrder.roomId || roomCharge || "",
+      discountId: currentOrder.discountId || "",
+      discountPercent: Number(currentOrder.discountPercent || 0) || 0,
     });
     queueOrderSave({
       orderId: newOrder.id || newOrder.orderId || undefined,
@@ -1618,6 +1859,8 @@ const subCategories = useMemo(() => {
       covers: newOrder.covers || 0,
       serviceType: newOrder.serviceType || serviceType || "DINE_IN",
       roomId: newOrder.roomId || roomCharge || "",
+      discountId: "",
+      discountPercent: 0,
     });
 
     if (splitOrderCount === 3) {
@@ -1643,6 +1886,8 @@ const subCategories = useMemo(() => {
         covers: newOrderC.covers || 0,
         serviceType: newOrderC.serviceType || serviceType || "DINE_IN",
         roomId: newOrderC.roomId || roomCharge || "",
+        discountId: "",
+        discountPercent: 0,
       });
     }
 
@@ -1850,6 +2095,8 @@ const subCategories = useMemo(() => {
           covers: merged.covers || 0,
           serviceType: merged.serviceType || "DINE_IN",
           roomId: merged.roomId || "",
+          discountId: merged.discountId || "",
+          discountPercent: Number(merged.discountPercent || 0) || 0,
           waiterId: merged.waiterId || undefined,
         });
 
@@ -1980,6 +2227,8 @@ const subCategories = useMemo(() => {
         covers: fromSnapshot.covers || 0,
         serviceType: fromSnapshot.serviceType || "DINE_IN",
         roomId: fromSnapshot.roomId || "",
+        discountId: fromSnapshot.discountId || "",
+        discountPercent: Number(fromSnapshot.discountPercent || 0) || 0,
       });
     }
     if (toSnapshot) {
@@ -1994,6 +2243,8 @@ const subCategories = useMemo(() => {
         covers: toSnapshot.covers || 0,
         serviceType: toSnapshot.serviceType || "DINE_IN",
         roomId: toSnapshot.roomId || "",
+        discountId: toSnapshot.discountId || "",
+        discountPercent: Number(toSnapshot.discountPercent || 0) || 0,
       });
     }
     if (newOrderKey) {
@@ -2065,6 +2316,27 @@ const subCategories = useMemo(() => {
   const handleRoomChargeChange = (value) => {
     setRoomCharge(value);
     if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, roomId: value }));
+  };
+
+  const handleOrderDiscountChange = (value) => {
+    if (!selectedTable?.id) return;
+    const id = String(value || "");
+    const selected = discountById.get(id);
+    const percent = selected ? Number(selected.value || 0) : 0;
+    updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, discountId: id, discountPercent: percent }));
+  };
+
+  const handleItemDiscountChange = (itemKey, value) => {
+    if (!selectedTable?.id) return;
+    const id = String(value || "");
+    const selected = discountById.get(id);
+    const percent = selected ? Number(selected.value || 0) : 0;
+    updateOrderForTable(selectedTable.id, (cur) => {
+      const items = (cur.items || []).map((i) =>
+        getOrderItemKey(i) === itemKey ? { ...i, discountId: id, discountPercent: percent } : i
+      );
+      return { ...cur, items };
+    });
   };
   const resolveOptionId = useCallback(
     (opt, idx) => String(opt?.id ?? opt?.key ?? opt?.label ?? opt?.name ?? idx ?? ""),
@@ -2473,33 +2745,99 @@ const subCategories = useMemo(() => {
                 Moneda: {paymentsCfg.monedaBase} · TC {paymentsCfg.tipoCambio}
               </div>
             </div>
-            <div className="grid gap-2">
-              <input
-                className="w-full max-w-[150px] rounded-lg border px-3 py-1.5 text-sm h-9"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                placeholder="Monto de apertura"
-                value={shiftOpenForm.amount}
-                onChange={(e) => setShiftOpenForm((f) => ({ ...f, amount: e.target.value }))}
-                onBlur={(e) =>
-                  setShiftOpenForm((f) => ({ ...f, amount: normalizeMoneyInput(e.target.value) }))
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") openShift();
-                }}
-              />
-              <input
-                className="h-min-[100px] w-max-[200px] rounded-lg border px-3 py-1.5 text-sm h-9"
-                placeholder="Nota (opcional)"
-                value={shiftOpenForm.note}
-                onChange={(e) => setShiftOpenForm((f) => ({ ...f, note: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") openShift();
-                }}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-3 items-stretch">
+              <div className="space-y-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-600">Usuario</label>
+                  <select
+                    className="h-9 w-full rounded-lg border px-3 text-sm bg-white"
+                    value={staffLoginForm.username}
+                    onChange={(e) => setStaffLoginForm((p) => ({ ...p, username: e.target.value }))}
+                  >
+                    <option value="">{staffOptionsLoading ? "Cargando..." : "Selecciona un usuario"}</option>
+                    {staffOptions.map((s) => (
+                      <option key={s.id} value={s.username}>
+                        {s.name} {s.role ? `(${s.role})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <input
+                  className="w-full rounded-lg border px-3 py-1.5 text-sm h-9"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="Monto de apertura"
+                  value={shiftOpenForm.amount}
+                  onFocus={() => setShiftKeypadTarget("amount")}
+                  onChange={(e) => {
+                    const raw = String(e.target.value || "");
+                    const onlyDigits = raw.replace(/\D+/g, "");
+                    setShiftOpenForm((f) => ({ ...f, amount: onlyDigits }));
+                  }}
+                  onBlur={(e) => {
+                    const raw = String(e.target.value || "");
+                    const onlyDigits = raw.replace(/\D+/g, "");
+                    setShiftOpenForm((f) => ({ ...f, amount: onlyDigits }));
+                  }}
+                />
+                <textarea
+                  className="w-full rounded-lg border px-3 py-1.5 text-sm h-24 resize-none"
+                  placeholder="Nota (opcional)"
+                  value={shiftOpenForm.note}
+                  onChange={(e) => setShiftOpenForm((f) => ({ ...f, note: e.target.value }))}
+                />
+              </div>
+              <div className="rounded-xl border bg-slate-50 p-2 flex items-start justify-center">
+                <div className="w-full space-y-2">
+                  <input
+                    className="w-full h-9 rounded-lg border px-3 text-sm bg-white"
+                    type="password"
+                    placeholder="Password"
+                    name="staff_password_shift"
+                    autoComplete="new-password"
+                    value={staffLoginForm.password}
+                    onFocus={() => setShiftKeypadTarget("password")}
+                    onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    {["1","2","3","4","5","6","7","8","9"].map((d) => (
+                      <button
+                        key={d}
+                        className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                        onClick={() => handleStaffDigit(d)}
+                        type="button"
+                      >
+                        {d}
+                      </button>
+                    ))}
+                    <button
+                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={handleStaffClear}
+                      type="button"
+                    >
+                      C
+                    </button>
+                    <button
+                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={() => handleStaffDigit("0")}
+                      type="button"
+                    >
+                      0
+                    </button>
+                    <button
+                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={handleStaffBackspace}
+                      type="button"
+                    >
+                      ⌫
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
             {shiftOpenError && <div className="text-xs text-red-600">{shiftOpenError}</div>}
+            {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
             <div className="flex items-center justify-between gap-2">
               <button
                 className="px-4 py-2 rounded-lg border text-sm"
@@ -2510,10 +2848,10 @@ const subCategories = useMemo(() => {
               </button>
               <button
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
-                onClick={openShift}
-                disabled={shiftOpenBusy || shiftLoading}
+                onClick={openShiftWithLogin}
+                disabled={shiftOpenBusy || shiftLoading || staffLoginBusy}
               >
-                {shiftOpenBusy ? "Abriendo..." : shiftLoading ? "Verificando..." : "Abrir turno"}
+                {shiftOpenBusy || staffLoginBusy ? "Abriendo..." : shiftLoading ? "Verificando..." : "Abrir turno"}
               </button>
             </div>
           </div>
@@ -2551,16 +2889,15 @@ const subCategories = useMemo(() => {
         </div>
         </header>
 
-        {staffLoginOpen && (
-          <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
+        {staffLoginOpen && !shiftModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+            <div className="w-full max-w-xl md:max-w-2xl bg-white rounded-2xl shadow-2xl p-5 space-y-4 overflow-hidden">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xs uppercase text-lime-600">Acceso TPV</div>
                   <div className="text-lg font-semibold text-slate-900">Meseros y cajeros</div>
                   <div className="text-xs text-slate-500">Ingresa usuario y password para continuar.</div>
                 </div>
-                {activeStaff && <RestaurantCloseXButton onClick={() => setStaffLoginOpen(false)} />}
               </div>
               {activeStaff && (
                 <div className="text-xs text-slate-600">
@@ -2568,33 +2905,85 @@ const subCategories = useMemo(() => {
                   <span className="font-semibold">{activeStaff.name}</span>
                 </div>
               )}
-              <div className="space-y-2">
-                <input
-                  className="w-full h-10 rounded-lg border px-3 text-sm"
-                  placeholder="Usuario"
-                  value={staffLoginForm.username}
-                  onChange={(e) => setStaffLoginForm((p) => ({ ...p, username: e.target.value }))}
-                />
-                <input
-                  className="w-full h-10 rounded-lg border px-3 text-sm"
-                  type="password"
-                  placeholder="Password"
-                  value={staffLoginForm.password}
-                  onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitStaffLogin();
-                  }}
-                />
-                {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-4 items-stretch">
+                <div className="space-y-2 flex flex-col items-center">
+                  <input type="text" name="fake_username" autoComplete="username" className="hidden" />
+                  <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
+                  <div className="w-full max-w-[210px] space-y-1">
+                    <label className="text-xs text-slate-600">Usuario</label>
+                    <select
+                      className="h-11 w-full rounded-lg border px-3 text-xs bg-white"
+                      value={staffLoginForm.username}
+                      onChange={(e) => setStaffLoginForm((p) => ({ ...p, username: e.target.value }))}
+                    >
+                      <option value="">
+                        {staffOptionsLoading ? "Cargando..." : "Selecciona un usuario"}
+                      </option>
+                      {staffOptions.map((s) => (
+                        <option key={s.id} value={s.username}>
+                          {s.name} {s.role ? `(${s.role})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="w-full max-w-[210px] space-y-1">
+                    <label className="text-xs text-slate-600">Password</label>
+                    <input
+                      className="w-full h-11 rounded-lg border px-3 text-xs"
+                      type="password"
+                      placeholder="Password"
+                      name="staff_password"
+                      autoComplete="new-password"
+                      value={staffLoginForm.password}
+                      onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitStaffLogin();
+                      }}
+                    />
+                  </div>
+                  {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
+                </div>
+
+                <div className="rounded-xl border bg-slate-50 p-3 flex items-center justify-center">
+                  <div className="grid grid-cols-3 gap-2">
+                    {["1","2","3","4","5","6","7","8","9"].map((d) => (
+                      <button
+                        key={d}
+                        className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                        onClick={() => handleStaffDigit(d)}
+                        type="button"
+                      >
+                        {d}
+                      </button>
+                    ))}
+                    <button
+                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={handleStaffClear}
+                      type="button"
+                    >
+                      C
+                    </button>
+                    <button
+                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={() => handleStaffDigit("0")}
+                      type="button"
+                    >
+                      0
+                    </button>
+                    <button
+                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      onClick={handleStaffBackspace}
+                      type="button"
+                    >
+                      ⌫
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="flex items-center justify-between gap-2">
-                {activeStaff ? (
-                  <button className="px-3 py-2 rounded-lg border text-sm" onClick={clearStaffSession}>
-                    Cerrar sesion
-                  </button>
-                ) : (
-                  <div />
-                )}
+                <button className="px-3 py-2 rounded-lg border text-sm" onClick={() => navigate("/restaurant")}>
+                  Regresar
+                </button>
                 <button
                   className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:bg-lime-300"
                   disabled={staffLoginBusy}
@@ -2739,7 +3128,7 @@ const subCategories = useMemo(() => {
 
       {voidInvoiceAuthOpen && (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-red-600">Autorizacion</div>
@@ -2748,23 +3137,31 @@ const subCategories = useMemo(() => {
               <RestaurantCloseXButton onClick={closeVoidInvoiceAuth} />
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid gap-2 place-items-center">
+              <input type="text" name="fake_username" autoComplete="username" className="hidden" />
+              <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
               <input
-                className="w-full rounded-lg border px-3 py-2 text-sm"
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 placeholder="Usuario administrador"
+                name="void_username"
+                autoComplete="off"
                 value={voidInvoiceForm.username}
                 onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, username: e.target.value }))}
               />
               <input
-                className="w-full rounded-lg border px-3 py-2 text-sm"
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 type="password"
                 placeholder="Contrasena administrador"
+                name="void_password"
+                autoComplete="new-password"
                 value={voidInvoiceForm.password}
                 onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, password: e.target.value }))}
               />
               <input
-                className="w-full rounded-lg border px-3 py-2 text-sm"
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 placeholder="Asunto / motivo"
+                name="void_reason"
+                autoComplete="off"
                 value={voidInvoiceForm.reason}
                 onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, reason: e.target.value }))}
               />
@@ -2831,7 +3228,9 @@ const subCategories = useMemo(() => {
                     window.alert("You do not have permission to close cash. Ask an administrator.");
                     return;
                   }
-                  setCloseType("X");
+                  setCloseStage("X");
+                  setCloseAuditOk(false);
+                  setCloseSnapshot(null);
                   setCloseModalOpen(true);
                 }}
               >
@@ -2847,148 +3246,192 @@ const subCategories = useMemo(() => {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[10px] uppercase text-lime-500">Cash close</div>
+                <div className="text-[10px] uppercase text-lime-500">{closeStage === "Z" ? "Cash close Z" : "Cash close X"}</div>
                 <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
                 <div className="text-[11px] text-slate-500">
-                  Moneda: {paymentsCfg.monedaBase} · TC {paymentsCfg.tipoCambio}
+                  Moneda: {paymentsCfg.monedaBase} - TC {paymentsCfg.tipoCambio}
                 </div>
               </div>
               <RestaurantCloseXButton onClick={() => setCloseModalOpen(false)} />
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-lg border bg-gradient-to-r from-lime-50 to-slate-50 px-4 py-3 text-sm">
-                <div className="text-xs text-lime-700">Reported (manual)</div>
-                <div className="text-xl font-bold text-lime-900">{canViewTotals ? formatMoney(closeSummary.reported) : "***"}</div>
-                <div className="text-xs text-lime-500">Sum of methods</div>
-              </div>
-            </div>
+            {closeStage === "X" ? (
+              <>
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="rounded-lg border bg-gradient-to-r from-lime-50 to-slate-50 px-4 py-3 text-sm">
+                    <div className="text-xs text-lime-700">Reported (manual)</div>
+                    <div className="text-xl font-bold text-lime-900">{canViewTotals ? formatMoney(closeSummary.reported) : "***"}</div>
+                    <div className="text-xs text-lime-500">Sum of methods</div>
+                  </div>
+                </div>
 
-            <div className="flex gap-2">
-              <button
-                className={`px-3 py-2 rounded-lg border text-xs ${closeType === "X" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
-                onClick={() => setCloseType("X")}
-              >
-                Cierre X (parcial)
-              </button>
-              <button
-                className={`px-3 py-2 rounded-lg border text-xs ${closeType === "Z" ? "bg-emerald-100 border-emerald-300" : "bg-white"}`}
-                onClick={() => canCloseZ && setCloseType("Z")}
-                disabled={!canCloseZ}
-                title={canCloseZ ? "" : "No tienes permiso para cierre Z"}
-              >
-                Cierre Z (final)
-              </button>
-            </div>
+                <div className="rounded-lg border bg-white px-3 py-2">
+                  <div className="grid grid-cols-2 gap-2 text-[11px] uppercase text-slate-500 mb-2">
+                    <div>Ventas por metodo (sistema)</div>
+                    <div>Conteo fisico</div>
+                  </div>
+                  {closeCompareRows.length === 0 && <div className="text-xs text-slate-500">Sin datos.</div>}
+                  {closeCompareRows.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
+                      {closeCompareRows.map((row) => (
+                        <React.Fragment key={row.key}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate">{row.label}</span>
+                            <span className="font-semibold">{formatMoney(row.amount)}</span>
+                          </div>
+                          <input
+                            className="h-9 w-full rounded-lg border px-3 text-xs"
+                            placeholder={row.label}
+                            type="text"
+                            inputMode="decimal"
+                            pattern="[0-9.,]*"
+                            value={closeForm[row.key] || ""}
+                            onChange={(e) => setCloseForm((f) => ({ ...f, [row.key]: e.target.value }))}
+                            onBlur={(e) => setCloseForm((f) => ({ ...f, [row.key]: normalizeMoneyInput(e.target.value) }))}
+                          />
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  className="h-min-[200px] w-max-[150px] rounded-lg border px-3 py-2 text-sm"
+                  placeholder="Close notes..."
+                  value={closeForm.notes}
+                  onChange={(e) => setCloseForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+                <div className="text-sm text-lime-700 bg-lime-50 border border-lime-100 rounded-lg px-3 py-2">
+                  System: {formatMoney(closeSummary.system)}  Reported: {formatMoney(closeSummary.reported)}  Difference: {formatMoney(closeSummary.diff)}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="px-4 py-2 rounded-lg border text-sm"
+                    onClick={() => setCloseModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold"
+                    disabled={closeLoading}
+                    onClick={async () => {
+                      if (!canViewTotals) {
+                        window.alert("No tienes permisos para cerrar caja.");
+                        return;
+                      }
+                      if (closeLoading) return;
+                      setCloseLoading(true);
+                      try {
+                        await api.post("/restaurant/close", {
+                          totals: closeSummary,
+                          payments: closeForm,
+                          note: closeForm.notes,
+                          breakdown: stats.byMethod || {},
+                          type: "X",
+                        });
+                        setCloseSnapshot({ totals: closeSummary, byMethod: stats.byMethod || {} });
+                        setCloseStage("Z");
+                        setCloseAuditOk(false);
+                      } catch (e) {
+                        const msg = e?.response?.data?.message || "Could not record the cash close.";
+                        window.alert(msg);
+                      } finally {
+                        setCloseLoading(false);
+                      }
+                    }}
+                  >
+                    {closeLoading ? "Sending..." : "Completar cierre X"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-lg border bg-gradient-to-r from-amber-50 to-slate-50 px-4 py-3 text-sm">
+                  <div className="text-xs text-amber-700">Auditoria de cierre Z</div>
+                  <div className="text-xl font-bold text-amber-900">{canViewTotals ? formatMoney(auditTotals.reported) : "***"}</div>
+                  <div className="text-xs text-amber-600">Reported (desde cierre X)</div>
+                </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
-              <input
-                className="h-9 w-full rounded-lg border px-3 text-xs"
-                placeholder="Cash"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                value={closeForm.cash}
-                onChange={(e) => setCloseForm((f) => ({ ...f, cash: e.target.value }))}
-                onBlur={(e) => setCloseForm((f) => ({ ...f, cash: normalizeMoneyInput(e.target.value) }))}
-              />
-              <input
-                className="h-9 w-full rounded-lg border px-3 text-xs"
-                placeholder="Card"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                value={closeForm.card}
-                onChange={(e) => setCloseForm((f) => ({ ...f, card: e.target.value }))}
-                onBlur={(e) => setCloseForm((f) => ({ ...f, card: normalizeMoneyInput(e.target.value) }))}
-              />
-              <input
-                className="h-9 w-full rounded-lg border px-3 text-xs"
-                placeholder="SINPE"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                value={closeForm.sinpe}
-                onChange={(e) => setCloseForm((f) => ({ ...f, sinpe: e.target.value }))}
-                onBlur={(e) => setCloseForm((f) => ({ ...f, sinpe: normalizeMoneyInput(e.target.value) }))}
-              />
-              <input
-                className="h-9 w-full rounded-lg border px-3 text-xs"
-                placeholder="Bank transfer"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                value={closeForm.transfer}
-                onChange={(e) => setCloseForm((f) => ({ ...f, transfer: e.target.value }))}
-                onBlur={(e) => setCloseForm((f) => ({ ...f, transfer: normalizeMoneyInput(e.target.value) }))}
-              />
-              <input
-                className="h-9 w-full rounded-lg border px-3 text-xs"
-                placeholder="Room charge"
-                type="text"
-                inputMode="decimal"
-                pattern="[0-9.,]*"
-                value={closeForm.room}
-                onChange={(e) => setCloseForm((f) => ({ ...f, room: e.target.value }))}
-                onBlur={(e) => setCloseForm((f) => ({ ...f, room: normalizeMoneyInput(e.target.value) }))}
-              />
-            </div>
-            <textarea
-              className="h-min-[200px] w-max-[150px] rounded-lg border px-3 py-2 text-sm"
-              placeholder="Close notes..."
-              value={closeForm.notes}
-              onChange={(e) => setCloseForm((f) => ({ ...f, notes: e.target.value }))}
-            />
-            <div className="text-sm text-lime-700 bg-lime-50 border border-lime-100 rounded-lg px-3 py-2">
-              System: {formatMoney(closeSummary.system)}  Reported: {formatMoney(closeSummary.reported)}  Difference: {formatMoney(closeSummary.diff)}
-            </div>
-            <div className="flex justify-end gap-2">
-              <button
-                className="px-4 py-2 rounded-lg border text-sm"
-                onClick={() => setCloseModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold"
-                disabled={closeLoading}
-                onClick={async () => {
-                  if (!canViewTotals) {
-                    window.alert("No tienes permisos para cerrar caja.");
-                    return;
-                  }
-                  if (closeLoading) return;
-                  setCloseLoading(true);
-                  try {
-                    await api.post("/restaurant/close", {
-                      totals: closeSummary,
-                      payments: closeForm,
-                      note: closeForm.notes,
-                      breakdown: stats.byMethod || {},
-                      type: closeType,
-                    });
-                    setCloseModalOpen(false);
-                    setCloseOpen(false);
-                    setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
-                    setOrdersByTable({});
-                    setActiveOrderByTable({});
-                    setPaymentResult(null);
-                    setPaymentForm({});
-                    setSelectedPaymentKeys([]);
-                    setSplitPayments(false);
-                    resetToLobby();
-                    setShiftModalOpen(true);
-                    refreshStats();
-                  } catch (e) {
-                    window.alert("Could not record the cash close.");
-                  } finally {
-                    setCloseLoading(false);
-                  }
-                }}
-              >
-                {closeLoading ? "Sending..." : "Record close"}
-              </button>
-            </div>
+                <div className="rounded-lg border bg-white px-3 py-2">
+                  <div className="text-[11px] uppercase text-slate-500 mb-2">Ventas por metodo (sistema)</div>
+                  {auditRows.length === 0 && <div className="text-xs text-slate-500">Sin datos.</div>}
+                  {auditRows.length > 0 && (
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-700">
+                      {auditRows.map((row) => (
+                        <div key={row.key} className="flex items-center justify-between gap-2">
+                          <span className="truncate">{row.label}</span>
+                          <span className="font-semibold">{formatMoney(row.amount)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  System: {formatMoney(auditTotals.system)}  Reported: {formatMoney(auditTotals.reported)}  Difference: {formatMoney(auditTotals.diff)}
+                </div>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={closeAuditOk} onChange={(e) => setCloseAuditOk(e.target.checked)} />
+                  Confirmo que el conteo fisico coincide con el cierre X.
+                </label>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="px-4 py-2 rounded-lg border text-sm"
+                    onClick={() => setCloseModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold"
+                    disabled={closeLoading || !canCloseZ || !closeAuditOk}
+                    title={canCloseZ ? "" : "No tienes permiso para cierre Z"}
+                    onClick={async () => {
+                      if (!canViewTotals) {
+                        window.alert("No tienes permisos para cerrar caja.");
+                        return;
+                      }
+                      if (!canCloseZ) {
+                        window.alert("No tienes permiso para cierre Z.");
+                        return;
+                      }
+                      if (!closeAuditOk) return;
+                      if (closeLoading) return;
+                      setCloseLoading(true);
+                      try {
+                        await api.post("/restaurant/close", {
+                          totals: auditTotals,
+                          payments: closeForm,
+                          note: closeForm.notes,
+                          breakdown: stats.byMethod || {},
+                          type: "Z",
+                        });
+                        setCloseModalOpen(false);
+                        setCloseOpen(false);
+                        setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
+                        setCloseSnapshot(null);
+                        setOrdersByTable({});
+                        setActiveOrderByTable({});
+                        setPaymentResult(null);
+                        setPaymentForm({});
+                        setSelectedPaymentKeys([]);
+                        setSplitPayments(false);
+                        resetToLobby();
+                        setShiftModalOpen(true);
+                        refreshStats();
+                      } catch (e) {
+                        const msg = e?.response?.data?.message || "Could not record the cash close.";
+                        window.alert(msg);
+                      } finally {
+                        setCloseLoading(false);
+                      }
+                    }}
+                  >
+                    {closeLoading ? "Sending..." : "Completar cierre Z"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -3142,6 +3585,9 @@ const subCategories = useMemo(() => {
                   <div className="text-2xl font-bold text-slate-900">{formatMoney(displayTotals.total)}</div>
                   <div className="text-xs text-slate-500">
                     Subtotal {formatMoney(displayTotals.subtotal)}  Service {formatMoney(displayTotals.service)}  Taxes {formatMoney(displayTotals.tax)}
+                    {displayTotals.discountTotal > 0 && (
+                      <span className="block">Descuento {formatMoney(displayTotals.discountTotal)}</span>
+                    )}
                   </div>
                 </div>
 
@@ -3545,13 +3991,21 @@ const subCategories = useMemo(() => {
                             setSectionLauncher(false);
                           }}
                         >
+                          <div className="relative w-full aspect-[4/3] rounded-md overflow-hidden bg-white/70 border border-white/60 shadow-sm">
+                            {sec?.imageUrl ? (
+                              <img src={sec.imageUrl} alt={sec.name || sec.id} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="h-full w-full flex items-center justify-center text-xs text-lime-500/70">
+                                Sin imagen
+                              </div>
+                            )}
+                          </div>
                           <div className="text-[10px] uppercase text-lime-500">Section</div>
                           <div className="text-sm font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
                           <div className="text-xs text-lime-700/90 mt-1">{(sec.tables || []).length} tables</div>
                           <div className="text-[11px] text-lime-700/80 mt-1">
                             Menu: <span className="font-semibold">{sec?.activeMenu?.name || "-"}</span>
                           </div>
-                          <div className="mt-auto text-[11px] text-lime-500">Tap to view tables</div>
                         </div>
                       ))}
                     </div>
@@ -3969,7 +4423,7 @@ const subCategories = useMemo(() => {
                         </button>
                       ))}
                     </div>
-                    {serviceType === "ROOM" && (
+                  {serviceType === "ROOM" && (
                       <input
                         className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm"
                         placeholder="Room / room charge"
@@ -3978,6 +4432,24 @@ const subCategories = useMemo(() => {
                       />
                     )}
                   </div>
+
+                  {taxesCfg.permitirDescuentos && (
+                    <div className="mt-3 space-y-1">
+                      <div className="text-[10px] uppercase text-lime-500">Descuento de la orden</div>
+                      <select
+                        className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
+                        value={currentOrder.discountId || ""}
+                        onChange={(e) => handleOrderDiscountChange(e.target.value)}
+                      >
+                        <option value="">Sin descuento</option>
+                        {discountOptions.map((d) => (
+                          <option key={String(d.id)} value={String(d.id)}>
+                            {d.name} ({Number(d.value || 0)}%)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div className="flex-1 overflow-y-auto space-y-2 pr-1 mt-2">
                     {(currentOrder.items || []).length === 0 && (
@@ -4042,6 +4514,23 @@ const subCategories = useMemo(() => {
                             </button>
                           </div>
                         </div>
+                        {taxesCfg.permitirDescuentos && (
+                          <div className="mt-2 flex items-center gap-2 text-xs">
+                            <span className="text-lime-600">Desc.</span>
+                            <select
+                              className="h-7 rounded border border-lime-200 bg-white px-2 text-[11px]"
+                              value={item.discountId || ""}
+                              onChange={(e) => handleItemDiscountChange(getOrderItemKey(item), e.target.value)}
+                            >
+                              <option value="">Sin descuento</option>
+                              {discountOptions.map((d) => (
+                                <option key={String(d.id)} value={String(d.id)}>
+                                  {d.name} ({Number(d.value || 0)}%)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -4059,6 +4548,12 @@ const subCategories = useMemo(() => {
                       <span>Taxes {taxesCfg.iva || 0}%</span>
                       <span>{formatMoney(totals.tax)}</span>
                     </div>
+                    {totals.discountTotal > 0 && (
+                      <div className="flex justify-between text-amber-700">
+                        <span>Descuento</span>
+                        <span>-{formatMoney(totals.discountTotal)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-semibold text-lg mt-1">
                       <span>Total</span>
                       <span>{formatMoney(totals.total)}</span>
@@ -4177,6 +4672,7 @@ const subCategories = useMemo(() => {
     </div>
   );
 }
+
 
 
 

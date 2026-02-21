@@ -44,7 +44,6 @@ const BACKEND_PREFIXES = [
   "/permissions",
   "/taxes",
   "/restaurant",
-  "/reports",
   "/invoices",
   "/einvoicing",
   "/geo",

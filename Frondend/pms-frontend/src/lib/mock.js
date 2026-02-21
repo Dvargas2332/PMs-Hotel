@@ -191,7 +191,6 @@ let DB = {
   restaurantCloses: [],
   restaurantLastCloseAt: null,
   restaurantKdsStatus: {},
-  reports: [],
 };
 
 const UNIT_MAP = {
@@ -326,12 +325,6 @@ export const mockApi = {
     }
     if (path === "/restaurant/stats") return makeResp(restaurantStats());
     if (path === "/restaurant/close") return makeResp(DB.restaurantCloses);
-    if (path === "/reports") {
-      const params = new URLSearchParams(query || "");
-      const category = params.get("category");
-      const list = Array.isArray(DB.reports) ? DB.reports : [];
-      return makeResp(category ? list.filter((r) => r.category === category) : list);
-    }
     if (path === "/restaurant/kds") {
       const params = new URLSearchParams(query || "");
       const area = String(params.get("area") || "KITCHEN").toUpperCase();
@@ -725,19 +718,6 @@ export const mockApi = {
       const job = { id: Math.random().toString(36).slice(2, 7), ...payload, at: new Date().toISOString() };
       DB.audit.unshift({ timestamp: job.at, module: "restaurant", action: "print", detail: job });
       return makeResp({ ok: true, job });
-    }
-    if (path === "/reports") {
-      const item = {
-        id: Math.random().toString(36).slice(2, 10),
-        createdAt: new Date().toISOString(),
-        title: payload?.title || "Reporte",
-        category: payload?.category || "general",
-        type: payload?.type || "snapshot",
-        filters: payload?.filters || {},
-        payload: payload?.payload || {},
-      };
-      DB.reports.unshift(item);
-      return makeResp(item);
     }
     if (path.startsWith("/restaurant/menu/")) {
       const secId = path.split("/").pop();
