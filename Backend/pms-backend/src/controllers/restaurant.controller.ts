@@ -3781,6 +3781,11 @@ export async function closeShift(req: Request, res: Response) {
   if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
 
   try {
+    const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
+    if (!["X", "Z"].includes(closeTypeRaw)) {
+      return res.status(400).json({ message: "Tipo de cierre invalido" });
+    }
+
     const role = (user.role || "").toUpperCase();
     if (!["ADMIN", "MANAGER"].includes(role)) {
       const required = closeTypeRaw === "Z" ? "restaurant.shift.closeZ" : "restaurant.shift.closeX";
@@ -3805,10 +3810,6 @@ export async function closeShift(req: Request, res: Response) {
     }
 
     const { totals, payments, note, breakdown } = req.body || {};
-    const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
-    if (!["X", "Z"].includes(closeTypeRaw)) {
-      return res.status(400).json({ message: "Tipo de cierre invalido" });
-    }
 
     const openOrders = await prisma.restaurantOrder.count({
       where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
