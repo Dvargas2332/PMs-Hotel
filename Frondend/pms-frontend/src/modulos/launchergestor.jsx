@@ -2017,6 +2017,7 @@ const importEndpoints = useMemo(
                       {lastImport.updated ?? 0} actualizados, {lastImport.errors ?? 0} errores.
                     </div>
                   ) : null}
+                </div>
               )}
             </Card>
           </div>
