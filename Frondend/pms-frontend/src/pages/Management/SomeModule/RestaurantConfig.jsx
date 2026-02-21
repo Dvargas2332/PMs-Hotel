@@ -2143,7 +2143,7 @@ export default function RestaurantConfig() {
 
 
 
-        const { data } = await api.get(`/restaurant/menu-section=${encodeURIComponent(String(selectedSectionId))}`);
+        const { data } = await api.get(`/restaurant/menu/${encodeURIComponent(String(selectedSectionId))}`);
 
 
 
