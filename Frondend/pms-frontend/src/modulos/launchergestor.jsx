@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, LogOut, RefreshCcw, Moon, Sun } from "lucide-react";
+import { Building2, LogOut, RefreshCcw, Moon, Sun, ChevronDown, ChevronUp } from "lucide-react";
 
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -27,6 +27,13 @@ const CURRENCIES = [
   { code: "GBP", label: "GBP — Libra esterlina" },
   { code: "MXN", label: "MXN — Peso mexicano" },
   { code: "BRL", label: "BRL — Real brasileño" },
+];
+
+const PRINT_FORM_MODULES = [
+  { id: "restaurant", label: "Restaurante" },
+  { id: "frontdesk", label: "Front Desk" },
+  { id: "accounting", label: "Contabilidad" },
+  { id: "einvoicing", label: "Facturaci??n electr??nica" },
 ];
 
 const CLIENT_FILTER_NONE = "__none__";
@@ -131,6 +138,39 @@ function fmtMoney(amount, currency) {
   }
 }
 
+function buildPrintPreview(form) {
+  const module = String(form?.module || "restaurant").toLowerCase();
+  const docType = String(form?.docType || "TE").toUpperCase();
+  const paper = String(form?.paperType || "80mm");
+  const lines = [];
+  lines.push("KAZEHANA CLOUD");
+  lines.push(`Module: ${module}`);
+  lines.push(`Doc: ${docType} (${paper})`);
+  lines.push(`Date: ${new Date().toLocaleString()}`);
+  lines.push("-".repeat(26));
+  if (docType === "COMANDA") {
+    lines.push("Mesa 12 - Comanda");
+    lines.push("1x Cafe Latte      3.50");
+    lines.push("1x Croissant       2.00");
+    lines.push("Nota: Sin azucar");
+  } else if (docType === "CLOSES") {
+    lines.push("Cierre de caja");
+    lines.push("Efectivo: 120.00");
+    lines.push("Tarjeta:  80.00");
+    lines.push("SINPE:    40.00");
+    lines.push("Total:   240.00");
+  } else {
+    lines.push("1x Cafe Latte      3.50");
+    lines.push("1x Croissant       2.00");
+    lines.push("Sub-total:         5.50");
+    lines.push("IVA:               0.72");
+    lines.push("Total:             6.22");
+  }
+  lines.push("-".repeat(26));
+  lines.push("Gracias por su visita");
+  return lines.join("\n");
+}
+
 function fmtHotelNumber(n) {
   const num = Number(n);
   if (!Number.isFinite(num) || num <= 0) return "-";
@@ -201,6 +241,18 @@ export default function Launchergestor() {
   const [smtpSaving, setSmtpSaving] = useState(false);
   const [smtpStatus, setSmtpStatus] = useState("");
   const [showSmtp, setShowSmtp] = useState(false);
+  const [printForms, setPrintForms] = useState([]);
+  const [printFormsLoading, setPrintFormsLoading] = useState(false);
+  const [printFormsSaving, setPrintFormsSaving] = useState(false);
+  const [printFormsOpen, setPrintFormsOpen] = useState(true);
+  const [globalFormIds, setGlobalFormIds] = useState([]);
+  const [globalModules, setGlobalModules] = useState({
+    restaurant: true,
+    frontdesk: true,
+    accounting: false,
+    einvoicing: false,
+  });
+  const [selectedPrintFormId, setSelectedPrintFormId] = useState("");
 
   const [createForm, setCreateForm] = useState(() => ({ ...INITIAL_CREATE_FORM }));
   const [createTab, setCreateTab] = useState("hotel");
@@ -246,6 +298,71 @@ export default function Launchergestor() {
       setSmtpLoading(false);
     }
   }, []);
+
+  const loadPrintForms = useCallback(async () => {
+    setPrintFormsLoading(true);
+    try {
+      const { data } = await api.get("/gestor/print-forms");
+      const list = Array.isArray(data?.forms) ? data.forms : [];
+      const rawGlobal = data?.global || data?.globalForms || null;
+      const globalConfig = (() => {
+        if (rawGlobal && typeof rawGlobal === "object" && !Array.isArray(rawGlobal)) {
+          return {
+            formIds: Array.isArray(rawGlobal.formIds) ? rawGlobal.formIds.map((id) => String(id)) : [],
+            modules: typeof rawGlobal.modules === "object" && rawGlobal.modules ? rawGlobal.modules : {},
+          };
+        }
+        const formIds = Array.isArray(rawGlobal)
+          ? rawGlobal.map((f) => String(f?.id || f))
+          : [];
+        return { formIds, modules: {} };
+      })();
+      const fallbackModules = PRINT_FORM_MODULES.reduce((acc, mod) => {
+        acc[mod.id] = true;
+        return acc;
+      }, {});
+      const nextModules = { ...fallbackModules, ...(globalConfig.modules || {}) };
+
+      setPrintForms(list);
+      setGlobalFormIds(globalConfig.formIds);
+      setGlobalModules(nextModules);
+      setSelectedPrintFormId((cur) => cur || list[0]?.id || "");
+    } catch {
+      setPrintForms([]);
+      setGlobalFormIds([]);
+    } finally {
+      setPrintFormsLoading(false);
+    }
+  }, []);
+
+  const saveGlobalForms = useCallback(async (nextIds, nextModules) => {
+    setPrintFormsSaving(true);
+    try {
+      const payload = { formIds: nextIds, modules: nextModules || globalModules };
+      const { data } = await api.put("/gestor/print-forms/global", payload);
+      const rawGlobal = data?.global || data?.globalForms || null;
+      const globalConfig = (() => {
+        if (rawGlobal && typeof rawGlobal === "object" && !Array.isArray(rawGlobal)) {
+          return {
+            formIds: Array.isArray(rawGlobal.formIds) ? rawGlobal.formIds.map((id) => String(id)) : [],
+            modules: typeof rawGlobal.modules === "object" && rawGlobal.modules ? rawGlobal.modules : {},
+          };
+        }
+        const formIds = Array.isArray(rawGlobal)
+          ? rawGlobal.map((f) => String(f?.id || f))
+          : [];
+        return { formIds, modules: {} };
+      })();
+      if (globalConfig.formIds.length) setGlobalFormIds(globalConfig.formIds);
+      if (globalConfig.modules && Object.keys(globalConfig.modules).length > 0) {
+        setGlobalModules((prev) => ({ ...prev, ...globalConfig.modules }));
+      }
+    } catch {
+      // keep local selection on error
+    } finally {
+      setPrintFormsSaving(false);
+    }
+  }, [globalModules]);
 
   const onSaveSmtp = useCallback(async () => {
     setSmtpSaving(true);
@@ -322,6 +439,10 @@ export default function Launchergestor() {
     () => (hotels || []).find((h) => h.id === selectedHotelId) || null,
     [hotels, selectedHotelId]
   );
+  const selectedPrintForm = useMemo(() => {
+    if (!Array.isArray(printForms) || printForms.length === 0) return null;
+    return printForms.find((f) => f.id === selectedPrintFormId) || printForms[0] || null;
+  }, [printForms, selectedPrintFormId]);
 
   const loadClients = useCallback(async () => {
     setLoadingClients(true);
@@ -402,7 +523,8 @@ export default function Launchergestor() {
   useEffect(() => {
     loadClients().catch(() => {});
     loadHotels().catch(() => {});
-  }, [loadClients, loadHotels]);
+    loadPrintForms().catch(() => {});
+  }, [loadClients, loadHotels, loadPrintForms]);
 
   useEffect(() => {
     if (!Array.isArray(filteredHotels) || filteredHotels.length === 0) {
@@ -782,104 +904,196 @@ const importEndpoints = useMemo(
         </div>
 
         {showSmtp ? (
-          <Card className="p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">SMTP global</div>
-                <div className="text-xs text-slate-500">
-                  Configura el correo del gestor para enviar mensajes y recibir solicitudes del sitio web.
-                </div>
+
+        <Card className="p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Plantillas de impresi?n</div>
+              <div className="text-xs text-slate-500">
+                Vista previa y activaci?n global de formatos para todos los m?dulos.
               </div>
-              <Button variant="outline" onClick={() => setShowSmtp(false)}>
-                Cerrar
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => loadPrintForms()} disabled={printFormsLoading}>
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Actualizar
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setPrintFormsOpen((v) => !v)}>
+                {printFormsOpen ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-2" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                    Mostrar
+                  </>
+                )}
               </Button>
             </div>
+          </div>
 
-            {smtpLoading ? (
-              <div className="text-sm text-slate-500">Cargando configuraciÃ³n...</div>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Host</div>
-                    <Input
-                      value={smtpForm.host}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, host: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Puerto</div>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={smtpForm.port}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, port: e.target.value }))}
-                    />
-                  </div>
-                </div>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+            <span className="text-[11px] uppercase tracking-wide text-slate-500">M??dulos</span>
+            {PRINT_FORM_MODULES.map((mod) => (
+              <label key={mod.id} className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={Boolean(globalModules?.[mod.id])}
+                  disabled={printFormsSaving}
+                  onChange={(e) => {
+                    const next = { ...globalModules, [mod.id]: e.target.checked };
+                    setGlobalModules(next);
+                    saveGlobalForms(globalFormIds, next);
+                  }}
+                />
+                {mod.label}
+              </label>
+            ))}
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Usuario</div>
-                    <Input
-                      value={smtpForm.user}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, user: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">ContraseÃ±a</div>
-                    <Input
-                      type="password"
-                      value={smtpForm.pass}
-                      placeholder={smtpForm.passSet ? "******** (ya guardada)" : ""}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, pass: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">From</div>
-                    <Input
-                      value={smtpForm.from}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, from: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">To</div>
-                    <Input
-                      value={smtpForm.to}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, to: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="px-1 text-xs text-slate-600">Reply-To</div>
-                    <Input
-                      value={smtpForm.replyTo}
-                      onChange={(e) => setSmtpForm((p) => ({ ...p, replyTo: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(smtpForm.secure)}
-                    onChange={(e) => setSmtpForm((p) => ({ ...p, secure: e.target.checked }))}
-                  />
-                  Usar SSL/TLS (secure)
-                </label>
-
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-slate-500">{smtpStatus || " "}</div>
-                  <Button onClick={onSaveSmtp} disabled={smtpSaving}>
-                    {smtpSaving ? "Guardando..." : "Guardar SMTP"}
-                  </Button>
-                </div>
-              </>
-            )}
-          </Card>
+          {!printFormsOpen ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+              <div>
+                {printForms.length} plantillas ? {globalFormIds.length} globales
+              </div>
+              <div>{selectedPrintForm ? selectedPrintForm.name : "Sin selecci?n"}</div>
+            </div>
+          ) : printFormsLoading ? (
+            <div className="text-sm text-slate-500">Cargando plantillas...</div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-3">
+              <div className="space-y-2">
+                {(printForms || []).map((f) => {
+                  const id = String(f.id || "");
+                  const isSelected = id === selectedPrintFormId;
+                  const isGlobal = globalFormIds.includes(id);
+                  return (
+                    <div
+                      key={id}
+                      className={`rounded-lg border p-2 flex items-center justify-between gap-2 ${
+                        isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <button type="button" className="text-left flex-1" onClick={() => setSelectedPrintFormId(id)}>
+                        <div className="text-sm font-semibold text-slate-900">{f.name || id}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {String(f.module || "").toUpperCase()} ? {String(f.docType || "").toUpperCase()} ? {f.paperType}
+                        </div>
+                      </button>
+                      <label className="text-[11px] text-slate-600 flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={isGlobal}
+                          disabled={printFormsSaving}
+                          onChange={() => {
+                            const nextIds = isGlobal
+                              ? globalFormIds.filter((x) => x !== id)
+                              : [...globalFormIds, id];
+                            setGlobalFormIds(nextIds);
+                            saveGlobalForms(nextIds, globalModules);
+                          }}
+                        />
+                        Global
+                      </label>
+                    </div>
+                  );
+                })}
+                {(printForms || []).length === 0 && (
+                  <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>
+                )}
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-slate-500 mb-2">Vista previa</div>
+                {selectedPrintForm ? (
+                  <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">
+                    {buildPrintPreview(selectedPrintForm)}
+                  </pre>
+                ) : (
+                  <div className="text-xs text-slate-500">Selecciona una plantilla.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
         ) : null}
+
+        <Card className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Plantillas de impresión</div>
+              <div className="text-xs text-slate-500">
+                Vista previa y activación global de formatos para todos los módulos.
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => loadPrintForms()} disabled={printFormsLoading}>
+              <RefreshCcw className="h-4 w-4 mr-2" />
+              Actualizar
+            </Button>
+          </div>
+
+          {printFormsLoading ? (
+            <div className="text-sm text-slate-500">Cargando plantillas...</div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
+              <div className="space-y-2">
+                {(printForms || []).map((f) => {
+                  const id = String(f.id || "");
+                  const isSelected = id === selectedPrintFormId;
+                  const isGlobal = globalFormIds.includes(id);
+                  return (
+                    <div
+                      key={id}
+                      className={`rounded-lg border p-2 flex items-center justify-between gap-2 ${
+                        isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="text-left flex-1"
+                        onClick={() => setSelectedPrintFormId(id)}
+                      >
+                        <div className="text-sm font-semibold text-slate-900">{f.name || id}</div>
+                        <div className="text-[11px] text-slate-500">
+                          {String(f.module || "").toUpperCase()} • {String(f.docType || "").toUpperCase()} • {f.paperType}
+                        </div>
+                      </button>
+                      <label className="text-[11px] text-slate-600 flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={isGlobal}
+                          disabled={printFormsSaving}
+                          onChange={() => {
+                            const nextIds = isGlobal
+                              ? globalFormIds.filter((x) => x !== id)
+                              : [...globalFormIds, id];
+                            setGlobalFormIds(nextIds);
+                            saveGlobalForms(nextIds, globalModules);
+                          }}
+                        />
+                        Global
+                      </label>
+                    </div>
+                  );
+                })}
+                {(printForms || []).length === 0 && (
+                  <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>
+                )}
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="text-xs text-slate-500 mb-2">Vista previa</div>
+                {selectedPrintForm ? (
+                  <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">
+                    {buildPrintPreview(selectedPrintForm)}
+                  </pre>
+                ) : (
+                  <div className="text-xs text-slate-500">Selecciona una plantilla.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-1 space-y-4">

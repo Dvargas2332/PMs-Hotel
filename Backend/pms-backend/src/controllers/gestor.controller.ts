@@ -7,6 +7,7 @@ import { Prisma } from "@prisma/client";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import { allowedModulesForMembership, isMembershipTier, normalizeMembershipTier } from "../config/membership.js";
 import { nextHotelSequence } from "../lib/sequences.js";
+import { DEFAULT_PRINT_FORMS, normalizeGlobalPrintForms } from "../lib/printForms.js";
 import { processFormInfo, type FormPayload } from "./forminfo.controller.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
@@ -911,4 +912,24 @@ export async function updateSaasConfig(req: Request, res: Response) {
     safeSmtp.passSet = true;
   }
   res.json({ key: SAAS_CONFIG_KEY, smtp: safeSmtp });
+}
+
+export async function getPrintForms(_req: Request, res: Response) {
+  const config = await prisma.saasConfig.findUnique({ where: { key: SAAS_CONFIG_KEY } });
+  const global = normalizeGlobalPrintForms((config as any)?.printFormsGlobal);
+  res.json({ forms: DEFAULT_PRINT_FORMS, global });
+}
+
+export async function updateGlobalPrintForms(req: Request, res: Response) {
+  const formIds = Array.isArray(req.body?.formIds) ? req.body.formIds : [];
+  const modules = req.body?.modules;
+  const nextForms = DEFAULT_PRINT_FORMS.filter((f) => formIds.includes(f.id));
+  const global = normalizeGlobalPrintForms({ formIds: nextForms.map((f) => f.id), modules });
+  const saved = await prisma.saasConfig.upsert({
+    where: { key: SAAS_CONFIG_KEY },
+    update: { printFormsGlobal: global },
+    create: { key: SAAS_CONFIG_KEY, printFormsGlobal: global },
+  });
+  const savedGlobal = normalizeGlobalPrintForms((saved as any)?.printFormsGlobal);
+  res.json({ ok: true, global: savedGlobal });
 }

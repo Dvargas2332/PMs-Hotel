@@ -11,6 +11,7 @@ import {
   getRestaurantBilling,
   updateRestaurantBilling,
   listRestaurantPrinters,
+  listRestaurantPrintForms,
   printRestaurantOrder,
   updateRestaurantConfig,
   getRestaurantStats,
@@ -106,6 +107,7 @@ router.put("/general", requirePermission("restaurant.config.write"), updateResta
 router.get("/billing", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantBilling);
 router.put("/billing", requirePermission("restaurant.config.write"), updateRestaurantBilling);
 router.get("/printers", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), listRestaurantPrinters);
+router.get("/print-forms", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), listRestaurantPrintForms);
 router.post("/print", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.print"), printRestaurantOrder);
 router.get("/shift", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantShift);
 router.post("/shift/open", requirePermission("restaurant.access.pos", "restaurant.pos.open"), openRestaurantShift);

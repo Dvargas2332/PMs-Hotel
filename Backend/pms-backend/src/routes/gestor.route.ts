@@ -25,6 +25,8 @@ import {
   submitFormInfoFromGestor,
   getSaasConfig,
   updateSaasConfig,
+  getPrintForms,
+  updateGlobalPrintForms,
 } from "../controllers/gestor.controller.js";
 import upload from "../middleware/upload.js";
 
@@ -59,5 +61,7 @@ router.post("/hotels/:id/import/restaurant/suppliers", upload.single("file"), im
 router.post("/forminfo", submitFormInfoFromGestor);
 router.get("/saas-config", getSaasConfig);
 router.put("/saas-config", updateSaasConfig);
+router.get("/print-forms", getPrintForms);
+router.put("/print-forms/global", updateGlobalPrintForms);
 
 export default router;

@@ -7,6 +7,7 @@ import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
+import { DEFAULT_PRINT_FORMS } from "../lib/printForms.js";
 
 const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
@@ -3143,6 +3144,7 @@ export async function reprintOrder(req: Request, res: Response) {
   if (!order) return res.status(404).json({ message: "Orden no encontrada" });
 
   const cfg = await prisma.restaurantConfig.findUnique({ where: { hotelId } });
+  const billing: any = cfg?.billing && typeof cfg.billing === "object" ? (cfg.billing as any) : {};
   const items = (order.items || []).map((i) => ({
     id: i.itemId,
     itemId: i.itemId,
@@ -3154,9 +3156,32 @@ export async function reprintOrder(req: Request, res: Response) {
   }));
 
   const job = await prisma.$transaction(async (tx) => {
+    const lastJob = await tx.restaurantPrintJob.findFirst({
+      where: { hotelId, orderId: order.id },
+      orderBy: { createdAt: "desc" },
+    });
+    const docType = lastJob?.docType || "TE";
+    const formId = lastJob?.formId || null;
+    const header =
+      typeof lastJob?.header === "string"
+        ? lastJob.header
+        : docType === "TE"
+          ? String(billing?.ticketHeader || "")
+          : docType === "FE"
+            ? String(billing?.invoiceHeader || "")
+            : "";
+    const footer =
+      typeof lastJob?.footer === "string"
+        ? lastJob.footer
+        : docType === "TE"
+          ? String(billing?.ticketFooter || "")
+          : docType === "FE"
+            ? String(billing?.invoiceFooter || "")
+            : "";
     const created = await tx.restaurantPrintJob.create({
       data: {
         hotelId,
+        orderId: order.id,
         sectionId: order.sectionId,
         tableId: order.tableId,
         items,
@@ -3164,6 +3189,10 @@ export async function reprintOrder(req: Request, res: Response) {
         covers: order.covers || 0,
         kitchenPrinter: cfg?.kitchenPrinter || null,
         barPrinter: cfg?.barPrinter || null,
+        docType,
+        formId,
+        header,
+        footer,
         userId: user.sub,
       },
     });
@@ -3473,13 +3502,21 @@ export async function listRestaurantPrinters(req: Request, res: Response) {
   res.json(list);
 }
 
+export async function listRestaurantPrintForms(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+  const forms = DEFAULT_PRINT_FORMS.filter((f) => String(f?.module || "").toLowerCase() === "restaurant");
+  res.json({ forms });
+}
+
 export async function printRestaurantOrder(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user) return res.status(401).json({ message: "No autenticado" });
   if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
 
-  const { sectionId, tableId, items, note, covers, printers, fromTableId, type } = req.body || {};
+  const { sectionId, tableId, items, note, covers, printers, fromTableId, type, orderId } = req.body || {};
 
   if (!tableId || !Array.isArray(items)) {
     return res.status(400).json({ message: "tableId e items requeridos" });
@@ -3511,6 +3548,7 @@ export async function printRestaurantOrder(req: Request, res: Response) {
     }
   }
   const printing: any = cfg?.printing && typeof cfg.printing === "object" ? (cfg.printing as any) : {};
+  const billing: any = cfg?.billing && typeof cfg.billing === "object" ? (cfg.billing as any) : {};
   const paperType =
     (printers && printers.paperType) ||
     printing?.paperType ||
@@ -3533,6 +3571,31 @@ export async function printRestaurantOrder(req: Request, res: Response) {
               : null;
 
   const typeCfg = printingTypeKey ? printing?.types?.[printingTypeKey] : null;
+  const docType =
+    printingTypeKey === "comanda"
+      ? "COMANDA"
+      : printingTypeKey === "ticket"
+        ? "TE"
+        : printingTypeKey === "electronicInvoice"
+          ? "FE"
+          : printingTypeKey === "closes"
+            ? "CLOSES"
+            : printingTypeKey === "document"
+              ? "DOCUMENT"
+              : null;
+  const formId = typeCfg?.formId ? String(typeCfg.formId) : null;
+  const header =
+    docType === "TE"
+      ? String(billing?.ticketHeader || "")
+      : docType === "FE"
+        ? String(billing?.invoiceHeader || "")
+        : "";
+  const footer =
+    docType === "TE"
+      ? String(billing?.ticketFooter || "")
+      : docType === "FE"
+        ? String(billing?.invoiceFooter || "")
+        : "";
   if (printingTypeKey && typeCfg && typeCfg.enabled === false) {
     return res.status(403).json({ message: "Tipo de impresion deshabilitado por configuracion" });
   }
@@ -3555,9 +3618,14 @@ export async function printRestaurantOrder(req: Request, res: Response) {
   const job = await prisma.restaurantPrintJob.create({
     data: {
       hotelId: user.hotelId,
+      orderId: orderId ? String(orderId) : null,
       sectionId: internalSectionId,
       tableId: internalTableId,
       type: normalizedType,
+      docType,
+      formId,
+      header,
+      footer,
       items,
       note: note || "",
       covers: covers || 0,
