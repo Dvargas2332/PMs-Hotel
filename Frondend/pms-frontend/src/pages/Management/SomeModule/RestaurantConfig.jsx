@@ -2143,7 +2143,9 @@ export default function RestaurantConfig() {
 
 
 
-        const { data } = await api.get(`/restaurant/menu/${encodeURIComponent(String(selectedSectionId))}`);
+        const { data } = await api.get(
+          `/restaurant/menu?section=${encodeURIComponent(String(selectedSectionId))}`
+        );
 
 
 
@@ -9629,11 +9631,36 @@ export default function RestaurantConfig() {
 
         </div>
 
+        <label className="flex items-center gap-2 text-sm mt-3">
+          <input
+            type="checkbox"
+            checked={printing?.showPreview !== false}
+            onChange={(e) => setPrinting((p) => ({ ...p, showPreview: e.target.checked }))}
+          />
+          Mostrar vista previa antes de imprimir
+        </label>
 
-
-
-
-
+        <div className="grid md:grid-cols-3 gap-2 text-sm">
+          {[
+            { id: "comanda", label: "Comanda" },
+            { id: "subtotal", label: "Subtotal" },
+            { id: "invoice", label: "Factura" },
+          ].map((opt) => (
+            <label key={opt.id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={printing?.previewByType?.[opt.id] !== false}
+                onChange={(e) =>
+                  setPrinting((p) => ({
+                    ...p,
+                    previewByType: { ...(p.previewByType || {}), [opt.id]: e.target.checked },
+                  }))
+                }
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
 
         <div className="grid lg:grid-cols-12 gap-4">
 

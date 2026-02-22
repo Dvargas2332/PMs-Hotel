@@ -107,7 +107,7 @@ async function nextEInvoiceConsecutive(hotelId: string, docType: "FE" | "TE", br
       return 1;
     }
     await tx.eInvoicingSequence.update({
-      where: { id: existing.id },
+      where: { id: existing.id, hotelId },
       data: { nextNumber: { increment: 1 } },
     });
     return existing.nextNumber;
@@ -2154,6 +2154,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     discountPercent?: number;
   };
   if (!tableId || !Array.isArray(items)) return res.status(400).json({ message: "tableId e items requeridos" });
+  const mergeItems = Boolean((req.body as any)?.mergeItems);
 
   const internalTableId = toInternalId(hotelId, String(tableId));
   const internalSectionId = sectionId ? toInternalId(hotelId, String(sectionId)) : undefined;
@@ -2196,14 +2197,31 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
   const serviceRate = Number(taxes.servicio || 0) / 100;
   const taxRate = Number(taxes.iva || 0) / 100;
 
-  const itemIds = items.map((i) => String(i.itemId || i.id));
+  const mergeItemsList = (base: any[], incoming: any[]) => {
+    const byKey = new Map<string, any>();
+    const keyOf = (i: any) => `${String(i.itemId || i.id)}::${String(i.variantKey || "")}`;
+    base.forEach((it) => byKey.set(keyOf(it), { ...it }));
+    incoming.forEach((it) => {
+      const key = keyOf(it);
+      const prev = byKey.get(key);
+      if (prev) {
+        byKey.set(key, { ...prev, ...it, qty: Number(prev.qty || 0) + Number(it.qty || 0) });
+      } else {
+        byKey.set(key, { ...it });
+      }
+    });
+    return Array.from(byKey.values());
+  };
+
+  const normalizedItems = mergeItems && existing ? mergeItemsList(existing.items || [], items) : items;
+  const itemIds = normalizedItems.map((i) => String(i.itemId || i.id));
   const itemRules = await prisma.restaurantItem.findMany({
     where: { hotelId, id: { in: itemIds } },
     select: { id: true, priceIncludesTaxesAndService: true },
   });
   const includesById = new Map(itemRules.map((r) => [r.id, r.priceIncludesTaxesAndService !== false]));
 
-  const sums = items.reduce(
+  const sums = normalizedItems.reduce(
     (acc, i) => {
       const qty = Number(i.qty || 0);
       const price = Number(i.price || 0);
@@ -2242,7 +2260,8 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
   const subtotal = sums.subtotal * factor;
   const tax = sums.tax * factor;
   const discountAmount = orderDiscountAmount + sums.discountItems;
-  const discountIdToSave = String(discountId || "").trim() || null;
+  const discountIdRaw = String(discountId || "").trim();
+  const discountIdToSave = discountIdRaw || null;
   const inferredServiceType = String(serviceType || existing?.serviceType || "DINE_IN");
 
   const resolvedSectionId = internalSectionId
@@ -2255,6 +2274,14 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     : undefined;
 
   const nextStatus: RestaurantOrderStatus = "OPEN";
+
+  const validDiscountIds = new Set(
+    (await prisma.discount.findMany({
+      where: { hotelId },
+      select: { id: true },
+    })).map((d) => d.id)
+  );
+  const safeOrderDiscountId = discountIdToSave && validDiscountIds.has(discountIdToSave) ? discountIdToSave : null;
 
   const order = existing
     ? await prisma.$transaction(async (tx) => {
@@ -2269,7 +2296,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             covers: covers ?? existing.covers,
             serviceType: inferredServiceType,
             roomId: roomId ?? existing.roomId,
-            discountId: discountIdToSave,
+            discountId: safeOrderDiscountId,
             discountPercent: normalizedDiscountPercent,
             discountAmount,
             total,
@@ -2281,7 +2308,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
         const toKey = (itemId: string, variantKey: string) => `${itemId}::${variantKey || ""}`;
         const existingItems = await tx.restaurantOrderItem.findMany({
           where: { hotelId, orderId: existing.id },
-          select: { itemId: true, variantKey: true, area: true, status: true },
+          select: { itemId: true, variantKey: true, area: true, status: true, qty: true },
         });
         const existingMap = new Map(existingItems.map((i) => [toKey(i.itemId, i.variantKey || ""), i]));
         const incomingKeys = items.map((i) => ({
@@ -2289,15 +2316,17 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
           variantKey: String(i.variantKey || ""),
         }));
 
-        await tx.restaurantOrderItem.deleteMany({
-          where: {
-            hotelId,
-            orderId: existing.id,
-            NOT: { OR: incomingKeys },
-          },
-        });
+        if (!mergeItems) {
+          await tx.restaurantOrderItem.deleteMany({
+            where: {
+              hotelId,
+              orderId: existing.id,
+              NOT: { OR: incomingKeys },
+            },
+          });
+        }
 
-        for (const i of items) {
+        for (const i of normalizedItems) {
           const itemId = String(i.itemId || i.id);
           const variantKey = String(i.variantKey || "");
           const prev = existingMap.get(`${itemId}::${variantKey}`);
@@ -2305,14 +2334,16 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
           const isBar = cat.includes("bebida") || cat.includes("bar");
               const includes = includesById.get(String(itemId)) ?? true;
               const itemDiscountPercent = clampPercent(i.discountPercent);
-              const itemDiscountId = String(i.discountId || "").trim() || null;
+              const itemDiscountRaw = String(i.discountId || "").trim();
+              const itemDiscountId = itemDiscountRaw && validDiscountIds.has(itemDiscountRaw) ? itemDiscountRaw : null;
+              const nextQty = mergeItems && prev ? Number(prev.qty || 0) + Number(i.qty || 0) : i.qty;
               await tx.restaurantOrderItem.upsert({
                 where: { hotelId_orderId_itemId_variantKey: { hotelId, orderId: existing.id, itemId, variantKey } },
                 update: {
                   name: i.name,
                   category: i.category || "",
                   price: i.price,
-                  qty: i.qty,
+                  qty: nextQty,
                   detailNote: i.detailNote ? String(i.detailNote) : null,
                   priceIncludesTaxesAndService: includes,
                   discountId: itemDiscountId,
@@ -2328,7 +2359,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
                   name: i.name,
                   category: i.category || "",
                   price: i.price,
-                  qty: i.qty,
+                  qty: nextQty,
                   detailNote: i.detailNote ? String(i.detailNote) : null,
                   priceIncludesTaxesAndService: includes,
                   discountId: itemDiscountId,
@@ -2348,7 +2379,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             tableId: fromInternalId(hotelId, internalTableId),
             sectionId: resolvedSectionId ? fromInternalId(hotelId, resolvedSectionId) : null,
             totals: { subtotal, service, tax, total, discountAmount },
-            itemsCount: items.length,
+            itemsCount: normalizedItems.length,
             note: note ?? existing.note ?? "",
           } as any,
         });
@@ -2367,20 +2398,21 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             covers: covers || 0,
             serviceType: inferredServiceType,
             roomId: roomId || null,
-            discountId: discountIdToSave,
+            discountId: safeOrderDiscountId,
             discountPercent: normalizedDiscountPercent,
             discountAmount,
             total,
             tip10: service,
             items: {
-              create: items.map((i) => {
+              create: normalizedItems.map((i) => {
                 const itemId = String(i.itemId || i.id);
                 const variantKey = String(i.variantKey || "");
                 const cat = (i.category || "").toLowerCase();
                 const isBar = cat.includes("bebida") || cat.includes("bar");
                 const includes = includesById.get(String(itemId)) ?? true;
                 const itemDiscountPercent = clampPercent(i.discountPercent);
-                const itemDiscountId = String(i.discountId || "").trim() || null;
+                const itemDiscountRaw = String(i.discountId || "").trim();
+                const itemDiscountId = itemDiscountRaw && validDiscountIds.has(itemDiscountRaw) ? itemDiscountRaw : null;
                 return {
                   hotelId,
                   itemId,
@@ -2621,9 +2653,11 @@ export async function closeOrder(req: Request, res: Response) {
     const cfg = await getOrCreateRestaurantConfig(hotelId);
     const billing = cfg.billing && typeof cfg.billing === "object" ? (cfg.billing as any) : {};
     const autoFactura = billing?.autoFactura !== false;
-    const desiredDocType = resolveBillingDocType(billing?.ticketComprobante ?? billing?.comprobante) || "TE";
-    const docTypeToIssue: "TE" = "TE";
-    if (autoFactura && desiredDocType) {
+    const requestedDocType = resolveBillingDocType((req.body as any)?.docType);
+    const billingInvoiceDocType = resolveBillingDocType(billing?.invoiceComprobante);
+    const billingTicketDocType = resolveBillingDocType(billing?.ticketComprobante ?? billing?.comprobante);
+    const docTypeToIssue = (requestedDocType || billingInvoiceDocType || billingTicketDocType || "TE") as "FE" | "TE";
+    if (autoFactura && docTypeToIssue) {
       await issueRestaurantDocForOrder({
         hotelId,
         order: updated,
@@ -3014,7 +3048,18 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
   if (!incomingOrderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
 
-  const allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
+  const roleKey = String(user.role || "").toUpperCase();
+  let allowed = roleKey === "ADMIN" || roleKey === "MANAGER";
+  if (!allowed) {
+    const hasCancelPerm = await prisma.rolePermission.findFirst({
+      where: { hotelId, roleId: user.role, permissionId: { in: ["restaurant.orders.cancel", "restaurant.orders.close"] } },
+      select: { permissionId: true },
+    });
+    allowed = Boolean(hasCancelPerm);
+  }
+  if (!allowed) {
+    allowed = await requireAdminOrAdminCode(user, hotelId, adminCode);
+  }
   if (!allowed) return res.status(401).json({ message: "Admin PIN requerido" });
 
   const where: any = { hotelId, status: { in: OPEN_ORDER_STATUSES } };
@@ -3805,6 +3850,94 @@ export async function getRestaurantShift(req: Request, res: Response) {
 
   if (!shift) return res.json({ open: false });
   res.json({ open: true, shift: buildShiftPayload(shift) });
+}
+
+export async function listShiftInvoices(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+  const hotelId = user.hotelId;
+
+  const shift = await prisma.cashAudit.findFirst({
+    where: { hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
+  if (!shift) return res.json([]);
+
+  const since = shift.openedAt || shift.createdAt || new Date(0);
+
+  const docs = await prisma.eInvoicingDocument.findMany({
+    where: { hotelId, restaurantOrderId: { not: null }, createdAt: { gte: since } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      restaurantOrderId: true,
+      docType: true,
+      status: true,
+      consecutive: true,
+      key: true,
+      createdAt: true,
+    },
+  });
+
+  const docOrderIds = new Set(docs.map((d) => d.restaurantOrderId).filter(Boolean) as string[]);
+
+  const docOrders = await prisma.restaurantOrder.findMany({
+    where: { hotelId, id: { in: Array.from(docOrderIds) } },
+    select: { id: true, tableId: true, total: true },
+  });
+  const docOrderMap = new Map(docOrders.map((o) => [o.id, o]));
+
+  const ordersWithoutDoc = await prisma.restaurantOrder.findMany({
+    where: {
+      hotelId,
+      status: "PAID",
+      updatedAt: { gte: since },
+      id: { notIn: Array.from(docOrderIds) },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 200,
+    select: { id: true, tableId: true, total: true, updatedAt: true, createdAt: true },
+  });
+
+  const list = [
+    ...docs.map((d) => {
+      const order = d.restaurantOrderId ? docOrderMap.get(d.restaurantOrderId) : null;
+      return ({
+      id: d.id,
+      restaurantOrderId: d.restaurantOrderId,
+      docType: d.docType,
+      status: d.status,
+      consecutive: d.consecutive,
+      key: d.key,
+      createdAt: d.createdAt,
+      order: order
+        ? {
+            id: order.id,
+            tableId: fromInternalId(hotelId, order.tableId),
+            total: order.total,
+          }
+        : null,
+    });
+    }),
+    ...ordersWithoutDoc.map((o) => ({
+      id: `NO_DOC:${o.id}`,
+      restaurantOrderId: o.id,
+      docType: "NO_DOC",
+      status: "NO_DOC",
+      consecutive: null,
+      key: null,
+      createdAt: o.updatedAt || o.createdAt,
+      order: {
+        id: o.id,
+        tableId: fromInternalId(hotelId, o.tableId),
+        total: o.total,
+      },
+    })),
+  ];
+
+  res.json(list);
 }
 
 export async function openRestaurantShift(req: Request, res: Response) {

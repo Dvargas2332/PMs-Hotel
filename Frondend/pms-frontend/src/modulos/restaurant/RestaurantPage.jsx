@@ -40,9 +40,27 @@ function asInt(n, fallback = 0) {
   return Number.isFinite(v) ? Math.trunc(v) : fallback;
 }
 
+function composePrintText({ header, body, footer }) {
+  const parts = [];
+  const h = String(header || "").trim();
+  if (h) {
+    parts.push(h);
+    parts.push("");
+  }
+  parts.push(body);
+  const f = String(footer || "").trim();
+  if (f) {
+    parts.push("");
+    parts.push(f);
+  }
+  return parts.join("\n");
+}
+
 function buildPrintPreviewText({ title, payload, totals }) {
   const now = new Date();
   const lines = [];
+  const header = String(payload?.__printHeader || "").trim();
+  const footer = String(payload?.__printFooter || "").trim();
 
   lines.push(String(title || "IMPRIMIR").toUpperCase());
   lines.push(`Fecha: ${now.toLocaleString()}`);
@@ -53,6 +71,11 @@ function buildPrintPreviewText({ title, payload, totals }) {
   if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
   if (payload?.roomId) lines.push(`Habitación: ${String(payload.roomId)}`);
   lines.push("");
+
+  if (header) {
+    lines.push(header);
+    lines.push("");
+  }
 
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (items.length > 0) {
@@ -86,6 +109,11 @@ function buildPrintPreviewText({ title, payload, totals }) {
     if (tax != null) lines.push(`Impuesto: ${formatMoney(tax)}`);
     if (t?.discountTotal) lines.push(`Descuento: ${formatMoney(t.discountTotal)}`);
     if (total != null) lines.push(`Total: ${formatMoney(total)}`);
+  }
+
+  if (footer) {
+    lines.push("");
+    lines.push(footer);
   }
 
   return lines.join("\n");
@@ -320,6 +348,8 @@ const [subCategory, setSubCategory] = useState("");
   const [printSettings, setPrintSettings] = useState({
     paperType: "80mm",
     defaultDocType: "TE",
+    showPreview: true,
+    previewByType: { comanda: true, subtotal: true, invoice: true },
     types: {
       comanda: { enabled: true, printerId: "", copies: 1 },
       ticket: { enabled: true, printerId: "", copies: 1 },
@@ -362,6 +392,13 @@ const [subCategory, setSubCategory] = useState("");
     impuestoIncluido: true,
   });
   const [discountsList, setDiscountsList] = useState([]);
+  const [billingCfg, setBillingCfg] = useState({
+    ticketHeader: "",
+    ticketFooter: "",
+    invoiceHeader: "",
+    invoiceFooter: "",
+  });
+
   const [paymentsCfg, setPaymentsCfg] = useState({
     monedaBase: "CRC",
     monedaSec: "USD",
@@ -1334,6 +1371,20 @@ const subCategories = useMemo(() => {
       setPaymentsCfg({ monedaBase: "CRC", monedaSec: "USD", tipoCambio: 530, cobros: [], cargoHabitacion: false, paymentMethods: [] });
     }
     try {
+      const { data } = await api.get("/restaurant/billing");
+      if (data && typeof data === "object") {
+        setBillingCfg({
+          ticketHeader: data.ticketHeader || "",
+          ticketFooter: data.ticketFooter || "",
+          invoiceHeader: data.invoiceHeader || "",
+          invoiceFooter: data.invoiceFooter || "",
+        });
+      }
+    } catch {
+      setBillingCfg({ ticketHeader: "", ticketFooter: "", invoiceHeader: "", invoiceFooter: "" });
+    }
+
+    try {
       const { data } = await api.get("/discounts");
       setDiscountsList(Array.isArray(data) ? data : []);
     } catch {
@@ -1968,15 +2019,27 @@ const subCategories = useMemo(() => {
     setPaymentPrintBusy(true);
     try {
       const invoiceCfg = getInvoicePrintConfig();
-      const text = buildPrintPreviewText({ title: "Factura", payload, totals: previewTotals });
-      await printToAgent({
-        printerNames: [invoiceCfg.printerId],
-        text,
-        copies: invoiceCfg.copies,
+      const isFE = String(invoiceCfg.docType || "TE").toUpperCase() === "FE";
+      const header = isFE ? billingCfg.invoiceHeader : billingCfg.ticketHeader;
+      const footer = isFE ? billingCfg.invoiceFooter : billingCfg.ticketFooter;
+      const run = async () => {
+        const baseText = buildPrintPreviewText({ title: "Factura", payload, totals: previewTotals });
+        const text = composePrintText({ header, body: baseText, footer });
+        await printToAgent({
+          printerNames: [invoiceCfg.printerId],
+          text,
+          copies: invoiceCfg.copies,
+        });
+        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Factura impresa." } }));
+        finalizePaymentAndExit();
+      };
+      await runPrintWithPreview({
+        title: "Factura",
+        payload: { ...payload, __printHeader: header, __printFooter: footer },
+        totals: previewTotals,
+        onConfirm: run,
+        previewKey: "invoice",
       });
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Factura impresa." } }));
-      setPaymentPrintBusy(false);
-      finalizePaymentAndExit();
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir.";
       window.dispatchEvent(
@@ -1984,6 +2047,7 @@ const subCategories = useMemo(() => {
           detail: { title: "Restaurant billing", desc: msg, kind: "einvoice.error" },
         })
       );
+      finalizePaymentAndExit();
     } finally {
       setPaymentPrintBusy(false);
     }
@@ -2442,33 +2506,28 @@ const subCategories = useMemo(() => {
               borderColor: item?.color ? String(item.color) : undefined,
             }}
           >
-            <div className="absolute top-2 right-2 text-[16px] font-bold text-lime-800 leading-none">
-              {formatMoney(item.price)}
+            <div className="min-w-0 text-[16px] font-semibold text-lime-900 leading-tight line-clamp-2">
+              {item.name}
             </div>
 
             {item.imageUrl ? (
-              <>
-                <div className="pr-14 min-w-0 text-[16px] font-semibold text-lime-900 leading-tight line-clamp-2">
-                  {item.name}
-                </div>
-                <div className="flex-1 min-h-0 rounded-lg overflow-hidden bg-white flex items-center justify-center">
-                  <img
-                    alt=""
-                    src={item.imageUrl}
-                    className="h-full w-full object-contain p-1"
-                    onError={(ev) => {
-                      ev.currentTarget.style.display = "none";
-                    }}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="flex-1 min-h-0 flex items-center justify-center text-center px-2">
-                <div className="text-[17px] font-semibold text-lime-900 leading-snug line-clamp-3">
-                  {item.name}
-                </div>
+              <div className="flex-1 min-h-0 rounded-lg overflow-hidden bg-white flex items-center justify-center">
+                <img
+                  alt=""
+                  src={item.imageUrl}
+                  className="h-full w-full object-contain p-1"
+                  onError={(ev) => {
+                    ev.currentTarget.style.display = "none";
+                  }}
+                />
               </div>
+            ) : (
+              <div className="flex-1 min-h-0" />
             )}
+
+            <div className="mt-auto w-full text-right text-[16px] font-bold text-lime-800 leading-none">
+              {formatMoney(item.price)}
+            </div>
           </button>
         ))}
       </div>
@@ -2490,6 +2549,19 @@ const subCategories = useMemo(() => {
       setPrintConfirmOpen(true);
     },
     []
+  );
+
+  const runPrintWithPreview = useCallback(
+    async ({ title, payload, totals: previewTotals, onConfirm, previewKey }) => {
+      const allowGlobal = printSettings?.showPreview !== false;
+      const allowByType = previewKey ? printSettings?.previewByType?.[previewKey] !== false : true;
+      if (!allowGlobal || !allowByType) {
+        await onConfirm();
+        return;
+      }
+      openPrintConfirm({ title, payload, totals: previewTotals, onConfirm });
+    },
+    [openPrintConfirm, printSettings]
   );
 
   const getSentMap = useCallback(
@@ -2524,7 +2596,7 @@ const subCategories = useMemo(() => {
         sectionId: selectedSection?.id,
         tableId: selectedTable?.id,
         orderId: currentOrder?.id || currentOrder?.orderId || undefined,
-        items: currentOrder.items || [],
+        items: markAsSent ? itemsToPrint : currentOrder.items || [],
         note: orderNote || "",
         covers: currentOrder.covers || covers,
         printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
@@ -2533,6 +2605,7 @@ const subCategories = useMemo(() => {
         roomId: currentOrder.roomId || roomCharge,
         waiterId:
           currentOrder.waiterId || (activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined),
+        mergeItems: markAsSent,
       };
 
     const run = async () => {
@@ -2590,11 +2663,12 @@ const subCategories = useMemo(() => {
       return;
     }
 
-    openPrintConfirm({
+    runPrintWithPreview({
       title: markAsSent ? "Imprimir comanda" : "Reimprimir comanda",
       payload,
       totals,
       onConfirm: run,
+      previewKey: "comanda",
     });
   }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm, getOrderItemKey]);
 
@@ -2628,10 +2702,13 @@ const subCategories = useMemo(() => {
         roomId: currentOrder.roomId || roomCharge,
         printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
       };
-      const text = buildPrintPreviewText({ title: "Subtotal", payload: subtotalPayload, totals });
       const invoiceCfg = getInvoicePrintConfig();
-      await printToAgent({ printerNames: [invoiceCfg.printerId], text, copies: invoiceCfg.copies });
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Subtotal impreso." } }));
+      const run = async () => {
+        const text = buildPrintPreviewText({ title: "Subtotal", payload: subtotalPayload, totals });
+        await printToAgent({ printerNames: [invoiceCfg.printerId], text, copies: invoiceCfg.copies });
+        window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Subtotal impreso." } }));
+      };
+      await runPrintWithPreview({ title: "Subtotal", payload: subtotalPayload, totals, onConfirm: run, previewKey: "subtotal" });
     } catch (err) {
       const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir subtotal.";
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
@@ -2663,6 +2740,7 @@ const subCategories = useMemo(() => {
         sectionId: selectedSection?.id,
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
         orderId: currentOrder?.id || currentOrder?.orderId || undefined,
+        docType: invoiceCfg.docType,
         payments: paymentForm,
         totals,
         note: orderNote,
@@ -3002,7 +3080,7 @@ const subCategories = useMemo(() => {
         )}
 
         {printConfirmOpen && (
-          <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
+          <div className="fixed inset-0 z-[70] bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
           <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
               <div>
