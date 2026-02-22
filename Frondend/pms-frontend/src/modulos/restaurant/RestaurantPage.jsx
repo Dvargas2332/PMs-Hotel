@@ -1732,7 +1732,7 @@ const subCategories = useMemo(() => {
     }
   };
 
-  const cancelEmptyOrder = () => {
+  const cancelEmptyOrder = async () => {
     if (!selectedTable?.id) return;
     const tableId = selectedTable.id;
     const list = normalizeOrderList(ordersByTable[tableId]);
@@ -1740,17 +1740,55 @@ const subCategories = useMemo(() => {
     const targetOrder = list.find((o) => getOrderKey(o) === activeOrderKey) || list[0];
     if (!targetOrder) return;
     const itemsCount = Array.isArray(targetOrder.items) ? targetOrder.items.length : 0;
-    if (itemsCount > 0) {
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "La orden tiene articulos." } }));
-      return;
-    }
-    if (targetOrder?.id || targetOrder?.orderId) {
+    const orderId = targetOrder?.id || targetOrder?.orderId || "";
+    if (!orderId) {
       window.dispatchEvent(
         new CustomEvent("pms:push-alert", {
-          detail: { title: "Restaurant", desc: "La orden ya existe en el sistema. Elimina los articulos y cobra o anula." },
+          detail: { title: "Restaurant", desc: "La orden aun no existe en el sistema." },
         })
       );
       return;
+    }
+
+    const reason = window.prompt("Motivo de anulacion:") || "";
+    const adminPin = window.prompt("PIN de administrador requerido:") || "";
+    if (!adminPin.trim()) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "Se requiere PIN de administrador para anular." },
+        })
+      );
+      return;
+    }
+    try {
+      await api.post("/restaurant/order/cancel", {
+        orderId,
+        tableId,
+        reason: String(reason || "").trim(),
+        adminCode: String(adminPin || "").trim(),
+      });
+      // remove from local list
+      setOrdersByTable((prev) => {
+        const current = normalizeOrderList(prev[tableId]);
+        const nextList = current.filter((o) => getOrderKey(o) !== getOrderKey(targetOrder));
+        const next = { ...prev };
+        if (nextList.length === 0) {
+          delete next[tableId];
+        } else {
+          next[tableId] = nextList;
+        }
+        return next;
+      });
+      setActiveOrderByTable((prev) => {
+        const next = { ...prev };
+        delete next[tableId];
+        return next;
+      });
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Orden anulada." } }));
+      resetToLobby();
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "No se pudo anular la orden.";
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
     }
 
     setOrdersByTable((prev) => {
@@ -4733,8 +4771,8 @@ const subCategories = useMemo(() => {
               <button
                 className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50 ml-1"
                 onClick={cancelEmptyOrder}
-                disabled={hasItems}
-                title="Cancelar orden vac�a"
+                
+                title="Cancelar orden"
               >
                 Cancelar orden
               </button>

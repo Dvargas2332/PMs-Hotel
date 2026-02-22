@@ -586,6 +586,10 @@ export default function RestaurantConfig() {
 
 
 
+  const [objectEdit, setObjectEdit] = useState(null);
+
+
+
   const [rotationSnap, setRotationSnap] = useState(15); // 0 = off
 
 
@@ -960,6 +964,16 @@ export default function RestaurantConfig() {
 
 
 
+
+
+
+  const selectedObject = useMemo(
+
+    () => (selectedSection?.objects || []).find((o) => String(o.id) === String(selectedObjectId)) || null,
+
+    [selectedSection, selectedObjectId]
+
+  );
 
 
 
@@ -4273,7 +4287,23 @@ export default function RestaurantConfig() {
 
 
 
-  const barObjects = useMemo(
+  const objects = useMemo(
+
+
+
+    () => (selectedSection?.objects || []),
+
+
+
+    [selectedSection]
+
+
+
+  );
+
+
+
+const barObjects = useMemo(
 
 
 
@@ -4526,6 +4556,86 @@ export default function RestaurantConfig() {
 
 
   }, [selectedTableId, selectedTable]);
+
+
+
+  useEffect(() => {
+
+
+
+    if (!selectedObject) {
+
+
+
+      setObjectEdit(null);
+
+
+
+      return;
+
+
+
+    }
+
+
+
+    setObjectEdit({
+
+
+
+      id: selectedObject.id,
+
+
+
+      kind: String(selectedObject.kind || "OTHER").toUpperCase(),
+
+
+
+      label: String(selectedObject.label || ""),
+
+
+
+      x: Number(selectedObject.x ?? 50),
+
+
+
+      y: Number(selectedObject.y ?? 50),
+
+
+
+      w: Number(selectedObject.w ?? 12),
+
+
+
+      h: Number(selectedObject.h ?? 12),
+
+
+
+      zIndex: Number(selectedObject.zIndex ?? 0),
+
+
+
+      rotation: Number(selectedObject.rotation ?? 0),
+
+
+
+      color: String(selectedObject.color || ""),
+
+
+
+      iconUrl: String(selectedObject?.meta?.iconUrl || ""),
+
+
+
+      iconDataUrl: String(selectedObject?.meta?.iconDataUrl || ""),
+
+
+
+    });
+
+
+
+  }, [selectedObjectId, selectedObject]);
 
 
 
