@@ -5742,73 +5742,63 @@ const barObjects = useMemo(
 
   const toggleDiscountActive = async (d) => {
 
-
-
     if (!d?.id) return;
 
+    try {
 
+      await api.put(`/discounts/${encodeURIComponent(d.id)}`, {
 
-    await api.put(`/discounts/${encodeURIComponent(d.id)}`, {
+        name: String(d.name || d.id || "").trim(),
 
+        value: Number(d.value ?? d.percent ?? 0) || 0,
 
+        requiresPin: Boolean(d.requiresPin),
 
-      ...d,
+        active: d.active === false ? true : false,
 
+        expiresAt: d.expiresAt || null,
 
+      });
 
-      active: d.active === false ? true : false,
+      setDiscountsList((prev) =>
 
+        (prev || []).map((x) => (x.id === d.id ? { ...x, active: !(d.active === false) } : x))
 
+      );
 
-    });
+    } catch (err) {
 
+      const msg = err?.response?.data?.message || err?.message || "No se pudo actualizar el descuento.";
 
+      alert("Restaurant", msg);
 
-    setDiscountsList((prev) =>
-
-
-
-      (prev || []).map((x) => (x.id === d.id ? { ...x, active: !(d.active === false) } : x))
-
-
-
-    );
-
-
+    }
 
   };
-
-
-
-
 
 
 
   const deleteDiscount = async (d) => {
 
-
-
     if (!d?.id) return;
 
+    if (!window.confirm(`Eliminar descuento "${d.name || d.id}"?`)) return;
 
+    try {
 
-    if (!window.confirm(`Eliminar descuento \"${d.name || d.id}\"?`)) return;
+      await api.delete(`/discounts/${encodeURIComponent(d.id)}`);
 
+      setDiscountsList((prev) => (prev || []).filter((x) => x.id !== d.id));
 
+    } catch (err) {
 
-    await api.delete(`/discounts/${encodeURIComponent(d.id)}`);
+      const msg = err?.response?.data?.message || err?.message || "No se pudo eliminar el descuento.";
 
+      alert("Restaurant", msg);
 
-
-    setDiscountsList((prev) => (prev || []).filter((x) => x.id !== d.id));
-
-
+    }
 
   };
-
-
-
-
 
 
 

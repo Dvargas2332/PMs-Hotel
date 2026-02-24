@@ -250,7 +250,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
     });
 
     return invoice;
-  });
+  }, { timeout: 20000, maxWait: 10000 });
 }
 
 export function buildInventoryLinesFromXml(lines?: Array<Record<string, any>>): InventoryInvoiceLineInput[] {

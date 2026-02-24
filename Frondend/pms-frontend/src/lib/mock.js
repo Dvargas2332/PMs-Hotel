@@ -164,6 +164,7 @@ let DB = {
     horario: "11:00 - 23:00",
     resolucion: "DGT-001",
     notas: "",
+    inventoryEnabled: true,
   },
   restaurantBilling: { comprobante: "factura", margen: "0", propina: "10", autoFactura: true },
   restaurantTaxes: {
@@ -186,6 +187,7 @@ let DB = {
   restaurantItems: [],
   restaurantRecipes: [],
   restaurantInventory: [],
+  restaurantInventoryInvoices: [],
   restaurantOrders: [],
   restaurantSales: [],
   restaurantCloses: [],
@@ -208,6 +210,152 @@ const normalizeQty = (qty, unit) => {
   const map = UNIT_MAP[unit];
   if (!map) return { value: val, baseUnit: unit || "un" };
   return { value: val * map.factor, baseUnit: map.base };
+};
+
+const safeText = (node) => (node && typeof node.textContent === "string" ? node.textContent.trim() : "");
+const localNameEquals = (node, name) => node && node.localName === name;
+const getFirstByLocalName = (root, name) =>
+  root ? root.getElementsByTagNameNS("*", name)[0] || null : null;
+const getTextByLocalName = (root, name) => safeText(getFirstByLocalName(root, name));
+const getChildText = (root, name) => {
+  if (!root || !root.childNodes) return "";
+  for (const n of root.childNodes) {
+    if (localNameEquals(n, name)) return safeText(n);
+  }
+  return "";
+};
+const normalizeUnit = (raw) => {
+  const unit = String(raw || "").trim();
+  if (!unit) return "";
+  const lower = unit.toLowerCase();
+  if (["unid", "unidad", "und", "u"].includes(lower)) return "un";
+  return lower;
+};
+
+const parseXmlInvoice = (xml) => {
+  if (typeof DOMParser === "undefined") throw new Error("XML parser unavailable");
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  const hasError = doc.getElementsByTagName("parsererror").length > 0;
+  if (hasError) throw new Error("XML invalido");
+  const emisorNode = getFirstByLocalName(doc, "Emisor");
+  const emisor =
+    getChildText(emisorNode, "NombreComercial") ||
+    getChildText(emisorNode, "Nombre") ||
+    "";
+  const docNumber =
+    getTextByLocalName(doc, "NumeroConsecutivo") ||
+    getTextByLocalName(doc, "NumeroConsecutivoComprobante") ||
+    "";
+  const issueDate =
+    getTextByLocalName(doc, "FechaEmision") ||
+    getTextByLocalName(doc, "FechaEmisionComprobante") ||
+    "";
+  const detalleServicio = getFirstByLocalName(doc, "DetalleServicio");
+  const lineNodes = detalleServicio
+    ? Array.from(detalleServicio.getElementsByTagNameNS("*", "LineaDetalle"))
+    : Array.from(doc.getElementsByTagNameNS("*", "LineaDetalle"));
+  const lines = lineNodes.map((line) => {
+    const sku =
+      getChildText(line, "Codigo") ||
+      getChildText(getFirstByLocalName(line, "CodigoComercial"), "Codigo") ||
+      "";
+    const name = getChildText(line, "Detalle") || getChildText(line, "Descripcion") || "";
+    const qty = getChildText(line, "Cantidad") || "0";
+    const unit = normalizeUnit(getChildText(line, "UnidadMedida") || getChildText(line, "Unidad"));
+    const cost = getChildText(line, "PrecioUnitario") || getChildText(line, "Precio") || "";
+    const impuestoNode = getFirstByLocalName(line, "Impuesto");
+    const taxRate = getChildText(impuestoNode, "Tarifa") || getChildText(line, "Tarifa") || "";
+    return { sku, name, qty, unit, cost, taxRate };
+  });
+  return {
+    supplierName: emisor,
+    docNumber,
+    issueDate,
+    lines: lines.filter((l) => l.name || l.sku),
+  };
+};
+
+const findInventoryItem = (line) => {
+  const sku = String(line.sku || "").trim().toLowerCase();
+  const name = String(line.name || "").trim().toLowerCase();
+  if (sku) {
+    const bySku = (DB.restaurantInventory || []).find((i) => String(i.sku || "").trim().toLowerCase() === sku);
+    if (bySku) return bySku;
+  }
+  if (name) {
+    const byName = (DB.restaurantInventory || []).find((i) => String(i.desc || "").trim().toLowerCase() === name);
+    if (byName) return byName;
+  }
+  return null;
+};
+
+const applyInventoryLine = (line, supplierName) => {
+  const qty = Number(line.qty || 0);
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  const unit = String(line.unit || "").trim() || "un";
+  const { value: baseQty, baseUnit } = normalizeQty(qty, unit);
+  const existing = findInventoryItem(line);
+  if (existing) {
+    const sameBase = !existing.unidadBase || existing.unidadBase === baseUnit;
+    const nextBase = sameBase ? asNumber(existing.stockBase) + baseQty : asNumber(existing.stockBase);
+    existing.stockBase = nextBase;
+    existing.unidadBase = existing.unidadBase || baseUnit;
+    existing.unit = existing.unit || existing.unidad || baseUnit;
+    existing.stock = nextBase;
+    existing.cost = line.cost || existing.cost || existing.costo || 0;
+    existing.taxRate = line.taxRate || existing.taxRate || existing.iva || "13";
+    existing.supplierName = supplierName || existing.supplierName || existing.proveedor || "";
+    return existing;
+  }
+  const item = {
+    id: Math.random().toString(36).slice(2, 7),
+    sku: line.sku || "",
+    desc: line.name || line.sku || "",
+    stock: baseQty,
+    unit: baseUnit,
+    stockBase: baseQty,
+    unidadBase: baseUnit,
+    minimo: 0,
+    cost: line.cost || 0,
+    taxRate: line.taxRate || "13",
+    supplierName: supplierName || "",
+  };
+  DB.restaurantInventory.push(item);
+  return item;
+};
+
+const consumeInventoryForOrder = (orderItems = []) => {
+  const invEnabled = DB.restaurantGeneral?.inventoryEnabled !== false;
+  if (!invEnabled) return;
+  const recipes = Array.isArray(DB.restaurantRecipes) ? DB.restaurantRecipes : [];
+  orderItems.forEach((item) => {
+    const itemId = String(item?.id || item?.code || item?.codigo || "").trim();
+    if (!itemId) return;
+    const qty = asNumber(item?.qty ?? 1, 1);
+    const lines = recipes.filter((r) => {
+      const rId = String(r.restaurantItemId || r.codigo || r.restaurantItemCode || "").trim();
+      return rId && rId === itemId;
+    });
+    lines.forEach((line) => {
+      const invId = String(line.ingrediente || line.inventoryItemId || "").trim();
+      if (!invId) return;
+      const inv = (DB.restaurantInventory || []).find((i) => String(i.id) === invId);
+      if (!inv) return;
+      const baseQty = Number.isFinite(Number(line.baseCantidad))
+        ? asNumber(line.baseCantidad)
+        : normalizeQty(line.cantidad, line.unidad).value;
+      const baseUnit = line.baseUnidad || normalizeQty(line.cantidad, line.unidad).baseUnit;
+      const invBaseUnit = inv.unidadBase || inv.unit || inv.unidad;
+      if (invBaseUnit && baseUnit && invBaseUnit !== baseUnit) return;
+      const delta = baseQty * qty;
+      const currentBase = asNumber(inv.stockBase, asNumber(inv.stock, 0));
+      const nextBase = Math.max(0, currentBase - delta);
+      inv.stockBase = nextBase;
+      inv.stock = nextBase;
+      inv.unidadBase = inv.unidadBase || baseUnit || invBaseUnit;
+      inv.unit = inv.unit || inv.unidad || inv.unidadBase;
+    });
+  });
 };
 
 const makeResp = (data) => ({ data });
@@ -302,6 +450,7 @@ export const mockApi = {
     if (path === "/restaurant/items") return makeResp(DB.restaurantItems);
     if (path === "/restaurant/recipes") return makeResp(DB.restaurantRecipes);
     if (path === "/restaurant/inventory") return makeResp(DB.restaurantInventory);
+    if (path === "/restaurant/inventory/invoices") return makeResp(DB.restaurantInventoryInvoices || []);
     if (path === "/restaurant/orders") {
       const params = new URLSearchParams(query || "");
       const status = String(params.get("status") || "OPEN").toUpperCase();
@@ -645,6 +794,7 @@ export const mockApi = {
     if (path === "/restaurant/order/close") {
       const now = new Date().toISOString();
       const totals = payload?.totals && typeof payload.totals === "object" ? payload.totals : calcOrderTotals(payload.items || []);
+      consumeInventoryForOrder(payload.items || []);
       const sale = {
         id: payload.id || Math.random().toString(36).slice(2, 8),
         tableId: payload.tableId,
@@ -772,9 +922,16 @@ export const mockApi = {
     }
     if (path === "/restaurant/recipes") {
       const { value, baseUnit } = normalizeQty(payload.cantidad, payload.unidad);
+      const inv = (DB.restaurantInventory || []).find((i) => String(i.id) === String(payload.ingrediente));
+      const itemMeta = (DB.restaurantItems || []).find((i) => String(i.id) === String(payload.codigo));
       const item = {
         ...payload,
         id: payload.id || Math.random().toString(36).slice(2, 7),
+        restaurantItemId: payload.codigo,
+        restaurantItemName: itemMeta?.name || itemMeta?.nombre || "",
+        restaurantItemCode: itemMeta?.code || itemMeta?.codigo || payload.codigo,
+        inventorySku: inv?.sku || "",
+        inventoryDesc: inv?.desc || inv?.descripcion || "",
         baseCantidad: value,
         baseUnidad: baseUnit,
       };
@@ -793,6 +950,62 @@ export const mockApi = {
       };
       DB.restaurantInventory.push(item);
       return makeResp(item);
+    }
+    if (path === "/restaurant/inventory/invoices") {
+      const lines = Array.isArray(payload?.lines) ? payload.lines : [];
+      const supplierName = String(payload?.supplierName || payload?.proveedor || "").trim();
+      const invoice = {
+        id: payload?.id || Math.random().toString(36).slice(2, 8),
+        supplierName,
+        proveedor: supplierName,
+        docNumber: payload?.docNumber || payload?.numero || "",
+        issueDate: payload?.issueDate || payload?.fecha || "",
+        source: payload?.source || "MANUAL",
+        currency: payload?.currency || "",
+        exchangeRate: payload?.exchangeRate || "",
+        lines: lines
+          .filter((l) => l)
+          .map((l) => ({
+            id: Math.random().toString(36).slice(2, 9),
+            sku: l.sku || "",
+            name: l.name || "",
+            qty: l.qty || 0,
+            unit: l.unit || "",
+            cost: l.cost || 0,
+            taxRate: l.taxRate || "13",
+          })),
+      };
+      invoice.total = invoice.lines.reduce(
+        (acc, l) => acc + asNumber(l.cost) * asNumber(l.qty || 0),
+        0
+      );
+      invoice.taxTotal = invoice.lines.reduce((acc, l) => {
+        const rate = asNumber(l.taxRate, 0) / 100;
+        return acc + asNumber(l.cost) * asNumber(l.qty || 0) * rate;
+      }, 0);
+      if (payload?.totals && typeof payload.totals === "object") {
+        invoice.totalFromXml = payload.totals.totalComprobante || payload.totals.total || "";
+        invoice.taxTotalFromXml = payload.totals.totalImpuesto || "";
+        invoice.totalSaleFromXml = payload.totals.totalVenta || "";
+      }
+      (DB.restaurantInventoryInvoices || (DB.restaurantInventoryInvoices = [])).unshift(invoice);
+      invoice.lines.forEach((l) => applyInventoryLine(l, supplierName));
+      return makeResp(invoice);
+    }
+    if (path === "/restaurant/inventory/invoices/import-xml") {
+      const xml = String(payload?.xml || "");
+      const parsed = parseXmlInvoice(xml);
+      const invoice = {
+        supplierName: parsed.supplierName || "XML",
+        docNumber: parsed.docNumber || "",
+        issueDate: parsed.issueDate || "",
+        source: "XML",
+        lines: parsed.lines,
+        totals: payload?.totals || parsed?.totals || undefined,
+        currency: payload?.currency || parsed?.currency || "",
+        exchangeRate: payload?.exchangeRate || parsed?.exchangeRate || "",
+      };
+      return await mockApi.post("/restaurant/inventory/invoices", invoice);
     }
     return makeResp(payload);
   },
