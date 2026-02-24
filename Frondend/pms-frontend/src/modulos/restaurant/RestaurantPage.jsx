@@ -382,6 +382,11 @@ const [subCategory, setSubCategory] = useState("");
   const [voidInvoiceAuthOpen, setVoidInvoiceAuthOpen] = useState(false);
   const [voidInvoiceSuccessOpen, setVoidInvoiceSuccessOpen] = useState(false);
   const voidInvoiceSuccessTimerRef = useRef(null);
+  const [cancelOrderModalOpen, setCancelOrderModalOpen] = useState(false);
+  const [cancelOrderForm, setCancelOrderForm] = useState({ username: "", password: "", reason: "" });
+  const [cancelOrderBusy, setCancelOrderBusy] = useState(false);
+  const [cancelOrderError, setCancelOrderError] = useState("");
+  const [cancelOrderTarget, setCancelOrderTarget] = useState(null);
 
   const [openInfo, setOpenInfo] = useState(() => ({ openedAt: new Date().toISOString(), user: "Cashier" }));
   const [taxesCfg, setTaxesCfg] = useState({
@@ -1749,28 +1754,50 @@ const subCategories = useMemo(() => {
       );
       return;
     }
+    setCancelOrderTarget({ orderId, tableId, itemsCount });
+    setCancelOrderForm({ username: "", password: "", reason: "" });
+    setCancelOrderError("");
+    setCancelOrderModalOpen(true);
+  };
 
-    const reason = window.prompt("Motivo de anulacion:") || "";
-    const adminPin = window.prompt("PIN de administrador requerido:") || "";
-    if (!adminPin.trim()) {
-      window.dispatchEvent(
-        new CustomEvent("pms:push-alert", {
-          detail: { title: "Restaurant", desc: "Se requiere PIN de administrador para anular." },
-        })
-      );
+  const closeCancelOrderModal = () => {
+    if (cancelOrderBusy) return;
+    setCancelOrderModalOpen(false);
+    setCancelOrderError("");
+    setCancelOrderForm({ username: "", password: "", reason: "" });
+    setCancelOrderTarget(null);
+  };
+
+  const confirmCancelOrder = async () => {
+    if (cancelOrderBusy) return;
+    const username = String(cancelOrderForm.username || "").trim();
+    const password = String(cancelOrderForm.password || "").trim();
+    const reason = String(cancelOrderForm.reason || "").trim();
+    if (!username || !password || !reason) {
+      setCancelOrderError("Usuario, contrasena y motivo son requeridos.");
       return;
     }
+    if (!cancelOrderTarget?.orderId || !cancelOrderTarget?.tableId) {
+      setCancelOrderError("Orden no seleccionada.");
+      return;
+    }
+    setCancelOrderBusy(true);
+    setCancelOrderError("");
     try {
       await api.post("/restaurant/order/cancel", {
-        orderId,
-        tableId,
-        reason: String(reason || "").trim(),
-        adminCode: String(adminPin || "").trim(),
+        orderId: cancelOrderTarget.orderId,
+        tableId: cancelOrderTarget.tableId,
+        reason,
+        adminCode: password,
+        adminUser: username,
       });
-      // remove from local list
+      const tableId = cancelOrderTarget.tableId;
       setOrdersByTable((prev) => {
         const current = normalizeOrderList(prev[tableId]);
-        const nextList = current.filter((o) => getOrderKey(o) !== getOrderKey(targetOrder));
+        const nextList = current.filter((o) => {
+          const id = String(o?.id || o?.orderId || "");
+          return id !== String(cancelOrderTarget.orderId);
+        });
         const next = { ...prev };
         if (nextList.length === 0) {
           delete next[tableId];
@@ -1785,31 +1812,14 @@ const subCategories = useMemo(() => {
         return next;
       });
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Orden anulada." } }));
+      closeCancelOrderModal();
       resetToLobby();
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo anular la orden.";
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+      setCancelOrderError(msg);
+    } finally {
+      setCancelOrderBusy(false);
     }
-
-    setOrdersByTable((prev) => {
-      const current = normalizeOrderList(prev[tableId]);
-      const nextList = current.filter((o) => getOrderKey(o) !== getOrderKey(targetOrder));
-      const next = { ...prev };
-      if (nextList.length === 0) {
-        delete next[tableId];
-      } else {
-        next[tableId] = nextList;
-      }
-      return next;
-    });
-
-    setActiveOrderByTable((prev) => {
-      const next = { ...prev };
-      delete next[tableId];
-      return next;
-    });
-
-    resetToLobby();
   };
 
   const openPayments = () => {
@@ -2961,14 +2971,14 @@ const subCategories = useMemo(() => {
             {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
             <div className="flex items-center justify-between gap-2">
               <button
-                className="px-4 py-2 rounded-lg border text-sm"
+                className="h-12 px-4 rounded-lg border text-sm"
                 onClick={() => navigate("/restaurant")}
                 disabled={shiftOpenBusy}
               >
                 Regresar
               </button>
               <button
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                 onClick={openShiftWithLogin}
                 disabled={shiftOpenBusy || shiftLoading || staffLoginBusy}
               >
@@ -2995,7 +3005,7 @@ const subCategories = useMemo(() => {
               </div>
             </div>
             <button
-              className="px-3 py-2 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
+              className="h-12 px-3 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
               onClick={() => setStaffLoginOpen(true)}
             >
               {activeStaff ? `${staffRoleLabel(activeStaff.role)}: ${activeStaff.name}` : "Ingresar mesero/cajero"}
@@ -3012,12 +3022,11 @@ const subCategories = useMemo(() => {
 
         {staffLoginOpen && !shiftModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-            <div className="w-full max-w-xl md:max-w-2xl bg-white rounded-2xl shadow-2xl p-5 space-y-4 overflow-hidden">
+            <div className="w-full max-w-xl md:max-w-1xl bg-white rounded-2xl shadow-2xl p-5 space-y-4 overflow-hidden">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase text-lime-600">Acceso TPV</div>
-                  <div className="text-lg font-semibold text-slate-900">Meseros y cajeros</div>
-                  <div className="text-xs text-slate-500">Ingresa usuario y password para continuar.</div>
+                  <div className="text-xl uppercase text-lime-600">Acceso TPV</div>
+                    <div className="text-xs text-slate-500">Ingresa usuario y password para continuar.</div>
                 </div>
               </div>
               {activeStaff && (
@@ -3070,7 +3079,7 @@ const subCategories = useMemo(() => {
                     {["1","2","3","4","5","6","7","8","9"].map((d) => (
                       <button
                         key={d}
-                        className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                        className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
                         onClick={() => handleStaffDigit(d)}
                         type="button"
                       >
@@ -3078,21 +3087,21 @@ const subCategories = useMemo(() => {
                       </button>
                     ))}
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
                       onClick={handleStaffClear}
                       type="button"
                     >
                       C
                     </button>
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
                       onClick={() => handleStaffDigit("0")}
                       type="button"
                     >
                       0
                     </button>
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
                       onClick={handleStaffBackspace}
                       type="button"
                     >
@@ -3102,11 +3111,11 @@ const subCategories = useMemo(() => {
                 </div>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <button className="px-3 py-2 rounded-lg border text-sm" onClick={() => navigate("/restaurant")}>
+                <button className="h-12 px-3 rounded-lg border text-sm" onClick={() => navigate("/restaurant")}>
                   Regresar
                 </button>
                 <button
-                  className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:bg-lime-300"
+                  className="h-12 px-4 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:bg-lime-300"
                   disabled={staffLoginBusy}
                   onClick={submitStaffLogin}
                 >
@@ -3131,7 +3140,7 @@ const subCategories = useMemo(() => {
               <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">{printConfirmText}</pre>
             </div>
             <div className="flex justify-end gap-2">
-              <button className="px-4 py-2 rounded-lg border text-sm" disabled={printConfirmBusy} onClick={closePrintConfirm}>
+              <button className="h-12 px-4 rounded-lg border text-sm" disabled={printConfirmBusy} onClick={closePrintConfirm}>
                 Cancelar
               </button>
               <button
@@ -3232,7 +3241,7 @@ const subCategories = useMemo(() => {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <button className="px-4 py-2 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceModal}>
+              <button className="h-12 px-4 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceModal}>
                 Cerrar
               </button>
               <button
@@ -3291,7 +3300,7 @@ const subCategories = useMemo(() => {
             {voidInvoiceError && <div className="text-xs text-red-600">{voidInvoiceError}</div>}
 
             <div className="flex justify-end gap-2 pt-1">
-              <button className="px-4 py-2 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceAuth}>
+              <button className="h-12 px-4 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceAuth}>
                 Cancelar
               </button>
               <button
@@ -3317,13 +3326,72 @@ const subCategories = useMemo(() => {
         </div>
       )}
 
+      {cancelOrderModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase text-red-600">Autorizacion</div>
+                <div className="text-sm font-semibold text-slate-900">Confirmar anulacion</div>
+              </div>
+              <RestaurantCloseXButton onClick={closeCancelOrderModal} />
+            </div>
+
+            <div className="grid gap-2 place-items-center">
+              <input type="text" name="fake_username" autoComplete="username" className="hidden" />
+              <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
+              <input
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
+                placeholder="Usuario administrador"
+                name="cancel_username"
+                autoComplete="off"
+                value={cancelOrderForm.username}
+                onChange={(e) => setCancelOrderForm((f) => ({ ...f, username: e.target.value }))}
+              />
+              <input
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
+                type="password"
+                placeholder="Contrasena administrador"
+                name="cancel_password"
+                autoComplete="new-password"
+                value={cancelOrderForm.password}
+                onChange={(e) => setCancelOrderForm((f) => ({ ...f, password: e.target.value }))}
+              />
+              <input
+                className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
+                placeholder="Asunto / motivo"
+                name="cancel_reason"
+                autoComplete="off"
+                value={cancelOrderForm.reason}
+                onChange={(e) => setCancelOrderForm((f) => ({ ...f, reason: e.target.value }))}
+              />
+            </div>
+
+            {cancelOrderError && <div className="text-xs text-red-600">{cancelOrderError}</div>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button className="h-12 px-4 rounded-lg border text-sm" disabled={cancelOrderBusy} onClick={closeCancelOrderModal}>
+                Cancelar
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
+                disabled={cancelOrderBusy}
+                onClick={confirmCancelOrder}
+              >
+                {cancelOrderBusy ? "Anulando..." : "Anular orden"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {closeOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex justify-end">
           <div className="w-full max-w-[360px] max-h-[40vh] min-h-[200px] bg-white rounded-l-2xl shadow-2xl p-3 flex flex-col gap-3 overflow-y-auto">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[10px] uppercase text-lime-500">Cash status</div>
-                <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
+                <div className="text-xs uppercase text-lime-500">Cash status</div>
+                <div className="text-base font-semibold text-lime-900">Restaurant cash</div>
                 <div className="text-xs text-lime-700">
                   Opened: {new Date(openInfo.openedAt).toLocaleString()}  {openInfo.user}
                 </div>
@@ -3367,8 +3435,8 @@ const subCategories = useMemo(() => {
           <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[10px] uppercase text-lime-500">{closeStage === "Z" ? "Cash close Z" : "Cash close X"}</div>
-                <div className="text-sm font-semibold text-lime-900">Restaurant cash</div>
+                <div className="text-xs uppercase text-lime-500">{closeStage === "Z" ? "Cash close Z" : "Cash close X"}</div>
+                <div className="text-base font-semibold text-lime-900">Restaurant cash</div>
                 <div className="text-[11px] text-slate-500">
                   Moneda: {paymentsCfg.monedaBase} - TC {paymentsCfg.tipoCambio}
                 </div>
@@ -3426,7 +3494,7 @@ const subCategories = useMemo(() => {
                 </div>
                 <div className="flex justify-end gap-2">
                   <button
-                    className="px-4 py-2 rounded-lg border text-sm"
+                    className="h-12 px-4 rounded-lg border text-sm"
                     onClick={() => setCloseModalOpen(false)}
                   >
                     Cancel
@@ -3498,7 +3566,7 @@ const subCategories = useMemo(() => {
 
                 <div className="flex justify-end gap-2">
                   <button
-                    className="px-4 py-2 rounded-lg border text-sm"
+                    className="h-12 px-4 rounded-lg border text-sm"
                     onClick={() => setCloseModalOpen(false)}
                   >
                     Cancel
@@ -3672,11 +3740,11 @@ const subCategories = useMemo(() => {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <button className="px-4 py-2 rounded-lg border text-sm" onClick={closeItemOptions}>
+              <button className="h-12 px-4 rounded-lg border text-sm" onClick={closeItemOptions}>
                 Cancelar
               </button>
               <button
-                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                 onClick={confirmItemOptions}
               >
                 Agregar
@@ -3805,14 +3873,14 @@ const subCategories = useMemo(() => {
               {paymentResult ? (
                 <>
                   <button
-                    className="px-4 py-2 rounded-lg border text-sm"
+                    className="h-12 px-4 rounded-lg border text-sm"
                     onClick={finalizePaymentAndExit}
                     disabled={paymentPrintBusy}
                   >
                     Cerrar sin imprimir
                   </button>
               <button
-                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                    className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                     onClick={printPaidInvoice}
                     disabled={paymentPrintBusy}
                   >
@@ -3822,14 +3890,14 @@ const subCategories = useMemo(() => {
               ) : (
                 <>
                   <button
-                    className="px-4 py-2 rounded-lg border text-sm"
+                    className="h-12 px-4 rounded-lg border text-sm"
                     onClick={openSplitOrderModal}
                     disabled={!hasItems}
                   >
                     Split Order
                   </button>
               <button
-                    className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                    className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                     disabled={!hasItems || selectedPaymentKeys.length === 0}
                     onClick={confirmChargeOrder}
                   >
@@ -3961,7 +4029,7 @@ const subCategories = useMemo(() => {
               ))}
             </div>
             <div className="flex justify-end gap-2">
-              <button className="px-4 py-2 rounded-lg border text-sm" onClick={closeSplitOrderModal}>
+              <button className="h-12 px-4 rounded-lg border text-sm" onClick={closeSplitOrderModal}>
                 Cancelar
               </button>
               <button
@@ -3979,8 +4047,8 @@ const subCategories = useMemo(() => {
           <div className="w-full md:w-[560px] h-full bg-white rounded-l-2xl shadow-2xl p-6 flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-[10px] uppercase text-lime-500">{tablePickerMode === "MOVE" ? "Change table" : "Quick table"}</div>
-                <div className="text-sm font-semibold text-lime-900">{tablePickerMode === "MOVE" ? "Select destination table" : "Select table"}</div>
+                <div className="text-xs uppercase text-lime-500">{tablePickerMode === "MOVE" ? "Change table" : "Quick table"}</div>
+                <div className="text-base font-semibold text-lime-900">{tablePickerMode === "MOVE" ? "Select destination table" : "Select table"}</div>
               </div>
               <RestaurantCloseXButton onClick={() => setTablePickerOpen(false)} />
             </div>
@@ -4029,7 +4097,7 @@ const subCategories = useMemo(() => {
                     onClick={() => (tablePickerMode === "MOVE" ? setMoveTargetTable(t) : handleSelectTable(t, t.section))}
                   >
                     <div className="text-xs text-lime-500">{t.section?.name || "Section"}</div>
-                    <div className="text-sm font-semibold text-lime-900">{t.name}</div>
+                    <div className="text-base font-semibold text-lime-900">{t.name}</div>
                     <div className="text-xs text-lime-700/80">{t.seats} seats</div>
                     {hasOrder && (
                       <div className="text-[11px] text-emerald-700 mt-1">
@@ -4054,7 +4122,7 @@ const subCategories = useMemo(() => {
                   </span>
                 </div>
                 <button
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                  className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
                   disabled={!moveTargetTable?.id || moveTargetTable?.id === selectedTable?.id}
                   onClick={() => moveTargetTable && moveToTable(moveTargetTable)}
                 >
@@ -4078,7 +4146,7 @@ const subCategories = useMemo(() => {
                   {!sectionsLoading && sectionsError && <div className="text-sm text-lime-700">{sectionsError}</div>}
                   {!sectionsLoading && !sectionsError && (sections || []).length === 0 && (
                     <div className="rounded-2xl border border-lime-200 bg-lime-50 p-4">
-                      <div className="text-sm font-semibold text-lime-900">No sections configured</div>
+                      <div className="text-base font-semibold text-lime-900">No sections configured</div>
                       <div className="text-sm text-lime-700 mt-1">
                         Create sections and tables from <span className="font-semibold">Management → Restaurant → Sections, tables and menu</span>.
                       </div>
@@ -4117,10 +4185,10 @@ const subCategories = useMemo(() => {
                               </div>
                             )}
                           </div>
-                          <div className="text-[10px] uppercase text-lime-500">Section</div>
-                          <div className="text-sm font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
-                          <div className="text-xs text-lime-700/90 mt-1">{(sec.tables || []).length} tables</div>
-                          <div className="text-[11px] text-lime-700/80 mt-1">
+                          <div className="text-xs uppercase text-lime-500">Section</div>
+                          <div className="text-base font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
+                          <div className="text-sm text-lime-700/90 mt-1">{(sec.tables || []).length} tables</div>
+                          <div className="text-sm text-lime-700/80 mt-1">
                             Menu: <span className="font-semibold">{sec?.activeMenu?.name || "-"}</span>
                           </div>
                         </div>
@@ -4492,8 +4560,8 @@ const subCategories = useMemo(() => {
                   </div>
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <div className="text-[10px] uppercase text-lime-500">Order</div>
-                      <div className="text-sm font-semibold text-lime-900">
+                      <div className="text-xs uppercase text-lime-500">Order</div>
+                      <div className="text-base font-semibold text-lime-900">
                         {selectedSection ? `${selectedSection.name} - ` : ""}
                         {selectedTable?.name || "No table"}
                       </div>
@@ -4528,7 +4596,7 @@ const subCategories = useMemo(() => {
                   />
 
                   <div className="mt-3 space-y-2">
-                    <div className="text-[10px] uppercase text-lime-500">Services Types</div>
+                    <div className="text-xs uppercase text-lime-500">Services Types</div>
                     <div className="grid grid-cols-2 gap-2">
                       {filteredServiceOptions.map((opt) => (
                         <button
@@ -4552,7 +4620,7 @@ const subCategories = useMemo(() => {
 
                   {taxesCfg.permitirDescuentos && (
                     <div className="mt-3 space-y-1">
-                      <div className="text-[10px] uppercase text-lime-500">Descuento de la orden</div>
+                      <div className="text-xs uppercase text-lime-500">Descuento de la orden</div>
                       <select
                         className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                         value={currentOrder.discountId || ""}
@@ -4680,21 +4748,21 @@ const subCategories = useMemo(() => {
 
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button
-                      className="h-12 rounded-xl bg-lime-50 text-lime-700 font-semibold disabled:opacity-60"
+                      className="h-12 rounded-xl bg-lime-50 text-lime-700 font-semibold transition-colors hover:bg-lime-100 active:bg-lime-200 disabled:opacity-60"
                       onClick={sendToKitchen}
                       disabled={!hasItems}
                     >
                       Comandar
                     </button>
               <button
-                      className="h-12 rounded-xl bg-emerald-600 text-white font-semibold disabled:bg-emerald-300"
+                      className="h-12 rounded-xl bg-emerald-600 text-white font-semibold transition-colors hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-300"
                       onClick={openPayments}
                       disabled={!hasItems}
                     >
                       Cobrar
                     </button>
               <button
-                      className="h-12 rounded-xl bg-emerald-100 text-emerald-800 font-semibold disabled:opacity-60"
+                      className="h-12 rounded-xl bg-emerald-100 text-emerald-800 font-semibold transition-colors hover:bg-emerald-200 active:bg-emerald-300 disabled:opacity-60"
                       onClick={printSubtotal}
                       disabled={!hasItems}
                     >
@@ -4707,20 +4775,20 @@ const subCategories = useMemo(() => {
         </div>
       </div>
       {(sectionLauncher || !selectedTable) && (
-        <div className="fixed bottom-4 left-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[900px]">
-          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+        <div className="fixed bottom-4 left-4 z-40 w-auto max-w-[calc(100%-2rem)]">
+          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-2xl px-5 py-3 inline-flex flex-col md:flex-row md:items-center gap-3">
             <div>
-              <div className="text-[10px] uppercase text-lime-500">Secciones</div>
-              <div className="text-sm font-semibold text-lime-900">Gestionar facturas</div>
+              <div className="text-[11px] uppercase text-lime-500">Secciones</div>
+              <div className="text-base font-semibold text-lime-900">Gestionar facturas</div>
             </div>
             <button
-              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+              className="h-12 px-6 rounded-2xl bg-red-600 text-white text-lg font-semibold transition-colors hover:bg-red-700 active:bg-red-800"
               onClick={openVoidInvoiceModal}
             >
               Anular factura
             </button>
             <button
-              className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600"
+              className="h-12 px-6 rounded-2xl bg-emerald-500 text-white text-lg font-semibold transition-colors hover:bg-emerald-600 active:bg-emerald-700"
               onClick={resetToLobby}
             >
               Back
@@ -4730,21 +4798,21 @@ const subCategories = useMemo(() => {
       )}
 
       {selectedTable && !sectionLauncher && (
-        <div className="fixed bottom-4 left-4 right-4 z-40 w-[calc(100%-2rem)] max-w-[900px]">
-          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-xl px-3 py-2 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="fixed bottom-4 left-4 z-40 w-auto max-w-[calc(100%-2rem)]">
+          <div className="bg-white/95 backdrop-blur border border-lime-200 shadow-xl rounded-2xl px-5 py-3 inline-flex flex-col md:flex-row md:items-center gap-3">
             <div>
-              <div className="text-[10px] uppercase text-lime-500">Mesa</div>
-              <div className="text-sm font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
+              <div className="text-[11px] uppercase text-lime-500">Mesa</div>
+              <div className="text-base font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
             </div>
-            <div className="flex flex-wrap items-center justify-start md:justify-end gap-1.5 text-[12px]">
+            <div className="flex flex-wrap items-center justify-start md:justify-end gap-2 text-sm">
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
                 onClick={() => createNewOrderForTable(selectedTable?.id)}
               >
                 Nueva orden
               </button>
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
                 onClick={() => {
                   setTablePickerMode("MOVE");
                   setTablePickerOpen(true);
@@ -4754,14 +4822,14 @@ const subCategories = useMemo(() => {
                 Change table
               </button>
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
                 onClick={openSplitOrderModal}
                 disabled={!hasItems}
               >
                 Split Order
               </button>
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50"
+                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
                 onClick={reprintComanda}
                 disabled={!hasItems}
                 title="Reprint comanda without re-sending to kitchen/KDS"
@@ -4769,7 +4837,7 @@ const subCategories = useMemo(() => {
                 Reprint comanda
               </button>
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-white border border-lime-200 text-lime-800 font-semibold hover:bg-lime-50 ml-1"
+                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100 ml-1"
                 onClick={cancelEmptyOrder}
                 
                 title="Cancelar orden"
@@ -4777,7 +4845,7 @@ const subCategories = useMemo(() => {
                 Cancelar orden
               </button>
               <button
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 ml-1"
+                className="h-12 px-4 rounded-2xl bg-emerald-500 text-white text-base font-semibold transition-colors hover:bg-emerald-600 active:bg-emerald-700 ml-1"
                 onClick={resetToLobby}
               >
                 Back

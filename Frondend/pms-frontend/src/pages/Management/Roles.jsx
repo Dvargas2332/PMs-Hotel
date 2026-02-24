@@ -190,8 +190,9 @@ export default function Roles() {
       <Card>
         <Card className="space-y-3 p-5">
           <h3 className="font-medium">Roles</h3>
-          <div className="flex gap-2">
+          <div className="grid gap-2 md:grid-cols-[200px_1fr] max-w-[420px]">
             <Select
+              className="w-full"
               value={formRole.id}
               onChange={(val) =>
                 setFormRole((r) => ({
@@ -203,17 +204,20 @@ export default function Roles() {
               options={roleOptions}
             />
             <Input
+              className="w-full"
               placeholder="Name"
               value={formRole.name}
               onChange={(e) => setFormRole((r) => ({ ...r, name: e.target.value }))}
             />
           </div>
           <Input
+            className="w-full max-w-[420px]"
             placeholder="Job title"
             value={formRole.jobTitle}
             onChange={(e) => setFormRole((r) => ({ ...r, jobTitle: e.target.value }))}
           />
           <Input
+            className="w-full max-w-[420px]"
             placeholder="Description"
             value={formRole.description}
             onChange={(e) => setFormRole((r) => ({ ...r, description: e.target.value }))}

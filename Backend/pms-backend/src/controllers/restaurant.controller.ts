@@ -1,5 +1,5 @@
 ﻿import type { Request, Response } from "express";
-import type { Prisma, RestaurantOrderStatus, RestaurantStaffRole } from "@prisma/client";
+import { Prisma, type RestaurantOrderStatus, type RestaurantStaffRole } from "@prisma/client";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
@@ -8,6 +8,8 @@ import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/u
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
 import { DEFAULT_PRINT_FORMS } from "../lib/printForms.js";
+
+const ROUNDS = 10;
 
 const asNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0;
@@ -90,6 +92,22 @@ const resolveBillingDocType = (raw: unknown): "FE" | "TE" | null => {
   if (value === "tiquete" || value === "ticket" || value === "te") return "TE";
   return null;
 };
+
+async function recordOrderEvent(
+  client: any,
+  opts: { hotelId: string; orderId?: string | null; eventType: string; actorId?: string | null; payload?: Prisma.InputJsonValue | null }
+) {
+  const payload = (opts.payload ?? Prisma.JsonNull) as Prisma.InputJsonValue;
+  return client.restaurantOrderEvent.create({
+    data: {
+      hotelId: opts.hotelId,
+      orderId: opts.orderId ?? null,
+      eventType: String(opts.eventType || "UNKNOWN"),
+      actorId: opts.actorId ?? null,
+      payload,
+    },
+  });
+}
 
 async function nextEInvoiceConsecutive(hotelId: string, docType: "FE" | "TE", branch: string, terminal: string) {
   const b = padLeft(branch || "001", 3);
@@ -3812,6 +3830,135 @@ export async function updateKdsItem(req: Request, res: Response) {
   res.json({ ok: true, item: updated });
 }
 
+const toStaffPayload = (staff: any) => ({
+  id: staff.id,
+  name: staff.name,
+  username: staff.username,
+  role: staff.role,
+  accessRoleId: staff.accessRoleId || "",
+  active: staff.active !== false,
+  createdAt: staff.createdAt,
+  updatedAt: staff.updatedAt,
+});
+
+export async function listRestaurantStaff(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const staff = await prisma.restaurantStaff.findMany({
+    where: { hotelId: user.hotelId },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(staff.map(toStaffPayload));
+}
+
+export async function listRestaurantStaffRoles(_req: Request, res: Response) {
+  res.json(Object.values<RestaurantStaffRole>({
+    CASHIER: "CASHIER",
+    WAITER: "WAITER",
+  } as Record<string, RestaurantStaffRole>));
+}
+
+export async function createRestaurantStaff(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const name = String(req.body?.name || "").trim();
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "").trim();
+  const role = String(req.body?.role || "WAITER").trim().toUpperCase() as RestaurantStaffRole;
+  const accessRoleId = String(req.body?.accessRoleId || "").trim() || null;
+  const active = req.body?.active !== false;
+
+  if (!name || !username || !password) {
+    return res.status(400).json({ message: "Nombre, usuario y password son requeridos." });
+  }
+
+  const exists = await prisma.restaurantStaff.findUnique({
+    where: { hotelId_username: { hotelId: user.hotelId, username } },
+    select: { id: true },
+  });
+  if (exists) return res.status(409).json({ message: "El usuario ya existe." });
+
+  const passwordHash = await bcrypt.hash(password, ROUNDS);
+  const staff = await prisma.restaurantStaff.create({
+    data: {
+      hotelId: user.hotelId,
+      name,
+      username,
+      role,
+      accessRoleId,
+      active,
+      passwordHash,
+    },
+  });
+  res.json(toStaffPayload(staff));
+}
+
+export async function updateRestaurantStaff(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const id = String(req.params?.id || "").trim();
+  if (!id) return res.status(400).json({ message: "id requerido" });
+
+  const data: any = {};
+  if (req.body?.name != null) data.name = String(req.body.name || "").trim();
+  if (req.body?.username != null) data.username = String(req.body.username || "").trim();
+  if (req.body?.role != null) data.role = String(req.body.role || "WAITER").trim().toUpperCase();
+  if (req.body?.accessRoleId !== undefined) data.accessRoleId = String(req.body.accessRoleId || "").trim() || null;
+  if (req.body?.active !== undefined) data.active = req.body.active !== false;
+  if (req.body?.password) data.passwordHash = await bcrypt.hash(String(req.body.password).trim(), ROUNDS);
+
+  const staff = await prisma.restaurantStaff.update({
+    where: { id, hotelId: user.hotelId },
+    data,
+  });
+  res.json(toStaffPayload(staff));
+}
+
+export async function deleteRestaurantStaff(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const id = String(req.params?.id || "").trim();
+  if (!id) return res.status(400).json({ message: "id requerido" });
+
+  await prisma.restaurantStaff.delete({
+    where: { id, hotelId: user.hotelId },
+  });
+  res.json({ ok: true });
+}
+
+export async function loginRestaurantStaff(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const username = String(req.body?.username || "").trim();
+  const password = String(req.body?.password || "").trim();
+  if (!username || !password) return res.status(400).json({ message: "Usuario y password requeridos." });
+
+  const staff = await prisma.restaurantStaff.findUnique({
+    where: { hotelId_username: { hotelId: user.hotelId, username } },
+  });
+  if (!staff || staff.active === false) return res.status(401).json({ message: "Credenciales invalidas." });
+
+  const ok = await bcrypt.compare(password, staff.passwordHash);
+  if (!ok) return res.status(401).json({ message: "Credenciales invalidas." });
+
+  res.json(toStaffPayload(staff));
+}
+
 export async function listCloses(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -3834,8 +3981,20 @@ const buildShiftPayload = (shift: any) => ({
   openedAt: shift.openedAt,
   closedAt: shift.closedAt ?? null,
   openingAmount: asNumber((shift?.totals as any)?.openingAmount ?? (shift?.details as any)?.openingAmount),
+  shiftNumber: asNumber((shift?.details as any)?.shiftNumber ?? (shift?.totals as any)?.shiftNumber) || null,
   note: shift?.note || "",
 });
+
+const buildShiftNumberMap = async (hotelId: string) => {
+  const rows = await prisma.cashAudit.findMany({
+    where: { hotelId, module: "RESTAURANT" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  const map = new Map<string, number>();
+  rows.forEach((r, idx) => map.set(r.id, idx + 1));
+  return map;
+};
 
 export async function getRestaurantShift(req: Request, res: Response) {
   // @ts-ignore
@@ -3850,6 +4009,92 @@ export async function getRestaurantShift(req: Request, res: Response) {
 
   if (!shift) return res.json({ open: false });
   res.json({ open: true, shift: buildShiftPayload(shift) });
+}
+
+export async function openRestaurantShift(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const openingAmount = asNumber(req.body?.openingAmount);
+  if (!Number.isFinite(openingAmount) || openingAmount <= 0) {
+    return res.status(400).json({ message: "Debes ingresar un monto de apertura mayor a 0." });
+  }
+
+  const existing = await prisma.cashAudit.findFirst({
+    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
+  });
+  if (existing) return res.status(400).json({ message: "Ya hay un turno abierto." });
+
+  const note = String(req.body?.note || "").trim() || null;
+  const existingCount = await prisma.cashAudit.count({
+    where: { hotelId: user.hotelId, module: "RESTAURANT" },
+  });
+  const shiftNumber = existingCount + 1;
+  const shift = await prisma.cashAudit.create({
+    data: {
+      hotelId: user.hotelId,
+      module: "RESTAURANT",
+      openedAt: new Date(),
+      closedAt: null,
+      totals: { openingAmount, shiftNumber },
+      details: { openingAmount, shiftNumber },
+      note,
+      createdById: user.sub || null,
+    },
+  });
+
+  res.json({ open: true, shift: buildShiftPayload(shift) });
+}
+
+export async function closeShift(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const hotelId = user.hotelId;
+  const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
+  const stage = closeTypeRaw === "X" ? "X" : "Z";
+
+  const shift = await prisma.cashAudit.findFirst({
+    where: { hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
+  if (!shift) return res.status(400).json({ message: "No hay turno abierto." });
+
+  const totals = (req.body?.totals ?? {}) as Prisma.InputJsonValue;
+  const payments = (req.body?.payments ?? {}) as Prisma.InputJsonValue;
+  const breakdown = (req.body?.breakdown ?? Prisma.JsonNull) as Prisma.InputJsonValue;
+  const note = String(req.body?.note || "").trim() || null;
+
+  await prisma.restaurantClose.create({
+    data: {
+      hotelId,
+      turno: shift.id,
+      stage,
+      totals,
+      payments,
+      breakdown,
+      note,
+      userId: user.sub || null,
+    },
+  });
+
+  if (stage === "Z") {
+    await prisma.cashAudit.update({
+      where: { id: shift.id, hotelId },
+      data: {
+        closedAt: new Date(),
+        totals,
+        details: breakdown,
+        note,
+      },
+    });
+  }
+
+  res.json({ ok: true });
 }
 
 export async function listShiftInvoices(req: Request, res: Response) {
@@ -3940,420 +4185,537 @@ export async function listShiftInvoices(req: Request, res: Response) {
   res.json(list);
 }
 
-export async function openRestaurantShift(req: Request, res: Response) {
+export async function listClosedRestaurantShifts(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user) return res.status(401).json({ message: "No autenticado" });
   if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
 
-  const existing = await prisma.cashAudit.findFirst({
-    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
-    orderBy: { openedAt: "desc" },
+  const shifts = await prisma.cashAudit.findMany({
+    where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: { not: null } },
+    orderBy: { closedAt: "desc" },
+    take: 60,
   });
-  if (existing) return res.json({ open: true, shift: buildShiftPayload(existing) });
-
-  const openingAmount = asNumber(req.body?.openingAmount ?? req.body?.amount ?? req.body?.monto);
-  if (!Number.isFinite(openingAmount) || openingAmount <= 0) {
-    return res.status(400).json({ message: "Debes ingresar un monto de apertura mayor a 0" });
-  }
-
-  const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
-
-  const created = await prisma.cashAudit.create({
-    data: {
-      hotelId: user.hotelId,
-      module: "RESTAURANT",
-      openedAt: new Date(),
-      closedAt: null,
-      totals: { openingAmount } as any,
-      details: undefined,
-      note: note || null,
-      createdById: user.sub,
-    },
-  });
-
-  res.status(201).json({ open: true, shift: buildShiftPayload(created) });
+  const shiftNumberMap = await buildShiftNumberMap(user.hotelId);
+  res.json(
+    shifts.map((s) => ({
+      ...buildShiftPayload(s),
+      shiftNumber: buildShiftPayload(s).shiftNumber || shiftNumberMap.get(s.id) || null,
+    }))
+  );
 }
 
-export async function closeShift(req: Request, res: Response) {
+export async function listRestaurantHistorySales(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user) return res.status(401).json({ message: "No autenticado" });
   if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
-
-  try {
-    const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
-    if (!["X", "Z"].includes(closeTypeRaw)) {
-      return res.status(400).json({ message: "Tipo de cierre invalido" });
-    }
-
-    const role = (user.role || "").toUpperCase();
-    if (!["ADMIN", "MANAGER"].includes(role)) {
-      const required = closeTypeRaw === "Z" ? "restaurant.shift.closeZ" : "restaurant.shift.closeX";
-      const legacy = "restaurant.shift.close";
-      const granted = await prisma.rolePermission.findFirst({
-        where: { hotelId: user.hotelId, roleId: user.role, permissionId: { in: [required, legacy] } },
-        select: { permissionId: true },
-      });
-      if (!granted) {
-        return res
-          .status(403)
-          .json({ message: closeTypeRaw === "Z" ? "No tienes permiso para cierre Z" : "No tienes permiso para cierre X" });
-      }
-    }
-
-    const openShift = await prisma.cashAudit.findFirst({
-      where: { hotelId: user.hotelId, module: "RESTAURANT", closedAt: null },
-      orderBy: { openedAt: "desc" },
-    });
-    if (!openShift) {
-      return res.status(400).json({ message: "No hay turno abierto" });
-    }
-
-    const { totals, payments, note, breakdown } = req.body || {};
-
-    const openOrders = await prisma.restaurantOrder.count({
-      where: { hotelId: user.hotelId, status: { in: OPEN_ORDER_STATUSES } },
-    });
-    if (openOrders > 0) {
-      return res.status(400).json({ message: "No se puede cerrar turno con ?rdenes abiertas" });
-    }
-
-    const totalsObj = totals && typeof totals === "object" ? (totals as any) : null;
-    const paymentsObj = payments && typeof payments === "object" ? (payments as Record<string, unknown>) : null;
-    const hasTotalsDeclared =
-      totalsObj &&
-      (Object.prototype.hasOwnProperty.call(totalsObj, "reported") ||
-        Object.prototype.hasOwnProperty.call(totalsObj, "system"));
-    const hasPaymentsDeclared = paymentsObj && Object.keys(paymentsObj).length > 0;
-    if (!hasTotalsDeclared && !hasPaymentsDeclared) {
-      return res.status(400).json({ message: "Debes declarar un monto (>= 0)" });
-    }
-
-    const lastClose = await prisma.restaurantClose.findFirst({
-      where: { hotelId: user.hotelId },
-      orderBy: { createdAt: "desc" },
-      select: { createdAt: true },
-    });
-    const paidWhere: any = { hotelId: user.hotelId, status: "PAID" };
-    if (lastClose?.createdAt) paidWhere.updatedAt = { gte: lastClose.createdAt };
-    const paidOrders = await prisma.restaurantOrder.findMany({
-      where: paidWhere,
-      select: { total: true },
-    });
-    const system = paidOrders.reduce((acc, o) => acc + asNumber(o.total), 0);
-
-    const reportedFromTotals =
-      totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "reported")
-        ? asNumber(totalsObj.reported)
-        : undefined;
-    const systemFromTotals =
-      totalsObj && Object.prototype.hasOwnProperty.call(totalsObj, "system")
-        ? asNumber(totalsObj.system)
-        : undefined;
-    const reportedFromPayments = paymentsObj
-      ? Object.values(paymentsObj).reduce<number>((acc, v) => acc + asNumber(v), 0)
-      : 0;
-
-    const reported =
-      reportedFromTotals !== undefined
-        ? reportedFromTotals
-        : systemFromTotals !== undefined
-          ? systemFromTotals
-          : reportedFromPayments;
-
-    if (reported < 0) {
-      return res.status(400).json({ message: "El monto declarado no puede ser negativo" });
-    }
-
-    const safeTotals = { system, reported, diff: reported - system };
-
-    const closedAt = new Date();
-    const openingAmount = asNumber((openShift?.totals as any)?.openingAmount ?? (openShift?.details as any)?.openingAmount);
-    const close = await prisma.$transaction(async (tx) => {
-      const createdClose = await tx.restaurantClose.create({
-        data: {
-          hotel: { connect: { id: user.hotelId } },
-          turno: `T-${Date.now()}`,
-          stage: closeTypeRaw,
-          totals: safeTotals as any,
-          payments: (payments || {}) as any,
-          breakdown: breakdown || {},
-          note: note || "",
-          userId: user.sub,
-        },
-      });
-
-      if (closeTypeRaw === "Z") {
-        await tx.cashAudit.updateMany({
-          where: { id: openShift.id, hotelId: user.hotelId },
-          data: {
-            closedAt,
-            totals: { openingAmount, ...safeTotals } as any,
-            details: { payments: payments || {}, breakdown: breakdown || {}, closeId: createdClose.id } as any,
-            note: (note || openShift.note || "").trim() || null,
-          },
-        });
-      } else {
-        await tx.cashAudit.updateMany({
-          where: { id: openShift.id, hotelId: user.hotelId },
-          data: {
-            details: {
-              ...((openShift?.details as any) || {}),
-              lastCloseX: {
-                totals: safeTotals,
-                payments: payments || {},
-                breakdown: breakdown || {},
-                closeId: createdClose.id,
-                createdAt: closedAt,
-              },
-            } as any,
-          },
-        });
-      }
-
-      await recordOrderEvent(tx, {
-        hotelId: user.hotelId || "",
-        orderId: null,
-        eventType: closeTypeRaw === "Z" ? "SHIFT_CLOSE_Z" : "SHIFT_CLOSE_X",
-        actorId: user.sub,
-        payload: {
-          shiftId: openShift.id,
-          closeId: createdClose.id,
-          stage: closeTypeRaw,
-          totals: safeTotals,
-          payments: payments || {},
-          breakdown: breakdown || {},
-          openingAmount,
-          openedAt: openShift.openedAt ?? null,
-          closedAt,
-        } as any,
-      });
-
-      return createdClose;
-    });
-
-    res.json({ ok: true, close });
-  } catch (err) {
-    console.error("[restaurant.closeShift] failed:", err);
-    const detail =
-      process.env.NODE_ENV === "production"
-        ? undefined
-        : err instanceof Error
-          ? err.message
-          : String(err);
-    res.status(500).json({ message: "No se pudo cerrar turno", detail });
-  }
-}
-
-const STAFF_ROLES = new Set<RestaurantStaffRole>(["CASHIER", "WAITER"]);
-const normalizeStaffRole = (value: unknown): RestaurantStaffRole | undefined => {
-  const raw = String(value ?? "").trim().toUpperCase();
-  if (raw === "CAJERO") return "CASHIER";
-  if (raw === "MESERO") return "WAITER";
-  if (STAFF_ROLES.has(raw as RestaurantStaffRole)) return raw as RestaurantStaffRole;
-  return undefined;
-};
-
-const normalizeStaffUsername = (value: unknown) => String(value ?? "").trim().toLowerCase();
-
-const recordOrderEvent = async (
-  tx: { restaurantOrderEvent: { create: (args: Prisma.RestaurantOrderEventCreateArgs) => Promise<unknown> } },
-  opts: { hotelId: string; orderId?: string | null; eventType: string; actorId?: string | null; payload?: Prisma.InputJsonValue | null }
-) => {
-  await tx.restaurantOrderEvent.create({
-    data: {
-      hotelId: opts.hotelId,
-      orderId: opts.orderId || null,
-      eventType: opts.eventType,
-      actorId: opts.actorId || null,
-      payload: opts.payload ?? undefined,
-    },
-  });
-};
-
-const sanitizeStaff = (staff: any) => ({
-  id: staff.id,
-  name: staff.name,
-  username: staff.username,
-  role: staff.role,
-  accessRoleId: staff.accessRoleId || null,
-  accessRoleName: staff.accessRole?.name || null,
-  active: staff.active,
-  createdAt: staff.createdAt,
-  updatedAt: staff.updatedAt,
-});
-
-export async function listRestaurantStaff(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId || !user?.sub) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
-  const role = normalizeStaffRole((req.query.role as string | undefined) || "");
 
-  const list = await prisma.restaurantStaff.findMany({
+  const type = String((req.query as any)?.type || "SALES").trim().toUpperCase();
+  const missing: string[] = [];
+  if (type !== "SALES") {
+    return res.json({
+      items: [],
+      missing: [`Tipo no disponible en TPV: ${type}`],
+    });
+  }
+
+  const useTurno = String((req.query as any)?.useTurno || "").toLowerCase() === "true";
+  const shiftId = String((req.query as any)?.shiftId || "").trim();
+  if (useTurno && !shiftId) missing.push("Filtro Turno requiere selección.");
+  const useMoneda = String((req.query as any)?.useMoneda || "").toLowerCase() === "true";
+  const currency = String((req.query as any)?.currency || "").trim();
+  if (useMoneda && !currency) missing.push("Filtro Moneda requiere selección.");
+
+  const dateFromRaw = String((req.query as any)?.dateFrom || "").trim();
+  const dateToRaw = String((req.query as any)?.dateTo || "").trim();
+  const dateTimeFromRaw = String((req.query as any)?.dateTimeFrom || "").trim();
+  const dateTimeToRaw = String((req.query as any)?.dateTimeTo || "").trim();
+  const useFecha = String((req.query as any)?.useFecha || "").toLowerCase() === "true";
+  const useFechaHora = String((req.query as any)?.useFechaHora || "").toLowerCase() === "true";
+  const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
+  const dateTo = dateToRaw ? new Date(dateToRaw) : null;
+  const dateTimeFrom = dateTimeFromRaw ? new Date(dateTimeFromRaw) : null;
+  const dateTimeTo = dateTimeToRaw ? new Date(dateTimeToRaw) : null;
+  if (dateTo) dateTo.setHours(23, 59, 59, 999);
+  if (dateTimeTo) dateTimeTo.setSeconds(59, 999);
+  if (useFecha && !dateFrom && !dateTo) missing.push("Filtro Fecha requiere rango.");
+  if (useFechaHora && !dateTimeFrom && !dateTimeTo) missing.push("Filtro Fecha y hora requiere rango.");
+
+  const restCfg = await prisma.restaurantConfig.findUnique({ where: { hotelId } });
+  const storedPayments = (restCfg?.payments && typeof restCfg.payments === "object" ? restCfg.payments : {}) as any;
+  const paymentCobros = Array.isArray(storedPayments.cobros)
+    ? storedPayments.cobros
+    : typeof storedPayments.cobros === "string"
+      ? String(storedPayments.cobros)
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : ["Efectivo", "Tarjeta"];
+  const paymentCurrencies = [storedPayments.monedaBase || "CRC", storedPayments.monedaSec || "USD"].map((c: any) => String(c).trim()).filter(Boolean);
+  const hotelRow = await prisma.hotel.findFirst({ where: { id: hotelId }, select: { name: true, currency: true } });
+  const hotelCurrency = String(hotelRow?.currency || paymentCurrencies[0] || "CRC");
+  const shiftWhere: Prisma.CashAuditWhereInput = {
+    hotelId,
+    module: "RESTAURANT",
+    closedAt: { not: null },
+  };
+  if (dateFrom || dateTo) {
+    shiftWhere.closedAt = {
+      ...(dateFrom ? { gte: dateFrom } : {}),
+      ...(dateTo ? { lte: dateTo } : {}),
+      not: null,
+    };
+  }
+
+  const shifts = await prisma.cashAudit.findMany({
+    where: shiftWhere,
+    orderBy: { closedAt: "desc" },
+    take: 60,
+  });
+  const shiftNumberMap = await buildShiftNumberMap(hotelId);
+
+  if (shifts.length === 0) {
+    return res.json({ items: [], missing: ["No hay turnos cerrados disponibles."] });
+  }
+
+  let useShifts = dateFrom || dateTo || dateTimeFrom || dateTimeTo ? shifts : [shifts[0]];
+  if (useTurno && shiftId) {
+    const chosen = shifts.find((s) => s.id === shiftId);
+    if (!chosen) {
+      return res.json({ items: [], missing: ["Turno no encontrado o no cerrado."] });
+    }
+    useShifts = [chosen];
+  }
+
+  const ranges = useShifts
+    .filter((s) => s.closedAt)
+    .map((s) => ({
+      createdAt: {
+        gte: s.openedAt || s.createdAt || new Date(0),
+        lte: s.closedAt as Date,
+      },
+    }));
+
+  const useArticulo = String((req.query as any)?.useArticulo || "").toLowerCase() === "true";
+  const useFamilia = String((req.query as any)?.useFamilia || "").toLowerCase() === "true";
+  const useSubfamilia = String((req.query as any)?.useSubfamilia || "").toLowerCase() === "true";
+  const familyId = String((req.query as any)?.familyId || "").trim();
+  const subFamilyId = String((req.query as any)?.subFamilyId || "").trim();
+  const itemId = String((req.query as any)?.itemId || "").trim();
+
+  if (useArticulo && !itemId) missing.push("Filtro Artículo requiere selección.");
+  if (useFamilia && !familyId) missing.push("Filtro Familia requiere selección.");
+  if (useSubfamilia && !subFamilyId) missing.push("Filtro Subfamilia requiere selección.");
+
+  let itemIds: string[] = [];
+  if (useArticulo && itemId) {
+    itemIds = [itemId];
+  } else if (useFamilia || useSubfamilia) {
+    const items = await prisma.restaurantItem.findMany({
+      where: {
+        hotelId,
+        ...(useFamilia && familyId ? { familyId } : {}),
+        ...(useSubfamilia && subFamilyId ? { subFamilyId } : {}),
+      },
+      select: { id: true },
+    });
+    itemIds = items.map((i) => i.id);
+    if (itemIds.length === 0) {
+      return res.json({ items: [], missing });
+    }
+  }
+
+  const useCajero = String((req.query as any)?.useCajero || "").toLowerCase() === "true";
+  const useMesero = String((req.query as any)?.useMesero || "").toLowerCase() === "true";
+  const cashierId = String((req.query as any)?.cashierId || "").trim();
+  const waiterId = String((req.query as any)?.waiterId || "").trim();
+  if (useCajero && !cashierId) missing.push("Filtro Cajero requiere selección.");
+  if (useMesero && !waiterId) missing.push("Filtro Mesero requiere selección.");
+  const serviceType = String((req.query as any)?.serviceType || "").trim();
+  const paymentKey = String((req.query as any)?.paymentKey || "").trim();
+  const useTipoCobro = String((req.query as any)?.useTipoCobro || "").toLowerCase() === "true";
+  const detailedByFamily = String((req.query as any)?.detailedByFamily || "").toLowerCase() === "true";
+  const includeHouseAccount = String((req.query as any)?.includeHouseAccount || "").toLowerCase() === "true";
+  const includeVoidedInvoices = String((req.query as any)?.includeVoidedInvoices || "").toLowerCase() === "true";
+  const topCountRaw = String((req.query as any)?.topCount || "").trim();
+  const topMode = String((req.query as any)?.topMode || "").trim();
+  const includeItemsMode = String((req.query as any)?.includeItemsMode || "").trim();
+  const focus = String((req.query as any)?.focus || "").trim();
+
+  const orderDateFilter = dateTimeFrom || dateTimeTo || dateFrom || dateTo
+    ? {
+        createdAt: {
+          ...(dateTimeFrom ? { gte: dateTimeFrom } : {}),
+          ...(dateTimeTo ? { lte: dateTimeTo } : {}),
+          ...(dateTimeFrom || dateTimeTo ? {} : dateFrom ? { gte: dateFrom } : {}),
+          ...(dateTimeFrom || dateTimeTo ? {} : dateTo ? { lte: dateTo } : {}),
+        },
+      }
+    : {};
+
+  const orders = await prisma.restaurantOrder.findMany({
     where: {
       hotelId,
-      ...(role ? { role } : {}),
+      status: { in: ["PAID", "CLOSED"] },
+      OR: ranges,
+      ...(orderDateFilter as any),
+      ...(itemIds.length > 0 ? { items: { some: { itemId: { in: itemIds } } } } : {}),
+      ...(useCajero && cashierId ? { cashierId } : {}),
+      ...(useMesero && waiterId ? { waiterId } : {}),
+      ...(serviceType ? { serviceType } : {}),
     },
-    include: { accessRole: { select: { id: true, name: true } } },
-    orderBy: [{ createdAt: "desc" }],
-  });
-  res.json(list.map(sanitizeStaff));
-}
-
-export async function listRestaurantStaffRoles(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
-  const roles = await prisma.appRole.findMany({
-    where: { hotelId: user.hotelId },
-    orderBy: { id: "asc" },
-  });
-  res.json(roles.map((r) => ({ id: r.id, name: r.name })));
-}
-
-export async function createRestaurantStaff(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId || !user?.sub) return res.status(401).json({ message: "No autenticado" });
-  const hotelId = user.hotelId;
-
-  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
-  const name = String(body.name || "").trim();
-  const username = normalizeStaffUsername(body.username || body.user || body.code);
-  const password = String(body.password || "").trim();
-  const role = normalizeStaffRole(body.role);
-  const accessRoleId = String(body.accessRoleId || body.roleId || "").trim();
-  const active = body.active !== false;
-
-  if (!name) return res.status(400).json({ message: "Nombre requerido" });
-  if (!username) return res.status(400).json({ message: "Usuario requerido" });
-  if (!password || password.length < 4) return res.status(400).json({ message: "Password minimo 4" });
-  if (!role) return res.status(400).json({ message: "Rol invalido" });
-
-  const existing = await prisma.restaurantStaff.findFirst({ where: { hotelId, username } });
-  if (existing) return res.status(409).json({ message: "Usuario ya existe" });
-
-  if (accessRoleId) {
-    const roleExists = await prisma.appRole.findFirst({ where: { hotelId, id: accessRoleId } });
-    if (!roleExists) return res.status(400).json({ message: "Perfil de permisos inválido" });
-  }
-
-  const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
-  const passwordHash = await bcrypt.hash(password, rounds);
-  const created = await prisma.restaurantStaff.create({
-    data: {
-      hotelId,
-      launcherId: null,
-      name,
-      username,
-      role,
-      active,
-      passwordHash,
-      accessRoleId: accessRoleId || null,
-    } as any,
-    include: { accessRole: { select: { id: true, name: true } } },
+    include: { items: true },
+    orderBy: { createdAt: "desc" },
+    take: 2000,
   });
 
-  res.status(201).json(sanitizeStaff(created));
-}
-
-export async function updateRestaurantStaff(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId || !user?.sub) return res.status(401).json({ message: "No autenticado" });
-  const hotelId = user.hotelId;
-  const { id } = req.params as { id?: string };
-  if (!id) return res.status(400).json({ message: "id requerido" });
-
-  const existing = await prisma.restaurantStaff.findFirst({
-    where: { id: String(id), hotelId },
-  });
-  if (!existing) return res.status(404).json({ message: "Personal no encontrado" });
-
-  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
-  const data: any = {};
-  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if ("active" in body) data.active = body.active !== false;
-
-  if (body.role) {
-    const role = normalizeStaffRole(body.role);
-    if (!role) return res.status(400).json({ message: "Rol invalido" });
-    data.role = role;
-  }
-  if ("accessRoleId" in body || "roleId" in body) {
-    const nextRoleId = String(body.accessRoleId || body.roleId || "").trim();
-    if (nextRoleId) {
-      const roleExists = await prisma.appRole.findFirst({ where: { hotelId, id: nextRoleId } });
-      if (!roleExists) return res.status(400).json({ message: "Perfil de permisos inválido" });
-      data.accessRoleId = nextRoleId;
+  let filtered = orders;
+  if (useTipoCobro) {
+    if (!paymentKey) {
+      missing.push("Filtro Tipo de Cobro pendiente: selecciona un método.");
     } else {
-      data.accessRoleId = null;
+      filtered = filtered.filter((o) => {
+        const pb = (o.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
+        const val = pb[paymentKey];
+        return typeof val === "number" ? val > 0 : Boolean(val);
+      });
     }
   }
 
-  if (body.username || body.user || body.code) {
-    const username = normalizeStaffUsername(body.username || body.user || body.code);
-    if (!username) return res.status(400).json({ message: "Usuario invalido" });
-    if (username !== existing.username) {
-      const dup = await prisma.restaurantStaff.findFirst({ where: { hotelId, username } });
-      if (dup) return res.status(409).json({ message: "Usuario ya existe" });
+  if (useMoneda && currency && currency !== "BASE") {
+    missing.push("Filtro Moneda pendiente (TPV solo base).");
+  }
+  if (includeHouseAccount) missing.push("Filtro Cuenta Casa pendiente (TPV no expone).");
+  if (includeVoidedInvoices) missing.push("Filtro Facturas Anuladas pendiente (TPV no expone).");
+  if (detailedByFamily) missing.push("Detallado por Familia pendiente (TPV no expone).");
+  if (includeItemsMode) missing.push("Filtro de inclusión de artículos pendiente (TPV no expone).");
+  if (focus) missing.push(`Enfoque rápido '${focus}' pendiente (TPV no expone).`);
+
+  const groupBy = String((req.query as any)?.groupBy || "").trim();
+  const orderBy = String((req.query as any)?.orderBy || "").trim();
+
+  if (orderBy === "Cobros") {
+    filtered = [...filtered].sort((a, b) => asNumber(b.total) - asNumber(a.total));
+  } else if (orderBy === "Extra Tip") {
+    filtered = [...filtered].sort((a, b) => asNumber((b as any).tip10) - asNumber((a as any).tip10));
+  } else if (orderBy === "Código") {
+    filtered = [...filtered].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }
+
+  let groupKeyMap = new Map<string, string>();
+  if (groupBy === "Familia") {
+    const allItemIds = new Set<string>();
+    filtered.forEach((o) => (o.items || []).forEach((it: any) => it?.itemId && allItemIds.add(it.itemId)));
+    if (allItemIds.size > 0) {
+      const itemRows = await prisma.restaurantItem.findMany({
+        where: { hotelId, id: { in: Array.from(allItemIds) } },
+        include: { family: true },
+      });
+      const itemFamilyMap = new Map(itemRows.map((r) => [r.id, r.family?.name || r.familyId]));
+      groupKeyMap = new Map(itemRows.map((r) => [r.id, r.family?.name || r.familyId]));
+      filtered = filtered.map((o) => {
+        const firstItem = (o.items || []).find((it: any) => it?.itemId);
+        const key = firstItem ? itemFamilyMap.get(firstItem.itemId) || "-" : "-";
+        (o as any).__groupKey = key;
+        return o;
+      });
     }
-    data.username = username;
+  } else if (groupBy === "Mesero") {
+    filtered = filtered.map((o) => {
+      (o as any).__groupKey = o.waiterId || "-";
+      return o;
+    });
+  } else if (groupBy && groupBy !== "Familia" && groupBy !== "Mesero") {
+    missing.push(`Agrupar por ${groupBy} pendiente.`);
   }
 
-  if (body.password) {
-    const password = String(body.password || "").trim();
-    if (password.length < 4) return res.status(400).json({ message: "Password minimo 4" });
-    const rounds = Number(process.env.BCRYPT_ROUNDS || 10);
-    data.passwordHash = await bcrypt.hash(password, rounds);
+  const topCount = Number(topCountRaw || 0);
+  if (topCountRaw && (!Number.isFinite(topCount) || topCount <= 0)) {
+    missing.push("Seleccionar los requiere un número válido.");
+  }
+  if (topCount > 0 && topMode) {
+    filtered = filtered.slice(0, topCount);
+  } else if (topCount > 0 && !topMode) {
+    missing.push("Seleccionar los requiere más vendidos o menos vendidos.");
   }
 
-  if (Object.keys(data).length === 0) return res.status(400).json({ message: "No hay cambios" });
-
-  const updated = await prisma.restaurantStaff.update({
-    where: { id: existing.id },
-    data,
-    include: { accessRole: { select: { id: true, name: true } } },
+  return res.json({
+    items: filtered.map((o) => ({
+      id: o.id,
+      tableId: fromInternalId(hotelId, o.tableId),
+      sectionId: o.sectionId ? fromInternalId(hotelId, o.sectionId) : null,
+      waiterId: o.waiterId,
+      cashierId: o.cashierId,
+      status: o.status,
+      serviceType: o.serviceType,
+      total: o.total,
+      createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
+      items: o.items,
+      groupKey: (o as any).__groupKey,
+    })),
+    missing,
   });
-  res.json(sanitizeStaff(updated));
 }
 
-export async function deleteRestaurantStaff(req: Request, res: Response) {
+export async function listRestaurantHistoryInvoices(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId || !user?.sub) return res.status(401).json({ message: "No autenticado" });
-  const hotelId = user.hotelId;
-  const { id } = req.params as { id?: string };
-  if (!id) return res.status(400).json({ message: "id requerido" });
-
-  await prisma.restaurantStaff.deleteMany({ where: { id: String(id), hotelId } });
-  res.json({ ok: true });
-}
-
-export async function loginRestaurantStaff(req: Request, res: Response) {
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
-  if (!user?.hotelId || !user?.sub) return res.status(401).json({ message: "No autenticado" });
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
   const hotelId = user.hotelId;
 
-  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
-  const username = normalizeStaffUsername(body.username || body.user || body.code);
-  const password = String(body.password || "").trim();
-  if (!username || !password) return res.status(400).json({ message: "Usuario y password requeridos" });
+  const missing: string[] = [];
+  const useTurno = String((req.query as any)?.useTurno || "").toLowerCase() === "true";
+  const shiftId = String((req.query as any)?.shiftId || "").trim();
+  if (useTurno && !shiftId) missing.push("Filtro Turno requiere selecci?n.");
 
-  const staff = await prisma.restaurantStaff.findFirst({
-    where: { hotelId, username },
-    include: { accessRole: { select: { id: true, name: true } } },
+  const useFechaCierre = String((req.query as any)?.useFechaCierre || "").toLowerCase() === "true";
+  const dateFromRaw = String((req.query as any)?.dateFrom || "").trim();
+  const dateToRaw = String((req.query as any)?.dateTo || "").trim();
+  const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
+  const dateTo = dateToRaw ? new Date(dateToRaw) : null;
+  if (dateTo) dateTo.setHours(23, 59, 59, 999);
+  if (useFechaCierre && !dateFrom && !dateTo) missing.push("Filtro Fecha de cierre requiere rango.");
+
+  const includePaid = String((req.query as any)?.includePaid || "").toLowerCase() !== "false";
+  const includeVoided = String((req.query as any)?.includeVoided || "").toLowerCase() === "true";
+  const useMoneda = String((req.query as any)?.useMoneda || "").toLowerCase() === "true";
+  const currency = String((req.query as any)?.currency || "").trim();
+  if (useMoneda && !currency) missing.push("Filtro Moneda requiere selecci?n.");
+  const useMonedaPago = String((req.query as any)?.useMonedaPago || "").toLowerCase() === "true";
+  const paymentCurrency = String((req.query as any)?.paymentCurrency || "").trim();
+  if (useMonedaPago && !paymentCurrency) missing.push("Filtro Moneda Pago requiere selecci?n.");
+  const useTipoCobro = String((req.query as any)?.useTipoCobro || "").toLowerCase() === "true";
+  const paymentKey = String((req.query as any)?.paymentKey || "").trim();
+  if (useTipoCobro && !paymentKey) missing.push("Filtro Tipo de Cobro requiere selecci?n.");
+  const useMotivo = String((req.query as any)?.useMotivo || "").toLowerCase() === "true";
+  const motivo = String((req.query as any)?.motivo || "").trim();
+  if (useMotivo && !motivo) missing.push("Filtro Motivo Anulaci?n requiere selecci?n.");
+  const usePerfil = String((req.query as any)?.usePerfil || "").toLowerCase() === "true";
+  const perfilId = String((req.query as any)?.perfilId || "").trim();
+  if (usePerfil && !perfilId) missing.push("Filtro Perfil Empresa requiere selecci?n.");
+
+  const invoiceNumberFrom = String((req.query as any)?.invoiceNumberFrom || "").trim();
+  const invoiceNumberTo = String((req.query as any)?.invoiceNumberTo || "").trim();
+  const useInvoiceNumber = String((req.query as any)?.useInvoiceNumber || "").toLowerCase() === "true";
+  if (useInvoiceNumber && !invoiceNumberFrom && !invoiceNumberTo) missing.push("Filtro N. Factura requiere rango.");
+
+  const restCfg = await prisma.restaurantConfig.findUnique({ where: { hotelId } });
+  const storedPayments = (restCfg?.payments && typeof restCfg.payments === "object" ? restCfg.payments : {}) as any;
+  const paymentCobros = Array.isArray(storedPayments.cobros)
+    ? storedPayments.cobros
+    : typeof storedPayments.cobros === "string"
+      ? String(storedPayments.cobros)
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean)
+      : ["Efectivo", "Tarjeta"];
+  const paymentCurrencies = [storedPayments.monedaBase || "CRC", storedPayments.monedaSec || "USD"]
+    .map((c: any) => String(c).trim())
+    .filter(Boolean);
+  const hotelRow = await prisma.hotel.findFirst({ where: { id: hotelId }, select: { name: true, currency: true } });
+  const hotelCurrency = String(hotelRow?.currency || paymentCurrencies[0] || "CRC");
+
+  const shiftWhere: Prisma.CashAuditWhereInput = {
+    hotelId,
+    module: "RESTAURANT",
+    closedAt: { not: null },
+  };
+  if (useFechaCierre && (dateFrom || dateTo)) {
+    shiftWhere.closedAt = {
+      ...(dateFrom ? { gte: dateFrom } : {}),
+      ...(dateTo ? { lte: dateTo } : {}),
+      not: null,
+    };
+  }
+
+  const shifts = await prisma.cashAudit.findMany({
+    where: shiftWhere,
+    orderBy: { closedAt: "desc" },
+    take: 90,
   });
-  if (!staff) return res.status(401).json({ message: "Credenciales invalidas" });
-  if (!STAFF_ROLES.has(staff.role)) return res.status(403).json({ message: "Rol no autorizado" });
-  if (!staff.active) return res.status(403).json({ message: "Usuario inactivo" });
+  if (shifts.length === 0) return res.json({ items: [], missing: ["No hay turnos cerrados disponibles."] });
 
-  const ok = await bcrypt.compare(password, staff.passwordHash);
-  if (!ok) return res.status(401).json({ message: "Credenciales invalidas" });
+  let useShifts = shifts;
+  if (useTurno && shiftId) {
+    const chosen = shifts.find((s) => s.id === shiftId);
+    if (!chosen) return res.json({ items: [], missing: ["Turno no encontrado o no cerrado."] });
+    useShifts = [chosen];
+  } else if (!useFechaCierre && !useTurno) {
+    useShifts = [shifts[0]];
+  }
+  const shiftNumberMap = new Map(useShifts.map((s, idx) => [s.id, idx + 1]));
 
-  res.json(sanitizeStaff(staff));
+  const ranges = useShifts
+    .filter((s) => s.closedAt)
+    .map((s) => ({
+      createdAt: {
+        gte: s.openedAt || s.createdAt || new Date(0),
+        lte: s.closedAt as Date,
+      },
+    }));
+
+  const docs = await prisma.eInvoicingDocument.findMany({
+    where: {
+      hotelId,
+      restaurantOrderId: { not: null },
+      OR: ranges,
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      restaurantOrderId: true,
+      docType: true,
+      status: true,
+      consecutive: true,
+      key: true,
+      createdAt: true,
+    },
+  });
+
+  let filteredDocs = docs;
+  if (useInvoiceNumber && (invoiceNumberFrom || invoiceNumberTo)) {
+    const fromNum = invoiceNumberFrom ? Number(invoiceNumberFrom) : NaN;
+    const toNum = invoiceNumberTo ? Number(invoiceNumberTo) : NaN;
+    filteredDocs = filteredDocs.filter((d) => {
+      const val = typeof d.consecutive === "string" ? Number(d.consecutive) : Number(d.consecutive ?? NaN);
+      if (!Number.isFinite(val)) return false;
+      if (Number.isFinite(fromNum) && val < fromNum) return false;
+      if (Number.isFinite(toNum) && val > toNum) return false;
+      return true;
+    });
+  }
+
+  const orderIds = Array.from(new Set(filteredDocs.map((d) => d.restaurantOrderId).filter(Boolean) as string[]));
+  const orders = await prisma.restaurantOrder.findMany({
+    where: { hotelId, id: { in: orderIds } },
+    select: {
+      id: true,
+      tableId: true,
+      sectionId: true,
+      total: true,
+      tip10: true,
+      discountAmount: true,
+      note: true,
+      covers: true,
+      serviceType: true,
+      roomId: true,
+      waiterId: true,
+      cashierId: true,
+      status: true,
+      paymentBreakdown: true,
+      items: {
+        select: {
+          id: true,
+          name: true,
+          qty: true,
+          price: true,
+          detailNote: true,
+        },
+      },
+    },
+  });
+  const orderMap = new Map(orders.map((o) => [o.id, o]));
+
+  const events = await prisma.restaurantOrderEvent.findMany({
+    where: { hotelId, orderId: { in: orderIds }, eventType: "ORDER_VOID" },
+    select: { orderId: true, payload: true },
+  });
+  const reasonMap = new Map(
+    events
+      .map((e) => ({ orderId: e.orderId || "", reason: (e.payload as any)?.reason }))
+      .filter((e) => e.orderId && e.reason)
+      .map((e) => [e.orderId, e.reason])
+  );
+
+  const normalized = filteredDocs.map((d) => {
+    const order = d.restaurantOrderId ? orderMap.get(d.restaurantOrderId) : null;
+    const shift = useShifts.find((s) => {
+      const openedAt = s.openedAt || s.createdAt || new Date(0);
+      const closedAt = s.closedAt || new Date(0);
+      return d.createdAt >= openedAt && d.createdAt <= closedAt;
+    });
+    return {
+      id: d.id,
+      restaurantOrderId: d.restaurantOrderId,
+      docType: d.docType,
+      status: d.status,
+      consecutive: d.consecutive,
+      key: d.key,
+      createdAt: d.createdAt,
+      shiftId: shift?.id || null,
+      shiftNumber: shift?.id ? shiftNumberMap.get(shift.id) || null : null,
+      closedAt: shift?.closedAt || null,
+      order: order
+        ? {
+            id: order.id,
+            tableId: fromInternalId(hotelId, order.tableId),
+            total: order.total,
+            waiterId: order.waiterId,
+            cashierId: order.cashierId,
+            currency: hotelCurrency,
+            paymentCurrency: hotelCurrency,
+            paymentBreakdown: order.paymentBreakdown,
+            status: order.status,
+            voidReason: reasonMap.get(order.id) || null,
+          }
+        : null,
+    };
+  });
+
+  let filteredList = normalized;
+  if (useMoneda && currency) {
+    filteredList = filteredList.filter((row) => {
+      const rowCurrency = (row as any)?.order?.currency || hotelCurrency;
+      return String(rowCurrency || "").toUpperCase() === String(currency || "").toUpperCase();
+    });
+  }
+  if (useMonedaPago && paymentCurrency) {
+    filteredList = filteredList.filter((row) => {
+      const rowPayCurrency = (row as any)?.order?.paymentCurrency || hotelCurrency;
+      return String(rowPayCurrency || "").toUpperCase() === String(paymentCurrency || "").toUpperCase();
+    });
+  }
+  if (useTipoCobro && paymentKey) {
+    filteredList = filteredList.filter((row) => {
+      const pb = (row as any)?.order?.paymentBreakdown && typeof (row as any).order.paymentBreakdown === "object"
+        ? (row as any).order.paymentBreakdown
+        : {};
+      const val = (pb as any)[paymentKey];
+      return typeof val === "number" ? val > 0 : Boolean(val);
+    });
+  }
+  if (useMotivo && motivo) {
+    filteredList = filteredList.filter((row) => String((row as any)?.order?.voidReason || "") === motivo);
+  }
+  if (usePerfil && perfilId) {
+    filteredList = filteredList.filter(() => perfilId === hotelId);
+  }
+
+  const byStatus = filteredList.filter((row) => {
+    const orderStatus = String(row.order?.status || "").toUpperCase();
+    const docStatus = String(row.status || "").toUpperCase();
+    const isVoided = docStatus.includes("VOID") || docStatus.includes("CANCEL") || docStatus.includes("ANUL");
+    const isPaid = orderStatus === "PAID" || orderStatus === "CLOSED" || docStatus === "ACEPTADO";
+    if (isVoided && includeVoided) return true;
+    if (!isVoided && includePaid) return true;
+    return false;
+  });
+
+  const reasons = Array.from(new Set((byStatus || []).map((r: any) => r?.order?.voidReason).filter(Boolean)));
+  const profiles = hotelRow ? [{ id: hotelId, name: hotelRow.name || hotelId }] : [];
+
+  return res.json({
+    items: byStatus,
+    missing,
+    filters: {
+      currencies: paymentCurrencies,
+      paymentMethods: paymentCobros,
+      reasons,
+      profiles,
+    },
+  });
 }
-

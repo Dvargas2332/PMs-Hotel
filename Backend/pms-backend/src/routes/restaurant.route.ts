@@ -18,6 +18,9 @@ import {
   closeShift,
   getRestaurantShift,
   listShiftInvoices,
+  listClosedRestaurantShifts,
+  listRestaurantHistorySales,
+  listRestaurantHistoryInvoices,
   openRestaurantShift,
   listCloses,
   listOrders,
@@ -113,6 +116,9 @@ router.post("/print", requirePermission("restaurant.access.pos", "restaurant.pos
 router.get("/shift", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantShift);
 router.get("/shift/invoices", requirePermission("restaurant.access.pos", "restaurant.pos.open"), listShiftInvoices);
 router.post("/shift/open", requirePermission("restaurant.access.pos", "restaurant.pos.open"), openRestaurantShift);
+router.get("/shifts/closed", requirePermission("restaurant.access.history", "restaurant.access.pos"), listClosedRestaurantShifts);
+router.get("/history/sales", requirePermission("restaurant.access.history", "restaurant.access.pos"), listRestaurantHistorySales);
+router.get("/history/invoices", requirePermission("restaurant.access.history", "restaurant.access.pos"), listRestaurantHistoryInvoices);
 router.post(
   "/close",
   requirePermission("restaurant.access.closes", "restaurant.pos.open"),

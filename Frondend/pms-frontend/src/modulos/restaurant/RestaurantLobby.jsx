@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Boxes, UtensilsCrossed, ScrollText, ChevronRight, Users } from "lucide-react";
+import { Boxes, UtensilsCrossed, ScrollText, ChevronRight, Users, BarChart3 } from "lucide-react";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
 // Manually adjust tile size:
 const LOBBY_TILE_SIZE = "lg"; // "sm" | "md" | "lg"
 
-const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE, actions }) => {
+export const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TILE_SIZE, actions }) => {
   const toneDecor = {
     lime: {
       border: "border-lime-200",
@@ -42,6 +42,13 @@ const Tile = ({ title, desc, icon: Icon, onClick, tone = "lime", size = LOBBY_TI
       iconText: "text-white",
       watermark: "text-lime-200/60",
       glow: "shadow-emerald-500/20",
+    },
+    amber: {
+      border: "border-amber-300",
+      iconBg: "bg-amber-500",
+      iconText: "text-white",
+      watermark: "text-amber-300/60",
+      glow: "shadow-amber-400/30",
     },
   };
 
@@ -162,6 +169,14 @@ export default function RestaurantLobby() {
       size: "lg",
       onClick: () => navigate("/management?view=restaurantInventory"),
       tone: "orange",
+    },
+    {
+      title: "Historicos / Estadisticas",
+      desc: "Reportes, cierres y control operativo.",
+      icon: BarChart3,
+      size: "lg",
+      onClick: () => navigate("/restaurant/history"),
+      tone: "indigo",
     },
   ];
   const gridCols =

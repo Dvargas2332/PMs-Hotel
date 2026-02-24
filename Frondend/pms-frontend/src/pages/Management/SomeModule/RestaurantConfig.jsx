@@ -703,6 +703,11 @@ export default function RestaurantConfig() {
 
 
   const floorplanHasChanges = floorplanDirty || (dirtyStyleTableIds || []).length > 0;
+  const backgroundDirty = (() => {
+    if (!selectedSectionId) return false;
+    const bg = general?.backgrounds?.[selectedSectionId] || {};
+    return (backgroundForm.color || "") !== (bg.color || "") || (backgroundForm.image || "") !== (bg.image || "");
+  })();
 
 
 
@@ -3728,57 +3733,29 @@ export default function RestaurantConfig() {
 
 
   const saveFloorplan = async () => {
-
-
-
     if (!selectedSectionId || floorplanSaving) return;
-
-
-
-    if (!floorplanHasChanges) return;
-
-
+    if (!floorplanHasChanges && !backgroundDirty) return;
 
     setFloorplanSaving(true);
-
-
-
     try {
-
-
+      if (backgroundDirty) {
+        const nextBackgrounds = {
+          ...(general.backgrounds || {}),
+          [selectedSectionId]: { color: backgroundForm.color || "", image: backgroundForm.image || "" },
+        };
+        const payload = { ...general, backgrounds: nextBackgrounds };
+        await api.put("/restaurant/general", payload);
+        setGeneral((prev) => ({ ...prev, backgrounds: nextBackgrounds }));
+      }
 
       if (floorplanDirty) await saveLayoutPositions();
-
-
-
       if ((dirtyStyleTableIds || []).length > 0) await saveAllTableStyles();
-
-
-
       alert("Restaurant", "Floorplan guardado.");
-
-
-
     } catch (err) {
-
-
-
       alert("Restaurant", getApiError(err, "No se pudo guardar el floorplan."));
-
-
-
     } finally {
-
-
-
       setFloorplanSaving(false);
-
-
-
     }
-
-
-
   };
 
 
@@ -6403,90 +6380,6 @@ const barObjects = useMemo(
 
 
 
-                <Button
-
-
-
-                  type="button"
-
-
-
-                  variant="outline"
-
-
-
-                  onClick={async () => {
-
-
-
-                    if (!selectedSectionId) return;
-
-
-
-                    const nextBackgrounds = {
-
-
-
-                      ...(general.backgrounds || {}),
-
-
-
-                      [selectedSectionId]: { color: backgroundForm.color || "", image: backgroundForm.image || "" },
-
-
-
-                    };
-
-
-
-                    const payload = { ...general, backgrounds: nextBackgrounds };
-
-
-
-                    try {
-
-
-
-                      await api.put("/restaurant/general", payload);
-
-
-
-                      setGeneral((prev) => ({ ...prev, backgrounds: nextBackgrounds }));
-
-
-
-                      alert("Restaurant", "Fondo guardado");
-
-
-
-                    } catch (err) {
-
-
-
-                      alert("Restaurant", getApiError(err, "No se pudo guardar el fondo."));
-
-
-
-                    }
-
-
-
-                  }}
-
-
-
-                >
-
-
-
-                  Guardar fondo
-
-
-
-                </Button>
-
-
-
               </div>
 
 
@@ -6511,7 +6404,7 @@ const barObjects = useMemo(
 
 
 
-                {floorplanHasChanges ? (
+                {(floorplanHasChanges || backgroundDirty) ? (
 
 
 
@@ -6547,11 +6440,11 @@ const barObjects = useMemo(
 
 
 
-                <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || !floorplanHasChanges}>
+                <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || (!floorplanHasChanges && !backgroundDirty)}>
 
 
 
-                  {floorplanSaving ? "Guardando..." : "Guardar todo"}
+                  {floorplanSaving ? "Guardando..." : "Guardar"}
 
 
 
@@ -6684,22 +6577,6 @@ const barObjects = useMemo(
 
 
               >
-
-
-
-                <div className="absolute inset-x-4 top-3 flex justify-between text-[11px] text-amber-700">
-
-
-
-                  <span>Entrance</span>
-
-
-
-                  <span>Bar / Kitchen</span>
-
-
-
-                </div>
 
 
 
@@ -7475,7 +7352,7 @@ const barObjects = useMemo(
 
 
 
-                      <div className="text-xs text-slate-400">Usa "Guardar todo"</div>
+                      <div className="text-xs text-slate-400">Usa "Guardar"</div>
 
 
 
@@ -15124,6 +15001,7 @@ const barObjects = useMemo(
 
 
 }
+
 
 
 

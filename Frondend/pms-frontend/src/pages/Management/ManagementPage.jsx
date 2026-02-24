@@ -159,7 +159,7 @@ function LauncherProfiles() {
         <h3 className="font-medium">Login profiles</h3>
         
 
-        <form className="grid gap-4 md:grid-cols-2" autoComplete="off">
+        <form className="grid gap-x-6 gap-y-4 md:grid-cols-2 max-w-[720px]" autoComplete="off">
           <input
             type="text"
             name="fake_username"
@@ -177,7 +177,7 @@ function LauncherProfiles() {
           <div className="space-y-1 md:col-span-1">
             <label className="text-xs text-slate-500">User (login ID)</label>
             <Input
-              className="max-w-[320px]"
+              className="w-full"
               placeholder="e.g. frontdesk1"
               autoComplete="new-password"
               autoCapitalize="off"
@@ -192,7 +192,7 @@ function LauncherProfiles() {
           <div className="space-y-1 md:col-span-1">
             <label className="text-xs text-slate-500">Full name</label>
             <Input
-              className="max-w-[320px]"
+              className="w-full"
               placeholder="User name"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
@@ -202,7 +202,7 @@ function LauncherProfiles() {
           <div className="space-y-1 md:col-span-1">
             <label className="text-xs text-slate-500">Role:</label>
             <Select
-              className="max-w-[320px]"
+              className="w-full"
               value={form.roleId}
               onChange={(val) => setForm((f) => ({ ...f, roleId: val }))}
               options={roleOptions}
@@ -214,7 +214,7 @@ function LauncherProfiles() {
               Password / PIN (min 4 digits)
             </label>
             <Input
-              className="max-w-[320px]"
+              className="w-full"
               type="password"
               placeholder={editingId ? "Leave blank to keep unchanged" : "Numeric PIN (e.g. 1234)"}
               autoComplete={editingId ? "new-password" : "new-password"}

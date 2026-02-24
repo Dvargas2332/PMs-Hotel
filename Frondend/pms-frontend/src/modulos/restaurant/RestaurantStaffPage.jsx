@@ -193,7 +193,7 @@ export default function RestaurantStaffPage() {
         {error && <div className="text-sm text-red-600">{error}</div>}
 
         <div className="grid lg:grid-cols-3 gap-4">
-          <div className="rounded-2xl border border-lime-200 bg-white/95 shadow p-4 space-y-3">
+          <div className="rounded-2xl border border-lime-200 bg-white/95 shadow p-4 space-y-3" autoComplete="off">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold text-lime-900">Crear / Editar</div>
               <div className="h-9 w-9 rounded-xl bg-lime-700 text-white flex items-center justify-center shadow">
@@ -205,12 +205,14 @@ export default function RestaurantStaffPage() {
               <input
                 className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 placeholder="Nombre"
+                autoComplete="off"
                 value={form.name}
                 onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               />
               <input
                 className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 placeholder="Usuario"
+                autoComplete="off"
                 value={form.username}
                 onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
               />
@@ -218,6 +220,7 @@ export default function RestaurantStaffPage() {
                 className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
                 type="password"
                 placeholder={editingId ? "Nuevo password (opcional)" : "Password"}
+                autoComplete="new-password"
                 value={form.password}
                 onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
               />
