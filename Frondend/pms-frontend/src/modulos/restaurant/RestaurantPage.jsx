@@ -64,6 +64,7 @@ function buildPrintPreviewText({ title, payload, totals }) {
 
   lines.push(String(title || "IMPRIMIR").toUpperCase());
   lines.push(`Fecha: ${now.toLocaleString()}`);
+  if (payload?.saleNumber) lines.push(`Venta: ${String(payload.saleNumber)}`);
   if (payload?.type) lines.push(`Tipo: ${String(payload.type)}`);
   if (payload?.sectionId) lines.push(`Sección: ${String(payload.sectionId)}`);
   if (payload?.tableId) lines.push(`Mesa: ${String(payload.tableId)}`);
@@ -2783,7 +2784,7 @@ const subCategories = useMemo(() => {
       };
       const paidAmount = sumNumbers(paymentForm);
       const change = Math.max(0, paidAmount - (snapshotTotals.total || 0));
-      await api.post("/restaurant/order/close", {
+      const closeRes = await api.post("/restaurant/order/close", {
         tableId: selectedTable.id,
         sectionId: selectedSection?.id,
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
@@ -2798,6 +2799,8 @@ const subCategories = useMemo(() => {
         roomId: currentOrder.roomId || roomCharge,
         cashierId: activeStaffRef.current?.role === "CASHIER" ? activeStaffRef.current?.id : undefined,
       });
+      const saleNumber = closeRes?.data?.order?.saleNumber || "";
+      if (saleNumber) snapshotPayload.saleNumber = saleNumber;
       let nextActiveKey = "";
       setOrdersByTable((prev) => {
         const list = normalizeOrderList(prev[selectedTable.id]);

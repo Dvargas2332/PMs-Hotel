@@ -167,6 +167,8 @@ model RestaurantClose {
 model RestaurantOrder {
   id               String                @id @default(cuid())
   hotelId          String
+  saleNumber       String?
+  saleNumberInt    Int?
   sectionId        String?
   tableId          String
   waiterId         String?
@@ -194,6 +196,7 @@ model RestaurantOrder {
 
   @@index([hotelId])
   @@index([hotelId, tableId, status])
+  @@unique([hotelId, saleNumber])
 }
 
 model RestaurantOrderItem {

@@ -2519,6 +2519,7 @@ export async function closeOrder(req: Request, res: Response) {
   const totalToSave = asNumber(totals?.total ?? totals?.reported) || asNumber(order.total);
   const serviceToSave = asNumber(totals?.service) || asNumber(order.tip10);
   const paidAt = new Date();
+  const shouldAssignSaleNumber = !order.saleNumber;
 
   // Cargo a habitaci?n (FrontDesk): creamos un InvoiceItem en la factura del hospedaje.
   const roomAmount = asNumber(payments?.room);
@@ -2569,19 +2570,37 @@ export async function closeOrder(req: Request, res: Response) {
 
   const updated = await prisma.$transaction(async (tx) => {
       const cashierIdToSave = resolvedCashierId || order.cashierId || null;
+      let saleNumberToSave: string | null = null;
+      let saleNumberIntToSave: number | null = null;
+      if (shouldAssignSaleNumber) {
+        const seq = await tx.hotelSequence.upsert({
+          where: { hotelId_key: { hotelId, key: "restaurant_sale" } },
+          create: { hotelId, key: "restaurant_sale", nextNumber: 2 },
+          update: { nextNumber: { increment: 1 } },
+          select: { nextNumber: true },
+        });
+        const assigned = Math.max(1, Number(seq.nextNumber) - 1);
+        saleNumberIntToSave = assigned;
+        saleNumberToSave = `v-${padNumber(assigned, 4)}`;
+      }
+      const updateData: Prisma.RestaurantOrderUpdateManyMutationInput = {
+        status: "PAID",
+        paymentBreakdown: payments || {},
+        total: totalToSave,
+        tip10: serviceToSave,
+        note: note ?? order.note,
+        serviceType: String(serviceType || order.serviceType || "DINE_IN"),
+        roomId: roomTarget || order.roomId,
+        cashierId: cashierIdToSave,
+        updatedAt: paidAt,
+      };
+      if (saleNumberToSave && saleNumberIntToSave) {
+        updateData.saleNumber = saleNumberToSave;
+        updateData.saleNumberInt = saleNumberIntToSave;
+      }
       const written = await tx.restaurantOrder.updateMany({
         where: { id: order.id, hotelId },
-        data: {
-          status: "PAID",
-          paymentBreakdown: payments || {},
-          total: totalToSave,
-          tip10: serviceToSave,
-          note: note ?? order.note,
-          serviceType: String(serviceType || order.serviceType || "DINE_IN"),
-          roomId: roomTarget || order.roomId,
-          cashierId: cashierIdToSave,
-          updatedAt: paidAt,
-        },
+        data: updateData,
       });
     if (written.count === 0) return null;
 
@@ -4444,6 +4463,8 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   return res.json({
     items: filtered.map((o) => ({
       id: o.id,
+      saleNumber: (o as any).saleNumber || null,
+      saleNumberInt: (o as any).saleNumberInt || null,
       tableId: fromInternalId(hotelId, o.tableId),
       sectionId: o.sectionId ? fromInternalId(hotelId, o.sectionId) : null,
       waiterId: o.waiterId,

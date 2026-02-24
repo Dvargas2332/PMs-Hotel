@@ -23,6 +23,7 @@ export default function RestaurantHistory() {
   const [now, setNow] = useState(new Date());
   const [salesDialogOpen, setSalesDialogOpen] = useState(false);
   const [invoicesDialogOpen, setInvoicesDialogOpen] = useState(false);
+  const [shiftsDialogOpen, setShiftsDialogOpen] = useState(false);
   const [movementType, setMovementType] = useState("SALES");
   const [groupBy, setGroupBy] = useState("");
   const [orderBy, setOrderBy] = useState("");
@@ -69,6 +70,14 @@ export default function RestaurantHistory() {
   const [reportError, setReportError] = useState("");
   const [salesPreviewOpen, setSalesPreviewOpen] = useState(false);
   const [salesPreviewRows, setSalesPreviewRows] = useState([]);
+  const [shiftRows, setShiftRows] = useState([]);
+  const [shiftBusy, setShiftBusy] = useState(false);
+  const [shiftError, setShiftError] = useState("");
+  const [shiftUseTurno, setShiftUseTurno] = useState(false);
+  const [shiftIdFilter, setShiftIdFilter] = useState("");
+  const [shiftUseFecha, setShiftUseFecha] = useState(false);
+  const [shiftDateFrom, setShiftDateFrom] = useState("");
+  const [shiftDateTo, setShiftDateTo] = useState("");
   const [invoiceRows, setInvoiceRows] = useState([]);
   const [invoiceCurrencies, setInvoiceCurrencies] = useState([]);
   const [invoicePaymentMethods, setInvoicePaymentMethods] = useState([]);
@@ -133,7 +142,7 @@ export default function RestaurantHistory() {
   }, []);
 
   useEffect(() => {
-    if (!salesDialogOpen && !invoicesDialogOpen) return;
+    if (!salesDialogOpen && !invoicesDialogOpen && !shiftsDialogOpen) return;
     const loadOptions = async () => {
       setFamiliesLoading(true);
       setOptionsLoading(true);
@@ -190,7 +199,36 @@ export default function RestaurantHistory() {
       }
     };
     loadOptions();
-  }, [salesDialogOpen, invoicesDialogOpen]);
+  }, [salesDialogOpen, invoicesDialogOpen, shiftsDialogOpen]);
+
+  const handleShiftsApply = async () => {
+    if (shiftBusy) return;
+    setShiftBusy(true);
+    setShiftError("");
+    try {
+      let rows = Array.isArray(closedShifts) ? [...closedShifts] : [];
+      if (shiftUseTurno && shiftIdFilter) {
+        rows = rows.filter((s) => String(s.id) === String(shiftIdFilter));
+      }
+      if (shiftUseFecha && (shiftDateFrom || shiftDateTo)) {
+        const from = shiftDateFrom ? new Date(shiftDateFrom) : null;
+        const to = shiftDateTo ? new Date(shiftDateTo) : null;
+        if (to) to.setHours(23, 59, 59, 999);
+        rows = rows.filter((s) => {
+          const closedAt = s?.closedAt ? new Date(s.closedAt) : null;
+          if (!closedAt) return false;
+          if (from && closedAt < from) return false;
+          if (to && closedAt > to) return false;
+          return true;
+        });
+      }
+      setShiftRows(rows);
+    } catch {
+      setShiftError("No se pudo filtrar turnos.");
+    } finally {
+      setShiftBusy(false);
+    }
+  };
 
   const staffById = useMemo(() => {
     const map = new Map();
@@ -453,7 +491,7 @@ const handleInvoicesApply = async () => {
   const items = [
     { title: "Ventas / Devoluciones", icon: BarChart3, onClick: () => setSalesDialogOpen(true) },
     { title: "Facturas", icon: FileText, onClick: () => setInvoicesDialogOpen(true), tone: "amber" },
-    { title: "Turnos de Trabajo", icon: Briefcase },
+    { title: "Turnos de Trabajo", icon: Briefcase, onClick: () => setShiftsDialogOpen(true) },
     { title: "Estad?sticas", icon: BarChart3 },
     { title: "Exenciones de Impuestos", icon: ShieldCheck },
     { title: "Rebajas de Inventario", icon: MinusSquare },
@@ -518,7 +556,7 @@ const handleInvoicesApply = async () => {
       <>
         {salesDialogOpen && (
           <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
-            <div className="w-full max-w-6xl h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
+            <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
                 <div className="flex items-center gap-3">
                   <div className="text-lg font-semibold text-lime-800">Ventas / Devoluciones</div>
@@ -532,7 +570,7 @@ const handleInvoicesApply = async () => {
                 </button>
               </div>
 
-              <div className="p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)]">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)]">
                 <div className="space-y-4">
                 <div className="inline-flex items-center gap-4 rounded-xl border border-lime-200 px-4 py-2">
                   <label className="flex items-center gap-2 text-sm">
@@ -567,8 +605,10 @@ const handleInvoicesApply = async () => {
                   </label>
                 </div>
 
-                <div className="rounded-xl border border-lime-200 p-4 space-y-3 bg-white">
-                  <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                <div className="rounded-xl border border-lime-200 p-4 bg-white">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -579,7 +619,7 @@ const handleInvoicesApply = async () => {
                       Artículo
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       value={itemId}
                       onChange={(e) => setItemId(e.target.value)}
                       disabled={!useArticulo}
@@ -593,7 +633,7 @@ const handleInvoicesApply = async () => {
                     </select>
                   </div>
 
-                  <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -604,7 +644,7 @@ const handleInvoicesApply = async () => {
                       Tipo de Cobro
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       disabled={!useTipoCobro}
                       value={paymentKey}
                       onChange={(e) => setPaymentKey(e.target.value)}
@@ -617,8 +657,7 @@ const handleInvoicesApply = async () => {
                       ))}
                     </select>
                   </div>
-                </div>
-                <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -629,7 +668,7 @@ const handleInvoicesApply = async () => {
                     Turno
                   </label>
                   <select
-                    className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                     disabled={!useTurno}
                     value={shiftId}
                     onChange={(e) => setShiftId(e.target.value)}
@@ -643,7 +682,7 @@ const handleInvoicesApply = async () => {
                     ))}
                   </select>
                 </div>
-                <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"
@@ -654,7 +693,7 @@ const handleInvoicesApply = async () => {
                     Moneda
                   </label>
                   <select
-                    className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                     disabled={!useMoneda}
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value)}
@@ -664,6 +703,40 @@ const handleInvoicesApply = async () => {
                     <option value="SEC">Secundaria</option>
                   </select>
                 </div>
+                <div className="grid grid-cols-[140px_1fr_160px] gap-3 items-center">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="accent-lime-600"
+                      checked={useFecha}
+                      onChange={(e) => setUseFecha(e.target.checked)}
+                    />
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[280px]"
+                    value={dateFrom}
+                    onChange={(e) => {
+                      setDateFrom(e.target.value);
+                      setDateTo("");
+                    }}
+                    disabled={!useFecha}
+                  />
+                  <select
+                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[160px] bg-white"
+                    value={serviceType}
+                    onChange={(e) => setServiceType(e.target.value)}
+                  >
+                    <option value="">Servicio</option>
+                    <option value="DINE_IN">DINE_IN</option>
+                    <option value="TAKEOUT">TAKEOUT</option>
+                    <option value="DELIVERY">DELIVERY</option>
+                    <option value="ROOM">ROOM</option>
+                  </select>
+                </div>
+                    </div>
+                    <div className="space-y-3">
                   <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
@@ -675,7 +748,7 @@ const handleInvoicesApply = async () => {
                       Cajero
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       disabled={!useCajero}
                       value={cashierId}
                       onChange={(e) => setCashierId(e.target.value)}
@@ -688,7 +761,7 @@ const handleInvoicesApply = async () => {
                       ))}
                     </select>
                   </div>
-                  <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -699,7 +772,7 @@ const handleInvoicesApply = async () => {
                       Mesero
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       disabled={!useMesero}
                       value={waiterId}
                       onChange={(e) => setWaiterId(e.target.value)}
@@ -712,7 +785,7 @@ const handleInvoicesApply = async () => {
                       ))}
                     </select>
                   </div>
-                  <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -723,7 +796,7 @@ const handleInvoicesApply = async () => {
                       Familia
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       value={familyId}
                       onChange={(e) => setFamilyId(e.target.value)}
                       disabled={!useFamilia}
@@ -736,7 +809,7 @@ const handleInvoicesApply = async () => {
                       ))}
                     </select>
                   </div>
-                  <div className="grid md:grid-cols-[140px_1fr] gap-3 items-center">
+                  <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -747,7 +820,7 @@ const handleInvoicesApply = async () => {
                       Subfamilia
                     </label>
                     <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
                       disabled={!useSubfamilia}
                       value={subFamilyId}
                       onChange={(e) => setSubFamilyId(e.target.value)}
@@ -761,40 +834,8 @@ const handleInvoicesApply = async () => {
                     </select>
                   </div>
 
-                  <div className="grid md:grid-cols-[140px_1fr_220px] gap-3 items-center">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="accent-lime-600"
-                        checked={useFecha}
-                        onChange={(e) => setUseFecha(e.target.checked)}
-                      />
-                      Fecha
-                    </label>
-                    <input
-                      type="date"
-                      className="h-8 rounded-lg border px-2 text-xs w-full"
-                      value={dateFrom}
-                      onChange={(e) => {
-                        setDateFrom(e.target.value);
-                        setDateTo("");
-                      }}
-                      disabled={!useFecha}
-                    />
-                    <select
-                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
-                      value={serviceType}
-                      onChange={(e) => setServiceType(e.target.value)}
-                    >
-                      <option value="">Servicio</option>
-                      <option value="DINE_IN">DINE_IN</option>
-                      <option value="TAKEOUT">TAKEOUT</option>
-                      <option value="DELIVERY">DELIVERY</option>
-                      <option value="ROOM">ROOM</option>
-                    </select>
+                    </div>
                   </div>
-
-
                 </div>
 
                 <div className="grid md:grid-cols-3 gap-3">
@@ -932,9 +973,11 @@ const handleInvoicesApply = async () => {
                     )}
                   </div>
                 )}
+              </div>
+              <div className="space-y-2">
                 <div className="rounded-xl border border-lime-200 p-3">
                   <div className="text-xs uppercase text-lime-600 mb-2">Enfoque r?pido</div>
-                  <div className="grid grid-cols-1 gap-2 max-w-[260px]">
+                  <div className="grid grid-cols-1 gap-2">
                     {[
                       "Familia",
                       "Subfamilia",
@@ -965,9 +1008,10 @@ const handleInvoicesApply = async () => {
                   </div>
                 </div>
               </div>
+            </div>
           </div>
         </div>
-      )}
+        )}
         {invoicesDialogOpen && (
           <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
             <div className="w-full max-w-6xl h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
@@ -1322,9 +1366,127 @@ const handleInvoicesApply = async () => {
                   )}
                 </div>
               )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
+        {shiftsDialogOpen && (
+          <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
+            <div className="w-full max-w-6xl h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
+                <div className="text-lg font-semibold text-lime-800">Turnos de Trabajo</div>
+                <button
+                  type="button"
+                  className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
+                  onClick={() => setShiftsDialogOpen(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)]">
+                <div className="rounded-xl border border-lime-200 p-4">
+                  <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm min-w-[140px]">
+                        <input
+                          type="checkbox"
+                          className="accent-lime-600"
+                          checked={shiftUseTurno}
+                          onChange={(e) => setShiftUseTurno(e.target.checked)}
+                        />
+                        Turno
+                      </label>
+                      <select
+                        className="h-9 rounded-lg border px-2 text-sm w-full bg-white"
+                        disabled={!shiftUseTurno}
+                        value={shiftIdFilter}
+                        onChange={(e) => setShiftIdFilter(e.target.value)}
+                      >
+                        <option value="">{optionsLoading ? "Cargando..." : "Selecciona..."}</option>
+                        {closedShifts.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.shiftNumber ? `#${s.shiftNumber} • ` : ""}
+                            {s.closedAt ? new Date(s.closedAt).toLocaleString() : s.id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm min-w-[140px]">
+                        <input
+                          type="checkbox"
+                          className="accent-lime-600"
+                          checked={shiftUseFecha}
+                          onChange={(e) => setShiftUseFecha(e.target.checked)}
+                        />
+                        Fecha cierre
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        <input
+                          type="date"
+                          className="h-9 rounded-lg border px-2 text-sm w-full"
+                          disabled={!shiftUseFecha}
+                          value={shiftDateFrom}
+                          onChange={(e) => setShiftDateFrom(e.target.value)}
+                        />
+                        <input
+                          type="date"
+                          className="h-9 rounded-lg border px-2 text-sm w-full"
+                          disabled={!shiftUseFecha}
+                          value={shiftDateTo}
+                          onChange={(e) => setShiftDateTo(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-lime-200 overflow-hidden">
+                  <div className="grid grid-cols-[120px_180px_180px_140px_1fr] bg-lime-100 text-xs font-semibold text-lime-900 px-3 py-2">
+                    <div>Turno</div>
+                    <div>Apertura</div>
+                    <div>Cierre</div>
+                    <div>Apertura (monto)</div>
+                    <div>Nota</div>
+                  </div>
+                  <div className="min-h-[240px] bg-lime-50">
+                    {(shiftRows.length ? shiftRows : closedShifts).map((row) => (
+                      <div
+                        key={row.id}
+                        className="grid grid-cols-[120px_180px_180px_140px_1fr] text-xs px-3 py-2 border-t border-lime-200"
+                      >
+                        <div>{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</div>
+                        <div>{row.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}</div>
+                        <div>{row.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}</div>
+                        <div>{Number(row.openingAmount || 0).toFixed(2)}</div>
+                        <div className="truncate" title={row.note || ""}>{row.note || "-"}</div>
+                      </div>
+                    ))}
+                    {((shiftRows.length ? shiftRows : closedShifts).length === 0) && (
+                      <div className="px-3 py-6 text-center text-xs text-slate-500">Sin resultados.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    className="h-10 px-3 rounded-lg bg-lime-100 border border-lime-200 disabled:opacity-60"
+                    onClick={handleShiftsApply}
+                    disabled={shiftBusy}
+                  >
+                    {shiftBusy ? "Cargando..." : "Buscar"}
+                  </button>
+                </div>
+                {shiftError && (
+                  <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    {shiftError}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </>
       {salesPreviewOpen && (
@@ -1363,7 +1525,7 @@ const handleInvoicesApply = async () => {
                 <thead>
                   <tr className="bg-lime-50 text-left">
                     {groupBy ? <th className="border border-lime-200 px-2 py-1">Grupo</th> : null}
-                    <th className="border border-lime-200 px-2 py-1">ID</th>
+                    <th className="border border-lime-200 px-2 py-1">Venta</th>
                     <th className="border border-lime-200 px-2 py-1">Sección</th>
                     <th className="border border-lime-200 px-2 py-1">Mesa</th>
                     <th className="border border-lime-200 px-2 py-1">Total</th>
@@ -1376,7 +1538,7 @@ const handleInvoicesApply = async () => {
                       {groupBy ? (
                         <td className="border border-lime-100 px-2 py-1">{row.groupKey || "-"}</td>
                       ) : null}
-                      <td className="border border-lime-100 px-2 py-1">{row.id || "-"}</td>
+                      <td className="border border-lime-100 px-2 py-1">{row.saleNumber || row.id || "-"}</td>
                       <td className="border border-lime-100 px-2 py-1">{row.sectionId || "-"}</td>
                       <td className="border border-lime-100 px-2 py-1">{row.tableId || "-"}</td>
                       <td className="border border-lime-100 px-2 py-1">{row.total ?? "-"}</td>
