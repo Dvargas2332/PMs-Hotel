@@ -3953,7 +3953,7 @@ export default function RestaurantConfig() {
 
     if (!d?.id) return;
 
-    if (!window.confirm(`Eliminar descuento "${d.name || d.id}"?`)) return;
+    if (!window.confirm(t("mgmt.restaurant.discounts.deleteConfirm", { name: d.name || d.id }))) return;
 
     try {
 
@@ -4381,15 +4381,15 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs uppercase text-gray-500">Floorplan</div>
+            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.floorplan.title")}</div>
 
 
 
-            <h3 className="font-semibold text-lg">Section layout editor</h3>
+            <h3 className="font-semibold text-lg">{t("mgmt.restaurant.floorplan.subtitle")}</h3>
 
 
 
-            <p className="text-sm text-gray-600">Drag tables to set X/Y. This is stored per hotel and rendered in the TPV.</p>
+            <p className="text-sm text-gray-600">{t("mgmt.restaurant.floorplan.help")}</p>
 
 
 
@@ -4405,7 +4405,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="font-semibold">Fondo de la secci\u00f3n</div>
+              <div className="font-semibold">{t("mgmt.restaurant.floorplan.backgroundTitle")}</div>
 
 
 
@@ -4433,7 +4433,7 @@ export default function RestaurantConfig() {
 
 
 
-                  title="Color de fondo"
+                  title={t("mgmt.restaurant.floorplan.backgroundColor")}
 
 
 
@@ -4457,7 +4457,7 @@ export default function RestaurantConfig() {
 
 
 
-                  placeholder="URL de imagen opcional"
+                  placeholder={t("mgmt.restaurant.floorplan.backgroundImage")}
 
 
 
@@ -4497,15 +4497,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
-
-
-
-                    Cambios sin guardar
-
-
-
-                  </span>
+                  <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">{t("mgmt.restaurant.floorplan.unsaved")}</span>
 
 
 
@@ -4513,15 +4505,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">
-
-
-
-                    Guardado
-
-
-
-                  </span>
+                  <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">{t("mgmt.restaurant.floorplan.saved")}</span>
 
 
 
@@ -4533,7 +4517,7 @@ export default function RestaurantConfig() {
 
 
 
-                  {floorplanSaving ? "Guardando..." : "Guardar"}
+                  {floorplanSaving ? t("mgmt.restaurant.floorplan.saving") : t("mgmt.restaurant.floorplan.save")}
 
 
 
@@ -4565,7 +4549,7 @@ export default function RestaurantConfig() {
 
 
 
-              title="Select section"
+              title={t("mgmt.restaurant.floorplan.selectSectionTitle")}
 
 
 
@@ -4797,15 +4781,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-amber-700">
-
-
-
-                    No tables in this section.
-
-
-
-                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-amber-700">{t("mgmt.restaurant.tables.empty")}</div>
 
 
 
@@ -4821,15 +4797,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-xs text-gray-500 hidden">
-
-
-
-                Tip: Use Sections & tables to create tables first. Then come back here to position them.
-
-
-
-              </div>
+              <div className="text-xs text-gray-500 hidden">{t("mgmt.restaurant.floorplan.tip")}</div>
 
 
 
@@ -4849,7 +4817,7 @@ export default function RestaurantConfig() {
 
 
 
-                <div className="font-semibold text-sm">Selected table</div>
+                <div className="font-semibold text-sm">{t("mgmt.restaurant.floorplan.selectedTable") }</div>
 
 
 
@@ -4857,7 +4825,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <div className="text-sm text-gray-600">Select a table on the map to edit its size, color, position and rotation.</div>
+                  <div className="text-sm text-gray-600">{t("mgmt.restaurant.floorplan.selectedTableHint")}</div>
 
 
 
@@ -4985,7 +4953,7 @@ export default function RestaurantConfig() {
 
 
 
-                        placeholder="X %"
+                        placeholder={t("mgmt.restaurant.tables.x")}
 
 
 
@@ -5009,7 +4977,7 @@ export default function RestaurantConfig() {
 
 
 
-                        placeholder="Y %"
+                        placeholder={t("mgmt.restaurant.tables.y")}
 
 
 
@@ -5077,7 +5045,7 @@ export default function RestaurantConfig() {
 
 
 
-                          title="Color"
+                          title={t("mgmt.restaurant.common.color")}
 
 
 
@@ -5125,7 +5093,7 @@ export default function RestaurantConfig() {
 
 
 
-                          <div className="text-xs font-semibold text-slate-700">Rotation snap</div>
+                          <div className="text-xs font-semibold text-slate-700">{t("mgmt.restaurant.floorplan.rotationSnap")}</div>
 
 
 
@@ -5269,7 +5237,7 @@ export default function RestaurantConfig() {
 
 
 
-                          <div className="text-xs font-semibold text-slate-700">Icon size</div>
+                          <div className="text-xs font-semibold text-slate-700">{t("mgmt.restaurant.floorplan.iconSize")}</div>
 
 
 
@@ -5341,7 +5309,7 @@ export default function RestaurantConfig() {
 
 
 
-                      <div className="text-xs text-slate-400">Usa "Guardar"</div>
+                      <div className="text-xs text-slate-400">{t("mgmt.restaurant.floorplan.useSave")}</div>
 
 
 
@@ -5595,11 +5563,11 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-xs uppercase text-gray-500">Sectiones</div>
+              <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.sections.title")}</div>
 
 
 
-              <h3 className="font-semibold text-lg">Sectiones del restaurante</h3>
+              <h3 className="font-semibold text-lg">{t("mgmt.restaurant.sections.subtitle")}</h3>
 
 
 
@@ -5635,7 +5603,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Nombre"
+              placeholder={t("mgmt.restaurant.sections.name")}
 
 
 
@@ -5655,7 +5623,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="ID (opcional)"
+              placeholder={t("mgmt.restaurant.sections.idOptional")}
 
 
 
@@ -5675,7 +5643,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="URL de imagen (opcional)"
+              placeholder={t("mgmt.restaurant.sections.imageOptional")}
 
 
 
@@ -5783,15 +5751,7 @@ export default function RestaurantConfig() {
 
 
 
-                    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400">
-
-
-
-                      Sin imagen
-
-
-
-                    </div>
+                    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400">{t("mgmt.restaurant.sections.noImage")}</div>
 
 
 
@@ -5807,7 +5767,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <div className="text-xs uppercase text-gray-500">Seccin</div>
+                  <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.sections.cardLabel")}</div>
 
 
 
@@ -5819,7 +5779,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <div className="text-xs text-slate-500">{(s.tables || []).length} mesas</div>
+                  <div className="text-xs text-slate-500">{(s.tables || []).length} {t("mgmt.restaurant.common.tables")}</div>
 
 
 
@@ -5859,15 +5819,7 @@ export default function RestaurantConfig() {
 
 
 
-                    >
-
-
-
-                      Eliminar
-
-
-
-                    </button>
+                    >{t("mgmt.restaurant.common.delete")}</button>
 
 
 
@@ -5935,7 +5887,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-sm text-slate-500">No hay secciones creadas.</div>
+              <div className="text-sm text-slate-500">{t("mgmt.restaurant.sections.empty")}</div>
 
 
 
@@ -5975,15 +5927,15 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs uppercase text-gray-500">Tables</div>
+            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.tables.title")}</div>
 
 
 
-            <h3 className="font-semibold text-lg">Table layout</h3>
+            <h3 className="font-semibold text-lg">{t("mgmt.restaurant.tables.subtitle")}</h3>
 
 
 
-            <p className="text-xs text-gray-500 mt-1">Simple layout per section.</p>
+            <p className="text-xs text-gray-500 mt-1">{t("mgmt.restaurant.tables.help")}</p>
 
 
 
@@ -6091,7 +6043,7 @@ export default function RestaurantConfig() {
 
 
 
-              title="Section"
+              title={t("mgmt.restaurant.tables.sectionTitle")}
 
 
 
@@ -6127,7 +6079,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Table ID"
+              placeholder={t("mgmt.restaurant.tables.tableId")}
 
 
 
@@ -6155,7 +6107,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Seats"
+              placeholder={t("mgmt.restaurant.tables.seats")}
 
 
 
@@ -6183,7 +6135,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="X %"
+              placeholder={t("mgmt.restaurant.tables.x")}
 
 
 
@@ -6211,7 +6163,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Y %"
+              placeholder={t("mgmt.restaurant.tables.y")}
 
 
 
@@ -6259,7 +6211,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500">Layout for: <span className="font-semibold">{selectedSection.name || selectedSection.id}</span></div>
+            <div className="text-xs text-gray-500">{t("mgmt.restaurant.tables.layoutFor")} <span className="font-semibold">{selectedSection.name || selectedSection.id}</span></div>
 
 
 
@@ -6267,7 +6219,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-[11px] text-gray-500 mb-2">Simulated grid. Each card is a table.</div>
+              <div className="text-[11px] text-gray-500 mb-2">{t("mgmt.restaurant.tables.gridHint")}</div>
 
 
 
@@ -6319,7 +6271,7 @@ export default function RestaurantConfig() {
 
 
 
-                      title="Delete table"
+                      title={t("mgmt.restaurant.tables.deleteTitle")}
 
 
 
@@ -6347,7 +6299,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <div className="text-sm text-gray-500 col-span-full">No tables in this section.</div>
+                  <div className="text-sm text-gray-500 col-span-full">{t("mgmt.restaurant.tables.empty")}</div>
 
 
 
@@ -6371,7 +6323,7 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-sm text-gray-500">Select a section to manage its tables.</div>
+          <div className="text-sm text-gray-500">{t("mgmt.restaurant.tables.selectSection")}</div>
 
 
 
@@ -6407,11 +6359,11 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs uppercase text-gray-500">Menu</div>
+            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.menus.title")}</div>
 
 
 
-            <h3 className="font-semibold text-lg">Menus & schedule (per section)</h3>
+            <h3 className="font-semibold text-lg">{t("mgmt.restaurant.menus.header")}</h3>
 
 
 
@@ -6540,8 +6492,8 @@ export default function RestaurantConfig() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-slate-600">
                     <tr>
-                      <th className="px-3 py-2 text-left font-semibold">Section</th>
-                      <th className="px-3 py-2 text-left font-semibold">Menu</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.section")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.menus.title")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.schedule")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.days")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.status")}</th>
@@ -6630,12 +6582,12 @@ export default function RestaurantConfig() {
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50">
                       <tr className="text-xs text-slate-600">
-                        <th className="text-left px-3 py-2">Family</th>
+                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.family")}</th>
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.subFamily")}</th>
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.subSubfamily")}</th>
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.article")}</th>
-                        <th className="text-center px-3 py-2">Active</th>
-                        <th className="text-center px-3 py-2">Color</th>
+                        <th className="text-center px-3 py-2">{t("mgmt.restaurant.menuItems.column.active")}</th>
+                        <th className="text-center px-3 py-2">{t("mgmt.restaurant.menuItems.column.color")}</th>
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.thumbnail")}</th>
                         <th className="text-right px-3 py-2">{t("mgmt.restaurant.menuItems.column.actions")}</th>
                       </tr>
@@ -6980,12 +6932,8 @@ export default function RestaurantConfig() {
                     </select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button onClick={saveMenuPickerSelection} disabled={saving.menuEntries || !menuPickerMenuId}>
-                      Guardar
-                    </Button>
-                    <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>
-                      Refresh
-                    </Button>
+                    <Button onClick={saveMenuPickerSelection} disabled={saving.menuEntries || !menuPickerMenuId}>{t("mgmt.restaurant.menuPicker.save")}</Button>
+                    <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>{t("mgmt.restaurant.menuPicker.refresh")}</Button>
                   </div>
                 </div>
 
@@ -7010,9 +6958,7 @@ export default function RestaurantConfig() {
                         </option>
                       ))}
                   </select>
-                  <Button variant="outline" onClick={assignFamilyToMenu} disabled={!menuPickerFamily}>
-                    Asignar familia
-                  </Button>
+                  <Button variant="outline" onClick={assignFamilyToMenu} disabled={!menuPickerFamily}>{t("mgmt.restaurant.menuPicker.assignFamily")}</Button>
                   <Button variant="outline" onClick={() => setMenuPickerSelectedIds([])}>
                     Limpiar seleccion
                   </Button>
@@ -7189,17 +7135,11 @@ export default function RestaurantConfig() {
 
 
                               {isInMenu ? (
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  En menu
-                                </span>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{t("mgmt.restaurant.menuPicker.inMenu")}</span>
                               ) : isSelected ? (
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                  Seleccionado
-                                </span>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">{t("mgmt.restaurant.menuPicker.selected")}</span>
                               ) : (
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">
-                                  Seleccionar
-                                </span>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">{t("mgmt.restaurant.menuPicker.select")}</span>
                               )}
 
 
@@ -7280,11 +7220,11 @@ export default function RestaurantConfig() {
 
 
 
-        <h3 className="font-semibold text-lg">Restaurant printers</h3>
+        <h3 className="font-semibold text-lg">{t("mgmt.restaurant.printers.title")}</h3>
 
 
 
-        <p className="text-sm text-gray-600">Configure printer IDs for kitchen and bar (separate from Front Desk).</p>
+        <p className="text-sm text-gray-600">{t("mgmt.restaurant.printers.help")}</p>
 
 
 
@@ -7300,7 +7240,7 @@ export default function RestaurantConfig() {
 
 
 
-          placeholder="Kitchen printer ID"
+          placeholder={t("mgmt.restaurant.printers.kitchen")}
 
 
 
@@ -7320,7 +7260,7 @@ export default function RestaurantConfig() {
 
 
 
-          placeholder="Bar printer ID"
+          placeholder={t("mgmt.restaurant.printers.bar")}
 
 
 
@@ -7340,7 +7280,7 @@ export default function RestaurantConfig() {
 
 
 
-          placeholder="Cashier printer ID (tickets/invoices)"
+          placeholder={t("mgmt.restaurant.printers.cashier")}
 
 
 
@@ -7368,7 +7308,7 @@ export default function RestaurantConfig() {
 
 
 
-        <div className="text-sm font-semibold">Printing</div>
+        <div className="text-sm font-semibold">{t("mgmt.restaurant.printers.printing")}</div>
 
 
 
@@ -7380,7 +7320,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500 mb-1">Paper type</div>
+            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.printers.paperType")}</div>
 
 
 
@@ -7428,7 +7368,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500 mb-1">Default billing document</div>
+            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.printers.defaultDoc")}</div>
 
 
 
@@ -7452,11 +7392,11 @@ export default function RestaurantConfig() {
 
 
 
-              <option value="TE">Ticket (TE)</option>
+              <option value="TE">{t("mgmt.restaurant.printers.ticketTE")}</option>
 
 
 
-              <option value="FE">Electronic invoice (FE)</option>
+              <option value="FE">{t("mgmt.restaurant.printers.invoiceFE")}</option>
 
 
 
@@ -7468,15 +7408,7 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-xs text-gray-500 flex items-end">
-
-
-
-            Configure 5 print types used across Restaurant.
-
-
-
-          </div>
+          <div className="text-xs text-gray-500 flex items-end">{t("mgmt.restaurant.printers.typesHelp")}</div>
 
 
 
@@ -7496,23 +7428,23 @@ export default function RestaurantConfig() {
 
 
 
-            { key: "comanda", label: "Comanda", docType: "COMANDA" },
+            { key: "comanda", label: t("mgmt.restaurant.printers.type.comanda"), docType: "COMANDA" },
 
 
 
-            { key: "ticket", label: "Ticket", docType: "TE" },
+            { key: "ticket", label: t("mgmt.restaurant.printers.type.ticket"), docType: "TE" },
 
 
 
-            { key: "document", label: "Subfactura", docType: "DOCUMENT" },
+            { key: "document", label: t("mgmt.restaurant.printers.type.subinvoice"), docType: "DOCUMENT" },
 
 
 
-            { key: "electronicInvoice", label: "Factura (FE)", docType: "FE" },
+            { key: "electronicInvoice", label: t("mgmt.restaurant.printers.type.invoice"), docType: "FE" },
 
 
 
-            { key: "closes", label: "Cierre", docType: "CLOSES" },
+            { key: "closes", label: t("mgmt.restaurant.printers.type.closes"), docType: "CLOSES" },
 
 
 
@@ -7603,7 +7535,7 @@ export default function RestaurantConfig() {
 
 
 
-                  placeholder="Printer ID (leave empty to use Cashier printer)"
+                  placeholder={t("mgmt.restaurant.printers.printerId")}
 
 
 
@@ -7675,7 +7607,7 @@ export default function RestaurantConfig() {
 
 
 
-                  title="Print form"
+                  title={t("mgmt.restaurant.printers.printForm")}
 
 
 
@@ -7683,7 +7615,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <option value="">Default form</option>
+                  <option value="">{t("mgmt.restaurant.printers.defaultForm")}</option>
 
 
 
@@ -7719,7 +7651,7 @@ export default function RestaurantConfig() {
 
 
 
-                  placeholder="Copies"
+                  placeholder={t("mgmt.restaurant.printers.copies")}
 
 
 
@@ -7783,7 +7715,7 @@ export default function RestaurantConfig() {
 
 
 
-        <Button onClick={savePrinters}>Save printers</Button>
+        <Button onClick={savePrinters}>{t("mgmt.restaurant.printers.save")}</Button>
 
 
 
@@ -7843,7 +7775,7 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-[11px] uppercase tracking-wide text-slate-800 font-semibold">Impuestos</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-800 font-semibold">{t("mgmt.restaurant.taxes.title")}</div>
 
 
 
@@ -7855,7 +7787,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-xs uppercase text-gray-500 mb-1">IVA %</div>
+              <div className="text-xs uppercase text-gray-500 mb-1">{t("mgmt.restaurant.taxes.vat")}</div>
 
 
 
@@ -7895,7 +7827,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-xs uppercase text-gray-500 mb-1">Servicio %</div>
+              <div className="text-xs uppercase text-gray-500 mb-1">{t("mgmt.restaurant.taxes.service")}</div>
 
 
 
@@ -7955,7 +7887,7 @@ export default function RestaurantConfig() {
 
 
 
-              Impuesto incluido en precios
+              {t("mgmt.restaurant.taxes.included")}
 
 
 
@@ -7987,15 +7919,7 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-[11px] uppercase tracking-wide text-slate-800 font-semibold">
-
-
-
-            Descuentos
-
-
-
-          </div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-800 font-semibold">{t("mgmt.restaurant.discounts.title")}</div>
 
 
 
@@ -8023,7 +7947,7 @@ export default function RestaurantConfig() {
 
 
 
-            Permitir descuentos en POS
+            {t("mgmt.restaurant.discounts.allow")}
 
 
 
@@ -8043,7 +7967,7 @@ export default function RestaurantConfig() {
 
 
 
-                placeholder="Nombre del descuento"
+                placeholder={t("mgmt.restaurant.discounts.name")}
 
 
 
@@ -8095,7 +8019,7 @@ export default function RestaurantConfig() {
 
 
 
-                <Button onClick={createDiscount}>Crear descuento</Button>
+                <Button onClick={createDiscount}>{t("mgmt.restaurant.discounts.create")}</Button>
 
 
 
@@ -8111,7 +8035,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="px-3 py-2 text-xs uppercase text-gray-500 bg-slate-50">Descuentos creados</div>
+              <div className="px-3 py-2 text-xs uppercase text-gray-500 bg-slate-50">{t("mgmt.restaurant.discounts.created")}</div>
 
 
 
@@ -8219,15 +8143,7 @@ export default function RestaurantConfig() {
 
 
 
-                              >
-
-
-
-                                Eliminar
-
-
-
-                              </button>
+                              >{t("mgmt.restaurant.common.delete")}</button>
 
 
 
@@ -8255,7 +8171,7 @@ export default function RestaurantConfig() {
 
 
 
-                <div className="px-3 py-3 text-sm text-slate-500">No hay descuentos creados.</div>
+                <div className="px-3 py-3 text-sm text-slate-500">{t("mgmt.restaurant.discounts.empty")}</div>
 
 
 
@@ -8307,11 +8223,11 @@ export default function RestaurantConfig() {
 
 
 
-          <h3 className="font-semibold text-lg">General info</h3>
+          <h3 className="font-semibold text-lg">{t("mgmt.restaurant.general.title")}</h3>
 
 
 
-          <p className="text-sm text-gray-600">Legal and contact details.</p>
+          <p className="text-sm text-gray-600">{t("mgmt.restaurant.general.subtitle")}</p>
 
 
 
@@ -8319,7 +8235,7 @@ export default function RestaurantConfig() {
 
 
 
-        {showSave && <Button onClick={saveGeneral}>Save</Button>}
+        {showSave && <Button onClick={saveGeneral}>{t("mgmt.restaurant.common.save")}</Button>}
 
 
 
@@ -8331,35 +8247,35 @@ export default function RestaurantConfig() {
 
 
 
-        <Input placeholder="Trade name" value={general.nombreComercial} onChange={(e) => setGeneral((g) => ({ ...g, nombreComercial: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.tradeName")} value={general.nombreComercial} onChange={(e) => setGeneral((g) => ({ ...g, nombreComercial: e.target.value }))} />
 
 
 
-        <Input placeholder="Legal name" value={general.razonSocial} onChange={(e) => setGeneral((g) => ({ ...g, razonSocial: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.legalName")} value={general.razonSocial} onChange={(e) => setGeneral((g) => ({ ...g, razonSocial: e.target.value }))} />
 
 
 
-        <Input placeholder="Legal ID" value={general.cedula} onChange={(e) => setGeneral((g) => ({ ...g, cedula: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.legalId")} value={general.cedula} onChange={(e) => setGeneral((g) => ({ ...g, cedula: e.target.value }))} />
 
 
 
-        <Input placeholder="Phone" value={general.telefono} onChange={(e) => setGeneral((g) => ({ ...g, telefono: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.phone")} value={general.telefono} onChange={(e) => setGeneral((g) => ({ ...g, telefono: e.target.value }))} />
 
 
 
-        <Input placeholder="Email" value={general.email} onChange={(e) => setGeneral((g) => ({ ...g, email: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.email")} value={general.email} onChange={(e) => setGeneral((g) => ({ ...g, email: e.target.value }))} />
 
 
 
-        <Input placeholder="Address" value={general.direccion} onChange={(e) => setGeneral((g) => ({ ...g, direccion: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.address")} value={general.direccion} onChange={(e) => setGeneral((g) => ({ ...g, direccion: e.target.value }))} />
 
 
 
-        <Input placeholder="Business hours" value={general.horario} onChange={(e) => setGeneral((g) => ({ ...g, horario: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.hours")} value={general.horario} onChange={(e) => setGeneral((g) => ({ ...g, horario: e.target.value }))} />
 
 
 
-        <Input placeholder="Tax authority resolution" value={general.resolucion} onChange={(e) => setGeneral((g) => ({ ...g, resolucion: e.target.value }))} />
+        <Input placeholder={t("mgmt.restaurant.general.resolution")} value={general.resolucion} onChange={(e) => setGeneral((g) => ({ ...g, resolucion: e.target.value }))} />
 
 
 
@@ -8367,7 +8283,7 @@ export default function RestaurantConfig() {
 
 
 
-      <Textarea placeholder="Notes" value={general.notas} onChange={(e) => setGeneral((g) => ({ ...g, notas: e.target.value }))} />
+      <Textarea placeholder={t("mgmt.restaurant.general.notes")} value={general.notas} onChange={(e) => setGeneral((g) => ({ ...g, notas: e.target.value }))} />
 
 
 
@@ -8387,25 +8303,25 @@ export default function RestaurantConfig() {
     <Card className="p-5 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold text-lg">Billing</h3>
-          <p className="text-sm text-gray-600">Tipos de comprobante y formatos de impresi?n.</p>
+          <h3 className="font-semibold text-lg">{t("mgmt.restaurant.billing.title")}</h3>
+          <p className="text-sm text-gray-600">{t("mgmt.restaurant.billing.subtitle")}</p>
         </div>
-        {showSave && <Button onClick={saveBilling}>Save</Button>}
+        {showSave && <Button onClick={saveBilling}>{t("mgmt.restaurant.common.save")}</Button>}
       </div>
 
       <div className="grid md:grid-cols-2 gap-3">
         <div className="space-y-1">
-          <label className="text-xs text-slate-500">Ticket receipt type</label>
+          <label className="text-xs text-slate-500">{t("mgmt.restaurant.billing.ticketType") }</label>
           <Input
-            placeholder="e.g. tiquete / TE"
+            placeholder={t("mgmt.restaurant.billing.ticketPlaceholder")}
             value={billing.ticketComprobante || ""}
             onChange={(e) => setBilling((b) => ({ ...b, ticketComprobante: e.target.value }))}
           />
         </div>
         <div className="space-y-1">
-          <label className="text-xs text-slate-500">Electronic invoice type</label>
+          <label className="text-xs text-slate-500">{t("mgmt.restaurant.billing.invoiceType") }</label>
           <Input
-            placeholder="e.g. factura / FE"
+            placeholder={t("mgmt.restaurant.billing.invoicePlaceholder")}
             value={billing.invoiceComprobante || ""}
             onChange={(e) => setBilling((b) => ({ ...b, invoiceComprobante: e.target.value }))}
           />
@@ -8417,26 +8333,22 @@ export default function RestaurantConfig() {
           type="checkbox"
           checked={Boolean(billing.autoFactura)}
           onChange={(e) => setBilling((b) => ({ ...b, autoFactura: e.target.checked }))}
-        />
-        Auto-generate invoice/receipt per local requirements
-      </label>
+        />{t("mgmt.restaurant.billing.autoGenerate")}</label>
 
       <Card className="p-4 space-y-3 border border-slate-200">
-        <div className="font-semibold text-sm text-slate-800">Vista previa de impresión</div>
+        <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.previewTitle")}</div>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={printing?.showPreview !== false}
             onChange={(e) => setPrinting((p) => ({ ...p, showPreview: e.target.checked }))}
-          />
-          Mostrar vista previa antes de imprimir
-        </label>
+          />{t("mgmt.restaurant.billing.previewBefore")}</label>
 
         <div className="grid md:grid-cols-3 gap-2 text-sm">
           {[
-            { id: "comanda", label: "Comanda" },
-            { id: "subtotal", label: "Subtotal" },
-            { id: "invoice", label: "Factura" },
+            { id: "comanda", label: t("mgmt.restaurant.billing.preview.comanda") },
+            { id: "subtotal", label: t("mgmt.restaurant.billing.preview.subtotal") },
+            { id: "invoice", label: t("mgmt.restaurant.billing.preview.invoice") },
           ].map((opt) => (
             <label key={opt.id} className="flex items-center gap-2">
               <input
@@ -8457,22 +8369,22 @@ export default function RestaurantConfig() {
 
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-4 space-y-3 border border-slate-200">
-          <div className="font-semibold text-sm text-slate-800">Ticket</div>
+          <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.ticketTitle")}</div>
           <div className="grid gap-2">
             <div>
-              <div className="text-xs text-slate-500 mb-1">Encabezado</div>
+              <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.header")}</div>
               <Textarea
                 rows={3}
-                placeholder="L?neas superiores del ticket"
+                placeholder={t("mgmt.restaurant.billing.ticketHeaderPlaceholder")}
                 value={billing.ticketHeader || ""}
                 onChange={(e) => setBilling((b) => ({ ...b, ticketHeader: e.target.value }))}
               />
             </div>
             <div>
-              <div className="text-xs text-slate-500 mb-1">Pie</div>
+              <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.footer")}</div>
               <Textarea
                 rows={3}
-                placeholder="L?neas finales del ticket"
+                placeholder={t("mgmt.restaurant.billing.ticketFooterPlaceholder")}
                 value={billing.ticketFooter || ""}
                 onChange={(e) => setBilling((b) => ({ ...b, ticketFooter: e.target.value }))}
               />
@@ -8481,22 +8393,22 @@ export default function RestaurantConfig() {
         </Card>
 
         <Card className="p-4 space-y-3 border border-slate-200">
-          <div className="font-semibold text-sm text-slate-800">Factura</div>
+          <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.invoiceTitle")}</div>
           <div className="grid gap-2">
             <div>
-              <div className="text-xs text-slate-500 mb-1">Encabezado</div>
+              <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.header")}</div>
               <Textarea
                 rows={3}
-                placeholder="L?neas superiores de la factura"
+                placeholder={t("mgmt.restaurant.billing.invoiceHeaderPlaceholder")}
                 value={billing.invoiceHeader || ""}
                 onChange={(e) => setBilling((b) => ({ ...b, invoiceHeader: e.target.value }))}
               />
             </div>
             <div>
-              <div className="text-xs text-slate-500 mb-1">Pie</div>
+              <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.footer")}</div>
               <Textarea
                 rows={3}
-                placeholder="L?neas finales de la factura"
+                placeholder={t("mgmt.restaurant.billing.invoiceFooterPlaceholder")}
                 value={billing.invoiceFooter || ""}
                 onChange={(e) => setBilling((b) => ({ ...b, invoiceFooter: e.target.value }))}
               />
@@ -8506,22 +8418,22 @@ export default function RestaurantConfig() {
       </div>
 
       <Card className="p-4 space-y-3 border border-slate-200">
-        <div className="font-semibold text-sm text-slate-800">Plantillas de reimpresi?n</div>
+        <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.reprintTitle") }</div>
         <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <div className="text-xs text-slate-500 mb-1">Encabezado</div>
+            <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.header")}</div>
             <Textarea
               rows={3}
-              placeholder="Encabezado para reimpresiones"
+              placeholder={t("mgmt.restaurant.billing.reprintHeaderPlaceholder")}
               value={billing.reprintHeader || ""}
               onChange={(e) => setBilling((b) => ({ ...b, reprintHeader: e.target.value }))}
             />
           </div>
           <div>
-            <div className="text-xs text-slate-500 mb-1">Pie</div>
+            <div className="text-xs text-slate-500 mb-1">{t("mgmt.restaurant.billing.footer")}</div>
             <Textarea
               rows={3}
-              placeholder="Pie para reimpresiones"
+              placeholder={t("mgmt.restaurant.billing.reprintFooterPlaceholder")}
               value={billing.reprintFooter || ""}
               onChange={(e) => setBilling((b) => ({ ...b, reprintFooter: e.target.value }))}
             />
@@ -8789,11 +8701,11 @@ export default function RestaurantConfig() {
 
 
 
-          <h3 className="font-semibold text-lg">Pagos y divisa</h3>
+          <h3 className="font-semibold text-lg">{t("mgmt.restaurant.payments.title")}</h3>
 
 
 
-          <p className="text-sm text-gray-600">Configura divisa del restaurante y los métodos de pago que se mostrarán en el TPV.</p>
+          <p className="text-sm text-gray-600">{t("mgmt.restaurant.payments.subtitle")}</p>
 
 
 
@@ -8801,7 +8713,7 @@ export default function RestaurantConfig() {
 
 
 
-        {showSave && <Button onClick={savePayments}>{t("mgmt.restaurant.menuPicker.save")}</Button>}
+        {showSave && <Button onClick={savePayments}>{t("mgmt.restaurant.payments.save")}</Button>}
 
 
 
@@ -8821,11 +8733,11 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-xs uppercase text-gray-500">Divisa</div>
+          <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.payments.currencyTitle")}</div>
 
 
 
-          <div className="font-semibold">Monedas y tipo de cambio</div>
+          <div className="font-semibold">{t("mgmt.restaurant.payments.currencySubtitle")}</div>
 
 
 
@@ -8833,7 +8745,7 @@ export default function RestaurantConfig() {
 
 
 
-            Primero define la moneda base (la moneda en que se venden los artculos). Luego la moneda de cambio.
+            {t("mgmt.restaurant.payments.currencyHelp")}
 
 
 
@@ -8857,7 +8769,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500 mb-1">Moneda base (ventas)</div>
+            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.baseCurrency") }</div>
 
 
 
@@ -8917,7 +8829,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500 mb-1">Moneda de cambio</div>
+            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.exchangeCurrency") }</div>
 
 
 
@@ -8985,7 +8897,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-gray-500 mb-1">Tipo de cambio</div>
+            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.exchangeRate") }</div>
 
 
 
@@ -8997,7 +8909,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Ej: 540"
+              placeholder={t("mgmt.restaurant.payments.exchangePlaceholder")}
 
 
 
@@ -9021,7 +8933,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div className="text-[11px] text-gray-500 mt-1">Se actualizar automticamente (prximamente).</div>
+              <div className="text-[11px] text-gray-500 mt-1">{t("mgmt.restaurant.payments.autoUpdate") }</div>
 
 
 
@@ -9097,11 +9009,11 @@ export default function RestaurantConfig() {
 
 
 
-          <div className="text-xs uppercase text-gray-500">Pagos</div>
+          <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.payments.methodsTitle")}</div>
 
 
 
-          <div className="font-semibold">Mtodos de pago</div>
+          <div className="font-semibold">{t("mgmt.restaurant.payments.methodsSubtitle") }</div>
 
 
 
@@ -9169,7 +9081,7 @@ export default function RestaurantConfig() {
 
 
 
-              placeholder="Conector/ID contable (pendiente de mdulo de contabilidad)"
+              placeholder={t("mgmt.restaurant.payments.accountingConnector")}
 
 
 
@@ -9233,15 +9145,7 @@ export default function RestaurantConfig() {
 
 
 
-            <Button type="button" variant="outline" onClick={startNewPaymentMethod}>
-
-
-
-              Nuevo
-
-
-
-            </Button>
+            <Button type="button" variant="outline" onClick={startNewPaymentMethod}>{t("mgmt.restaurant.common.new")}</Button>
 
 
 
@@ -9277,15 +9181,7 @@ export default function RestaurantConfig() {
 
 
 
-            <Button type="button" variant="outline" onClick={deleteSelectedPaymentMethod} disabled={!selectedPaymentMethodId}>
-
-
-
-              Eliminar
-
-
-
-            </Button>
+            <Button type="button" variant="outline" onClick={deleteSelectedPaymentMethod} disabled={!selectedPaymentMethodId}>{t("mgmt.restaurant.common.delete")}</Button>
 
 
 
@@ -9321,23 +9217,23 @@ export default function RestaurantConfig() {
 
 
 
-                  <th className="px-3 py-2 text-left w-10">Sel</th>
+                  <th className="px-3 py-2 text-left w-10">{t("mgmt.restaurant.payments.select")}</th>
 
 
 
-                  <th className="px-3 py-2 text-left w-16">Activo</th>
+                  <th className="px-3 py-2 text-left w-16">{t("mgmt.restaurant.common.active")}</th>
 
 
 
-                  <th className="px-3 py-2 text-left">Mtodo</th>
+                  <th className="px-3 py-2 text-left">{t("mgmt.restaurant.payments.method")}</th>
 
 
 
-                  {payments.accountingEnabled && <th className="px-3 py-2 text-left">Cuenta</th>}
+                  {payments.accountingEnabled && <th className="px-3 py-2 text-left">{t("mgmt.restaurant.payments.account")}</th>}
 
 
 
-                  <th className="px-3 py-2 text-right w-28">Accin</th>
+                  <th className="px-3 py-2 text-right w-28">{t("mgmt.restaurant.payments.action")}</th>
 
 
 
@@ -9481,15 +9377,7 @@ export default function RestaurantConfig() {
 
 
 
-                    <td className="px-3 py-4 text-slate-500" colSpan={payments.accountingEnabled ? 5 : 4}>
-
-
-
-                      No hay métodos de pago configurados.
-
-
-
-                    </td>
+                    <td className="px-3 py-4 text-slate-500" colSpan={payments.accountingEnabled ? 5 : 4}>{t("mgmt.restaurant.payments.empty")}</td>
 
 
 
@@ -9521,7 +9409,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="font-semibold">Agregar / editar</div>
+            <div className="font-semibold">{t("mgmt.restaurant.payments.addEdit")}</div>
 
 
 
@@ -9553,7 +9441,7 @@ export default function RestaurantConfig() {
 
 
 
-                placeholder="Cuenta contable (pendiente de mdulo de contabilidad)"
+                placeholder={t("mgmt.restaurant.payments.accountingAccount")}
 
 
 
@@ -9589,15 +9477,7 @@ export default function RestaurantConfig() {
 
 
 
-              <Button type="button" onClick={savePaymentMethodForm}>
-
-
-
-                Guardar método
-
-
-
-              </Button>
+              <Button type="button" onClick={savePaymentMethodForm}>{t("mgmt.restaurant.payments.saveMethod")}</Button>
 
 
 
@@ -9605,15 +9485,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-[11px] text-gray-500">
-
-
-
-              Nota: Estos métodos controlan qué opciones aparecen en el TPV. La integración contable es un placeholder.
-
-
-
-            </div>
+            <div className="text-[11px] text-gray-500">{t("mgmt.restaurant.payments.note")}</div>
 
 
 
@@ -9669,11 +9541,11 @@ export default function RestaurantConfig() {
 
 
 
-          <h3 className="font-semibold text-lg">Recipes</h3>
+          <h3 className="font-semibold text-lg">{t("mgmt.restaurant.recipes.title")}</h3>
 
 
 
-          <p className="text-sm text-gray-600">Each recipe belongs to a sellable article and consumes inventory on payment.</p>
+          <p className="text-sm text-gray-600">{t("mgmt.restaurant.recipes.subtitle")}</p>
 
 
 
@@ -9693,7 +9565,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-slate-600 mb-1">Sellable article</div>
+            <div className="text-xs text-slate-600 mb-1">{t("mgmt.restaurant.recipes.sellable") }</div>
 
 
 
@@ -9717,7 +9589,7 @@ export default function RestaurantConfig() {
 
 
 
-              <option value="">Select an article</option>
+              <option value="">{t("mgmt.restaurant.recipes.selectArticle")}</option>
 
 
 
@@ -9789,7 +9661,7 @@ export default function RestaurantConfig() {
 
 
 
-              <div>Select an article to manage its recipe.</div>
+              <div>{t("mgmt.restaurant.recipes.selectHint") }</div>
 
 
 
@@ -9817,7 +9689,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="font-semibold text-sm">Add ingredient</div>
+            <div className="font-semibold text-sm">{t("mgmt.restaurant.recipes.addIngredient")}</div>
 
 
 
@@ -9829,7 +9701,7 @@ export default function RestaurantConfig() {
 
 
 
-                <div className="text-xs text-slate-600 mb-1">Inventory item</div>
+                <div className="text-xs text-slate-600 mb-1">{t("mgmt.restaurant.recipes.inventoryItem") }</div>
 
 
 
@@ -9869,7 +9741,7 @@ export default function RestaurantConfig() {
 
 
 
-                  <option value="">Select inventory item</option>
+                  <option value="">{t("mgmt.restaurant.recipes.selectInventory")}</option>
 
 
 
@@ -9917,7 +9789,7 @@ export default function RestaurantConfig() {
 
 
 
-                <div className="text-xs text-slate-600 mb-1">Qty</div>
+                <div className="text-xs text-slate-600 mb-1">{t("mgmt.restaurant.recipes.qty") }</div>
 
 
 
@@ -9953,7 +9825,7 @@ export default function RestaurantConfig() {
 
 
 
-                <Input placeholder="Unit" value={recipeLineForm.unit} disabled />
+                <Input placeholder={t("mgmt.restaurant.recipes.unit")} value={recipeLineForm.unit} disabled />
 
 
 
@@ -9977,7 +9849,7 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="text-xs text-slate-500">Tip: quantities are stored in the inventory unit.</div>
+            <div className="text-xs text-slate-500">{t("mgmt.restaurant.recipes.tip") }</div>
 
 
 
@@ -10013,15 +9885,15 @@ export default function RestaurantConfig() {
 
 
 
-                <th className="px-3 py-2 text-left">Ingredient</th>
+                <th className="px-3 py-2 text-left">{t("mgmt.restaurant.recipes.ingredient") }</th>
 
 
 
-                <th className="px-3 py-2 text-left">Qty</th>
+                <th className="px-3 py-2 text-left">{t("mgmt.restaurant.recipes.qty") }</th>
 
 
 
-                <th className="px-3 py-2 text-left">Unit</th>
+                <th className="px-3 py-2 text-left">{t("mgmt.restaurant.recipes.unit") }</th>
 
 
 
@@ -10117,7 +9989,7 @@ export default function RestaurantConfig() {
 
 
 
-                    {selectedRecipeItemId ? "No recipe lines yet for this article." : "Select an article to view its recipe."}
+                    {selectedRecipeItemId ? t("mgmt.restaurant.recipes.emptyLines") : t("mgmt.restaurant.recipes.emptySelect")}
 
 
 
@@ -10301,11 +10173,11 @@ export default function RestaurantConfig() {
 
 
 
-            <div className="font-semibold text-lg text-slate-900">Configuración general</div>
+            <div className="font-semibold text-lg text-slate-900">{t("mgmt.restaurant.generalConfig.title")}</div>
 
 
 
-            <div className="font-semibold text-lg text-slate-900">Restaurante</div>
+            <div className="font-semibold text-lg text-slate-900">{t("mgmt.restaurant.generalConfig.restaurantLabel")}</div>
 
 
 
@@ -10341,7 +10213,7 @@ export default function RestaurantConfig() {
 
 
 
-            { id: "taxes", label: "Impuestos y descuentos" },
+            { id: "taxes", label: t("mgmt.restaurant.tabs.taxes") },
 
 
 
@@ -10557,7 +10429,7 @@ export default function RestaurantConfig() {
 
 
 
-        <div className="text-[15px] text-center uppercase tracking-wide text-indigo-200 px-2">Configuración del restaurante</div>
+        <div className="text-[15px] text-center uppercase tracking-wide text-indigo-200 px-2">{t("mgmt.restaurant.generalConfig.subtitle")}</div>
 
 
 
