@@ -80,6 +80,7 @@ import {
   deleteItem,
   listInventory,
   createInventoryItem,
+  updateInventoryItem,
   deleteInventoryItem,
   listInventoryInvoices,
   createInventoryInvoice,
@@ -206,6 +207,7 @@ router.delete("/items/:id", requirePermission("restaurant.items.write"), deleteI
 
 router.get("/inventory", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), listInventory);
 router.post("/inventory", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), createInventoryItem);
+router.patch("/inventory/:id", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), updateInventoryItem);
 router.delete("/inventory/:id", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), deleteInventoryItem);
 router.get("/inventory/invoices", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), listInventoryInvoices);
 router.post("/inventory/invoices", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), createInventoryInvoice);

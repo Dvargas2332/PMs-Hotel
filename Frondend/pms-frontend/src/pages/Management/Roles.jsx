@@ -304,6 +304,29 @@ export default function Roles() {
 function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerms }) {
   const [openModules, setOpenModules] = useState(() => new Set());
 
+  const restaurantSectionLabel = (key) => {
+    const map = {
+      access: "Accesos",
+      pos: "Accesos",
+      menu: "Menú",
+      sections: "Secciones y mesas",
+      families: "Familias",
+      items: "Artículos",
+      inventory: "Inventario",
+      recipes: "Recetas",
+      orders: "Órdenes",
+      staff: "Personal",
+      print: "Impresión",
+      shift: "Cierres",
+      config: "Configuración",
+      history: "Histórico",
+      closes: "Cierres",
+      reprints: "Reimpresiones",
+      kds: "KDS",
+    };
+    return map[key] || "Otros";
+  };
+
   const grouped = useMemo(() => {
     const groups = {};
     (permissions || []).forEach((p) => {
@@ -323,6 +346,22 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
     });
     return groups;
   }, [permissions]);
+
+  const restaurantGroups = useMemo(() => {
+    const perms = grouped.restaurant || [];
+    const bySection = {};
+    perms.forEach((perm) => {
+      const parts = String(perm || "").split(".");
+      const section = parts[1] || "other";
+      const label = restaurantSectionLabel(section);
+      bySection[label] = bySection[label] || [];
+      bySection[label].push(perm);
+    });
+    Object.keys(bySection).forEach((k) => {
+      bySection[k] = bySection[k].slice().sort((a, b) => a.localeCompare(b));
+    });
+    return bySection;
+  }, [grouped]);
 
   const prettyLabel = (perm) => {
     const raw = String(perm || "");
@@ -395,23 +434,50 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
                 />
                 Select all
               </label>
-              <div className="grid md:grid-cols-2 gap-2">
-                {perms.map((p) => {
-                  const list = rolePerms[selectedRole] || [];
-                  const checked = selectedRole === "ADMIN" || list.includes("*") || list.includes(p);
-                  return (
-                    <label key={p} className="text-sm flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={selectedRole === "ADMIN"}
-                        onChange={(e) => toggle(p, e.target.checked)}
-                      />
-                      {prettyLabel(p)}
-                    </label>
-                  );
-                })}
-              </div>
+              {mod === "restaurant" ? (
+                <div className="space-y-3">
+                  {Object.entries(restaurantGroups).map(([section, list]) => (
+                    <div key={section} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2">
+                      <div className="text-xs font-semibold uppercase text-slate-600 mb-2">{section}</div>
+                      <div className="grid md:grid-cols-2 gap-2">
+                        {(list || []).map((p) => {
+                          const listPerms = rolePerms[selectedRole] || [];
+                          const checked = selectedRole === "ADMIN" || listPerms.includes("*") || listPerms.includes(p);
+                          return (
+                            <label key={p} className="text-sm flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={selectedRole === "ADMIN"}
+                                onChange={(e) => toggle(p, e.target.checked)}
+                              />
+                              {prettyLabel(p)}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-2">
+                  {perms.map((p) => {
+                    const list = rolePerms[selectedRole] || [];
+                    const checked = selectedRole === "ADMIN" || list.includes("*") || list.includes(p);
+                    return (
+                      <label key={p} className="text-sm flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={selectedRole === "ADMIN"}
+                          onChange={(e) => toggle(p, e.target.checked)}
+                        />
+                        {prettyLabel(p)}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>

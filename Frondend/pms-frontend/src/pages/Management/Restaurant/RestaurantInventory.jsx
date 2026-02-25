@@ -3,22 +3,7 @@ import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
-
-const UNIT_OPTIONS = [
-  { label: "Unit (un)", value: "un" },
-  { label: "Grams (g)", value: "g" },
-  { label: "Kilograms (kg)", value: "kg" },
-  { label: "Pounds (lb)", value: "lb" },
-  { label: "Milliliters (ml)", value: "ml" },
-  { label: "Liters (l)", value: "l" },
-  { label: "Ounces (oz)", value: "oz" },
-];
-
-const TAX_OPTIONS = [
-  { label: "IVA 13%", value: "13" },
-  { label: "IVA 1%", value: "1" },
-  { label: "Exento", value: "0" },
-];
+import { useLanguage } from "../../../context/LanguageContext";
 
 const normalizeXmlUnit = (raw) => {
   const unit = String(raw || "").trim();
@@ -28,12 +13,12 @@ const normalizeXmlUnit = (raw) => {
   return lower;
 };
 
-const parseXmlPreview = async (file) => {
+const parseXmlPreview = async (file, invalidXmlMessage) => {
   const xml = await file.text();
   const parser = new DOMParser();
   const doc = parser.parseFromString(xml, "text/xml");
   if (doc.getElementsByTagName("parsererror").length > 0) {
-    throw new Error("XML invalido");
+    throw new Error(invalidXmlMessage || "XML invalido");
   }
   const getFirstByLocalName = (root, name) =>
     root ? root.getElementsByTagNameNS("*", name)[0] || null : null;
@@ -94,14 +79,6 @@ const parseXmlPreview = async (file) => {
   };
 };
 
-const TABS = [
-  { id: "settings", label: "Ajustes" },
-  { id: "manual", label: "Factura manual" },
-  { id: "xml", label: "XML" },
-  { id: "items", label: "Inventario" },
-  { id: "invoices", label: "Facturas" },
-];
-
 const emptyLine = () => ({
   sku: "",
   name: "",
@@ -112,6 +89,36 @@ const emptyLine = () => ({
 });
 
 export default function RestaurantInventory() {
+  const { t } = useLanguage();
+  const unitOptions = useMemo(
+    () => [
+      { label: t("mgmt.restaurant.inventory.units.unit"), value: "un" },
+      { label: t("mgmt.restaurant.inventory.units.grams"), value: "g" },
+      { label: t("mgmt.restaurant.inventory.units.kilograms"), value: "kg" },
+      { label: t("mgmt.restaurant.inventory.units.pounds"), value: "lb" },
+      { label: t("mgmt.restaurant.inventory.units.milliliters"), value: "ml" },
+      { label: t("mgmt.restaurant.inventory.units.liters"), value: "l" },
+      { label: t("mgmt.restaurant.inventory.units.ounces"), value: "oz" },
+    ],
+    [t]
+  );
+  const taxOptions = useMemo(
+    () => [
+      { label: t("mgmt.restaurant.inventory.tax.iva13"), value: "13" },
+      { label: t("mgmt.restaurant.inventory.tax.iva1"), value: "1" },
+      { label: t("mgmt.restaurant.inventory.tax.exempt"), value: "0" },
+    ],
+    [t]
+  );
+  const tabs = useMemo(
+    () => [
+      { id: "settings", label: t("mgmt.restaurant.inventory.tabs.settings") },
+      { id: "manual", label: t("mgmt.restaurant.inventory.tabs.manual") },
+      { id: "items", label: t("mgmt.restaurant.inventory.tabs.items") },
+      { id: "invoices", label: t("mgmt.restaurant.inventory.tabs.invoices") },
+    ],
+    [t]
+  );
   const [inventory, setInventory] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -120,8 +127,10 @@ export default function RestaurantInventory() {
   const [activeTab, setActiveTab] = useState("manual");
   const [xmlPreview, setXmlPreview] = useState(null);
   const [xmlError, setXmlError] = useState("");
+  const [xmlModalOpen, setXmlModalOpen] = useState(false);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]);
   const [previewInvoice, setPreviewInvoice] = useState(null);
+  const [controlMode, setControlMode] = useState(false);
 
   const [invoiceForm, setInvoiceForm] = useState({
     supplierName: "",
@@ -185,8 +194,8 @@ export default function RestaurantInventory() {
 
   const saveInvoice = async () => {
     if (savingInvoice) return;
-    if (!invoiceForm.supplierName.trim()) return alert("Proveedor requerido");
-    if (validLines.length === 0) return alert("Agrega al menos una linea valida");
+    if (!invoiceForm.supplierName.trim()) return window.alert(t("mgmt.restaurant.inventory.alerts.supplierRequired"));
+    if (validLines.length === 0) return window.alert(t("mgmt.restaurant.inventory.alerts.linesRequired"));
     setSavingInvoice(true);
     try {
       await api.post("/restaurant/inventory/invoices", {
@@ -205,10 +214,15 @@ export default function RestaurantInventory() {
       setInvoiceForm({ supplierName: "", docNumber: "", issueDate: "", lines: [emptyLine()] });
       await reloadAll();
       window.dispatchEvent(
-        new CustomEvent("pms:push-alert", { detail: { title: "Inventario", desc: "Factura guardada" } })
+        new CustomEvent("pms:push-alert", {
+          detail: {
+            title: t("mgmt.restaurant.inventory.alerts.title"),
+            desc: t("mgmt.restaurant.inventory.alerts.invoiceSaved"),
+          },
+        })
       );
     } catch (err) {
-      alert(err?.response?.data?.message || "No se pudo guardar la factura");
+      window.alert(err?.response?.data?.message || t("mgmt.restaurant.inventory.alerts.invoiceSaveFailed"));
     } finally {
       setSavingInvoice(false);
     }
@@ -218,12 +232,12 @@ export default function RestaurantInventory() {
     if (!file || xmlBusy) return;
     setXmlBusy(true);
     try {
-      const preview = await parseXmlPreview(file);
+      const preview = await parseXmlPreview(file, t("mgmt.restaurant.inventory.alerts.xmlInvalid"));
       setXmlPreview(preview);
       setXmlError("");
     } catch (err) {
       setXmlPreview(null);
-      setXmlError(err?.message || "No se pudo leer el XML");
+      setXmlError(err?.message || t("mgmt.restaurant.inventory.alerts.xmlReadFailed"));
     } finally {
       setXmlBusy(false);
     }
@@ -268,6 +282,17 @@ export default function RestaurantInventory() {
     }
   };
 
+  const updateInventoryControl = async (id, nextValue) => {
+    try {
+      await api.patch(`/restaurant/inventory/${id}`, { inventoryControlled: nextValue });
+      setInventory((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, inventoryControlled: nextValue } : i))
+      );
+    } catch (err) {
+      window.alert(err?.response?.data?.message || t("mgmt.restaurant.inventory.alerts.inventoryControlFailed"));
+    }
+  };
+
   const toggleInvoiceSelection = (id) => {
     setSelectedInvoiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -285,7 +310,7 @@ export default function RestaurantInventory() {
 
   const renderInvoicePrintHtml = (inv) => {
     const lines = Array.isArray(inv?.lines) ? inv.lines : [];
-    const title = `Factura ${inv?.docNumber || inv?.id || ""}`.trim();
+    const title = `${t("mgmt.restaurant.inventory.print.invoiceTitle")} ${inv?.docNumber || inv?.id || ""}`.trim();
     const total = getInvoiceDisplayTotal(inv);
     const iva = inv?.taxTotalFromXml || inv?.taxTotal || 0;
     const currency = inv?.currency || "";
@@ -297,25 +322,25 @@ export default function RestaurantInventory() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div>
             <div style="font-size:18px;font-weight:700;">${title}</div>
-            <div style="font-size:12px;color:#555;">Proveedor: ${supplier || "-"}</div>
-            <div style="font-size:12px;color:#555;">Fecha: ${issueDate || "-"}</div>
+            <div style="font-size:12px;color:#555;">${t("mgmt.restaurant.inventory.labels.supplier")}: ${supplier || "-"}</div>
+            <div style="font-size:12px;color:#555;">${t("mgmt.restaurant.inventory.labels.date")}: ${issueDate || "-"}</div>
           </div>
           <div style="text-align:right;font-size:12px;color:#555;">
-            <div>Moneda: ${currency || "-"}</div>
-            <div>TC: ${tc || "-"}</div>
-            <div>Total: ${total || 0}</div>
-            <div>IVA: ${iva || 0}</div>
+            <div>${t("mgmt.restaurant.inventory.labels.currency")}: ${currency || "-"}</div>
+            <div>${t("mgmt.restaurant.inventory.labels.exchangeRate")}: ${tc || "-"}</div>
+            <div>${t("mgmt.restaurant.inventory.labels.total")}: ${total || 0}</div>
+            <div>${t("mgmt.restaurant.inventory.labels.tax")}: ${iva || 0}</div>
           </div>
         </div>
         <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:12px;">
           <thead>
             <tr>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">SKU</th>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">Articulo</th>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">Cantidad</th>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">Unidad</th>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">Costo</th>
-              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">IVA</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">${t("mgmt.restaurant.inventory.columns.sku")}</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">${t("mgmt.restaurant.inventory.columns.item")}</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">${t("mgmt.restaurant.inventory.columns.qty")}</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:left;">${t("mgmt.restaurant.inventory.columns.unit")}</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">${t("mgmt.restaurant.inventory.columns.cost")}</th>
+              <th style="border-bottom:1px solid #ddd;padding:6px;text-align:right;">${t("mgmt.restaurant.inventory.columns.tax")}</th>
             </tr>
           </thead>
           <tbody>
@@ -348,7 +373,7 @@ export default function RestaurantInventory() {
     win.document.write(`
       <html>
         <head>
-          <title>Facturas</title>
+          <title>${t("mgmt.restaurant.inventory.print.title")}</title>
         </head>
         <body style="font-family:Arial, sans-serif; color:#111; padding:24px;">
           ${body}
@@ -366,7 +391,7 @@ export default function RestaurantInventory() {
       case "settings":
         return (
           <div className="space-y-3">
-            <div className="text-sm text-gray-600">El inventario se alimenta desde facturas manuales o XML.</div>
+            <div className="text-sm text-gray-600">{t("mgmt.restaurant.inventory.settings.desc")}</div>
             <label className="inline-flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -374,60 +399,241 @@ export default function RestaurantInventory() {
                 onChange={(e) => saveInventoryEnabled(e.target.checked)}
                 disabled={savingConfig}
               />
-              Activar inventario para restaurante
+              {t("mgmt.restaurant.inventory.settings.enable")}
             </label>
             {!inventoryEnabled && (
               <div className="text-xs text-amber-600">
-                Inventario desactivado: no se descuenta stock al cerrar ordenes.
+                {t("mgmt.restaurant.inventory.settings.disabledNote")}
               </div>
             )}
           </div>
         );
-      case "xml":
+      case "items":
         return (
           <div className="space-y-3">
             <div>
-              <div className="text-sm font-semibold">Importar XML</div>
-              <div className="text-xs text-gray-500">
-                Carga una factura XML para previsualizar y luego cargar al inventario.
-              </div>
+              <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.items.title")}</div>
+              <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.items.subtitle")}</div>
             </div>
-            <input
-              type="file"
-              accept=".xml,text/xml"
-              disabled={xmlBusy}
-              onChange={(e) => importXml(e.target.files && e.target.files[0])}
-            />
-            {xmlBusy && <div className="text-xs text-gray-500">Importando XML...</div>}
-            {xmlError && <div className="text-xs text-red-600">{xmlError}</div>}
-            {xmlPreview && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setControlMode((v) => !v)}
+                className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
+                  controlMode ? "bg-slate-900 text-white border-slate-900" : "bg-white hover:bg-slate-50"
+                }`}
+              >
+                {t("mgmt.restaurant.inventory.items.control")}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("pms:push-alert", {
+                      detail: { title: t("mgmt.restaurant.inventory.alerts.title"), desc: t("mgmt.restaurant.inventory.items.adjustmentsSoon") },
+                    })
+                  )
+                }
+                className="px-4 py-2 rounded-lg border bg-white text-sm font-semibold hover:bg-slate-50"
+              >
+                {t("mgmt.restaurant.inventory.items.adjustments")}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("pms:push-alert", {
+                      detail: { title: t("mgmt.restaurant.inventory.alerts.title"), desc: t("mgmt.restaurant.inventory.items.countSoon") },
+                    })
+                  )
+                }
+                className="px-4 py-2 rounded-lg border bg-white text-sm font-semibold hover:bg-slate-50"
+              >
+                {t("mgmt.restaurant.inventory.items.count")}
+              </button>
+            </div>
+            {loading ? (
+              <div className="text-sm text-gray-500">{t("common.loading")}</div>
+            ) : inventory.length === 0 ? (
+              <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.items.empty")}</div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        {controlMode && <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.control")}</th>}
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.stock")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.min")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.unit")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.cost")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.tax")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.supplier")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inventory.map((i, idx) => (
+                        <tr
+                          key={i.id}
+                          className={`${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"} ${
+                            i.inventoryControlled === false ? "text-slate-400" : ""
+                          }`}
+                        >
+                          {controlMode && (
+                            <td className="px-3 py-2">
+                              <input
+                                type="checkbox"
+                                className="accent-lime-600"
+                                checked={i.inventoryControlled !== false}
+                                onChange={(e) => updateInventoryControl(i.id, e.target.checked)}
+                              />
+                            </td>
+                          )}
+                          <td className="px-3 py-2">{i.sku || "-"}</td>
+                          <td className="px-3 py-2">{i.desc || i.descripcion || "-"}</td>
+                          <td className="px-3 py-2">{i.inventoryControlled === false ? 0 : i.stock || 0}</td>
+                          <td className="px-3 py-2">{i.minimo || i.min || 0}</td>
+                          <td className="px-3 py-2">{i.unit || i.unidad || ""}</td>
+                          <td className="px-3 py-2">{i.cost || i.costo || 0}</td>
+                          <td className="px-3 py-2">{i.taxRate ?? "-"}</td>
+                          <td className="px-3 py-2">{i.supplierName || i.proveedor || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+        );
+      case "invoices":
+        return (
+          <div className="space-y-3">
+            <div>
+              <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.invoices.title")}</div>
+              <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.invoices.subtitle")}</div>
+            </div>
+            {selectedInvoiceIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-xs text-slate-600">
+                  {t("mgmt.restaurant.inventory.invoices.selected")}{" "}
+                  <span className="font-semibold">{selectedInvoiceIds.length}</span>
+                </div>
+                <Button onClick={() => printInvoices(selectedInvoiceIds)}>
+                  {t("mgmt.restaurant.inventory.invoices.printSelected")}
+                </Button>
+                <Button variant="outline" onClick={clearInvoiceSelection}>
+                  {t("mgmt.restaurant.inventory.invoices.clearSelection")}
+                </Button>
+              </div>
+            )}
+            {invoices.length === 0 ? (
+              <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.invoices.empty")}</div>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map((inv) => (
+                  <div key={inv.id} className="border rounded-lg px-3 py-2 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold">
+                        {inv.proveedor || inv.supplierName} {inv.docNumber ? `- ${inv.docNumber}` : ""}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            className="accent-lime-600"
+                            checked={selectedInvoiceIds.includes(inv.id)}
+                            onChange={() => toggleInvoiceSelection(inv.id)}
+                          />
+                          {t("mgmt.restaurant.inventory.invoices.select")}
+                        </label>
+                        <Button variant="outline" onClick={() => setPreviewInvoice(inv)}>
+                          {t("mgmt.restaurant.inventory.invoices.view")}
+                        </Button>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : ""}
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      {t("mgmt.restaurant.inventory.labels.total")}: {inv.total || 0} |{" "}
+                      {t("mgmt.restaurant.inventory.labels.tax")}: {inv.taxTotal || 0} |{" "}
+                      {inv.source || t("mgmt.restaurant.inventory.invoices.sourceManual")}
+                    </div>
+                    {(inv.currency || inv.exchangeRate || inv.totalFromXml || inv.taxTotalFromXml || inv.totalSaleFromXml) && (
+                      <div className="text-xs text-gray-600">
+                        {t("mgmt.restaurant.inventory.labels.currency")}: {inv.currency || "-"} |{" "}
+                        {t("mgmt.restaurant.inventory.labels.exchangeRate")}: {inv.exchangeRate || "-"} |{" "}
+                        {t("mgmt.restaurant.inventory.invoices.totalXml")}: {inv.totalFromXml || "-"} |{" "}
+                        {t("mgmt.restaurant.inventory.invoices.taxXml")}: {inv.taxTotalFromXml || "-"} |{" "}
+                        {t("mgmt.restaurant.inventory.invoices.saleXml")}: {inv.totalSaleFromXml || "-"}
+                      </div>
+                    )}
+                    {Array.isArray(inv.lines) && inv.lines.length > 0 && (
+                      <div className="mt-2 grid md:grid-cols-2 gap-1">
+                        {inv.lines.map((l) => (
+                          <div key={l.id} className="text-xs text-gray-600">
+                            {l.qty} {l.unit} - {l.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      case "manual":
+      default:
+        return (
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.manual.title")}</div>
+              <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.manual.subtitle")}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={() => setXmlModalOpen(true)}>
+                {t("mgmt.restaurant.inventory.manual.loadXml")}
+              </Button>
+              {xmlPreview && (
               <div className="space-y-3">
                 <div className="text-xs text-slate-600">
-                  Proveedor: <span className="font-semibold">{xmlPreview.supplierName || "-"}</span> · Doc:{" "}
-                  <span className="font-semibold">{xmlPreview.docNumber || "-"}</span> · Fecha:{" "}
+                  {t("mgmt.restaurant.inventory.labels.supplier")}: 
+                  <span className="font-semibold">{xmlPreview.supplierName || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.doc")}: 
+                  <span className="font-semibold">{xmlPreview.docNumber || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.date")}: 
                   <span className="font-semibold">{xmlPreview.issueDate || "-"}</span>
                 </div>
                 <div className="text-xs text-slate-600">
-                  Moneda: <span className="font-semibold">{xmlPreview.currency || "-"}</span> · TC:{" "}
-                  <span className="font-semibold">{xmlPreview.exchangeRate || "-"}</span> · Total:{" "}
-                  <span className="font-semibold">{xmlPreview.totals?.totalComprobante || "-"}</span> · IVA:{" "}
-                  <span className="font-semibold">{xmlPreview.totals?.totalImpuesto || "-"}</span> · Venta:{" "}
+                  {t("mgmt.restaurant.inventory.labels.currency")}: 
+                  <span className="font-semibold">{xmlPreview.currency || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.exchangeRate")}: 
+                  <span className="font-semibold">{xmlPreview.exchangeRate || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.total")}: 
+                  <span className="font-semibold">{xmlPreview.totals?.totalComprobante || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.tax")}: 
+                  <span className="font-semibold">{xmlPreview.totals?.totalImpuesto || "-"}</span>  -  
+                  {t("mgmt.restaurant.inventory.labels.sale")}: 
                   <span className="font-semibold">{xmlPreview.totals?.totalVenta || "-"}</span>
                 </div>
                 {xmlPreview.lines.length === 0 ? (
-                  <div className="text-sm text-gray-500">Sin lineas en el XML.</div>
+                  <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.manual.xmlNoLines")}</div>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
                         <thead className="bg-slate-50 text-slate-600">
                           <tr>
-                            <th className="px-3 py-2 text-left font-semibold">SKU</th>
-                            <th className="px-3 py-2 text-left font-semibold">Articulo</th>
-                            <th className="px-3 py-2 text-left font-semibold">Cantidad</th>
-                            <th className="px-3 py-2 text-left font-semibold">Unidad</th>
-                            <th className="px-3 py-2 text-left font-semibold">Costo</th>
-                            <th className="px-3 py-2 text-left font-semibold">IVA</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.qty")}</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.unit")}</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.cost")}</th>
+                            <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.tax")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -448,224 +654,16 @@ export default function RestaurantInventory() {
                 )}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button onClick={applyXmlToManual} disabled={xmlBusy || xmlPreview.lines.length === 0}>
-                    Usar en factura manual
+                    {t("mgmt.restaurant.inventory.actions.applyXml")}
                   </Button>
                   <Button variant="outline" onClick={() => setXmlPreview(null)} disabled={xmlBusy}>
-                    Limpiar
+                    {t("common.clear")}
                   </Button>
                 </div>
               </div>
             )}
           </div>
-        );
-      case "items":
-        return (
-          <div className="space-y-3">
-            <div>
-              <div className="text-sm font-semibold">Inventario actual</div>
-              <div className="text-xs text-gray-500">Articulos cargados y stock disponible.</div>
-            </div>
-            {loading ? (
-              <div className="text-sm text-gray-500">Cargando...</div>
-            ) : inventory.length === 0 ? (
-              <div className="text-sm text-gray-500">Sin articulos.</div>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
-                      <tr>
-                        <th className="px-3 py-2 text-left font-semibold">SKU</th>
-                        <th className="px-3 py-2 text-left font-semibold">Articulo</th>
-                        <th className="px-3 py-2 text-left font-semibold">Stock</th>
-                        <th className="px-3 py-2 text-left font-semibold">Min</th>
-                        <th className="px-3 py-2 text-left font-semibold">Unidad</th>
-                        <th className="px-3 py-2 text-left font-semibold">Costo</th>
-                        <th className="px-3 py-2 text-left font-semibold">IVA</th>
-                        <th className="px-3 py-2 text-left font-semibold">Proveedor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {inventory.map((i, idx) => (
-                        <tr key={i.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                          <td className="px-3 py-2">{i.sku || "-"}</td>
-                          <td className="px-3 py-2">{i.desc || i.descripcion || "-"}</td>
-                          <td className="px-3 py-2">{i.stock || 0}</td>
-                          <td className="px-3 py-2">{i.minimo || i.min || 0}</td>
-                          <td className="px-3 py-2">{i.unit || i.unidad || ""}</td>
-                          <td className="px-3 py-2">{i.cost || i.costo || 0}</td>
-                          <td className="px-3 py-2">{i.taxRate ?? "-"}</td>
-                          <td className="px-3 py-2">{i.supplierName || i.proveedor || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      case "invoices":
-        return (
-          <div className="space-y-3">
-            <div>
-              <div className="text-sm font-semibold">Facturas registradas</div>
-              <div className="text-xs text-gray-500">Historico de entradas al inventario.</div>
-            </div>
-            {selectedInvoiceIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs text-slate-600">
-                  Seleccionadas: <span className="font-semibold">{selectedInvoiceIds.length}</span>
-                </div>
-                <Button onClick={() => printInvoices(selectedInvoiceIds)}>Imprimir seleccionadas</Button>
-                <Button variant="outline" onClick={clearInvoiceSelection}>Limpiar seleccion</Button>
-              </div>
-            )}
-            {invoices.length === 0 ? (
-              <div className="text-sm text-gray-500">No hay facturas.</div>
-            ) : (
-              <div className="space-y-2">
-                {invoices.map((inv) => (
-                  <div key={inv.id} className="border rounded-lg px-3 py-2 text-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-semibold">
-                        {inv.proveedor || inv.supplierName} {inv.docNumber ? `- ${inv.docNumber}` : ""}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                          <input
-                            type="checkbox"
-                            className="accent-lime-600"
-                            checked={selectedInvoiceIds.includes(inv.id)}
-                            onChange={() => toggleInvoiceSelection(inv.id)}
-                          />
-                          Seleccionar
-                        </label>
-                        <Button variant="outline" onClick={() => setPreviewInvoice(inv)}>
-                          Ver
-                        </Button>
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : ""}
-                      </div>
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      Total: {inv.total || 0} | IVA: {inv.taxTotal || 0} | {inv.source || "MANUAL"}
-                    </div>
-                    {(inv.currency || inv.exchangeRate || inv.totalFromXml || inv.taxTotalFromXml || inv.totalSaleFromXml) && (
-                      <div className="text-xs text-gray-600">
-                        Moneda: {inv.currency || "-"} | TC: {inv.exchangeRate || "-"} | Total XML:{" "}
-                        {inv.totalFromXml || "-"} | IVA XML: {inv.taxTotalFromXml || "-"} | Venta XML:{" "}
-                        {inv.totalSaleFromXml || "-"}
-                      </div>
-                    )}
-                    {Array.isArray(inv.lines) && inv.lines.length > 0 && (
-                      <div className="mt-2 grid md:grid-cols-2 gap-1">
-                        {inv.lines.map((l) => (
-                          <div key={l.id} className="text-xs text-gray-600">
-                            {l.qty} {l.unit} - {l.name}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      case "manual":
-      default:
-        return (
-          <div className="space-y-4">
-            <div>
-              <div className="text-sm font-semibold">Factura manual</div>
-              <div className="text-xs text-gray-500">Registra proveedores, articulos y cantidades.</div>
-            </div>
-            <div className="grid md:grid-cols-3 gap-3">
-              <Input
-                placeholder="Proveedor"
-                value={invoiceForm.supplierName}
-                onChange={(e) => setInvoiceForm((p) => ({ ...p, supplierName: e.target.value }))}
-              />
-              <Input
-                placeholder="Numero de factura"
-                value={invoiceForm.docNumber}
-                onChange={(e) => setInvoiceForm((p) => ({ ...p, docNumber: e.target.value }))}
-              />
-              <Input
-                type="date"
-                value={invoiceForm.issueDate}
-                onChange={(e) => setInvoiceForm((p) => ({ ...p, issueDate: e.target.value }))}
-              />
-            </div>
-            <div className="space-y-2">
-              {invoiceForm.lines.map((line, idx) => (
-                <div
-                  key={`${idx}-${line.sku}`}
-                  className="grid md:grid-cols-[140px_1fr_120px_120px_140px_120px_80px] gap-2 items-center"
-                >
-                  <Input
-                    placeholder="Codigo (auto)"
-                    value={line.sku}
-                    onChange={(e) => updateLine(idx, "sku", e.target.value)}
-                  />
-                  <Input
-                    placeholder="Nombre del articulo"
-                    value={line.name}
-                    onChange={(e) => updateLine(idx, "name", e.target.value)}
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Cantidad"
-                    value={line.qty}
-                    onChange={(e) => updateLine(idx, "qty", e.target.value)}
-                  />
-                  <select
-                    className="h-10 rounded-lg border px-3 text-sm bg-white"
-                    value={line.unit}
-                    onChange={(e) => updateLine(idx, "unit", e.target.value)}
-                  >
-                    <option value="">Unidad</option>
-                    {UNIT_OPTIONS.map((u) => (
-                      <option key={u.value} value={u.value}>
-                        {u.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Input
-                    type="number"
-                    placeholder="Costo"
-                    money
-                    value={line.cost}
-                    onChange={(e) => updateLine(idx, "cost", e.target.value)}
-                  />
-                  <select
-                    className="h-10 rounded-lg border px-3 text-sm bg-white"
-                    value={line.taxRate}
-                    onChange={(e) => updateLine(idx, "taxRate", e.target.value)}
-                  >
-                    {TAX_OPTIONS.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Button variant="outline" onClick={() => removeLine(idx)} disabled={invoiceForm.lines.length === 1}>
-                    Quitar
-                  </Button>
-                </div>
-              ))}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Button variant="outline" onClick={addLine}>
-                Agregar linea
-              </Button>
-              <Button onClick={saveInvoice} disabled={savingInvoice}>
-                {savingInvoice ? "Guardando..." : "Guardar factura"}
-              </Button>
-            </div>
-          </div>
+        </div>
         );
     }
   };
@@ -674,10 +672,10 @@ export default function RestaurantInventory() {
     <div className="space-y-4">
       <Card className="p-0 overflow-hidden">
         <div className="px-5 pt-4 pb-3 border-b">
-          <div className="text-lg font-semibold">Inventario</div>
-          <div className="text-xs text-gray-500">Secciones internas en una sola ventana.</div>
+          <div className="text-lg font-semibold">{t("mgmt.restaurant.inventory.title")}</div>
+          <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.subtitle")}</div>
           <div className="flex flex-wrap gap-2 mt-3">
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -700,7 +698,7 @@ export default function RestaurantInventory() {
           <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
               <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold text-lime-800">Vista previa de factura</div>
+                <div className="text-lg font-semibold text-lime-800">{t("mgmt.restaurant.inventory.preview.title")}</div>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -708,14 +706,14 @@ export default function RestaurantInventory() {
                   className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
                   onClick={() => printInvoices([previewInvoice.id])}
                 >
-                  Imprimir
+                  {t("mgmt.restaurant.inventory.actions.print")}
                 </button>
                 <button
                   type="button"
                   className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
                   onClick={() => setPreviewInvoice(null)}
                 >
-                  Cerrar
+                  {t("common.close")}
                 </button>
               </div>
             </div>
@@ -726,14 +724,14 @@ export default function RestaurantInventory() {
                     {previewInvoice.proveedor || previewInvoice.supplierName || "-"}
                   </div>
                   <div className="text-xs text-slate-600">
-                    Doc: {previewInvoice.docNumber || "-"} · Fecha:{" "}
+                    {t("mgmt.restaurant.inventory.labels.doc")}: {previewInvoice.docNumber || "-"}  - {t("mgmt.restaurant.inventory.labels.date")}: 
                     {previewInvoice.issueDate ? new Date(previewInvoice.issueDate).toLocaleString() : "-"}
                   </div>
                 </div>
                 <div className="text-xs text-slate-600 text-right">
-                  Moneda: {previewInvoice.currency || "-"} · TC: {previewInvoice.exchangeRate || "-"}
+                  {t("mgmt.restaurant.inventory.labels.currency")}: {previewInvoice.currency || "-"}  -  {t("mgmt.restaurant.inventory.labels.exchangeRate")}: {previewInvoice.exchangeRate || "-"}
                   <div>
-                    Total: {getInvoiceDisplayTotal(previewInvoice)} · IVA:{" "}
+                    {t("mgmt.restaurant.inventory.labels.total")}: {getInvoiceDisplayTotal(previewInvoice)}  - {t("mgmt.restaurant.inventory.labels.tax")}: 
                     {previewInvoice.taxTotalFromXml || previewInvoice.taxTotal || 0}
                   </div>
                 </div>
@@ -743,12 +741,12 @@ export default function RestaurantInventory() {
                   <table className="min-w-full text-sm">
                     <thead className="bg-slate-50 text-slate-600">
                       <tr>
-                        <th className="px-3 py-2 text-left font-semibold">SKU</th>
-                        <th className="px-3 py-2 text-left font-semibold">Articulo</th>
-                        <th className="px-3 py-2 text-left font-semibold">Cantidad</th>
-                        <th className="px-3 py-2 text-left font-semibold">Unidad</th>
-                        <th className="px-3 py-2 text-left font-semibold">Costo</th>
-                        <th className="px-3 py-2 text-left font-semibold">IVA</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.qty")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.unit")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.cost")}</th>
+                        <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.tax")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -770,6 +768,40 @@ export default function RestaurantInventory() {
           </div>
         </div>
       )}
+      {xmlModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div className="text-base font-semibold">{t("mgmt.restaurant.inventory.manual.selectXml")}</div>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                onClick={() => setXmlModalOpen(false)}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-sm">
+              <div className="text-xs text-slate-600">{t("mgmt.restaurant.inventory.manual.selectXmlHelp")}</div>
+              <input
+                type="file"
+                accept=".xml,text/xml"
+                disabled={xmlBusy}
+                onChange={(e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (file) importXml(file);
+                  setXmlModalOpen(false);
+                }}
+              />
+              {xmlBusy && <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.manual.importingXml")}</div>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+
+
+

@@ -319,6 +319,7 @@ const applyInventoryLine = (line, supplierName) => {
     cost: line.cost || 0,
     taxRate: line.taxRate || "13",
     supplierName: supplierName || "",
+    inventoryControlled: true,
   };
   DB.restaurantInventory.push(item);
   return item;
@@ -616,6 +617,17 @@ export const mockApi = {
   patch: async (url, payload) => {
     await sleep();
     const path = normalize(url);
+    if (path.startsWith("/restaurant/inventory/")) {
+      const id = path.split("/").pop();
+      const next = DB.restaurantInventory.map((i) =>
+        i.id === id
+          ? { ...i, inventoryControlled: payload?.inventoryControlled !== false }
+          : i
+      );
+      DB.restaurantInventory = next;
+      const updated = DB.restaurantInventory.find((i) => i.id === id);
+      return makeResp(updated || { id, ...payload });
+    }
     if (path.startsWith("/restaurant/sections/") && path.includes("/tables/") && path.endsWith("/position")) {
       const parts = path.split("/");
       const secId = parts[3];
@@ -947,6 +959,7 @@ export const mockApi = {
         stockBase: baseStock,
         minimoBase: baseMin,
         unidadBase: baseUnit || baseUnitMin || payload.unidad,
+        inventoryControlled: payload?.inventoryControlled !== false,
       };
       DB.restaurantInventory.push(item);
       return makeResp(item);

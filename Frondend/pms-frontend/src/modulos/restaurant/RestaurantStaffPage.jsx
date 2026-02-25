@@ -15,6 +15,7 @@ const emptyForm = {
   password: "",
   role: "WAITER",
   accessRoleId: "",
+  launcherId: "",
   active: true,
 };
 
@@ -28,7 +29,7 @@ export default function RestaurantStaffPage() {
   const [form, setForm] = useState({ ...emptyForm });
   const [editingId, setEditingId] = useState("");
   const [search, setSearch] = useState("");
-  const [roles, setRoles] = useState([]);
+  const [profiles, setProfiles] = useState([]);
   const shift = useMemo(() => {
     const h = now.getHours();
     if (h < 15) return "Morning shift";
@@ -61,9 +62,9 @@ export default function RestaurantStaffPage() {
 
   useEffect(() => {
     api
-      .get("/restaurant/staff/roles")
+      .get("/launcher")
       .then(({ data }) => {
-        if (Array.isArray(data)) setRoles(data);
+        if (Array.isArray(data)) setProfiles(data);
       })
       .catch(() => {});
   }, []);
@@ -94,7 +95,7 @@ export default function RestaurantStaffPage() {
         username: String(form.username || "").trim(),
         password: String(form.password || "").trim(),
         role: form.role,
-        accessRoleId: form.accessRoleId || undefined,
+        launcherId: form.launcherId || undefined,
         active: form.active !== false,
       };
 
@@ -135,6 +136,7 @@ export default function RestaurantStaffPage() {
       password: "",
       role: row.role || "WAITER",
       accessRoleId: row.accessRoleId || "",
+      launcherId: row.launcherId || "",
       active: row.active !== false,
     });
   };
@@ -237,16 +239,16 @@ export default function RestaurantStaffPage() {
                 ))}
               </select>
               <div className="text-[11px] text-lime-700/80">Perfil de permisos (Cajero o Mesero).</div>
-              <div className="text-xs font-medium text-lime-700">Rol de permisos</div>
+              <div className="text-xs font-medium text-lime-700">Perfil de permisos</div>
               <select
                 className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
-                value={form.accessRoleId}
-                onChange={(e) => setForm((p) => ({ ...p, accessRoleId: e.target.value }))}
+                value={form.launcherId}
+                onChange={(e) => setForm((p) => ({ ...p, launcherId: e.target.value }))}
               >
                 <option value="">Sin perfil</option>
-                {(roles || []).map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name || r.id}
+                {(profiles || []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name || p.userId || p.username || p.id}
                   </option>
                 ))}
               </select>
@@ -306,7 +308,7 @@ export default function RestaurantStaffPage() {
                         <td className="py-2 pr-2">{row.name}</td>
                         <td className="py-2 pr-2">{row.username}</td>
                         <td className="py-2 pr-2">{ROLE_OPTIONS.find((r) => r.value === row.role)?.label || row.role}</td>
-                        <td className="py-2 pr-2">{row.accessRoleName || row.accessRoleId || "-"}</td>
+                        <td className="py-2 pr-2">{row.launcherName || row.launcherUserId || "-"}</td>
                         <td className="py-2 pr-2">
                           <span
                             className={`px-2 py-1 rounded-full text-xs ${

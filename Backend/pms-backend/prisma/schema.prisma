@@ -589,6 +589,7 @@ model RestaurantInventoryItem {
   cost         Decimal  @default(0) @db.Decimal(14, 4)
   taxRate      Decimal? @db.Decimal(5, 2)
   supplierName String?
+  inventoryControlled Boolean @default(true)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

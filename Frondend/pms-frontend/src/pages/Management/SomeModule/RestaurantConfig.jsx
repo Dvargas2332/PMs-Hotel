@@ -27,6 +27,7 @@ import { Button } from "../../../components/ui/button";
 
 
 import { api } from "../../../lib/api";
+import { useLanguage } from "../../../context/LanguageContext";
 
 
 
@@ -46,111 +47,11 @@ import RestaurantInventory from "../Restaurant/RestaurantInventory";
 
 
 
-const NAV_TABS = [
 
 
 
-  { id: "generalConfig", label: "Configuración general" },
 
 
-
-  { id: "sections", label: "Secciones y mesas" },
-
-
-
-  { id: "floorplan", label: "Plano de planta" },
-
-
-
-  { id: "groups", label: "Grupos / familias" },
-
-
-
-  { id: "items", label: "Artículos" },
-
-
-
-  { id: "recipes", label: "Recetas" },
-
-
-
-  { id: "inventory", label: "Inventario" },
-
-
-
-  { id: "printers", label: "Impresoras" },
-
-
-
-];
-
-
-
-
-
-
-
-const TABS = [
-
-
-
-  { id: "sections", label: "Sections & tables" },
-
-
-
-  { id: "floorplan", label: "Floorplan" },
-
-
-
-  { id: "printers", label: "Printers" },
-
-
-
-  { id: "items", label: "Artículos" },
-
-
-
-  { id: "groups", label: "Groups / families" },
-
-
-
-  { id: "generalConfig", label: "Configuración general" },
-
-
-
-  { id: "recipes", label: "Recipes" },
-
-
-
-  { id: "inventory", label: "Inventory" },
-
-
-
-];
-
-
-
-
-
-
-
-const TOP_TABS = [
-
-
-
-  { id: "sections", label: "Secciones" },
-
-
-
-  { id: "tables", label: "Mesas" },
-
-
-
-  { id: "menus", label: "Menús" },
-
-
-
-];
 
 
 
@@ -289,6 +190,60 @@ export default function RestaurantConfig() {
   const [subTab, setSubTab] = useState("sections");
 
 
+
+  const { t } = useLanguage();
+
+  const navTabs = useMemo(
+    () => [
+      { id: "generalConfig", label: t("mgmt.restaurant.nav.general") },
+      { id: "sections", label: t("mgmt.restaurant.nav.sectionsTables") },
+      { id: "floorplan", label: t("mgmt.restaurant.nav.floorplan") },
+      { id: "groups", label: t("mgmt.restaurant.nav.groups") },
+      { id: "items", label: t("mgmt.restaurant.nav.items") },
+      { id: "recipes", label: t("mgmt.restaurant.nav.recipes") },
+      { id: "inventory", label: t("mgmt.restaurant.nav.inventory") },
+      { id: "printers", label: t("mgmt.restaurant.nav.printers") },
+    ],
+    [t]
+  );
+
+  const tabs = useMemo(
+    () => [
+      { id: "sections", label: t("mgmt.restaurant.tabs.sectionsTables") },
+      { id: "floorplan", label: t("mgmt.restaurant.tabs.floorplan") },
+      { id: "printers", label: t("mgmt.restaurant.tabs.printers") },
+      { id: "items", label: t("mgmt.restaurant.tabs.items") },
+      { id: "groups", label: t("mgmt.restaurant.tabs.groups") },
+      { id: "generalConfig", label: t("mgmt.restaurant.tabs.general") },
+      { id: "recipes", label: t("mgmt.restaurant.tabs.recipes") },
+      { id: "inventory", label: t("mgmt.restaurant.tabs.inventory") },
+    ],
+    [t]
+  );
+
+  const topTabs = useMemo(
+    () => [
+      { id: "sections", label: t("mgmt.restaurant.topTabs.sections") },
+      { id: "tables", label: t("mgmt.restaurant.topTabs.tables") },
+      { id: "menus", label: t("mgmt.restaurant.topTabs.menus") },
+    ],
+    [t]
+  );
+
+  const sectionMenuRows = useMemo(() => {
+    const list = Array.isArray(menus) ? menus : [];
+    const byMenu = new Map((sectionMenuAssignments || []).map((a) => [a.menuId, a]));
+    const rows = list.map((menu) => ({ menu, assignment: byMenu.get(menu?.id) }));
+    (sectionMenuAssignments || []).forEach((assignment) => {
+      if (!assignment?.menuId) return;
+      if (list.some((menu) => menu?.id === assignment.menuId)) return;
+      rows.push({
+        menu: { id: assignment.menuId, name: assignment?.menu?.name || assignment.menuId },
+        assignment,
+      });
+    });
+    return rows;
+  }, [menus, sectionMenuAssignments]);
 
 
 
@@ -515,6 +470,7 @@ export default function RestaurantConfig() {
 
 
   const [sectionMenuAssignments, setSectionMenuAssignments] = useState([]);
+  const [editingAssignmentId, setEditingAssignmentId] = useState("");
 
 
 
@@ -538,8 +494,6 @@ export default function RestaurantConfig() {
 
 
 
-    priority: 0,
-
 
 
     active: true,
@@ -559,6 +513,10 @@ export default function RestaurantConfig() {
 
 
   const [menuPickerSearch, setMenuPickerSearch] = useState("");
+  const [menuPickerMenuId, setMenuPickerMenuId] = useState("");
+  const [menuPickerEntries, setMenuPickerEntries] = useState([]);
+  const [menuPickerSelectedIds, setMenuPickerSelectedIds] = useState([]);
+  const [menuPickerFamily, setMenuPickerFamily] = useState("");
 
 
 
@@ -567,6 +525,24 @@ export default function RestaurantConfig() {
 
 
   const [drag, setDrag] = useState(null); // { type: 'table', mode: 'move', id, rect, startX, startY, baseX, baseY }
+
+  const formatDaysMask = (mask) => {
+    const m = Number(mask ?? 0);
+    const days = [
+      { bit: 1 << 1, label: "Lun" },
+      { bit: 1 << 2, label: "Mar" },
+      { bit: 1 << 3, label: "Mie" },
+      { bit: 1 << 4, label: "Jue" },
+      { bit: 1 << 5, label: "Vie" },
+      { bit: 1 << 6, label: "Sab" },
+      { bit: 1 << 0, label: "Dom" },
+    ];
+    const allMask = days.reduce((acc, d) => acc | d.bit, 0);
+    const weekendMask = (1 << 5) | (1 << 6) | (1 << 0);
+    if ((m & allMask) === allMask) return "Semanal";
+    if ((m & weekendMask) === weekendMask && (m & ~weekendMask) === 0) return "Fin de sem.";
+    return days.filter((d) => (m & d.bit) !== 0).map((d) => d.label).join(", ") || "-";
+  };
 
 
 
@@ -578,15 +554,7 @@ export default function RestaurantConfig() {
 
 
 
-  const [selectedObjectId, setSelectedObjectId] = useState("");
-
-
-
   const [tableEdit, setTableEdit] = useState(null);
-
-
-
-  const [objectEdit, setObjectEdit] = useState(null);
 
 
 
@@ -595,6 +563,7 @@ export default function RestaurantConfig() {
 
 
   const [floorplanSaving, setFloorplanSaving] = useState(false); // posiciones
+  const [floorplanError, setFloorplanError] = useState("");
 
 
 
@@ -603,6 +572,27 @@ export default function RestaurantConfig() {
 
 
   const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation/color changed
+
+  const filteredMenuEntries = useMemo(() => {
+    const list = Array.isArray(menuEntries) ? menuEntries : [];
+    const q = String(menuEntrySearch || "").trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((entry) => {
+      const it = entry?.item || {};
+      const hay = [
+        it.name,
+        it.code,
+        it.familyName,
+        it.subFamilyName,
+        it.subSubFamilyName,
+        entry?.itemId,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [menuEntries, menuEntrySearch]);
 
 
 
@@ -771,6 +761,97 @@ export default function RestaurantConfig() {
 
 
 
+  };
+
+  const patchTableLocal = (tableId, patch) => {
+    if (!tableId || !selectedSectionId) return;
+    setSections((prev) =>
+      (prev || []).map((s) => {
+        if (s.id !== selectedSectionId) return s;
+        const tables = (s.tables || []).map((t) => (t.id === tableId ? { ...t, ...patch } : t));
+        return { ...s, tables };
+      })
+    );
+    if (Object.prototype.hasOwnProperty.call(patch, "x") || Object.prototype.hasOwnProperty.call(patch, "y")) {
+      markPosDirty(tableId);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(patch, "size") ||
+      Object.prototype.hasOwnProperty.call(patch, "rotation") ||
+      Object.prototype.hasOwnProperty.call(patch, "color") ||
+      Object.prototype.hasOwnProperty.call(patch, "colorHex")
+    ) {
+      markStyleDirty(tableId);
+    }
+  };
+
+  const onCanvasPointerDown = (e, type, id) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (type === "table") setSelectedTableId(String(id));
+  };
+
+  const saveFloorplan = async () => {
+    if (!selectedSectionId || floorplanSaving) return;
+    setFloorplanSaving(true);
+    setFloorplanError("");
+    try {
+      const sec = sections.find((s) => s.id === selectedSectionId);
+      const tables = Array.isArray(sec?.tables) ? sec.tables : [];
+
+      try {
+        await api.put(`/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/layout`, {
+          tables,
+        });
+      } catch {
+        // ignore if backend does not support /layout
+      }
+
+      const tableStyles = { ...(general?.tableStyles || {}) };
+      const styleById = {};
+      tables.forEach((t) => {
+        if (!t?.id) return;
+        const entry = {};
+        if (Number.isFinite(Number(t.size))) entry.size = Number(t.size);
+        if (Number.isFinite(Number(t.rotation))) entry.rotation = Number(t.rotation);
+        const color = String(t.color || t.colorHex || "").trim();
+        if (color) entry.color = color;
+        if (Object.keys(entry).length > 0) styleById[t.id] = entry;
+      });
+      if (Object.keys(styleById).length > 0) {
+        tableStyles[selectedSectionId] = styleById;
+      } else {
+        delete tableStyles[selectedSectionId];
+      }
+
+      const backgrounds = { ...(general?.backgrounds || {}) };
+      if (backgroundForm.color || backgroundForm.image) {
+        backgrounds[selectedSectionId] = {
+          color: backgroundForm.color || "",
+          image: backgroundForm.image || "",
+        };
+      } else {
+        delete backgrounds[selectedSectionId];
+      }
+
+      const nextGeneral = { ...general, tableStyles, backgrounds };
+      setGeneral(nextGeneral);
+      await api.put("/restaurant/general", nextGeneral);
+
+      tables.forEach((t) => {
+        if (!t?.id) return;
+        clearPosDirty(t.id);
+        clearStyleDirty(t.id);
+      });
+
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.floorplanSaved"));
+    } catch (err) {
+      const msg = getApiError(err, "No se pudo guardar el plano.");
+      setFloorplanError(msg);
+      alert(t("mgmt.restaurant.alert.title"), msg);
+    } finally {
+      setFloorplanSaving(false);
+    }
   };
 
 
@@ -965,20 +1046,12 @@ export default function RestaurantConfig() {
 
 
   );
-
-
-
-
-
-
-
-  const selectedObject = useMemo(
-
-    () => (selectedSection?.objects || []).find((o) => String(o.id) === String(selectedObjectId)) || null,
-
-    [selectedSection, selectedObjectId]
-
-  );
+  const selectedTable = useMemo(() => {
+    if (!selectedSectionId) return null;
+    const sec = sections.find((s) => s.id === selectedSectionId);
+    if (!sec) return null;
+    return (sec.tables || []).find((t) => t.id === selectedTableId) || null;
+  }, [sections, selectedSectionId, selectedTableId]);
 
 
 
@@ -1034,7 +1107,7 @@ export default function RestaurantConfig() {
 
 
 
-    if (TABS.some((t) => t.id === tab)) {
+    if (tabs.some((t) => t.id === tab)) {
 
 
 
@@ -1050,7 +1123,7 @@ export default function RestaurantConfig() {
 
 
 
-    if (TOP_TABS.some((t) => t.id === tab)) {
+    if (topTabs.some((t) => t.id === tab)) {
 
 
 
@@ -2111,6 +2184,28 @@ export default function RestaurantConfig() {
 
 
   useEffect(() => {
+    if (!menuPickerOpen) return;
+    const fallback = selectedMenuId || (menus && menus[0] ? menus[0].id : "");
+    if (!menuPickerMenuId && fallback) setMenuPickerMenuId(fallback);
+  }, [menuPickerOpen, menuPickerMenuId, selectedMenuId, menus]);
+
+  useEffect(() => {
+    const loadPickerEntries = async () => {
+      if (!menuPickerOpen || !menuPickerMenuId) {
+        setMenuPickerEntries([]);
+        return;
+      }
+      try {
+        const { data } = await api.get(`/restaurant/menus/${encodeURIComponent(String(menuPickerMenuId))}/entries`);
+        setMenuPickerEntries(Array.isArray(data) ? data : []);
+      } catch {
+        setMenuPickerEntries([]);
+      }
+    };
+    loadPickerEntries();
+  }, [menuPickerOpen, menuPickerMenuId]);
+
+  useEffect(() => {
 
 
 
@@ -2122,11 +2217,26 @@ export default function RestaurantConfig() {
 
 
 
-    setSelectedObjectId("");
 
 
 
   }, [selectedSectionId]);
+
+  useEffect(() => {
+    if (!selectedTable) {
+      setTableEdit(null);
+      return;
+    }
+    setTableEdit({
+      id: selectedTable.id,
+      kind: selectedTable.kind || "mesa",
+      size: Number(selectedTable.size ?? 56) || 56,
+      rotation: Number(selectedTable.rotation ?? 0) || 0,
+      x: Number(selectedTable.x ?? 50),
+      y: Number(selectedTable.y ?? 50),
+      color: selectedTable.color || selectedTable.colorHex || "",
+    });
+  }, [selectedTable]);
 
 
 
@@ -2224,7 +2334,7 @@ export default function RestaurantConfig() {
 
 
 
-        alert("Restaurant", "Name is required.");
+        alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.nameRequired"));
 
 
 
@@ -2292,7 +2402,7 @@ export default function RestaurantConfig() {
 
 
 
-        alert("Restaurant", "ID is required.");
+        alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.idRequired"));
 
 
 
@@ -2372,7 +2482,7 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", "Section created.");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.sectionCreated"));
 
 
 
@@ -2380,7 +2490,7 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", getApiError(err, "Could not create section."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.sectionCreateFailed")));
 
 
 
@@ -2428,7 +2538,7 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete section."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.sectionDeleteFailed")));
 
 
 
@@ -2524,7 +2634,7 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", "Table added");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.tableAdded"));
 
 
 
@@ -2532,7 +2642,7 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", getApiError(err, "Could not add table."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.tableAddFailed")));
 
 
 
@@ -2612,2091 +2722,11 @@ export default function RestaurantConfig() {
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete table."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.tableDeleteFailed")));
 
 
 
     }
-
-
-
-  };
-
-
-
-
-
-
-
-  const updateSectionObjects = (sectionId, updater) => {
-
-
-
-    setSections((prev) =>
-
-
-
-      prev.map((s) => {
-
-
-
-        if (String(s.id) !== String(sectionId)) return s;
-
-
-
-        const current = Array.isArray(s.objects) ? s.objects : [];
-
-
-
-        const nextObjects = updater(current);
-
-
-
-        return { ...s, objects: nextObjects };
-
-
-
-      })
-
-
-
-    );
-
-
-
-  };
-
-
-
-
-
-
-
-  const addBarObject = async () => {
-
-
-
-    if (!selectedSectionId) return;
-
-
-
-    try {
-
-
-
-      const payload = {
-
-
-
-        kind: "BAR",
-
-
-
-        label: "Barra",
-
-
-
-        x: 50,
-
-
-
-        y: 50,
-
-
-
-        w: 24,
-
-
-
-        h: 10,
-
-
-
-        rotation: 0,
-
-
-
-        color: "#f59e0b",
-
-
-
-        meta: { iconUrl: BAR_DECOR_ICON_URL },
-
-
-
-      };
-
-
-
-      const { data } = await api.post(`/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects`, payload);
-
-
-
-      updateSectionObjects(selectedSectionId, (prev) => [...prev, data]);
-
-
-
-      setSelectedObjectId(String(data?.id || ""));
-
-
-
-      alert("Restaurant", "Barra agregada.");
-
-
-
-    } catch (err) {
-
-
-
-      alert("Restaurant", getApiError(err, "No se pudo agregar la barra."));
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const updateObjectXY = async (objectId, patch) => {
-
-
-
-    if (!selectedSectionId || !objectId) return;
-
-
-
-    try {
-
-
-
-      const { data } = await api.patch(
-
-
-
-        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects/${encodeURIComponent(String(objectId))}`,
-
-
-
-        patch
-
-
-
-      );
-
-
-
-      updateSectionObjects(selectedSectionId, (prev) =>
-
-
-
-        prev.map((o) => (String(o.id) === String(objectId) ? { ...o, ...data } : o))
-
-
-
-      );
-
-
-
-    } catch (err) {
-
-
-
-      alert("Restaurant", getApiError(err, "No se pudo actualizar el objeto."));
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const removeObject = async (objectId) => {
-
-
-
-    if (!selectedSectionId || !objectId) return;
-
-
-
-    try {
-
-
-
-      await api.delete(
-
-
-
-        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/objects/${encodeURIComponent(String(objectId))}`
-
-
-
-      );
-
-
-
-      updateSectionObjects(selectedSectionId, (prev) => prev.filter((o) => String(o.id) !== String(objectId)));
-
-
-
-      if (String(selectedObjectId) === String(objectId)) setSelectedObjectId("");
-
-
-
-    } catch (err) {
-
-
-
-      alert("Restaurant", getApiError(err, "No se pudo eliminar el objeto."));
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const saveLayoutPositions = async () => {
-
-
-
-    if (!selectedSectionId) return;
-
-
-
-    if ((dirtyPosTableIds || []).length === 0) return;
-
-
-
-    const tables = (selectedSection?.tables || [])
-
-
-
-      .map((t) => {
-
-
-
-        const x = typeof t.x === "number" ? t.x : Number(t.x);
-
-
-
-        const y = typeof t.y === "number" ? t.y : Number(t.y);
-
-
-
-        const color = String(t.color || t.colorHex || t.iconColor || "").trim();
-
-
-
-        return {
-
-
-
-          id: t.id,
-
-
-
-          kind: t.kind || "mesa",
-
-
-
-          x,
-
-
-
-          y,
-
-
-
-          size: Number(t.size ?? 56) || 56,
-
-
-
-          rotation: Number(t.rotation ?? 0) || 0,
-
-
-
-          color,
-
-
-
-          colorHex: color,
-
-
-
-          iconColor: color,
-
-
-
-        };
-
-
-
-      })
-
-
-
-      .filter((t) => Number.isFinite(t.x) && Number.isFinite(t.y));
-
-
-
-
-
-
-
-    const moved = new Set((dirtyPosTableIds || []).map(String));
-
-
-
-    const movedTables = tables.filter((t) => moved.has(String(t.id)));
-
-
-
-
-
-
-
-    const results = await Promise.allSettled(
-
-
-
-      movedTables.map((t) =>
-
-
-
-        api.patch(
-
-
-
-          `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(t.id))}/position`,
-
-
-
-          { x: t.x, y: t.y }
-
-
-
-        )
-
-
-
-      )
-
-
-
-    );
-
-
-
-    const patchOk = results.every((r) => r.status === "fulfilled");
-
-
-
-    if (!patchOk) throw new Error("No se pudo guardar posiciones (backend rechaz la solicitud).");
-
-
-
-    setDirtyPosTableIds([]);
-
-
-
-  };
-
-
-
-
-
-
-
-  // eslint-disable-next-line no-unused-vars
-
-
-
-  const saveTableStyleLegacy = async (tableId, style) => {
-
-
-
-    if (!selectedSectionId || !tableId) return;
-
-
-
-    const base = (selectedSection?.tables || []).find((t) => String(t.id) === String(tableId)) || null;
-
-
-
-    const x = typeof base?.x === "number" ? base.x : Number(base?.x);
-
-
-
-    const y = typeof base?.y === "number" ? base.y : Number(base?.y);
-
-
-
-    const color = String(style?.color || base?.color || base?.colorHex || base?.iconColor || "").trim();
-
-
-
-    const payload = {
-
-
-
-      id: String(tableId),
-
-
-
-      kind: style?.kind ?? base?.kind,
-
-
-
-      size: Number(style?.size ?? base?.size ?? 56) || 56,
-
-
-
-      rotation: Number(style?.rotation ?? base?.rotation ?? 0) || 0,
-
-
-
-      color,
-
-
-
-      colorHex: color,
-
-
-
-      iconColor: color,
-
-
-
-      x: Number.isFinite(x) ? x : 50,
-
-
-
-      y: Number.isFinite(y) ? y : 50,
-
-
-
-    };
-
-
-
-
-
-
-
-    const stylePayload = {
-
-
-
-      kind: payload.kind,
-
-
-
-      size: payload.size,
-
-
-
-      rotation: payload.rotation,
-
-
-
-      color: payload.color,
-
-
-
-      colorHex: payload.color,
-
-
-
-      iconColor: payload.color,
-
-
-
-      iconSize: payload.size,
-
-
-
-      angle: payload.rotation,
-
-
-
-    };
-
-
-
-
-
-
-
-    const isStylePersisted = (sectionsData) => {
-
-
-
-      const sec = Array.isArray(sectionsData) ? sectionsData.find((s) => String(s?.id) === String(selectedSectionId)) : null;
-
-
-
-      const t = sec?.tables ? sec.tables.find((tt) => String(tt?.id) === String(tableId)) : null;
-
-
-
-      if (!t) return false;
-
-
-
-      const savedColor = String(t.color || t.colorHex || t.iconColor || "").trim();
-
-
-
-      const savedSize = Number(t.size ?? t.iconSize);
-
-
-
-      const savedRotation = Number(t.rotation ?? t.angle);
-
-
-
-      const wantColor = String(stylePayload.color || "").trim();
-
-
-
-      const wantSize = Number(stylePayload.size);
-
-
-
-      const wantRotation = Number(stylePayload.rotation);
-
-
-
-      const colorOk = wantColor ? savedColor === wantColor : true;
-
-
-
-      const sizeOk = Number.isFinite(wantSize) ? Number.isFinite(savedSize) && savedSize === wantSize : true;
-
-
-
-      const rotationOk = Number.isFinite(wantRotation) ? Number.isFinite(savedRotation) && savedRotation === wantRotation : true;
-
-
-
-      return colorOk && sizeOk && rotationOk;
-
-
-
-    };
-
-
-
-
-
-
-
-    const candidates = [
-
-
-
-      { method: "patch", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
-
-
-
-      { method: "put", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
-
-
-
-      { method: "patch", url: `/restaurant/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
-
-
-
-      { method: "put", url: `/restaurant/tables/${encodeURIComponent(String(tableId))}`, data: stylePayload },
-
-
-
-      // last resort: some backends accept style on /position
-
-
-
-      { method: "patch", url: `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}/position`, data: stylePayload },
-
-
-
-    ];
-
-
-
-
-
-
-
-    const formatErr = (err) => {
-
-
-
-      const status = err?.response?.status;
-
-
-
-      const msg = err?.response?.data?.message || err?.message || "Error";
-
-
-
-      if (status) return `${status}: ${msg}`;
-
-
-
-      const baseURL = err?.config?.baseURL;
-
-
-
-      const url = err?.config?.url;
-
-
-
-      const full = baseURL && url ? `${String(baseURL).replace(/\/+$/, "")}${String(url).startsWith("/") ? "" : "/"}${String(url)}` : "";
-
-
-
-      return full ? `${msg} (${full})` : msg;
-
-
-
-    };
-
-
-
-
-
-
-
-    let lastErr = null;
-
-
-
-    for (const c of candidates) {
-
-
-
-      try {
-
-
-
-        // eslint-disable-next-line no-await-in-loop
-
-
-
-        await api[c.method](c.url, c.data);
-
-
-
-
-
-
-
-        // Verify persistence from backend (avoid false positives when backend ignores style fields).
-
-
-
-        // eslint-disable-next-line no-await-in-loop
-
-
-
-        const { data: secData } = await api.get("/restaurant/sections");
-
-
-
-        if (Array.isArray(secData) && isStylePersisted(secData)) {
-
-
-
-          setSections(secData);
-
-
-
-          clearStyleDirty(tableId);
-
-
-
-          return;
-
-
-
-        }
-
-
-
-
-
-
-
-        lastErr = `${c.method.toUpperCase()} ${c.url} -> 200 pero el backend no persisti (o no devuelve) color/tamao/rotacin.`;
-
-
-
-      } catch (err) {
-
-
-
-        lastErr = `${c.method.toUpperCase()} ${c.url} -> ${formatErr(err)}`;
-
-
-
-      }
-
-
-
-    }
-
-
-
-
-
-
-
-    throw new Error(lastErr || "No se pudo guardar estilo.");
-
-
-
-  };
-
-
-
-
-
-
-
-  const saveTableStyle = async (tableId, style) => {
-
-
-
-    if (!selectedSectionId || !tableId) return;
-
-
-
-    const base = (selectedSection?.tables || []).find((t) => String(t.id) === String(tableId)) || null;
-
-
-
-    const color = String(style?.color || base?.color || "").trim();
-
-
-
-    const nextStyle = {
-
-
-
-      kind: style?.kind ?? base?.kind ?? "mesa",
-
-
-
-      size: Number(style?.size ?? base?.size ?? 56) || 56,
-
-
-
-      rotation: Number(style?.rotation ?? base?.rotation ?? 0) || 0,
-
-
-
-      color: color || "",
-
-
-
-    };
-
-
-
-
-
-
-
-    const isStylePersisted = (sectionsData) => {
-
-
-
-      const sec = Array.isArray(sectionsData) ? sectionsData.find((s) => String(s?.id) === String(selectedSectionId)) : null;
-
-
-
-      const t = sec?.tables ? sec.tables.find((tt) => String(tt?.id) === String(tableId)) : null;
-
-
-
-      if (!t) return false;
-
-
-
-      const savedColor = String(t.color || t.colorHex || t.iconColor || "").trim();
-
-
-
-      const savedSize = Number(t.size ?? t.iconSize);
-
-
-
-      const savedRotation = Number(t.rotation ?? t.angle);
-
-
-
-      const wantColor = String(nextStyle.color || "").trim();
-
-
-
-      const wantSize = Number(nextStyle.size);
-
-
-
-      const wantRotation = Number(nextStyle.rotation);
-
-
-
-      const colorOk = wantColor ? savedColor === wantColor : true;
-
-
-
-      const sizeOk = Number.isFinite(wantSize) ? Number.isFinite(savedSize) && savedSize === wantSize : true;
-
-
-
-      const rotationOk = Number.isFinite(wantRotation) ? Number.isFinite(savedRotation) && savedRotation === wantRotation : true;
-
-
-
-      return colorOk && sizeOk && rotationOk;
-
-
-
-    };
-
-
-
-
-
-
-
-    const persistToGeneral = async () => {
-
-
-
-      const { data: gen } = await api.get("/restaurant/general");
-
-
-
-      const existing = gen && typeof gen === "object" ? gen : {};
-
-
-
-      const prevStyles = existing.tableStyles && typeof existing.tableStyles === "object" ? existing.tableStyles : {};
-
-
-
-      const secKey = String(selectedSectionId);
-
-
-
-      const tableKey = String(tableId);
-
-
-
-      const nextStyles = {
-
-
-
-        ...prevStyles,
-
-
-
-        [secKey]: {
-
-
-
-          ...(prevStyles?.[secKey] && typeof prevStyles[secKey] === "object" ? prevStyles[secKey] : {}),
-
-
-
-          [tableKey]: {
-
-
-
-            ...((prevStyles?.[secKey]?.[tableKey] && typeof prevStyles[secKey][tableKey] === "object")
-
-
-
-              ? prevStyles[secKey][tableKey]
-
-
-
-              : {}),
-
-
-
-            ...nextStyle,
-
-
-
-          },
-
-
-
-        },
-
-
-
-      };
-
-
-
-      const nextGeneral = { ...existing, tableStyles: nextStyles };
-
-
-
-      await api.put("/restaurant/general", nextGeneral);
-
-
-
-      setGeneral((prev) => ({ ...prev, ...nextGeneral }));
-
-
-
-      setSections((prev) => applyTableStylesToSections(prev, nextStyles));
-
-
-
-      clearStyleDirty(tableId);
-
-
-
-    };
-
-
-
-
-
-
-
-    try {
-
-
-
-      await api.patch(
-
-
-
-        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/tables/${encodeURIComponent(String(tableId))}`,
-
-
-
-        nextStyle
-
-
-
-      );
-
-
-
-      const { data: secData } = await api.get("/restaurant/sections");
-
-
-
-      if (Array.isArray(secData)) {
-
-
-
-        setSections(secData);
-
-
-
-        if (isStylePersisted(secData)) {
-
-
-
-          clearStyleDirty(tableId);
-
-
-
-          return;
-
-
-
-        }
-
-
-
-      }
-
-
-
-      await persistToGeneral();
-
-
-
-    } catch (err) {
-
-
-
-      // Backward compatibility: if backend doesn't have the endpoint yet, keep the old fallback.
-
-
-
-      if (err?.response?.status !== 404) {
-
-
-
-        await persistToGeneral();
-
-
-
-        return;
-
-
-
-      }
-
-
-
-      await persistToGeneral();
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const saveAllTableStyles = async () => {
-
-
-
-    if (!selectedSectionId) return;
-
-
-
-    const ids = Array.from(new Set(dirtyStyleTableIds || [])).map(String);
-
-
-
-    if (ids.length === 0) return;
-
-
-
-    for (const id of ids) {
-
-
-
-      const table = (selectedSection?.tables || []).find((t) => String(t.id) === String(id)) || null;
-
-
-
-      // eslint-disable-next-line no-await-in-loop
-
-
-
-      await saveTableStyle(String(id), table || {});
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const saveFloorplan = async () => {
-    if (!selectedSectionId || floorplanSaving) return;
-    if (!floorplanHasChanges && !backgroundDirty) return;
-
-    setFloorplanSaving(true);
-    try {
-      if (backgroundDirty) {
-        const nextBackgrounds = {
-          ...(general.backgrounds || {}),
-          [selectedSectionId]: { color: backgroundForm.color || "", image: backgroundForm.image || "" },
-        };
-        const payload = { ...general, backgrounds: nextBackgrounds };
-        await api.put("/restaurant/general", payload);
-        setGeneral((prev) => ({ ...prev, backgrounds: nextBackgrounds }));
-      }
-
-      if (floorplanDirty) await saveLayoutPositions();
-      if ((dirtyStyleTableIds || []).length > 0) await saveAllTableStyles();
-      alert("Restaurant", "Floorplan guardado.");
-    } catch (err) {
-      alert("Restaurant", getApiError(err, "No se pudo guardar el floorplan."));
-    } finally {
-      setFloorplanSaving(false);
-    }
-  };
-
-
-
-
-
-
-
-  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
-
-
-
-  const toPct = (val, size) => (size ? (val / size) * 100 : 0);
-
-
-
-  const snap = (n, step) => {
-
-
-
-    const s = Number(step) || 0;
-
-
-
-    if (!s) return n;
-
-
-
-    return Math.round(n / s) * s;
-
-
-
-  };
-
-
-
-  const normDeg = (n) => {
-
-
-
-    const v = Number(n) || 0;
-
-
-
-    return ((v % 360) + 360) % 360;
-
-
-
-  };
-
-
-
-  const onCanvasPointerDown = (e, type, id) => {
-
-
-
-    const el = e.currentTarget?.closest?.("[data-canvas]");
-
-
-
-    if (!el) return;
-
-
-
-    const rect = el.getBoundingClientRect();
-
-
-
-    const startX = e.clientX;
-
-
-
-    const startY = e.clientY;
-
-
-
-    if (type === "table") {
-
-
-
-      const base = (selectedSection?.tables || []).find((t) => t.id === id) || null;
-
-
-
-      if (!base) return;
-
-
-
-      setSelectedTableId(id);
-
-
-
-      setSelectedObjectId("");
-
-
-
-      dragLatestRef.current = {
-
-
-
-        type: "table",
-
-
-
-        mode: "move",
-
-
-
-        id,
-
-
-
-        x: Number(base.x ?? 50),
-
-
-
-        y: Number(base.y ?? 50),
-
-
-
-      };
-
-
-
-      setDrag({
-
-
-
-        type: "table",
-
-
-
-        mode: "move",
-
-
-
-        id,
-
-
-
-        rect,
-
-
-
-        startX,
-
-
-
-        startY,
-
-
-
-        baseX: Number(base.x ?? 50),
-
-
-
-        baseY: Number(base.y ?? 50),
-
-
-
-      });
-
-
-
-      e.preventDefault();
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    if (type === "object") {
-
-
-
-      const base = (selectedSection?.objects || []).find((o) => String(o.id) === String(id)) || null;
-
-
-
-      if (!base) return;
-
-
-
-      setSelectedObjectId(String(id));
-
-
-
-      setSelectedTableId("");
-
-
-
-      dragLatestRef.current = {
-
-
-
-        type: "object",
-
-
-
-        mode: "move",
-
-
-
-        id,
-
-
-
-        x: Number(base.x ?? 50),
-
-
-
-        y: Number(base.y ?? 50),
-
-
-
-      };
-
-
-
-      setDrag({
-
-
-
-        type: "object",
-
-
-
-        mode: "move",
-
-
-
-        id,
-
-
-
-        rect,
-
-
-
-        startX,
-
-
-
-        startY,
-
-
-
-        baseX: Number(base.x ?? 50),
-
-
-
-        baseY: Number(base.y ?? 50),
-
-
-
-      });
-
-
-
-      e.preventDefault();
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  useEffect(() => {
-
-
-
-    if (!drag) return;
-
-
-
-    const onMove = (e) => {
-
-
-
-      if (drag.mode === "move") {
-
-
-
-        const dx = e.clientX - drag.startX;
-
-
-
-        const dy = e.clientY - drag.startY;
-
-
-
-        const nx = clamp(drag.baseX + toPct(dx, drag.rect.width), 2, 98);
-
-
-
-        const ny = clamp(drag.baseY + toPct(dy, drag.rect.height), 5, 95);
-
-
-
-        dragLatestRef.current = { ...dragLatestRef.current, x: nx, y: ny };
-
-
-
-        if (drag.type === "table") {
-
-
-
-          markPosDirty(drag.id);
-
-
-
-          if (drag.id === selectedTableId) setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
-
-
-
-          setSections((prev) =>
-
-
-
-            prev.map((s) =>
-
-
-
-              s.id === selectedSectionId
-
-
-
-                ? { ...s, tables: (s.tables || []).map((t) => (t.id === drag.id ? { ...t, x: nx, y: ny } : t)) }
-
-
-
-                : s
-
-
-
-            )
-
-
-
-          );
-
-
-
-        }
-
-
-
-        if (drag.type === "object") {
-
-
-
-          setSections((prev) =>
-
-
-
-            prev.map((s) =>
-
-
-
-              s.id === selectedSectionId
-
-
-
-                ? { ...s, objects: (s.objects || []).map((o) => (String(o.id) === String(drag.id) ? { ...o, x: nx, y: ny } : o)) }
-
-
-
-                : s
-
-
-
-            )
-
-
-
-          );
-
-
-
-        }
-
-
-
-        return;
-
-
-
-      }
-
-
-
-    };
-
-
-
-    const onUp = () => {
-
-
-
-      const latest = dragLatestRef.current;
-
-
-
-      const nx = Number(latest?.x ?? drag.baseX);
-
-
-
-      const ny = Number(latest?.y ?? drag.baseY);
-
-
-
-      setDrag(null);
-
-
-
-      if (drag.type === "table" && drag.id === selectedTableId) {
-
-
-
-        setTableEdit((prev) => (prev ? { ...prev, x: nx, y: ny } : prev));
-
-
-
-      }
-
-
-
-      if (drag.type === "object") {
-
-
-
-        updateObjectXY(drag.id, { x: nx, y: ny });
-
-
-
-      }
-
-
-
-    };
-
-
-
-    window.addEventListener("pointermove", onMove);
-
-
-
-    window.addEventListener("pointerup", onUp, { once: true });
-
-
-
-    return () => {
-
-
-
-      window.removeEventListener("pointermove", onMove);
-
-
-
-    };
-
-
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-
-
-
-  }, [drag]);
-
-
-
-
-
-
-
-  const selectedTable = useMemo(
-
-
-
-    () => (selectedSection?.tables || []).find((t) => t.id === selectedTableId) || null,
-
-
-
-    [selectedSection, selectedTableId]
-
-
-
-  );
-
-
-
-
-
-
-
-  const objects = useMemo(
-
-
-
-    () => (selectedSection?.objects || []),
-
-
-
-    [selectedSection]
-
-
-
-  );
-
-
-
-const barObjects = useMemo(
-
-
-
-    () => (selectedSection?.objects || []).filter((o) => String(o.kind || "").toUpperCase() === "BAR"),
-
-
-
-    [selectedSection]
-
-
-
-  );
-
-
-
-
-
-
-
-  const filteredMenuEntries = useMemo(() => {
-
-
-
-    const q = String(menuEntrySearch || "").trim().toLowerCase();
-
-
-
-    if (!q) return menuEntries || [];
-
-
-
-    return (menuEntries || []).filter((e) => {
-
-
-
-      const it = e?.item || {};
-
-
-
-      const hay = [it.familyName, it.subFamilyName, it.subSubFamilyName, it.code, it.name].filter(Boolean).join(" ").toLowerCase();
-
-
-
-      return hay.includes(q);
-
-
-
-    });
-
-
-
-  }, [menuEntries, menuEntrySearch]);
-
-
-
-
-
-
-
-  const menuPreviewGroups = useMemo(() => {
-
-
-
-    const groups = new Map();
-
-
-
-    (menu || []).forEach((m) => {
-
-
-
-      const key = String(m?.category || "General").trim() || "General";
-
-
-
-      const list = groups.get(key) || [];
-
-
-
-      list.push(m);
-
-
-
-      groups.set(key, list);
-
-
-
-    });
-
-
-
-    return Array.from(groups.entries())
-
-
-
-      .map(([category, items]) => ({ category, items }))
-
-
-
-      .sort((a, b) => a.category.localeCompare(b.category));
-
-
-
-  }, [menu]);
-
-
-
-
-
-
-
-  const isDarkHex = (hex) => {
-
-
-
-    if (!hex) return false;
-
-
-
-    const c = String(hex).trim().replace("#", "");
-
-
-
-    if (!/^[0-9a-fA-F]{6}$/.test(c)) return false;
-
-
-
-    const r = parseInt(c.slice(0, 2), 16);
-
-
-
-    const g = parseInt(c.slice(2, 4), 16);
-
-
-
-    const b = parseInt(c.slice(4, 6), 16);
-
-
-
-    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-
-
-
-    return luminance < 0.45;
-
-
-
-  };
-
-
-
-
-
-
-
-  useEffect(() => {
-
-
-
-    if (!selectedMenuId) {
-
-
-
-      setMenuEditForm({ name: "", active: true });
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    const m = (menus || []).find((x) => x.id === selectedMenuId);
-
-
-
-    if (!m) return;
-
-
-
-    setMenuEditForm({ name: String(m.name || ""), active: m.active !== false });
-
-
-
-  }, [selectedMenuId, menus]);
-
-
-
-
-
-
-
-  useEffect(() => {
-
-
-
-    if (!selectedTable) {
-
-
-
-      setTableEdit(null);
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    setTableEdit({
-
-
-
-      id: selectedTable.id,
-
-
-
-      kind: String(selectedTable.kind || "mesa").toLowerCase(),
-
-
-
-      x: Number(selectedTable.x ?? 50),
-
-
-
-      y: Number(selectedTable.y ?? 50),
-
-
-
-      rotation: Number(selectedTable.rotation ?? 0),
-
-
-
-      size: Number(selectedTable.size ?? 56),
-
-
-
-      color: String(selectedTable.color || ""),
-
-
-
-    });
-
-
-
-  }, [selectedTableId, selectedTable]);
-
-
-
-  useEffect(() => {
-
-
-
-    if (!selectedObject) {
-
-
-
-      setObjectEdit(null);
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    setObjectEdit({
-
-
-
-      id: selectedObject.id,
-
-
-
-      kind: String(selectedObject.kind || "OTHER").toUpperCase(),
-
-
-
-      label: String(selectedObject.label || ""),
-
-
-
-      x: Number(selectedObject.x ?? 50),
-
-
-
-      y: Number(selectedObject.y ?? 50),
-
-
-
-      w: Number(selectedObject.w ?? 12),
-
-
-
-      h: Number(selectedObject.h ?? 12),
-
-
-
-      zIndex: Number(selectedObject.zIndex ?? 0),
-
-
-
-      rotation: Number(selectedObject.rotation ?? 0),
-
-
-
-      color: String(selectedObject.color || ""),
-
-
-
-      iconUrl: String(selectedObject?.meta?.iconUrl || ""),
-
-
-
-      iconDataUrl: String(selectedObject?.meta?.iconDataUrl || ""),
-
-
-
-    });
-
-
-
-  }, [selectedObjectId, selectedObject]);
-
-
-
-
-
-
-
-  const patchTableLocal = (tableId, patch) => {
-
-
-
-    if (!tableId || !selectedSectionId) return;
-
-
-
-    if (Object.prototype.hasOwnProperty.call(patch, "x") || Object.prototype.hasOwnProperty.call(patch, "y")) {
-
-
-
-      markPosDirty(tableId);
-
-
-
-    }
-
-
-
-    if (
-
-
-
-      Object.prototype.hasOwnProperty.call(patch, "size") ||
-
-
-
-      Object.prototype.hasOwnProperty.call(patch, "rotation") ||
-
-
-
-      Object.prototype.hasOwnProperty.call(patch, "color") ||
-
-
-
-      Object.prototype.hasOwnProperty.call(patch, "kind")
-
-
-
-    ) {
-
-
-
-      markStyleDirty(tableId);
-
-
-
-    }
-
-
-
-    setSections((prev) =>
-
-
-
-      prev.map((s) =>
-
-
-
-        s.id === selectedSectionId
-
-
-
-          ? { ...s, tables: (s.tables || []).map((t) => (t.id === tableId ? { ...t, ...patch } : t)) }
-
-
-
-          : s
-
-
-
-      )
-
-
-
-    );
 
 
 
@@ -4733,59 +2763,56 @@ const barObjects = useMemo(
 
 
   const createMenu = async () => {
-
-
-
     const nm = String(menuName || "").trim();
-
-
-
-    if (!nm) return alert("Restaurant", "Menu name is required.");
-
-
-
-    try {
-
-
-
-      const { data } = await api.post("/restaurant/menus", { name: nm, sectionIds: menuCreateSectionIds });
-
-
-
-      setMenus((prev) => [...prev, data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
-
-
-
-      setMenuName("");
-
-
-
-      setMenuCreateSectionIds([]);
-
-
-
-      if (!selectedMenuId) setSelectedMenuId(data.id);
-
-
-
-      alert("Restaurant", "Menu created.");
-
-
-
-    } catch (err) {
-
-
-
-      alert("Restaurant", getApiError(err, "Could not create menu."));
-
-
-
+    if (!nm) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuNameRequired"));
+    if (!Array.isArray(menuCreateSectionIds) || menuCreateSectionIds.length === 0) {
+      return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectSection"));
+    }
+    if (!menuAssignForm.startTime || !menuAssignForm.endTime) {
+      return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.scheduleRequiresTimes"));
     }
 
+    try {
+      const { data } = await api.post("/restaurant/menus", { name: nm });
+      setMenus((prev) => [...prev, data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
 
+      const schedulePayload = {
+        menuId: data.id,
+        daysMask: Number(menuAssignForm.daysMask ?? 127),
+        startTime: String(menuAssignForm.startTime || "").trim() || null,
+        endTime: String(menuAssignForm.endTime || "").trim() || null,
+        active: menuAssignForm.active !== false,
+      };
 
+      const assignments = await Promise.all(
+        menuCreateSectionIds.map((sid) =>
+          api
+            .post(`/restaurant/sections/${encodeURIComponent(String(sid))}/menus`, schedulePayload)
+            .then((r) => r.data)
+        )
+      );
+
+      if (selectedSectionId && menuCreateSectionIds.includes(selectedSectionId)) {
+        setSectionMenuAssignments((prev) => [...assignments.filter(Boolean), ...(prev || [])]);
+      }
+
+      setMenuName("");
+      setMenuCreateSectionIds([]);
+      setMenuAssignForm((p) => ({
+        ...p,
+        menuId: "",
+        startTime: "",
+        endTime: "",
+        daysMask: 127,
+        active: true,
+      }));
+
+      if (!selectedMenuId) setSelectedMenuId(data.id);
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuCreated"));
+    } catch (err) {
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuCreateFailed")));
+    }
   };
-
 
 
 
@@ -4816,7 +2843,7 @@ const barObjects = useMemo(
 
 
 
-    if (!payload.name) return alert("Restaurant", "Menu name is required.");
+    if (!payload.name) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuNameRequired"));
 
 
 
@@ -4848,7 +2875,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", "Menu updated.");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuUpdated"));
 
 
 
@@ -4856,7 +2883,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not update menu."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuUpdateFailed")));
 
 
 
@@ -4880,7 +2907,7 @@ const barObjects = useMemo(
 
 
 
-    if (!window.confirm("Delete this menu? This will remove its entries and schedules.")) return;
+    if (!window.confirm(t("mgmt.restaurant.confirm.deleteMenu"))) return;
 
 
 
@@ -4904,7 +2931,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", "Menu deleted.");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuDeleted"));
 
 
 
@@ -4912,7 +2939,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete menu."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuDeleteFailed")));
 
 
 
@@ -4921,6 +2948,29 @@ const barObjects = useMemo(
 
 
   };
+
+  const deleteMenuById = async (menuId) => {
+    if (!menuId) return;
+    if (!window.confirm(t("mgmt.restaurant.confirm.deleteMenu"))) return;
+    try {
+      await api.delete(`/restaurant/menus/${encodeURIComponent(String(menuId))}`);
+      setMenus((prev) => (prev || []).filter((m) => m.id !== menuId));
+      setSectionMenuAssignments((prev) => (prev || []).filter((a) => a.menuId !== menuId));
+      if (selectedMenuId === menuId) {
+        setSelectedMenuId("");
+        setMenuEntries([]);
+      }
+      if (menuPickerMenuId === menuId) {
+        setMenuPickerMenuId("");
+        setMenuPickerEntries([]);
+        setMenuPickerSelectedIds([]);
+      }
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuDeleted"));
+    } catch (err) {
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuDeleteFailed")));
+    }
+  };
+
 
 
 
@@ -5000,7 +3050,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not add item to menu."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuAddItemFailed")));
 
 
 
@@ -5023,6 +3073,72 @@ const barObjects = useMemo(
 
 
 
+
+  const reloadMenuPickerEntries = async () => {
+    if (!menuPickerMenuId) return;
+    try {
+      const { data } = await api.get(`/restaurant/menus/${encodeURIComponent(String(menuPickerMenuId))}/entries`);
+      setMenuPickerEntries(Array.isArray(data) ? data : []);
+      if (menuPickerMenuId === selectedMenuId) setMenuEntries(Array.isArray(data) ? data : []);
+    } catch {
+      setMenuPickerEntries([]);
+    }
+  };
+
+  const saveMenuPickerSelection = async () => {
+    if (!menuPickerMenuId) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectMenuFirst"));
+    const ids = Array.from(new Set(menuPickerSelectedIds || [])).filter(Boolean);
+    if (!ids.length) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.noItemsSelected"));
+    if (saving.menuEntries) return;
+    setSaving((s) => ({ ...s, menuEntries: true }));
+    try {
+      const inMenu = new Set((menuPickerEntries || []).map((e) => e.itemId));
+      const toAdd = ids.filter((id) => !inMenu.has(id));
+      await Promise.all(
+        toAdd.map((itemId) =>
+          api.post(`/restaurant/menus/${encodeURIComponent(String(menuPickerMenuId))}/entries`, { itemId })
+        )
+      );
+      const { data } = await api.get(`/restaurant/menus/${encodeURIComponent(String(menuPickerMenuId))}/entries`);
+      setMenuPickerEntries(Array.isArray(data) ? data : []);
+      if (menuPickerMenuId === selectedMenuId) setMenuEntries(Array.isArray(data) ? data : []);
+      setMenuPickerSelectedIds([]);
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.itemsAssigned"));
+    } catch (err) {
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.assignItemsFailed")));
+    } finally {
+      setSaving((s) => ({ ...s, menuEntries: false }));
+    }
+  };
+
+  const assignFamilyToMenu = async () => {
+    if (!menuPickerMenuId) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectMenuFirst"));
+    if (!menuPickerFamily) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectFamily"));
+    const ids = (items || [])
+      .filter((it) => it?.active !== false)
+      .filter((it) => String(it?.subSubFamily || it?.subFamily || it?.family || "General") === menuPickerFamily)
+      .map((it) => it.id)
+      .filter(Boolean);
+    if (!ids.length) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.noItemsForFamily"));
+    if (saving.menuEntries) return;
+    setSaving((s) => ({ ...s, menuEntries: true }));
+    try {
+      const inMenu = new Set((menuPickerEntries || []).map((e) => e.itemId));
+      const toAdd = ids.filter((id) => !inMenu.has(id));
+      await Promise.all(
+        toAdd.map((itemId) =>
+          api.post(`/restaurant/menus/${encodeURIComponent(String(menuPickerMenuId))}/entries`, { itemId })
+        )
+      );
+      await reloadMenuPickerEntries();
+      setMenuPickerSelectedIds([]);
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.familyAssigned"));
+    } catch (err) {
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.assignFamilyFailed")));
+    } finally {
+      setSaving((s) => ({ ...s, menuEntries: false }));
+    }
+  };
 
   const removeMenuEntry = async (entryId) => {
 
@@ -5064,7 +3180,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete menu entry."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuEntryDeleteFailed")));
 
 
 
@@ -5128,7 +3244,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not update item."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.itemUpdateFailed")));
 
 
 
@@ -5204,7 +3320,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete item."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.itemDeleteFailed")));
 
 
 
@@ -5224,7 +3340,7 @@ const barObjects = useMemo(
 
 
 
-    if (!selectedSectionId) return alert("Restaurant", "Select a section first.");
+    if (!selectedSectionId) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectSectionFirst"));
 
 
 
@@ -5232,7 +3348,7 @@ const barObjects = useMemo(
 
 
 
-    if (!menuId) return alert("Restaurant", "Select a menu to assign.");
+    if (!menuId) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectMenuToAssign"));
 
 
 
@@ -5264,7 +3380,6 @@ const barObjects = useMemo(
 
 
 
-        priority: Number(menuAssignForm.priority ?? 0),
 
 
 
@@ -5300,7 +3415,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", "Menu assigned to section.");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuAssigned"));
 
 
 
@@ -5308,7 +3423,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not assign menu."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuAssignFailed")));
 
 
 
@@ -5316,6 +3431,62 @@ const barObjects = useMemo(
 
 
 
+  };
+
+  const applyAssignmentEdit = async () => {
+    if (!selectedSectionId || !editingAssignmentId) return;
+    try {
+      const payload = {
+        daysMask: Number(menuAssignForm.daysMask ?? 127),
+        startTime: menuAssignForm.startTime ? String(menuAssignForm.startTime).trim() : null,
+        endTime: menuAssignForm.endTime ? String(menuAssignForm.endTime).trim() : null,
+        active: menuAssignForm.active !== false,
+      };
+      const { data } = await api.patch(
+        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/menus/${encodeURIComponent(
+          String(editingAssignmentId)
+        )}`,
+        payload
+      );
+      setSectionMenuAssignments((prev) => (prev || []).map((a) => (a.id === editingAssignmentId ? data : a)));
+      setEditingAssignmentId("");
+      setMenuAssignForm((p) => ({
+        ...p,
+        menuId: "",
+        startTime: "",
+        endTime: "",
+        daysMask: 127,
+        active: true,
+      }));
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.assignmentUpdated"));
+    } catch (err) {
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.assignmentUpdateFailed")));
+    }
+  };
+
+  const startEditAssignment = (assignment) => {
+    if (!assignment) return;
+    setEditingAssignmentId(assignment.id);
+    setMenuAssignForm((p) => ({
+      ...p,
+      menuId: assignment.menuId || "",
+      daysMask: Number(assignment.daysMask ?? 127),
+      startTime: assignment.startTime || "",
+      endTime: assignment.endTime || "",
+      active: assignment.active !== false,
+    }));
+  };
+
+  const cancelAssignmentEdit = () => {
+    setEditingAssignmentId("");
+    setMenuAssignForm((p) => ({
+      ...p,
+      menuId: "",
+      startTime: "",
+      endTime: "",
+      daysMask: 127,
+      active: true,
+    }));
   };
 
 
@@ -5356,7 +3527,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not delete assignment."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.assignmentDeleteFailed")));
 
 
 
@@ -5412,7 +3583,7 @@ const barObjects = useMemo(
 
 
 
-    alert("Restaurant", "Print settings saved");
+    alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.printSettingsSaved"));
 
 
 
@@ -5432,7 +3603,7 @@ const barObjects = useMemo(
 
 
 
-    if (!silent) alert("Restaurant", "General info saved");
+    if (!silent) alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.generalInfoSaved"));
 
 
 
@@ -5452,7 +3623,7 @@ const barObjects = useMemo(
 
 
 
-    if (!silent) alert("Restaurant", "Billing saved");
+    if (!silent) alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.billingSaved"));
 
 
 
@@ -5544,7 +3715,7 @@ const barObjects = useMemo(
 
 
 
-      if (!silent) alert("Restaurant", "Taxes saved");
+      if (!silent) alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.taxesSaved"));
 
 
 
@@ -5552,7 +3723,7 @@ const barObjects = useMemo(
 
 
 
-      if (!silent) alert("Restaurant", getApiError(err, "Could not save taxes."));
+      if (!silent) alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.taxesSaveFailed")));
 
 
 
@@ -5604,7 +3775,7 @@ const barObjects = useMemo(
 
 
 
-    if (!silent) alert("Restaurant", "Payments and currency saved");
+    if (!silent) alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.paymentsSaved"));
 
 
 
@@ -5660,11 +3831,11 @@ const barObjects = useMemo(
 
 
 
-    if (!name) return alert("Restaurant", "Nombre del descuento requerido.");
+    if (!name) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.discountNameRequired"));
 
 
 
-    if (!Number.isFinite(percent) || percent <= 0) return alert("Restaurant", "Porcentaje invlido.");
+    if (!Number.isFinite(percent) || percent <= 0) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.invalidPercent"));
 
 
 
@@ -5770,7 +3941,7 @@ const barObjects = useMemo(
 
       const msg = err?.response?.data?.message || err?.message || "No se pudo actualizar el descuento.";
 
-      alert("Restaurant", msg);
+      alert(t("mgmt.restaurant.alert.title"), msg);
 
     }
 
@@ -5794,7 +3965,7 @@ const barObjects = useMemo(
 
       const msg = err?.response?.data?.message || err?.message || "No se pudo eliminar el descuento.";
 
-      alert("Restaurant", msg);
+      alert(t("mgmt.restaurant.alert.title"), msg);
 
     }
 
@@ -5826,7 +3997,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", "Configuración general guardada.");
+      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.generalConfigSaved"));
 
 
 
@@ -5834,7 +4005,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "No se pudo guardar la configuracin general."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.generalConfigSaveFailed")));
 
 
 
@@ -6010,10 +4181,6 @@ const barObjects = useMemo(
 
 
 
-  const BAR_DECOR_ICON_URL = `${BASE_URL}assets/restaurant/bar.svg`;
-
-
-
 
 
 
@@ -6099,74 +4266,6 @@ const barObjects = useMemo(
 
 
         src={TABURETE_FREE_ICON_URL}
-
-
-
-        className={className}
-
-
-
-        style={{ objectFit: "contain" }}
-
-
-
-        onError={() => setOk(false)}
-
-
-
-      />
-
-
-
-    );
-
-
-
-  };
-
-
-
-
-
-
-
-  const BarDecorIcon = ({ className = "", src }) => {
-
-
-
-    const [ok, setOk] = React.useState(true);
-
-
-
-    const resolved = src || BAR_DECOR_ICON_URL;
-
-
-
-    if (!ok) {
-
-
-
-      return <div className={`rounded-xl bg-orange-400/80 ${className}`} />;
-
-
-
-    }
-
-
-
-    return (
-
-
-
-      <img
-
-
-
-        alt="Barra"
-
-
-
-        src={resolved}
 
 
 
@@ -6510,7 +4609,7 @@ const barObjects = useMemo(
 
 
 
-        {!selectedSectionId && <div className="text-sm text-gray-600">Select a section first.</div>}
+        {!selectedSectionId && <div className="text-sm text-gray-600">{t("mgmt.restaurant.assignments.selectSection")}</div>}
 
 
 
@@ -6567,106 +4666,6 @@ const barObjects = useMemo(
 
 
               >
-
-
-
-
-
-
-
-                {(barObjects || []).map((o) => {
-
-
-
-                  const iconSrc = o?.meta?.iconDataUrl || o?.meta?.iconUrl || BAR_DECOR_ICON_URL;
-
-
-
-                  const selected = String(selectedObjectId) === String(o.id);
-
-
-
-                  const w = Number(o.w ?? 24) || 24;
-
-
-
-                  const h = Number(o.h ?? 10) || 10;
-
-
-
-                  return (
-
-
-
-                    <div
-
-
-
-                      key={String(o.id)}
-
-
-
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 select-none ${selected ? "ring-2 ring-amber-400" : ""}`}
-
-
-
-                      style={{
-
-
-
-                        left: `${Number(o.x ?? 50)}%`,
-
-
-
-                        top: `${Number(o.y ?? 50)}%`,
-
-
-
-                        width: `${w}%`,
-
-
-
-                        height: `${h}%`,
-
-
-
-                        transform: `translate(-50%, -50%) rotate(${Number(o.rotation ?? 0)}deg)`,
-
-
-
-                        zIndex: Number(o.zIndex ?? 0),
-
-
-
-                      }}
-
-
-
-                      onPointerDown={(e) => onCanvasPointerDown(e, "object", o.id)}
-
-
-
-                      title="Barra"
-
-
-
-                    >
-
-
-
-                      <BarDecorIcon className="w-full h-full" src={iconSrc} />
-
-
-
-                    </div>
-
-
-
-                  );
-
-
-
-                })}
 
 
 
@@ -7366,1195 +5365,9 @@ const barObjects = useMemo(
 
 
 
-              <Card className="p-3 space-y-2">
-
-
-
-                <div className="flex items-center justify-between gap-2">
-
-
-
-                  <div className="font-semibold text-sm">Barra decorativa</div>
-
-
-
-                  <Button type="button" variant="outline" onClick={addBarObject}>
-
-
-
-                    Agregar barra
-
-
-
-                  </Button>
-
-
-
-                </div>
-
-
-
-                <div className="text-xs text-slate-500">Arrastra la barra en el plano para ubicarla.</div>
-
-
-
-                {(barObjects || []).length === 0 && <div className="text-sm text-gray-600">No hay barras en esta sección.</div>}
-
-
-
-                {(barObjects || []).length > 0 && (
-
-
-
-                  <div className="space-y-2">
-
-
-
-                    {barObjects.map((o) => {
-
-
-
-                      const iconSrc = o?.meta?.iconDataUrl || o?.meta?.iconUrl || BAR_DECOR_ICON_URL;
-
-
-
-                      const isSelected = String(selectedObjectId) === String(o.id);
-
-
-
-                      return (
-
-
-
-                        <div
-
-
-
-                          key={String(o.id)}
-
-
-
-                          className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1 ${isSelected ? "border-amber-300 bg-amber-50" : "border-slate-200"}`}
-
-
-
-                        >
-
-
-
-                          <button
-
-
-
-                            type="button"
-
-
-
-                            className="flex items-center gap-2 min-w-0"
-
-
-
-                            onClick={() => setSelectedObjectId(String(o.id))}
-
-
-
-                          >
-
-
-
-                            <div className="h-7 w-12">
-
-
-
-                              <BarDecorIcon className="w-full h-full" src={iconSrc} />
-
-
-
-                            </div>
-
-
-
-                            <div className="text-xs font-semibold text-slate-700 truncate">{o.label || "Barra"}</div>
-
-
-
-                          </button>
-
-
-
-                          <button
-
-
-
-                            type="button"
-
-
-
-                            className="text-xs text-red-600"
-
-
-
-                            onClick={(e) => {
-
-
-
-                              e.preventDefault();
-
-
-
-                              e.stopPropagation();
-
-
-
-                              removeObject(o.id);
-
-
-
-                            }}
-
-
-
-                          >
-
-
-
-                            Eliminar
-
-
-
-                          </button>
-
-
-
-                        </div>
-
-
-
-                      );
-
-
-
-                    })}
-
-
-
-                  </div>
-
-
-
-                )}
-
-
-
-              </Card>
-
-
-
-
-
-
 
               
 
-
-
-              <Card className="p-3 space-y-2">
-
-
-
-                <div className="font-semibold text-sm">Selected object</div>
-
-
-
-                {!selectedObject || !objectEdit ? (
-
-
-
-                  <div className="text-sm text-gray-600">Select an object on the map or from the list.</div>
-
-
-
-                ) : (
-
-
-
-                  <>
-
-
-
-                    <div className="flex items-center justify-between gap-2">
-
-
-
-                      <div className="min-w-0 flex items-center gap-2">
-
-
-
-                        <DecorPreview kind={String(selectedObject.kind || "OTHER").toUpperCase()} />
-
-
-
-                        <div className="text-sm font-semibold truncate">{selectedObject.label || selectedObject.kind}</div>
-
-
-
-                      </div>
-
-
-
-                      <button className="text-xs text-red-600" onClick={() => removeObject(selectedObject.id)}>
-
-
-
-                        Delete
-
-
-
-                      </button>
-
-
-
-                    </div>
-
-
-
-
-
-
-
-                    <div className="grid grid-cols-2 gap-2">
-
-
-
-                      <select
-
-
-
-                        className="h-10 rounded-lg border px-3 text-sm"
-
-
-
-                        value={objectEdit.kind}
-
-
-
-                        onChange={(e) => setObjectEdit((p) => ({ ...p, kind: e.target.value }))}
-
-
-
-                      >
-
-
-
-                        {["LABEL", "BAR", "POOL", "PLANT", "WALL", "COUNTER", "DOOR", "WC", "OTHER"].map((k) => (
-
-
-
-                          <option key={k} value={k}>
-
-
-
-                            {k}
-
-
-
-                          </option>
-
-
-
-                        ))}
-
-
-
-                      </select>
-
-
-
-                      <Input placeholder="Label" value={objectEdit.label} onChange={(e) => setObjectEdit((p) => ({ ...p, label: e.target.value }))} />
-
-
-
-                      <Input type="number" placeholder="X %" value={objectEdit.x} onChange={(e) => setObjectEdit((p) => ({ ...p, x: e.target.value }))} />
-
-
-
-                      <Input type="number" placeholder="Y %" value={objectEdit.y} onChange={(e) => setObjectEdit((p) => ({ ...p, y: e.target.value }))} />
-
-
-
-                      <Input type="number" placeholder="W %" value={objectEdit.w} onChange={(e) => setObjectEdit((p) => ({ ...p, w: e.target.value }))} />
-
-
-
-                      <Input type="number" placeholder="H %" value={objectEdit.h} onChange={(e) => setObjectEdit((p) => ({ ...p, h: e.target.value }))} />
-
-
-
-                      <Input
-
-
-
-                        type="number"
-
-
-
-                        placeholder="Layer (zIndex)"
-
-
-
-                        value={objectEdit.zIndex}
-
-
-
-                        onChange={(e) => setObjectEdit((p) => ({ ...p, zIndex: e.target.value }))}
-
-
-
-                      />
-
-
-
-                      <Input
-
-
-
-                        type="number"
-
-
-
-                        placeholder="Rotation (deg)"
-
-
-
-                        value={objectEdit.rotation}
-
-
-
-                        onChange={(e) =>
-
-
-
-                          setObjectEdit((p) => ({ ...p, rotation: normDeg(snap(Number(e.target.value || 0), rotationSnap)) }))
-
-
-
-                        }
-
-
-
-                      />
-
-
-
-                      <div className="col-span-2 rounded-lg border px-3 py-2">
-
-
-
-                        <div className="flex items-center justify-between gap-3">
-
-
-
-                          <div className="text-xs font-semibold text-slate-700">Rotation</div>
-
-
-
-                          <select
-
-
-
-                            className="h-8 rounded-md border px-2 text-xs"
-
-
-
-                            value={rotationSnap}
-
-
-
-                            onChange={(e) => setRotationSnap(Number(e.target.value || 0))}
-
-
-
-                            title="Snap step"
-
-
-
-                          >
-
-
-
-                            <option value={0}>Snap off</option>
-
-
-
-                            <option value={15}>Snap 15</option>
-
-
-
-                            <option value={45}>Snap 45</option>
-
-
-
-                            <option value={90}>Snap 90</option>
-
-
-
-                          </select>
-
-
-
-                        </div>
-
-
-
-                        <input
-
-
-
-                          type="range"
-
-
-
-                          min={0}
-
-
-
-                          max={359}
-
-
-
-                          step={1}
-
-
-
-                          className="w-full mt-2"
-
-
-
-                          value={Number(objectEdit.rotation) || 0}
-
-
-
-                          onChange={(e) =>
-
-
-
-                            setObjectEdit((p) => ({ ...p, rotation: normDeg(snap(Number(e.target.value || 0), rotationSnap)) }))
-
-
-
-                          }
-
-
-
-                        />
-
-
-
-                        <div className="flex gap-2 mt-2">
-
-
-
-                          {[0, 90, 180, 270].map((deg) => (
-
-
-
-                            <Button key={deg} type="button" variant="outline" className="h-8" onClick={() => setObjectEdit((p) => ({ ...p, rotation: deg }))}>
-
-
-
-                              {deg}
-
-
-
-                            </Button>
-
-
-
-                          ))}
-
-
-
-                        </div>
-
-
-
-                      </div>
-
-
-
-                      <div className="flex items-center gap-2 rounded-lg border px-2 h-10">
-
-
-
-                        <input
-
-
-
-                          type="color"
-
-
-
-                          className="h-7 w-7 p-0 border-0 bg-transparent"
-
-
-
-                          value={objectEdit.color || "#94a3b8"}
-
-
-
-                          onChange={(e) => setObjectEdit((p) => ({ ...p, color: e.target.value }))}
-
-
-
-                          title="Color"
-
-
-
-                        />
-
-
-
-                        <Input
-
-
-
-                          placeholder="#rrggbb"
-
-
-
-                          value={objectEdit.color}
-
-
-
-                          onChange={(e) => setObjectEdit((p) => ({ ...p, color: e.target.value }))}
-
-
-
-                          className="border-0 h-9 px-2"
-
-
-
-                        />
-
-
-
-                      </div>
-
-
-
-                      <Input
-
-
-
-                        placeholder="Icon URL (optional)"
-
-
-
-                        value={objectEdit.iconUrl}
-
-
-
-                        onChange={(e) => setObjectEdit((p) => ({ ...p, iconUrl: e.target.value, iconDataUrl: "" }))}
-
-
-
-                        className="col-span-2"
-
-
-
-                      />
-
-
-
-                      <input
-
-
-
-                        type="file"
-
-
-
-                        accept="image/*,.svg"
-
-
-
-                        className="col-span-2 text-xs"
-
-
-
-                        onChange={(e) => setObjectIconFromFile(e.target.files?.[0], setObjectEdit)}
-
-
-
-                      />
-
-
-
-                      {(objectEdit.iconUrl || objectEdit.iconDataUrl) && (
-
-
-
-                        <Button
-
-
-
-                          type="button"
-
-
-
-                          variant="outline"
-
-
-
-                          className="col-span-2"
-
-
-
-                          onClick={() => setObjectEdit((p) => ({ ...p, iconUrl: "", iconDataUrl: "" }))}
-
-
-
-                        >
-
-
-
-                          Clear icon
-
-
-
-                        </Button>
-
-
-
-                      )}
-
-
-
-                    </div>
-
-
-
-
-
-
-
-                    <div className="grid grid-cols-2 gap-2">
-
-
-
-                      <Button
-
-
-
-                        type="button"
-
-
-
-                        variant="outline"
-
-
-
-                        onClick={() => {
-
-
-
-                          const zs = (objects || []).map((o) => Number(o.zIndex ?? 0));
-
-
-
-                          const minZ = zs.length ? Math.min(...zs) : 0;
-
-
-
-                          updateObjectXY(selectedObject.id, { zIndex: minZ - 1 });
-
-
-
-                        }}
-
-
-
-                      >
-
-
-
-                        Send to back
-
-
-
-                      </Button>
-
-
-
-                      <Button type="button" variant="outline" onClick={() => updateObjectXY(selectedObject.id, { zIndex: Number(selectedObject.zIndex ?? 0) - 1 })}>
-
-
-
-                        Backward
-
-
-
-                      </Button>
-
-
-
-                      <Button type="button" variant="outline" onClick={() => updateObjectXY(selectedObject.id, { zIndex: Number(selectedObject.zIndex ?? 0) + 1 })}>
-
-
-
-                        Forward
-
-
-
-                      </Button>
-
-
-
-                      <Button
-
-
-
-                        type="button"
-
-
-
-                        variant="outline"
-
-
-
-                        onClick={() => {
-
-
-
-                          const zs = (objects || []).map((o) => Number(o.zIndex ?? 0));
-
-
-
-                          const maxZ = zs.length ? Math.max(...zs) : 0;
-
-
-
-                          updateObjectXY(selectedObject.id, { zIndex: maxZ + 1 });
-
-
-
-                        }}
-
-
-
-                      >
-
-
-
-                        Bring to front
-
-
-
-                      </Button>
-
-
-
-                    </div>
-
-
-
-
-
-
-
-                    <div className="flex items-center justify-between gap-2">
-
-
-
-                      <div className="flex gap-2">
-
-
-
-                        <Button
-
-
-
-                          type="button"
-
-
-
-                          variant="outline"
-
-
-
-                          onClick={() =>
-
-
-
-                            setObjectEdit((p) => ({ ...p, rotation: normDeg(snap(Number(p.rotation || 0) - 15, rotationSnap)) }))
-
-
-
-                          }
-
-
-
-                        >
-
-
-
-                          Rotate -15
-
-
-
-                        </Button>
-
-
-
-                        <Button
-
-
-
-                          type="button"
-
-
-
-                          variant="outline"
-
-
-
-                          onClick={() =>
-
-
-
-                            setObjectEdit((p) => ({ ...p, rotation: normDeg(snap(Number(p.rotation || 0) + 15, rotationSnap)) }))
-
-
-
-                          }
-
-
-
-                        >
-
-
-
-                          Rotate +15
-
-
-
-                        </Button>
-
-
-
-                      </div>
-
-
-
-                      <Button
-
-
-
-                        type="button"
-
-
-
-                        onClick={() =>
-
-
-
-                          updateObjectXY(selectedObject.id, {
-
-
-
-                            kind: objectEdit.kind,
-
-
-
-                            label: objectEdit.label,
-
-
-
-                            x: Number(objectEdit.x),
-
-
-
-                            y: Number(objectEdit.y),
-
-
-
-                            w: Number(objectEdit.w),
-
-
-
-                            h: Number(objectEdit.h),
-
-
-
-                            zIndex: Number(objectEdit.zIndex),
-
-
-
-                            rotation: Number(objectEdit.rotation),
-
-
-
-                            color: objectEdit.color || null,
-
-
-
-                            meta:
-
-
-
-                              objectEdit.iconUrl || objectEdit.iconDataUrl
-
-
-
-                                ? { iconUrl: objectEdit.iconUrl || undefined, iconDataUrl: objectEdit.iconDataUrl || undefined }
-
-
-
-                                : {},
-
-
-
-                          })
-
-
-
-                        }
-
-
-
-                      >
-
-
-
-                        Save changes
-
-
-
-                      </Button>
-
-
-
-                    </div>
-
-
-
-                  </>
-
-
-
-                )}
-
-
-
-              </Card>
-
-
-
-
-
-
-
-              <Card className="p-3 space-y-2">
-
-
-
-                <div className="font-semibold text-sm">Objects</div>
-
-
-
-                <div className="grid grid-cols-3 gap-2">
-
-
-
-                  {["LABEL", "BAR", "POOL", "PLANT", "WALL", "COUNTER", "DOOR", "WC", "OTHER"].map((k) => (
-
-
-
-                    <button
-
-
-
-                      key={k}
-
-
-
-                      type="button"
-
-
-
-                      className="h-9 rounded-lg border bg-white hover:bg-slate-50 text-xs font-semibold"
-
-
-
-                      onClick={() => addObject(k)}
-
-
-
-                    >
-
-
-
-                      {k}
-
-
-
-                    </button>
-
-
-
-                  ))}
-
-
-
-                </div>
-
-
-
-                {(objects || []).length === 0 && <div className="text-sm text-gray-600">No objects yet.</div>}
-
-
-
-                {(objects || []).length > 0 && (
-
-
-
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-
-
-
-                    {objects.map((o) => (
-
-
-
-                      <button
-
-
-
-                        key={o.id}
-
-
-
-                        type="button"
-
-
-
-                        className={`w-full rounded-lg border p-2 flex items-center justify-between gap-2 text-left hover:bg-slate-50 ${
-
-
-
-                          selectedObjectId === o.id ? "border-indigo-300 bg-indigo-50" : ""
-
-
-
-                        }`}
-
-
-
-                        onClick={() => setSelectedObjectId(o.id)}
-
-
-
-                      >
-
-
-
-                        <div className="min-w-0">
-
-
-
-                          <div className="flex items-center gap-2">
-
-
-
-                            {renderObjectIcon(o)}
-
-
-
-                            <div className="text-sm font-semibold truncate">{o.label || o.kind}</div>
-
-
-
-                          </div>
-
-
-
-                          <div className="text-xs text-gray-500">
-
-
-
-                            x:{Number(o.x ?? 0).toFixed(1)} y:{Number(o.y ?? 0).toFixed(1)} z:{Number(o.zIndex ?? 0)}
-
-
-
-                          </div>
-
-
-
-                        </div>
-
-
-
-                        <button
-
-
-
-                          type="button"
-
-
-
-                          className="text-xs text-red-600"
-
-
-
-                          onClick={(e) => {
-
-
-
-                            e.preventDefault();
-
-
-
-                            e.stopPropagation();
-
-
-
-                            removeObject(o.id);
-
-
-
-                          }}
-
-
-
-                        >
-
-
-
-                          Delete
-
-
-
-                        </button>
-
-
-
-                      </button>
-
-
-
-                    ))}
-
-
-
-                  </div>
-
-
-
-                )}
-
-
-
-              </Card>
 
 
 
@@ -8746,7 +5559,7 @@ const barObjects = useMemo(
 
 
 
-      alert("Restaurant", getApiError(err, "Could not update section."));
+      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.sectionUpdateFailed")));
 
 
 
@@ -8782,11 +5595,11 @@ const barObjects = useMemo(
 
 
 
-              <div className="text-xs uppercase text-gray-500">Secciones</div>
+              <div className="text-xs uppercase text-gray-500">Sectiones</div>
 
 
 
-              <h3 className="font-semibold text-lg">Secciones del restaurante</h3>
+              <h3 className="font-semibold text-lg">Sectiones del restaurante</h3>
 
 
 
@@ -9608,1506 +6421,323 @@ const barObjects = useMemo(
 
         </div>
 
-        <label className="flex items-center gap-2 text-sm mt-3">
-          <input
-            type="checkbox"
-            checked={printing?.showPreview !== false}
-            onChange={(e) => setPrinting((p) => ({ ...p, showPreview: e.target.checked }))}
-          />
-          Mostrar vista previa antes de imprimir
-        </label>
-
-        <div className="grid md:grid-cols-3 gap-2 text-sm">
-          {[
-            { id: "comanda", label: "Comanda" },
-            { id: "subtotal", label: "Subtotal" },
-            { id: "invoice", label: "Factura" },
-          ].map((opt) => (
-            <label key={opt.id} className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={printing?.previewByType?.[opt.id] !== false}
-                onChange={(e) =>
-                  setPrinting((p) => ({
-                    ...p,
-                    previewByType: { ...(p.previewByType || {}), [opt.id]: e.target.checked },
-                  }))
-                }
-              />
-              {opt.label}
-            </label>
-          ))}
-        </div>
-
-        <div className="grid lg:grid-cols-12 gap-4">
-
-
-
-          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
-
-
-
-            <div className="text-sm font-semibold">Menus</div>
-
-
-
-            <div className="flex gap-2">
-
-
-
-              <Input placeholder="New menu name" value={menuName} onChange={(e) => setMenuName(e.target.value)} />
-
-
-
-              <Button onClick={createMenu}>Create</Button>
-
-
-
-            </div>
-
-
-
-            <div className="rounded-xl border bg-white p-3 space-y-2">
-
-
-
-              <div className="text-sm font-semibold">Visible in sections</div>
-
-
-
-              <div className="text-xs text-gray-500">
-
-
-
-                Select where this menu will be visible. A checkbox appears for every section you create.
-
-
-
-              </div>
-
-
-
-              <div className="grid gap-2">
-
-
-
-                {(sections || []).map((s) => (
-
-
-
-                  <label key={s.id} className="flex items-center gap-2 text-sm">
-
-
-
-                    <input
-
-
-
-                      type="checkbox"
-
-
-
-                      checked={(menuCreateSectionIds || []).includes(s.id)}
-
-
-
-                      onChange={(e) => {
-
-
-
-                        const checked = e.target.checked;
-
-
-
-                        setMenuCreateSectionIds((prev) => {
-
-
-
-                          const list = Array.isArray(prev) ? [...prev] : [];
-
-
-
-                          if (checked) {
-
-
-
-                            if (!list.includes(s.id)) list.push(s.id);
-
-
-
-                          } else {
-
-
-
-                            return list.filter((x) => x !== s.id);
-
-
-
-                          }
-
-
-
-                          return list;
-
-
-
-                        });
-
-
-
-                      }}
-
-
-
-                    />
-
-
-
-                    {s.name || s.id}
-
-
-
-                  </label>
-
-
-
-                ))}
-
-
-
-                {(sections || []).length === 0 && <div className="text-sm text-gray-500">No sections yet.</div>}
-
-
-
-              </div>
-
-
-
-            </div>
-
-
-
-            <div className="grid gap-2 max-h-56 overflow-auto pr-1">
-
-
-
-              {(menus || []).map((m) => (
-
-
-
-                <button
-
-
-
-                  key={m.id}
-
-
-
-                  className={`px-3 py-2 rounded-lg border text-sm text-left ${selectedMenuId === m.id ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
-
-
-
-                  onClick={() => setSelectedMenuId(m.id)}
-
-
-
-                  title={m.active === false ? "Inactive" : "Active"}
-
-
-
-                >
-
-
-
-                  <div className="font-semibold truncate">{m.name}</div>
-
-
-
-                  <div className="text-[11px] text-slate-500">{m.active === false ? "Inactive" : "Active"}</div>
-
-
-
-                </button>
-
-
-
-              ))}
-
-
-
-              {menus.length === 0 && <div className="text-sm text-gray-500">No menus yet.</div>}
-
-
-
-            </div>
-
-
-
-
-
-
-
-             {selectedMenuId && (
-
-
-
-               <div className="rounded-xl border bg-white p-3 space-y-2">
-
-
-
-                 <div className="text-sm font-semibold">Edit selected menu</div>
-
-
-
-                 <div className="grid grid-cols-2 gap-2">
-
-
-
-                   <Input
-
-
-
-                     className="col-span-2"
-
-
-
-                     placeholder="Menu name"
-
-
-
-                     value={menuEditForm.name}
-
-
-
-                     onChange={(e) => setMenuEditForm((p) => ({ ...p, name: e.target.value }))}
-
-
-
-                   />
-
-
-
-                   <label className="inline-flex items-center gap-2 text-sm">
-
-
-
-                     <input
-
-
-
-                       type="checkbox"
-
-
-
-                       checked={menuEditForm.active !== false}
-
-
-
-                       onChange={(e) => setMenuEditForm((p) => ({ ...p, active: e.target.checked }))}
-
-
-
-                     />
-
-
-
-                     Active
-
-
-
-                   </label>
-
-
-
-                   <div className="flex justify-end gap-2">
-
-
-
-                     <Button variant="outline" onClick={deleteSelectedMenu}>
-
-
-
-                       Delete
-
-
-
-                     </Button>
-
-
-
-                     <Button onClick={saveSelectedMenu}>Save</Button>
-
-
-
-                   </div>
-
-
-
-                 </div>
-
-
-
-               </div>
-
-
-
-             )}
-
-
-
-           </div>
-
-
-
-
-
-
-
-          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
-
-
-
-            <div className="text-sm font-semibold">Assign to section (schedule)</div>
-
-
-
-            {!selectedSectionId ? (
-
-
-
-              <div className="text-sm text-gray-500">Select a section first.</div>
-
-
-
-            ) : (
-
-
-
-              <>
-
-
-
-                <div className="grid grid-cols-2 gap-2">
-
-
-
-                  <select
-
-
-
-                    className="h-10 rounded-lg border px-3 text-sm"
-
-
-
-                    value={menuAssignForm.menuId}
-
-
-
-                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, menuId: e.target.value }))}
-
-
-
-                    title="Menu"
-
-
-
-                  >
-
-
-
-                    <option value="">(use selected menu)</option>
-
-
-
-                    {(menus || []).map((m) => (
-
-
-
-                      <option key={m.id} value={m.id}>
-
-
-
-                        {m.name}
-
-
-
-                      </option>
-
-
-
-                    ))}
-
-
-
-                  </select>
-
-
-
-                  <Input
-
-
-
-                    type="number"
-
-
-
-                    placeholder="Priority"
-
-
-
-                    value={menuAssignForm.priority}
-
-
-
-                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, priority: e.target.value }))}
-
-
-
-                  />
-
-
-
-                  <Input
-
-
-
-                    type="time"
-
-
-
-                    placeholder="Start"
-
-
-
-                    value={menuAssignForm.startTime}
-
-
-
-                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, startTime: e.target.value }))}
-
-
-
-                  />
-
-
-
-                  <Input
-
-
-
-                    type="time"
-
-
-
-                    placeholder="End"
-
-
-
-                    value={menuAssignForm.endTime}
-
-
-
-                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, endTime: e.target.value }))}
-
-
-
-                  />
-
-
-
-                </div>
-
-
-
-                <div className="flex flex-wrap gap-2 text-xs">
-
-
-
-                  {[
-
-
-
-                    { bit: 1 << 1, label: "Mon" },
-
-
-
-                    { bit: 1 << 2, label: "Tue" },
-
-
-
-                    { bit: 1 << 3, label: "Wed" },
-
-
-
-                    { bit: 1 << 4, label: "Thu" },
-
-
-
-                    { bit: 1 << 5, label: "Fri" },
-
-
-
-                    { bit: 1 << 6, label: "Sat" },
-
-
-
-                    { bit: 1 << 0, label: "Sun" },
-
-
-
-                  ].map((d) => {
-
-
-
-                    const checked = (Number(menuAssignForm.daysMask) & d.bit) !== 0;
-
-
-
-                    return (
-
-
-
-                      <label key={d.label} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-white">
-
-
-
-                        <input
-
-
-
-                          type="checkbox"
-
-
-
-                          checked={checked}
-
-
-
-                          onChange={(e) =>
-
-
-
-                            setMenuAssignForm((p) => ({
-
-
-
-                              ...p,
-
-
-
-                              daysMask: e.target.checked
-
-
-
-                                ? Number(p.daysMask) | d.bit
-
-
-
-                                : Number(p.daysMask) & ~d.bit,
-
-
-
-                            }))
-
-
-
-                          }
-
-
-
-                        />
-
-
-
-                        {d.label}
-
-
-
-                      </label>
-
-
-
-                    );
-
-
-
-                  })}
-
-
-
-                </div>
-
-
-
-                <div className="flex justify-end">
-
-
-
-                  <Button onClick={createMenuAssignment}>Assign</Button>
-
-
-
-                </div>
-
-
-
-
-
-
-
-                <div className="space-y-2">
-
-
-
-                  {(sectionMenuAssignments || []).map((a) => (
-
-
-
-                    <div key={a.id} className="border rounded-lg p-3 flex items-start justify-between gap-3">
-
-
-
-                      <div className="min-w-0">
-
-
-
-                        <div className="font-semibold text-sm truncate">{a?.menu?.name || a.menuId}</div>
-
-
-
-                        <div className="text-xs text-gray-500">
-
-
-
-                          {a.startTime || "00:00"} - {a.endTime || "24:00"}  daysMask {a.daysMask}  prio {a.priority}
-
-
-
-                        </div>
-
-
-
-                        {a.active === false && <div className="text-xs text-amber-700 mt-1">Inactive</div>}
-
-
-
-                      </div>
-
-
-
-                      <button className="text-xs text-red-600" onClick={() => removeMenuAssignment(a.id)}>
-
-
-
-                        Delete
-
-
-
-                      </button>
-
-
-
-                    </div>
-
-
-
-                  ))}
-
-
-
-                  {sectionMenuAssignments.length === 0 && (
-
-
-
-                    <div className="text-sm text-gray-500">No schedules for this section yet.</div>
-
-
-
-                  )}
-
-
-
-                </div>
-
-
-
-              </>
-
-
-
-            )}
-
-
-
-          </div>
-
-
-
-
-
-
-
-          <div className="lg:col-span-4 space-y-3 rounded-xl border bg-white p-3">
-
-
-
-            <div className="text-sm font-semibold">Menu items</div>
-
-
-
-            {!selectedMenuId ? (
-
-
-
-              <div className="text-sm text-gray-500">Select a menu to manage its items.</div>
-
-
-
-            ) : (
-
-
-
-              <>
-
-
-
-                <div className="flex items-center justify-between gap-3">
-
-
-
-                  <div className="text-sm text-gray-600">
-
-
-
-                    Items: <span className="font-semibold">{menuEntries.length}</span>
-
-
-
-                  </div>
-
-
-
-                  <div className="flex items-center gap-2">
-
-
-
-                    <Input
-
-
-
-                      placeholder="Search assigned items..."
-
-
-
-                      value={menuEntrySearch}
-
-
-
-                      onChange={(e) => setMenuEntrySearch(e.target.value)}
-
-
-
-                    />
-
-
-
-                    <Button variant="outline" onClick={reloadMenuEntries} disabled={saving.menuEntries}>
-
-
-
-                      Reload
-
-
-
+        <div className="space-y-6">
+          <div className="grid lg:grid-cols-2 gap-4">
+            <div className="space-y-3">
+              <div className="text-sm font-semibold">{t("mgmt.restaurant.menus.createTitle")}</div>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  placeholder={t("mgmt.restaurant.menus.newMenuPlaceholder")}
+                  value={menuName}
+                  onChange={(e) => setMenuName(e.target.value)}
+                />
+                {editingAssignmentId ? (
+                  <>
+                    <Button onClick={applyAssignmentEdit}>{t("mgmt.restaurant.menus.updateAssignment")}</Button>
+                    <Button variant="outline" onClick={cancelAssignmentEdit}>
+                      {t("mgmt.restaurant.menus.cancel")}
                     </Button>
-
-
-
-                    <Button onClick={() => setMenuPickerOpen(true)}>Open menu picker</Button>
-
-
-
-                  </div>
-
-
-
+                  </>
+                ) : (
+                  <Button onClick={createMenu}>{t("mgmt.restaurant.menus.createButton")}</Button>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs text-gray-500">{t("mgmt.restaurant.menus.visibleInSections")}</div>
+                <div className="grid gap-2">
+                  {(sections || []).map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={(menuCreateSectionIds || []).includes(s.id)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setMenuCreateSectionIds((prev) => {
+                            const list = Array.isArray(prev) ? [...prev] : [];
+                            if (checked) {
+                              if (!list.includes(s.id)) list.push(s.id);
+                            } else {
+                              return list.filter((x) => x !== s.id);
+                            }
+                            return list;
+                          });
+                        }}
+                      />
+                      {s.name || s.id}
+                    </label>
+                  ))}
+                  {(sections || []).length === 0 && (
+                    <div className="text-sm text-gray-500">{t("mgmt.restaurant.menus.noSections")}</div>
+                  )}
                 </div>
-
-
-
-                <div className="text-xs text-gray-500">
-
-
-
-                  Items are pulled from <span className="font-semibold">Artículos</span> and added to the menu.
-
-
-
-                </div>
-
-
-
-
-
-
-
-                <div className="rounded-xl border bg-white overflow-hidden">
-
-
-
-                  <table className="w-full text-sm">
-
-
-
-                    <thead className="bg-slate-50">
-
-
-
-                      <tr className="text-xs text-slate-600">
-
-
-
-                        <th className="text-left px-3 py-2">Family</th>
-
-
-
-                        <th className="text-left px-3 py-2">Sub family</th>
-
-
-
-                        <th className="text-left px-3 py-2">Sub subfamily</th>
-
-
-
-                        <th className="text-left px-3 py-2">Article</th>
-
-
-
-                        <th className="text-center px-3 py-2">Active</th>
-
-
-
-                        <th className="text-center px-3 py-2">Color</th>
-
-
-
-                        <th className="text-left px-3 py-2">Thumbnail</th>
-
-
-
-                        <th className="text-right px-3 py-2">Actions</th>
-
-
-
-                      </tr>
-
-
-
-                    </thead>
-
-
-
-                    <tbody className="divide-y">
-
-
-
-                      {(filteredMenuEntries || []).map((e) => {
-
-
-
-                        const it = e?.item || {};
-
-
-
-                        const colorVal =
-
-
-
-                          typeof it.color === "string" && /^#?[0-9a-fA-F]{6}$/.test(it.color)
-
-
-
-                            ? it.color.startsWith("#")
-
-
-
-                              ? it.color
-
-
-
-                              : `#${it.color}`
-
-
-
-                            : "#ffffff";
-
-
-
-                        return (
-
-
-
-                          <tr key={e.id} className="hover:bg-slate-50">
-
-
-
-                            <td className="px-3 py-2">{it.familyName || "-"}</td>
-
-
-
-                            <td className="px-3 py-2">{it.subFamilyName || "-"}</td>
-
-
-
-                            <td className="px-3 py-2">{it.subSubFamilyName || "-"}</td>
-
-
-
-                            <td className="px-3 py-2">
-
-
-
-                              <div className="font-medium">{it.name || e.itemId}</div>
-
-
-
-                              <div className="text-xs text-slate-500">{it.code || ""}</div>
-
-
-
-                            </td>
-
-
-
-                            <td className="px-3 py-2 text-center">
-
-
-
-                              <input
-
-
-
-                                type="checkbox"
-
-
-
-                                checked={it.active !== false}
-
-
-
-                                onChange={(ev) => patchItemQuick(e.itemId, { active: ev.target.checked })}
-
-
-
-                                title="Enable/disable for sale"
-
-
-
-                              />
-
-
-
-                            </td>
-
-
-
-                            <td className="px-3 py-2 text-center">
-
-
-
-                              <input
-
-
-
-                                type="color"
-
-
-
-                                value={colorVal}
-
-
-
-                                onChange={(ev) => {
-
-
-
-                                  const v = ev.target.value;
-
-
-
-                                  setMenuEntries((prev) =>
-
-
-
-                                    (prev || []).map((x) =>
-
-
-
-                                      x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, color: v } } : x
-
-
-
-                                    )
-
-
-
-                                  );
-
-
-
-                                }}
-
-
-
-                                onBlur={(ev) => patchItemQuick(e.itemId, { color: ev.target.value })}
-
-
-
-                                title="Tile color"
-
-
-
-                              />
-
-
-
-                            </td>
-
-
-
-                            <td className="px-3 py-2">
-
-
-
-                              <div className="flex items-center gap-2">
-
-
-
-                                <input
-
-
-
-                                  className="h-9 w-full rounded-lg border px-2 text-xs"
-
-
-
-                                  placeholder="Image URL (optional)"
-
-
-
-                                  value={it.imageUrl || ""}
-
-
-
-                                  onChange={(ev) => {
-
-
-
-                                    const v = ev.target.value;
-
-
-
-                                    setMenuEntries((prev) =>
-
-
-
-                                      (prev || []).map((x) =>
-
-
-
-                                        x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, imageUrl: v } } : x
-
-
-
-                                      )
-
-
-
-                                    );
-
-
-
-                                  }}
-
-
-
-                                  onBlur={(ev) => patchItemQuick(e.itemId, { imageUrl: ev.target.value })}
-
-
-
-                                />
-
-
-
-                                {it.imageUrl ? (
-
-
-
-                                  <img
-
-
-
-                                    src={it.imageUrl}
-
-
-
-                                    alt=""
-
-
-
-                                    className="h-9 w-9 rounded-lg object-cover border"
-
-
-
-                                    onError={(ev) => {
-
-
-
-                                      ev.currentTarget.style.display = "none";
-
-
-
-                                    }}
-
-
-
-                                  />
-
-
-
-                                ) : null}
-
-
-
-                              </div>
-
-
-
-                            </td>
-
-
-
-                            <td className="px-3 py-2 text-right">
-
-
-
-                              <button
-
-
-
-                                className="text-xs text-red-600 hover:underline"
-
-
-
-                                onClick={() => removeMenuEntry(e.id)}
-
-
-
-                                disabled={saving.menuEntries}
-
-
-
-                              >
-
-
-
-                                Remove
-
-
-
-                              </button>
-
-
-
-                            </td>
-
-
-
-                          </tr>
-
-
-
-                        );
-
-
-
-                      })}
-
-
-
-                      {(filteredMenuEntries || []).length === 0 && (
-
-
-
-                        <tr>
-
-
-
-                          <td className="px-3 py-4 text-center text-slate-500" colSpan={8}>
-
-
-
-                            No items assigned.
-
-
-
-                          </td>
-
-
-
-                        </tr>
-
-
-
-                      )}
-
-
-
-                    </tbody>
-
-
-
-                  </table>
-
-
-
-                </div>
-
-
-
-              </>
-
-
-
-            )}
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div className="pt-3 border-t">
-
-
-
-          <div className="text-sm font-semibold">Active items now (preview)</div>
-
-
-
-          {!selectedSectionId ? (
-
-
-
-            <div className="text-sm text-gray-500">Select a section to preview.</div>
-
-
-
-          ) : (
-
-
-
-            <div className="space-y-4 mt-2">
-
-
-
-              {menuPreviewGroups.map((g) => (
-
-
-
-                <div key={g.category} className="space-y-2">
-
-
-
-                  <div className="text-xs uppercase tracking-wide text-slate-500">{g.category}</div>
-
-
-
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-
-
-
-                    {(g.items || []).map((m) => {
-
-
-
-                      const bg = typeof m.color === "string" && m.color.trim() ? m.color.trim() : "#ffffff";
-
-
-
-                      const dark = isDarkHex(bg);
-
-
-
-                      return (
-
-
-
-                        <div
-
-
-
-                          key={m.id}
-
-
-
-                          className={`border rounded-lg p-3 flex justify-between items-start gap-3 ${dark ? "text-white" : "text-slate-900"}`}
-
-
-
-                          style={{ backgroundColor: bg }}
-
-
-
-                        >
-
-
-
-                          <div className="min-w-0 flex items-start gap-2">
-
-
-
-                            {m.imageUrl ? (
-
-
-
-                              <img
-
-
-
-                                src={m.imageUrl}
-
-
-
-                                alt=""
-
-
-
-                                className="h-12 w-12 rounded-lg object-cover border bg-white/60"
-
-
-
-                                onError={(ev) => {
-
-
-
-                                  ev.currentTarget.style.display = "none";
-
-
-
-                                }}
-
-
-
-                              />
-
-
-
-                            ) : null}
-
-
-
-                            <div className="min-w-0">
-
-
-
-                              <div className="font-semibold text-sm truncate">{m.name}</div>
-
-
-
-                              <div className={`text-xs ${dark ? "text-white/80" : "text-slate-600"}`}>
-
-
-
-                                ${Number(m.price || 0).toFixed(2)}
-
-
-
-                              </div>
-
-
-
-                            </div>
-
-
-
-                          </div>
-
-
-
-                          <button
-
-
-
-                            className={`text-xs ${dark ? "text-white/90" : "text-red-600"} hover:underline`}
-
-
-
-                            onClick={() => removeActiveMenuPreviewItem(m)}
-
-
-
-                            title="Remove"
-
-
-
-                          >
-
-
-
-                            Remove
-
-
-
-                          </button>
-
-
-
-                        </div>
-
-
-
-                      );
-
-
-
-                    })}
-
-
-
-                  </div>
-
-
-
-                </div>
-
-
-
-              ))}
-
-
-
-              {menu.length === 0 && <div className="text-sm text-gray-500">No active items for this section.</div>}
-
-
-
+              </div>
             </div>
 
+            <div className="space-y-3">
+              <div className="text-sm font-semibold">{t("mgmt.restaurant.menus.scheduleTitle")}</div>
+              <div className="flex items-center gap-2">
+                <div className="w-25">
+                  <Input
+                    className="w-full"
+                    type="time"
+                    placeholder={t("mgmt.restaurant.menus.start")}
+                    value={menuAssignForm.startTime}
+                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, startTime: e.target.value }))}
+                  />
+                </div>
+                <div className="w-25">
+                  <Input
+                    className="w-full"
+                    type="time"
+                    placeholder={t("mgmt.restaurant.menus.end")}
+                    value={menuAssignForm.endTime}
+                    onChange={(e) => setMenuAssignForm((p) => ({ ...p, endTime: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs">
+                {[
+                  { bit: 1 << 1, label: t("mgmt.restaurant.days.mon") },
+                  { bit: 1 << 2, label: t("mgmt.restaurant.days.tue") },
+                  { bit: 1 << 3, label: t("mgmt.restaurant.days.wed") },
+                  { bit: 1 << 4, label: t("mgmt.restaurant.days.thu") },
+                  { bit: 1 << 5, label: t("mgmt.restaurant.days.fri") },
+                  { bit: 1 << 6, label: t("mgmt.restaurant.days.sat") },
+                  { bit: 1 << 0, label: t("mgmt.restaurant.days.sun") },
+                ].map((d) => {
+                  const checked = (Number(menuAssignForm.daysMask) & d.bit) !== 0;
+                  return (
+                    <label key={d.label} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-white">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) =>
+                          setMenuAssignForm((p) => ({
+                            ...p,
+                            daysMask: e.target.checked
+                              ? Number(p.daysMask) | d.bit
+                              : Number(p.daysMask) & ~d.bit,
+                          }))
+                        }
+                      />
+                      {d.label}
+                    </label>
+                  );
+                })}
+              </div>
+              {editingAssignmentId && (
+                <div className="text-xs text-amber-700">{t("mgmt.restaurant.assignments.editingHint")}</div>
+              )}
+            </div>
+          </div>
 
+          <div className="space-y-3">
+            <div className="text-sm font-semibold">{t("mgmt.restaurant.assignments.title")}</div>
+            {!selectedSectionId ? (
+              <div className="text-sm text-gray-500">{t("mgmt.restaurant.assignments.selectSection")}</div>
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Section</th>
+                      <th className="px-3 py-2 text-left font-semibold">Menu</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.schedule")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.days")}</th>
+                      <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.status")}</th>
+                      <th className="px-3 py-2 text-right font-semibold">{t("mgmt.restaurant.assignments.column.actions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sectionMenuRows || []).map((row, idx) => {
+                      const a = row.assignment;
+                      const menu = row.menu;
+                      return (
+                        <tr key={menu?.id || a?.id || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                          <td className="px-3 py-2">{selectedSection?.name || selectedSectionId || "-"}</td>
+                          <td className="px-3 py-2">{menu?.name || a?.menu?.name || a?.menuId || menu?.id}</td>
+                          <td className="px-3 py-2">
+                            {a ? `${a.startTime || "00:00"} - ${a.endTime || "24:00"}` : "-"}
+                          </td>
+                          <td className="px-3 py-2">{a ? formatDaysMask(a.daysMask) : "-"}</td>
+                          <td className="px-3 py-2">
+                            {a
+                              ? a.active === false
+                                ? t("mgmt.restaurant.assignments.status.inactive")
+                                : t("mgmt.restaurant.assignments.status.active")
+                              : t("mgmt.restaurant.assignments.status.unassigned")}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {a && (
+                                <button
+                                  className="text-xs text-slate-600 hover:underline"
+                                  onClick={() => startEditAssignment(a)}
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              {a && (
+                                <button className="text-xs text-red-600" onClick={() => removeMenuAssignment(a.id)}>
+                                  Delete
+                                </button>
+                              )}
+                              <button className="text-xs text-red-600" onClick={() => deleteMenuById(menu?.id)}>
+                                {t("mgmt.restaurant.assignments.action.deleteMenu")}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {sectionMenuRows.length === 0 && (
+                      <tr>
+                        <td className="px-3 py-4 text-center text-slate-500" colSpan={6}>
+                          {t("mgmt.restaurant.assignments.empty")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
 
-          )}
-
-
+          <div className="space-y-3">
+            <div className="text-sm font-semibold">{t("mgmt.restaurant.menuItems.title")}</div>
+            {!selectedMenuId ? (
+              <div className="text-sm text-gray-500">{t("mgmt.restaurant.menuItems.selectMenu")}</div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm text-gray-600">
+                    {t("mgmt.restaurant.menuItems.count")} <span className="font-semibold">{menuEntries.length}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder={t("mgmt.restaurant.menuItems.searchPlaceholder")}
+                      value={menuEntrySearch}
+                      onChange={(e) => setMenuEntrySearch(e.target.value)}
+                    />
+                    <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>
+                      {t("mgmt.restaurant.menuItems.reload")}
+                    </Button>
+                    <Button onClick={() => setMenuPickerOpen(true)}>{t("mgmt.restaurant.menuItems.openPicker")}</Button>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500">{t("mgmt.restaurant.menuItems.helper")}</div>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-xs text-slate-600">
+                        <th className="text-left px-3 py-2">Family</th>
+                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.subFamily")}</th>
+                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.subSubfamily")}</th>
+                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.article")}</th>
+                        <th className="text-center px-3 py-2">Active</th>
+                        <th className="text-center px-3 py-2">Color</th>
+                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.thumbnail")}</th>
+                        <th className="text-right px-3 py-2">{t("mgmt.restaurant.menuItems.column.actions")}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(filteredMenuEntries || []).map((e) => {
+                        const it = e?.item || {};
+                        const colorVal =
+                          typeof it.color === "string" && /^#?[0-9a-fA-F]{6}$/.test(it.color)
+                            ? it.color.startsWith("#")
+                              ? it.color
+                              : `#${it.color}`
+                            : "#ffffff";
+                        return (
+                          <tr key={e.id} className="hover:bg-slate-50">
+                            <td className="px-3 py-2">{it.familyName || "-"}</td>
+                            <td className="px-3 py-2">{it.subFamilyName || "-"}</td>
+                            <td className="px-3 py-2">{it.subSubFamilyName || "-"}</td>
+                            <td className="px-3 py-2">
+                              <div className="font-medium">{it.name || e.itemId}</div>
+                              <div className="text-xs text-slate-500">{it.code || ""}</div>
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={it.active !== false}
+                                onChange={(ev) => patchItemQuick(e.itemId, { active: ev.target.checked })}
+                                title={t("mgmt.restaurant.menuItems.action.toggleActive")}
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="color"
+                                value={colorVal}
+                                onChange={(ev) => {
+                                  const v = ev.target.value;
+                                  setMenuEntries((prev) =>
+                                    (prev || []).map((x) =>
+                                      x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, color: v } } : x
+                                    )
+                                  );
+                                }}
+                                onBlur={(ev) => patchItemQuick(e.itemId, { color: ev.target.value })}
+                                title={t("mgmt.restaurant.menuItems.action.color")}
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  className="h-9 w-full rounded-lg border px-2 text-xs"
+                                  placeholder={t("mgmt.restaurant.menuItems.imagePlaceholder")}
+                                  value={it.imageUrl || ""}
+                                  onChange={(ev) => {
+                                    const v = ev.target.value;
+                                    setMenuEntries((prev) =>
+                                      (prev || []).map((x) =>
+                                        x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, imageUrl: v } } : x
+                                      )
+                                    );
+                                  }}
+                                  onBlur={(ev) => patchItemQuick(e.itemId, { imageUrl: ev.target.value })}
+                                />
+                                {it.imageUrl ? (
+                                  <img
+                                    src={it.imageUrl}
+                                    alt=""
+                                    className="h-9 w-9 rounded-lg object-cover border"
+                                    onError={(ev) => {
+                                      ev.currentTarget.style.display = "none";
+                                    }}
+                                  />
+                                ) : null}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <button
+                                className="text-xs text-red-600 hover:underline"
+                                onClick={() => removeMenuEntry(e.id)}
+                                disabled={saving.menuEntries}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(filteredMenuEntries || []).length === 0 && (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-slate-500" colSpan={8}>
+                            {t("mgmt.restaurant.menuItems.empty")}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
 
         </div>
+
 
 
 
@@ -11143,19 +6773,7 @@ const barObjects = useMemo(
 
 
 
-                <div className="text-xs uppercase text-gray-500">Menu picker</div>
-
-
-
-                <div className="font-semibold truncate">
-
-
-
-                  {(menus || []).find((m) => m.id === selectedMenuId)?.name || "Menu"}
-
-
-
-                </div>
+                <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.menuItems.openPicker")}</div>
 
 
 
@@ -11175,7 +6793,7 @@ const barObjects = useMemo(
 
 
 
-                title="Close"
+                title={t("mgmt.restaurant.menuPicker.close")}
 
 
 
@@ -11211,7 +6829,7 @@ const barObjects = useMemo(
 
 
 
-                  placeholder="Search items..."
+                  placeholder={t("mgmt.restaurant.menuPicker.search")}
 
 
 
@@ -11227,7 +6845,7 @@ const barObjects = useMemo(
 
 
 
-                <div className="text-xs uppercase text-gray-500">Categories</div>
+                <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.menuPicker.categories")}</div>
 
 
 
@@ -11343,34 +6961,61 @@ const barObjects = useMemo(
 
 
 
-                <div className="flex items-center justify-between">
-
-
-
-                  <div className="text-sm text-gray-600">
-
-
-
-                    Click an item to add it to the menu. Items already in the menu are highlighted.
-
-
-
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      className="h-9 rounded-lg border px-2 text-sm bg-white"
+                      value={menuPickerMenuId}
+                      onChange={(e) => {
+                        setMenuPickerMenuId(e.target.value);
+                        setMenuPickerSelectedIds([]);
+                      }}
+                    >
+                      <option value="">{t("mgmt.restaurant.menuPicker.selectMenu")}</option>
+                      {(menus || []).map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={saveMenuPickerSelection} disabled={saving.menuEntries || !menuPickerMenuId}>
+                      Guardar
+                    </Button>
+                    <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
 
-
-
-                  <Button variant="outline" onClick={reloadMenuEntries} disabled={saving.menuEntries}>
-
-
-
-                    Refresh
-
-
-
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className="h-9 rounded-lg border px-2 text-sm bg-white"
+                    value={menuPickerFamily}
+                    onChange={(e) => setMenuPickerFamily(e.target.value)}
+                  >
+                    <option value="">{t("mgmt.restaurant.menuPicker.selectFamily")}</option>
+                    {Array.from(
+                      new Set(
+                        (items || [])
+                          .map((it) => String(it?.subSubFamily || it?.subFamily || it?.family || "General"))
+                          .filter(Boolean)
+                      )
+                    )
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                  </select>
+                  <Button variant="outline" onClick={assignFamilyToMenu} disabled={!menuPickerFamily}>
+                    Asignar familia
                   </Button>
-
-
-
+                  <Button variant="outline" onClick={() => setMenuPickerSelectedIds([])}>
+                    Limpiar seleccion
+                  </Button>
                 </div>
 
 
@@ -11387,7 +7032,7 @@ const barObjects = useMemo(
 
 
 
-                  const inMenu = new Map(menuEntries.map((e) => [e.itemId, e]));
+                  const inMenu = new Map((menuPickerEntries || []).map((e) => [e.itemId, e]));
 
 
 
@@ -11467,6 +7112,10 @@ const barObjects = useMemo(
 
 
 
+                        const isSelected = (menuPickerSelectedIds || []).includes(it.id);
+
+
+
                         const displayPrice = Number(it.price || 0);
 
 
@@ -11483,11 +7132,15 @@ const barObjects = useMemo(
 
 
 
-                            className={`text-left border rounded-xl p-3 hover:shadow-sm transition ${isInMenu ? "bg-emerald-50 border-emerald-200" : "bg-white"}`}
+                            className={`text-left border rounded-xl p-3 hover:shadow-sm transition ${isInMenu ? "bg-emerald-50 border-emerald-200" : isSelected ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
 
 
 
-                            onClick={() => (isInMenu ? undefined : addItemToMenuFromPicker(it.id))}
+                            onClick={() =>
+                              setMenuPickerSelectedIds((prev) =>
+                                (prev || []).includes(it.id) ? (prev || []).filter((x) => x !== it.id) : [...(prev || []), it.id]
+                              )
+                            }
 
 
 
@@ -11495,7 +7148,7 @@ const barObjects = useMemo(
 
 
 
-                            title={isInMenu ? "Already in menu" : "Add to menu"}
+                            title={isInMenu ? t("mgmt.restaurant.menuPicker.inMenu") : isSelected ? t("mgmt.restaurant.menuPicker.selected") : t("mgmt.restaurant.menuPicker.select")}
 
 
 
@@ -11536,65 +7189,17 @@ const barObjects = useMemo(
 
 
                               {isInMenu ? (
-
-
-
-                                <button
-
-
-
-                                  className="h-7 w-7 rounded-lg border bg-white hover:bg-slate-50 flex items-center justify-center text-xs"
-
-
-
-                                  onClick={(e) => {
-
-
-
-                                    e.stopPropagation();
-
-
-
-                                    removeMenuEntry(entry.id);
-
-
-
-                                  }}
-
-
-
-                                  title="Remove from menu"
-
-
-
-                                >
-
-
-
-                                  <XIcon className="h-4 w-4 text-slate-600" />
-
-
-
-                                </button>
-
-
-
-                              ) : (
-
-
-
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-
-
-
-                                  Add
-
-
-
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  En menu
                                 </span>
-
-
-
+                              ) : isSelected ? (
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  Seleccionado
+                                </span>
+                              ) : (
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">
+                                  Seleccionar
+                                </span>
                               )}
 
 
@@ -11619,7 +7224,7 @@ const barObjects = useMemo(
 
 
 
-                      {filtered.length === 0 && <div className="text-sm text-gray-500 col-span-full">No items.</div>}
+                      {filtered.length === 0 && <div className="text-sm text-gray-500 col-span-full">{t("mgmt.restaurant.menuPicker.noItems")}</div>}
 
 
 
@@ -12816,6 +8421,40 @@ const barObjects = useMemo(
         Auto-generate invoice/receipt per local requirements
       </label>
 
+      <Card className="p-4 space-y-3 border border-slate-200">
+        <div className="font-semibold text-sm text-slate-800">Vista previa de impresión</div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={printing?.showPreview !== false}
+            onChange={(e) => setPrinting((p) => ({ ...p, showPreview: e.target.checked }))}
+          />
+          Mostrar vista previa antes de imprimir
+        </label>
+
+        <div className="grid md:grid-cols-3 gap-2 text-sm">
+          {[
+            { id: "comanda", label: "Comanda" },
+            { id: "subtotal", label: "Subtotal" },
+            { id: "invoice", label: "Factura" },
+          ].map((opt) => (
+            <label key={opt.id} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={printing?.previewByType?.[opt.id] !== false}
+                onChange={(e) =>
+                  setPrinting((p) => ({
+                    ...p,
+                    previewByType: { ...(p.previewByType || {}), [opt.id]: e.target.checked },
+                  }))
+                }
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      </Card>
+
       <div className="grid lg:grid-cols-2 gap-4">
         <Card className="p-4 space-y-3 border border-slate-200">
           <div className="font-semibold text-sm text-slate-800">Ticket</div>
@@ -13162,7 +8801,7 @@ const barObjects = useMemo(
 
 
 
-        {showSave && <Button onClick={savePayments}>Guardar</Button>}
+        {showSave && <Button onClick={savePayments}>{t("mgmt.restaurant.menuPicker.save")}</Button>}
 
 
 
@@ -14370,7 +10009,7 @@ const barObjects = useMemo(
 
 
 
-                <th className="px-3 py-2 text-left">Article</th>
+                <th className="px-3 py-2 text-left">{t("mgmt.restaurant.menuItems.column.article")}</th>
 
 
 
@@ -14538,7 +10177,7 @@ const barObjects = useMemo(
 
 
 
-          {TOP_TABS.map((tab) => (
+          {topTabs.map((tab) => (
 
 
 
@@ -14674,7 +10313,7 @@ const barObjects = useMemo(
 
 
 
-          <Button onClick={saveGeneralConfig} className="mt-3">Guardar</Button>
+          <Button onClick={saveGeneralConfig} className="mt-3">{t("mgmt.restaurant.menuPicker.save")}</Button>
 
 
 
@@ -14922,7 +10561,7 @@ const barObjects = useMemo(
 
 
 
-        {NAV_TABS.map((tab) => (
+        {navTabs.map((tab) => (
 
 
 

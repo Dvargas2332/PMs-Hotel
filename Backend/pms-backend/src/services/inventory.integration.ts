@@ -183,6 +183,7 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
       const item = await resolveInventoryItem(db, input.hotelId, supplierName, line);
       const lineUnit = line.unit || item.unit;
       const itemUnit = item.unit;
+      const inventoryControlled = (item as any).inventoryControlled !== false;
 
       if (!lineUnit) {
         throw new Error(`Unidad requerida para ${line.name}`);
@@ -197,27 +198,29 @@ export async function applyInventoryInvoice(input: InventoryInvoiceInput) {
       const qtyInItemUnit = convertQty(line.qty, lineUnit, itemUnit);
       const costPerItemUnit = computeCostPerInventoryUnit(line.cost, line.qty, qtyInItemUnit);
 
-      await db.restaurantInventoryItem.updateMany({
-        where: { id: item.id, hotelId: input.hotelId },
-        data: {
-          stock: { increment: qtyInItemUnit },
-          cost: costPerItemUnit,
-          taxRate: line.taxRate ?? item.taxRate ?? null,
-          supplierName: supplierName || item.supplierName || null,
-        },
-      });
+      if (inventoryControlled) {
+        await db.restaurantInventoryItem.updateMany({
+          where: { id: item.id, hotelId: input.hotelId },
+          data: {
+            stock: { increment: qtyInItemUnit },
+            cost: costPerItemUnit,
+            taxRate: line.taxRate ?? item.taxRate ?? null,
+            supplierName: supplierName || item.supplierName || null,
+          },
+        });
 
-      await db.restaurantInventoryMovement.create({
-        data: {
-          hotelId: input.hotelId,
-          itemId: item.id,
-          qtyDelta: qtyInItemUnit,
-          reason: `Invoice ${input.docNumber || ""}`.trim(),
-          refType: "INVENTORY_INVOICE",
-          refId: invoice.id,
-          createdBy: input.createdBy || null,
-        },
-      });
+        await db.restaurantInventoryMovement.create({
+          data: {
+            hotelId: input.hotelId,
+            itemId: item.id,
+            qtyDelta: qtyInItemUnit,
+            reason: `Invoice ${input.docNumber || ""}`.trim(),
+            refType: "INVENTORY_INVOICE",
+            refId: invoice.id,
+            createdBy: input.createdBy || null,
+          },
+        });
+      }
 
       const lineSubtotal = line.cost * line.qty;
       const lineTax = line.taxRate ? lineSubtotal * (Number(line.taxRate) / 100) : 0;

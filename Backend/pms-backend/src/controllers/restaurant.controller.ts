@@ -2637,7 +2637,9 @@ export async function closeOrder(req: Request, res: Response) {
       if (itemIds.length) {
         const recipes = await tx.restaurantRecipeLine.findMany({
           where: { hotelId, restaurantItemId: { in: itemIds } },
-          include: { inventoryItem: { select: { id: true, unit: true, sku: true, desc: true, stock: true } } },
+          include: {
+            inventoryItem: { select: { id: true, unit: true, sku: true, desc: true, stock: true, inventoryControlled: true } },
+          },
         });
         const byItem = new Map<string, typeof recipes>();
         for (const r of recipes) {
@@ -2653,6 +2655,7 @@ export async function closeOrder(req: Request, res: Response) {
           const lines = byItem.get(String(oi.itemId)) || [];
           for (const line of lines) {
             const inv = line.inventoryItem;
+            if (inv?.inventoryControlled === false) continue;
             const consumption = Number(line.qty) * soldQty;
             if (!Number.isFinite(consumption) || consumption <= 0) continue;
 
@@ -2736,7 +2739,7 @@ export async function listInventory(req: Request, res: Response) {
       desc: i.desc,
       unidad: i.unit,
       unit: i.unit,
-      stock: Number(i.stock || 0),
+      stock: i.inventoryControlled ? Number(i.stock || 0) : 0,
       minimo: Number(i.min || 0),
       min: Number(i.min || 0),
       costo: Number(i.cost || 0),
@@ -2745,6 +2748,7 @@ export async function listInventory(req: Request, res: Response) {
       proveedor: i.supplierName || null,
       supplierName: i.supplierName || null,
       active: i.active !== false,
+      inventoryControlled: i.inventoryControlled !== false,
     }))
   );
 }
@@ -2764,6 +2768,7 @@ export async function createInventoryItem(req: Request, res: Response) {
   const taxRate = Number.isFinite(Number(taxRateRaw)) ? Number(taxRateRaw) : null;
   const supplierName = String(req.body?.supplierName || req.body?.proveedor || "").trim() || null;
   const active = req.body?.active !== false;
+  const inventoryControlled = req.body?.inventoryControlled !== false;
 
   if (!desc) return res.status(400).json({ message: "desc requerido" });
   if (!unit) return res.status(400).json({ message: "unidad requerida" });
@@ -2785,6 +2790,7 @@ export async function createInventoryItem(req: Request, res: Response) {
       taxRate,
       supplierName,
       active,
+      inventoryControlled,
     },
   });
 
@@ -3849,12 +3855,43 @@ export async function updateKdsItem(req: Request, res: Response) {
   res.json({ ok: true, item: updated });
 }
 
+export async function updateInventoryItem(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const id = String((req.params as any)?.id || "");
+  if (!id) return res.status(400).json({ message: "id requerido" });
+
+  const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
+  const inventoryControlled =
+    typeof body.inventoryControlled === "boolean" ? body.inventoryControlled : undefined;
+
+  if (inventoryControlled === undefined) {
+    return res.status(400).json({ message: "inventoryControlled requerido" });
+  }
+
+  const updated = await prisma.restaurantInventoryItem.updateMany({
+    where: { id, hotelId: user.hotelId },
+    data: {
+      inventoryControlled,
+    },
+  });
+
+  if (!updated.count) return res.status(404).json({ message: "Inventario no encontrado" });
+  return res.json({ ok: true, inventoryControlled });
+}
+
 const toStaffPayload = (staff: any) => ({
   id: staff.id,
   name: staff.name,
   username: staff.username,
   role: staff.role,
   accessRoleId: staff.accessRoleId || "",
+  accessRoleName: staff.accessRole?.name || "",
+  launcherId: staff.launcherId || "",
+  launcherName: staff.launcher?.name || "",
+  launcherUserId: staff.launcher?.userId || staff.launcher?.username || "",
   active: staff.active !== false,
   createdAt: staff.createdAt,
   updatedAt: staff.updatedAt,
@@ -3868,16 +3905,28 @@ export async function listRestaurantStaff(req: Request, res: Response) {
 
   const staff = await prisma.restaurantStaff.findMany({
     where: { hotelId: user.hotelId },
+    include: {
+      launcher: { select: { id: true, username: true, name: true, roleId: true } },
+      accessRole: { select: { id: true, name: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
   res.json(staff.map(toStaffPayload));
 }
 
 export async function listRestaurantStaffRoles(_req: Request, res: Response) {
-  res.json(Object.values<RestaurantStaffRole>({
-    CASHIER: "CASHIER",
-    WAITER: "WAITER",
-  } as Record<string, RestaurantStaffRole>));
+  // Return management-created access roles for assignment.
+  // @ts-ignore
+  const user = _req.user as AuthUser | undefined;
+  if (!user) return res.status(401).json({ message: "No autenticado" });
+  if (!user.hotelId) return res.status(400).json({ message: "Hotel no definido" });
+
+  const roles = await prisma.appRole.findMany({
+    where: { hotelId: user.hotelId },
+    select: { id: true, name: true, description: true },
+    orderBy: { name: "asc" },
+  });
+  res.json(roles);
 }
 
 export async function createRestaurantStaff(req: Request, res: Response) {
@@ -3891,6 +3940,7 @@ export async function createRestaurantStaff(req: Request, res: Response) {
   const password = String(req.body?.password || "").trim();
   const role = String(req.body?.role || "WAITER").trim().toUpperCase() as RestaurantStaffRole;
   const accessRoleId = String(req.body?.accessRoleId || "").trim() || null;
+  const launcherId = String(req.body?.launcherId || "").trim() || null;
   const active = req.body?.active !== false;
 
   if (!name || !username || !password) {
@@ -3904,15 +3954,35 @@ export async function createRestaurantStaff(req: Request, res: Response) {
   if (exists) return res.status(409).json({ message: "El usuario ya existe." });
 
   const passwordHash = await bcrypt.hash(password, ROUNDS);
-  const staff = await prisma.restaurantStaff.create({
+  let resolvedAccessRoleId = accessRoleId;
+  let resolvedLauncherId = launcherId;
+  if (launcherId) {
+    const launcher = await prisma.launcherAccount.findFirst({
+      where: { id: launcherId, hotelId: user.hotelId },
+      select: { id: true, roleId: true },
+    });
+    if (!launcher) return res.status(404).json({ message: "Perfil de launcher no encontrado" });
+    resolvedLauncherId = launcher.id;
+    if (!resolvedAccessRoleId) resolvedAccessRoleId = launcher.roleId || null;
+  }
+
+  const created = await prisma.restaurantStaff.create({
     data: {
       hotelId: user.hotelId,
       name,
       username,
       role,
-      accessRoleId,
+      accessRoleId: resolvedAccessRoleId,
+      launcherId: resolvedLauncherId,
       active,
       passwordHash,
+    },
+  });
+  const staff = await prisma.restaurantStaff.findFirst({
+    where: { id: created.id, hotelId: user.hotelId },
+    include: {
+      launcher: { select: { id: true, username: true, name: true, roleId: true } },
+      accessRole: { select: { id: true, name: true } },
     },
   });
   res.json(toStaffPayload(staff));
@@ -3932,12 +4002,33 @@ export async function updateRestaurantStaff(req: Request, res: Response) {
   if (req.body?.username != null) data.username = String(req.body.username || "").trim();
   if (req.body?.role != null) data.role = String(req.body.role || "WAITER").trim().toUpperCase();
   if (req.body?.accessRoleId !== undefined) data.accessRoleId = String(req.body.accessRoleId || "").trim() || null;
+  if (req.body?.launcherId !== undefined) {
+    const launcherId = String(req.body.launcherId || "").trim() || null;
+    if (launcherId) {
+      const launcher = await prisma.launcherAccount.findFirst({
+        where: { id: launcherId, hotelId: user.hotelId },
+        select: { id: true, roleId: true },
+      });
+      if (!launcher) return res.status(404).json({ message: "Perfil de launcher no encontrado" });
+      data.launcherId = launcher.id;
+      if (!data.accessRoleId) data.accessRoleId = launcher.roleId || null;
+    } else {
+      data.launcherId = null;
+    }
+  }
   if (req.body?.active !== undefined) data.active = req.body.active !== false;
   if (req.body?.password) data.passwordHash = await bcrypt.hash(String(req.body.password).trim(), ROUNDS);
 
-  const staff = await prisma.restaurantStaff.update({
+  await prisma.restaurantStaff.update({
     where: { id, hotelId: user.hotelId },
     data,
+  });
+  const staff = await prisma.restaurantStaff.findFirst({
+    where: { id, hotelId: user.hotelId },
+    include: {
+      launcher: { select: { id: true, username: true, name: true, roleId: true } },
+      accessRole: { select: { id: true, name: true } },
+    },
   });
   res.json(toStaffPayload(staff));
 }

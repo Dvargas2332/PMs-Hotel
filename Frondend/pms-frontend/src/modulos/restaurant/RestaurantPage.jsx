@@ -465,6 +465,10 @@ const [subCategory, setSubCategory] = useState("");
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
     return role === "ADMIN" || perms.includes("restaurant.shift.closeZ") || perms.includes("restaurant.shift.close");
   }, [role, user?.permissions]);
+  const canEditItemPrice = useMemo(() => {
+    const perms = Array.isArray(user?.permissions) ? user.permissions : [];
+    return role === "ADMIN" || perms.includes("restaurant.orders.edit_price");
+  }, [role, user?.permissions]);
   const canMoveOrders = useMemo(() => {
     if (role === "ADMIN") return true;
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
@@ -2452,6 +2456,18 @@ const subCategories = useMemo(() => {
     updateOrderForTable(selectedTable.id, (cur) => {
       const items = (cur.items || []).map((i) =>
         getOrderItemKey(i) === itemKey ? { ...i, discountId: id, discountPercent: percent } : i
+      );
+      return { ...cur, items };
+    });
+  };
+  const handleItemPriceChange = (itemKey, value) => {
+    if (!selectedTable?.id) return;
+    if (!canEditItemPrice) return;
+    const nextPrice = parseMoneyInput(value);
+    if (!Number.isFinite(nextPrice)) return;
+    updateOrderForTable(selectedTable.id, (cur) => {
+      const items = (cur.items || []).map((i) =>
+        getOrderItemKey(i) === itemKey ? { ...i, price: nextPrice } : i
       );
       return { ...cur, items };
     });
@@ -4650,7 +4666,23 @@ const subCategories = useMemo(() => {
                         <div className="flex justify-between items-center gap-2">
                           <div>
                             <div className="font-semibold text-lime-900">{item.name}</div>
-                            <div className="text-xs text-lime-600">{formatMoney(item.price)} c/u</div>
+                            <div className="text-xs text-lime-600">
+                              {canEditItemPrice && !isComandada ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] text-lime-500">Precio</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    className="h-7 w-24 rounded-md border border-lime-200 bg-white px-2 text-right text-xs text-lime-900 focus:outline-none focus:ring-2 focus:ring-lime-300"
+                                    value={Number.isFinite(Number(item.price)) ? Number(item.price) : ""}
+                                    onChange={(e) => handleItemPriceChange(getOrderItemKey(item), e.target.value)}
+                                  />
+                                </div>
+                              ) : (
+                                <span>{formatMoney(item.price)} c/u</span>
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <button
@@ -4672,27 +4704,6 @@ const subCategories = useMemo(() => {
                         <div className="flex items-center justify-between mt-2 text-sm">
                           <div className="text-lime-700">{formatMoney(item.price * item.qty)}</div>
                           <div className="flex items-center gap-2">
-                            {orderTabs.length > 1 && (
-                              <select
-                                className="h-7 rounded border border-slate-200 bg-white px-2 text-[11px]"
-                                defaultValue=""
-                                onChange={(e) => {
-                                  const target = e.target.value;
-                                  if (target) moveItemToOrder(item, target);
-                                  e.currentTarget.value = "";
-                                }}
-                              >
-                                <option value="">Mover a...</option>
-                                {orderTabs
-                                  .filter((tab) => tab.key !== activeOrderKey)
-                                  .map((tab) => (
-                                    <option key={tab.key} value={tab.key}>
-                                      {tab.label}
-                                    </option>
-                                  ))}
-                                <option value="__new__">Nueva orden</option>
-                              </select>
-                            )}
                             <button
                               className="text-xs text-red-600 hover:underline disabled:opacity-50"
                               onClick={() => removeItem(getOrderItemKey(item))}
