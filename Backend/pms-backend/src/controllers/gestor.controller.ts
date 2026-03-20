@@ -2,11 +2,12 @@
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import ExcelJS from "exceljs";
 import prisma from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import { allowedModulesForMembership, isMembershipTier, normalizeMembershipTier } from "../config/membership.js";
-import { nextHotelSequence } from "../lib/sequences.js";
+import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { DEFAULT_PRINT_FORMS, normalizeGlobalPrintForms } from "../lib/printForms.js";
 import { processFormInfo, type FormPayload } from "./forminfo.controller.js";
 
@@ -15,6 +16,24 @@ const DEFAULT_USER_PASSWORD_LEN = 10;
 
 function normalizeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function normalizeHeader(value: unknown) {
+  return String(value ?? "")
+    .replace(/^\uFEFF/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function pickFirst(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const v = normalizeText(row[key]);
+    if (v) return v;
+  }
+  return "";
 }
 
 function buildMembershipPermissions(membership: string) {
@@ -50,6 +69,10 @@ async function buildUniqueHotelUserEmail(base: string) {
 function parseCsv(content: string) {
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return [];
+  const firstLine = lines[0] || "";
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const delimiter = semicolonCount > commaCount ? ";" : ",";
 
   const parseLine = (line: string) => {
     const out: string[] = [];
@@ -64,7 +87,7 @@ function parseCsv(content: string) {
         } else {
           inQuotes = !inQuotes;
         }
-      } else if (ch === "," && !inQuotes) {
+      } else if (ch === delimiter && !inQuotes) {
         out.push(cur);
         cur = "";
       } else {
@@ -75,12 +98,14 @@ function parseCsv(content: string) {
     return out.map((v) => v.trim());
   };
 
-  const headers = parseLine(lines[0]).map((h) => h.toLowerCase());
+  const headers = parseLine(lines[0]).map((h) => normalizeHeader(h));
   const rows = [];
   for (let i = 1; i < lines.length; i += 1) {
     const values = parseLine(lines[i]);
+    if (!values.some((v) => normalizeText(v))) continue;
     const row: any = {};
     headers.forEach((h, idx) => {
+      if (!h) return;
       row[h] = values[idx] ?? "";
     });
     rows.push(row);
@@ -118,12 +143,146 @@ function normalizeSmtpPayload(body: any, existing: any) {
   return next;
 }
 
-function readUploadCsv(req: Request) {
+async function parseXlsx(buffer: Buffer) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as any);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+
+  let headers: string[] = [];
+  const rows: any[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row, rowIndex) => {
+    const values = Array.isArray(row.values) ? (row.values as any[]).slice(1) : [];
+    if (rowIndex === 1) {
+      headers = values.map((v) => normalizeHeader(v));
+      return;
+    }
+    if (!headers.length) return;
+    if (!values.some((v) => normalizeText(v))) return;
+
+    const out: any = {};
+    headers.forEach((h, idx) => {
+      if (!h) return;
+      const cell = values[idx];
+      out[h] = cell == null ? "" : normalizeText(cell);
+    });
+    rows.push(out);
+  });
+  return rows;
+}
+
+async function readUploadRows(req: Request) {
   // @ts-ignore
-  const file = req.file as { buffer?: Buffer } | undefined;
+  const file = req.file as { buffer?: Buffer; originalname?: string; mimetype?: string } | undefined;
   if (!file?.buffer) return [];
+  const fileName = normalizeText(file.originalname).toLowerCase();
+  const mime = normalizeText(file.mimetype).toLowerCase();
+  const isExcel = fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || mime.includes("spreadsheet") || mime.includes("excel");
+  if (isExcel) {
+    try {
+      return await parseXlsx(file.buffer);
+    } catch {
+      // Fallback to CSV parsing when the binary is not a valid XLSX.
+    }
+  }
   const content = file.buffer.toString("utf8");
   return parseCsv(content);
+}
+
+async function ensureFamilyCode(hotelId: string, familyId: string) {
+  const existing = await prisma.restaurantFamily.findFirst({
+    where: { id: familyId, hotelId },
+    select: { id: true, code: true },
+  });
+  if (!existing) throw new Error("Familia no encontrada");
+  if (existing.code) return existing.code;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const seq = await nextHotelSequence(hotelId, "restaurant_family_code");
+    const code = padNumber(seq, 3);
+    try {
+      const written = await prisma.restaurantFamily.updateMany({
+        where: { id: existing.id, hotelId, code: null },
+        data: { code },
+      });
+      if (written.count === 0) {
+        const fresh = await prisma.restaurantFamily.findFirst({ where: { id: existing.id, hotelId }, select: { code: true } });
+        if (fresh?.code) return fresh.code;
+      } else {
+        return code;
+      }
+    } catch (err: any) {
+      if (err?.code === "P2002") continue;
+      throw err;
+    }
+  }
+  throw new Error("No se pudo asignar el codigo de familia");
+}
+
+async function ensureSubFamilyCode(hotelId: string, subFamilyId: string) {
+  const existing = await prisma.restaurantSubFamily.findFirst({
+    where: { id: subFamilyId, hotelId },
+    select: { id: true, familyId: true, code: true },
+  });
+  if (!existing) throw new Error("Subfamilia no encontrada");
+  if (existing.code) return existing.code;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const seq = await nextHotelSequence(hotelId, `restaurant_subfamily_code:${existing.familyId}`);
+    const code = padNumber(seq, 2);
+    try {
+      const written = await prisma.restaurantSubFamily.updateMany({
+        where: { id: existing.id, hotelId, code: null },
+        data: { code },
+      });
+      if (written.count === 0) {
+        const fresh = await prisma.restaurantSubFamily.findFirst({ where: { id: existing.id, hotelId }, select: { code: true } });
+        if (fresh?.code) return fresh.code;
+      } else {
+        return code;
+      }
+    } catch (err: any) {
+      if (err?.code === "P2002") continue;
+      throw err;
+    }
+  }
+  throw new Error("No se pudo asignar el codigo de subfamilia");
+}
+
+async function ensureSubSubFamilyCode(hotelId: string, subSubFamilyId: string) {
+  const existing = await prisma.restaurantSubSubFamily.findFirst({
+    where: { id: subSubFamilyId, hotelId },
+    select: { id: true, subFamilyId: true, code: true },
+  });
+  if (!existing) throw new Error("SubSubfamilia no encontrada");
+  if (existing.code) return existing.code;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const seq = await nextHotelSequence(hotelId, `restaurant_subsubfamily_code:${existing.subFamilyId}`);
+    const code = padNumber(seq, 2);
+    try {
+      const written = await prisma.restaurantSubSubFamily.updateMany({
+        where: { id: existing.id, hotelId, code: null },
+        data: { code },
+      });
+      if (written.count === 0) {
+        const fresh = await prisma.restaurantSubSubFamily.findFirst({ where: { id: existing.id, hotelId }, select: { code: true } });
+        if (fresh?.code) return fresh.code;
+      } else {
+        return code;
+      }
+    } catch (err: any) {
+      if (err?.code === "P2002") continue;
+      throw err;
+    }
+  }
+  throw new Error("No se pudo asignar el codigo de subsubfamilia");
+}
+
+function buildItemPrefix(familyCode: string, subFamilyCode?: string | null, subSubFamilyCode?: string | null) {
+  return [familyCode, subFamilyCode || null, subSubFamilyCode || null].filter(Boolean).join(".");
+}
+
+async function nextRestaurantItemCode(hotelId: string, prefix: string) {
+  const seq = await nextHotelSequence(hotelId, `restaurant_item_code:${prefix}`);
+  return `${prefix}-${padNumber(seq, 4)}`;
 }
 
 export async function listClients(_req: Request, res: Response) {
@@ -646,7 +805,7 @@ export async function deleteHotelBilling(req: Request, res: Response) {
 export async function importRooms(req: Request, res: Response) {
   const hotelId = normalizeText(req.params.id);
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
-  const rows = readUploadCsv(req);
+  const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
@@ -685,7 +844,7 @@ export async function importRooms(req: Request, res: Response) {
 export async function importGuests(req: Request, res: Response) {
   const hotelId = normalizeText(req.params.id);
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
-  const rows = readUploadCsv(req);
+  const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
@@ -717,7 +876,7 @@ export async function importGuests(req: Request, res: Response) {
 export async function importReservations(req: Request, res: Response) {
   const hotelId = normalizeText(req.params.id);
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
-  const rows = readUploadCsv(req);
+  const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
@@ -772,63 +931,251 @@ export async function importReservations(req: Request, res: Response) {
 export async function importRestaurantItems(req: Request, res: Response) {
   const hotelId = normalizeText(req.params.id);
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
-  const rows = readUploadCsv(req);
-  if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
+  const rows = await readUploadRows(req);
+  if (!rows.length) return res.status(400).json({ message: "Archivo vacio" });
 
   let created = 0;
   let updated = 0;
-  for (const row of rows) {
-    const name = normalizeText(row.name || row.nombre);
-    const code = normalizeText(row.code || row.codigo || name);
-    const familyName = normalizeText(row.family || row.familia || "General");
-    if (!name) continue;
+  let skipped = 0;
+  const errors: Array<{ row: number; message: string }> = [];
+  const hasOwn = (obj: any, key: string) => Object.prototype.hasOwnProperty.call(obj, key);
+  const addError = (rowIdx: number, message: string) => {
+    skipped += 1;
+    if (errors.length < 50) errors.push({ row: rowIdx + 2, message });
+  };
 
-    let family = await prisma.restaurantFamily.findFirst({ where: { hotelId, name: familyName } });
-    if (!family) {
-      family = await prisma.restaurantFamily.create({
-        data: {
-          hotelId,
-          name: familyName,
-          code: null,
-        },
-      });
-    }
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] as any;
+    try {
+      const name = pickFirst(row, [
+        "name",
+        "nombre",
+        "item",
+        "item_name",
+        "itemname",
+        "nombre_item",
+        "nombre_articulo",
+        "articulo",
+        "producto",
+        "descripcion",
+        "description",
+        "descripcion_articulo",
+      ]);
+      if (!name) {
+        addError(idx, "Nombre requerido");
+        continue;
+      }
 
-    const existing = await prisma.restaurantItem.findFirst({ where: { hotelId, code } });
-    const price = Number(row.price || row.precio || 0);
+      const familyName =
+        pickFirst(row, ["family", "familia", "family_name", "familyname", "categoria", "category", "grupo", "group"]) ||
+        "General";
+      const subFamilyName = pickFirst(row, [
+        "subfamily",
+        "subfamilia",
+        "sub_family",
+        "sub_family_name",
+        "subfamily_name",
+        "subfamilia_name",
+        "subfamilia_nombre",
+        "subcategory",
+        "subcategoria",
+        "sub_group",
+      ]);
+      const subSubFamilyName = pickFirst(row, [
+        "subsubfamily",
+        "subsubfamilia",
+        "sub_subfamily",
+        "sub_sub_family",
+        "sub_subfamily_name",
+        "subsubfamily_name",
+        "subsubfamilia_name",
+        "sub_subfamilia",
+        "sub_subcategoria",
+      ]);
 
-    if (existing) {
-      await prisma.restaurantItem.update({
-        where: { id: existing.id },
-        data: {
+      const cabys = pickFirst(row, [
+        "cabys",
+        "cabyscode",
+        "cabys_code",
+        "codigo_cabys",
+        "cabys_codigo",
+        "codigo_cabys_familia",
+        "cabys_familia",
+      ]);
+      const hasBarcodeColumn = [
+        "barcode",
+        "codigo",
+        "codigo_barra",
+        "codigo_barras",
+        "codigo_de_barras",
+        "codigo_barra_opcional",
+        "barcode2",
+        "barcode_optional",
+        "code2",
+        "codigo2",
+        "barras",
+      ].some((k) => hasOwn(row, k));
+      const barcodeRaw = pickFirst(row, [
+        "barcode",
+        "codigo",
+        "codigo_barra",
+        "codigo_barras",
+        "codigo_de_barras",
+        "codigo_barra_opcional",
+        "barcode2",
+        "barcode_optional",
+        "code2",
+        "codigo2",
+        "barras",
+      ]);
+      const barcode = barcodeRaw ? barcodeRaw : null;
+
+      const internalCode = pickFirst(row, [
+        "item_code",
+        "itemcode",
+        "item_id",
+        "itemid",
+        "internal_code",
+        "code_internal",
+        "codigo_interno",
+        "code",
+        "codigo",
+        "sku",
+      ]);
+
+      const price = Number(pickFirst(row, ["price", "precio", "pvp", "unit_price", "sale_price", "precio_venta"]) || 0);
+
+      let family = await prisma.restaurantFamily.findFirst({ where: { hotelId, name: familyName } });
+      if (!family) {
+        if (!cabys) {
+          addError(idx, "CABYS requerido para crear la familia");
+          continue;
+        }
+        family = await prisma.restaurantFamily.create({
+          data: {
+            hotelId,
+            name: familyName,
+            code: null,
+            cabys,
+          },
+        });
+      } else if (cabys && !family.cabys) {
+        family = await prisma.restaurantFamily.update({
+          where: { id: family.id },
+          data: { cabys },
+        });
+      }
+
+      if (!family?.cabys) {
+        addError(idx, "CABYS requerido para la familia");
+        continue;
+      }
+
+      let subFamily: any = null;
+      if (subFamilyName) {
+        subFamily = await prisma.restaurantSubFamily.findFirst({
+          where: { hotelId, familyId: family.id, name: subFamilyName },
+        });
+        if (!subFamily) {
+          subFamily = await prisma.restaurantSubFamily.create({
+            data: { hotelId, familyId: family.id, name: subFamilyName, code: null },
+          });
+        }
+      }
+
+      let subSubFamily: any = null;
+      if (subSubFamilyName) {
+        if (!subFamily) {
+          addError(idx, "Subfamilia requerida para subsubfamilia");
+          continue;
+        }
+        subSubFamily = await prisma.restaurantSubSubFamily.findFirst({
+          where: { hotelId, subFamilyId: subFamily.id, name: subSubFamilyName },
+        });
+        if (!subSubFamily) {
+          subSubFamily = await prisma.restaurantSubSubFamily.create({
+            data: { hotelId, subFamilyId: subFamily.id, name: subSubFamilyName, code: null },
+          });
+        }
+      }
+
+      let existing: any = null;
+      if (internalCode) {
+        existing = await prisma.restaurantItem.findFirst({ where: { hotelId, code: internalCode } });
+      }
+      if (!existing && barcode) {
+        existing = await prisma.restaurantItem.findFirst({ where: { hotelId, barcode } });
+      }
+      if (!existing) {
+        existing = await prisma.restaurantItem.findFirst({
+          where: {
+            hotelId,
+            name,
+            familyId: family.id,
+            subFamilyId: subFamily?.id || null,
+            subSubFamilyId: subSubFamily?.id || null,
+          },
+        });
+      }
+
+      if (existing) {
+        const data: any = {
           name,
           price,
           familyId: family.id,
-        },
-      });
-      updated += 1;
-    } else {
-      const number = await nextHotelSequence(hotelId, "restaurant_item");
-      await prisma.restaurantItem.create({
-        data: {
-          hotelId,
-          number,
-          code,
-          name,
-          price,
-          familyId: family.id,
-        },
-      });
-      created += 1;
+          subFamilyId: subFamily?.id || null,
+          subSubFamilyId: subSubFamily?.id || null,
+          cabys: family.cabys,
+        };
+        if (hasBarcodeColumn) data.barcode = barcode;
+        if (internalCode && internalCode !== existing.code) data.code = internalCode;
+
+        await prisma.restaurantItem.updateMany({
+          where: { id: existing.id, hotelId },
+          data,
+        });
+        updated += 1;
+      } else {
+        const number = await nextHotelSequence(hotelId, "restaurant_item");
+        let code = internalCode;
+        if (!code) {
+          const familyCode = family.code || (await ensureFamilyCode(hotelId, family.id));
+          const subFamilyCode = subFamily?.id ? subFamily.code || (await ensureSubFamilyCode(hotelId, subFamily.id)) : null;
+          const subSubFamilyCode = subSubFamily?.id
+            ? subSubFamily.code || (await ensureSubSubFamilyCode(hotelId, subSubFamily.id))
+            : null;
+          const prefix = buildItemPrefix(familyCode, subFamilyCode, subSubFamilyCode);
+          code = await nextRestaurantItemCode(hotelId, prefix);
+        }
+
+        await prisma.restaurantItem.create({
+          data: {
+            hotelId,
+            number,
+            code,
+            barcode: barcode || null,
+            name,
+            price,
+            familyId: family.id,
+            subFamilyId: subFamily?.id || null,
+            subSubFamilyId: subSubFamily?.id || null,
+            cabys: family.cabys,
+          },
+        });
+        created += 1;
+      }
+    } catch (err: any) {
+      const msg = err?.message ? String(err.message) : "Error inesperado";
+      addError(idx, msg);
     }
   }
-  res.json({ created, updated });
+  res.json({ created, updated, skipped, errors });
 }
 
 export async function importInventoryItems(req: Request, res: Response) {
   const hotelId = normalizeText(req.params.id);
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
-  const rows = readUploadCsv(req);
+  const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;

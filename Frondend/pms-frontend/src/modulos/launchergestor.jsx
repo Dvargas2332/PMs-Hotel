@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Building2, LogOut, RefreshCcw, Moon, Sun, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -13,20 +13,20 @@ const MEMBERSHIPS = ["HBASIC", "RBASIC", "STANDARD", "PRO", "PLATINUM"];
 const MEMBERSHIP_LABELS = {
   HBASIC: "Hotel Basico",
   RBASIC: "Restaurante Basico",
-  STANDARD: "Estándar",
+  STANDARD: "EstÃ¡ndar",
   PRO: "Pro",
   PLATINUM: "Platino",
 };
 
 const CURRENCIES = [
-  { code: "USD", label: "USD — Dólar estadounidense" },
-  { code: "EUR", label: "EUR — Euro" },
-  { code: "CRC", label: "CRC — Colón costarricense" },
-  { code: "JPY", label: "JPY — Yen japonés" },
-  { code: "CAD", label: "CAD — Dólar canadiense" },
-  { code: "GBP", label: "GBP — Libra esterlina" },
-  { code: "MXN", label: "MXN — Peso mexicano" },
-  { code: "BRL", label: "BRL — Real brasileño" },
+  { code: "USD", label: "USD â€” DÃ³lar estadounidense" },
+  { code: "EUR", label: "EUR â€” Euro" },
+  { code: "CRC", label: "CRC â€” ColÃ³n costarricense" },
+  { code: "JPY", label: "JPY â€” Yen japonÃ©s" },
+  { code: "CAD", label: "CAD â€” DÃ³lar canadiense" },
+  { code: "GBP", label: "GBP â€” Libra esterlina" },
+  { code: "MXN", label: "MXN â€” Peso mexicano" },
+  { code: "BRL", label: "BRL â€” Real brasileÃ±o" },
 ];
 
 const PRINT_FORM_MODULES = [
@@ -293,7 +293,7 @@ export default function Launchergestor() {
         pass: "",
       }));
     } catch (err) {
-      setSmtpStatus("No se pudo cargar la configuración SMTP.");
+      setSmtpStatus("No se pudo cargar la configuraciÃ³n SMTP.");
     } finally {
       setSmtpLoading(false);
     }
@@ -322,7 +322,6 @@ export default function Launchergestor() {
         return acc;
       }, {});
       const nextModules = { ...fallbackModules, ...(globalConfig.modules || {}) };
-
       setPrintForms(list);
       setGlobalFormIds(globalConfig.formIds);
       setGlobalModules(nextModules);
@@ -388,9 +387,9 @@ export default function Launchergestor() {
         ...smtp,
         pass: "",
       }));
-      setSmtpStatus("Configuración guardada.");
+      setSmtpStatus("ConfiguraciÃ³n guardada.");
     } catch (err) {
-      setSmtpStatus("No se pudo guardar la configuración SMTP.");
+      setSmtpStatus("No se pudo guardar la configuraciÃ³n SMTP.");
     } finally {
       setSmtpSaving(false);
     }
@@ -443,6 +442,51 @@ export default function Launchergestor() {
     if (!Array.isArray(printForms) || printForms.length === 0) return null;
     return printForms.find((f) => f.id === selectedPrintFormId) || printForms[0] || null;
   }, [printForms, selectedPrintFormId]);
+
+  const renderPrintFormItems = () => {
+    if (!Array.isArray(printForms) || printForms.length === 0) {
+      return <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>;
+    }
+    return (printForms || []).map((f) => {
+      const id = String(f.id || "");
+      const isSelected = id === selectedPrintFormId;
+      const isGlobal = globalFormIds.includes(id);
+      return (
+        <div
+          key={id}
+          className={`rounded-lg border p-2 flex items-center justify-between gap-2 ${
+            isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
+          }`}
+        >
+          <button
+            type="button"
+            className="text-left flex-1"
+            onClick={() => setSelectedPrintFormId(id)}
+          >
+            <div className="text-sm font-semibold text-slate-900">{f.name || id}</div>
+            <div className="text-[11px] text-slate-500">
+              {String(f.module || "").toUpperCase()} - {String(f.docType || "").toUpperCase()} - {f.paperType}
+            </div>
+          </button>
+          <label className="text-[11px] text-slate-600 flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={isGlobal}
+              disabled={printFormsSaving}
+              onChange={() => {
+                const nextIds = isGlobal
+                  ? globalFormIds.filter((x) => x !== id)
+                  : [...globalFormIds, id];
+                setGlobalFormIds(nextIds);
+                saveGlobalForms(nextIds, globalModules);
+              }}
+            />
+            Global
+          </label>
+        </div>
+      );
+    });
+  };
 
   const loadClients = useCallback(async () => {
     setLoadingClients(true);
@@ -616,7 +660,7 @@ export default function Launchergestor() {
 
     const membershipMonthlyFee = Number(createForm.membershipMonthlyFee || 0);
     if (!Number.isFinite(membershipMonthlyFee) || membershipMonthlyFee < 0) {
-      return alert("Costo mensual inválido.");
+      return alert("Costo mensual invÃ¡lido.");
     }
 
     const payload = {
@@ -672,8 +716,8 @@ export default function Launchergestor() {
 
     if (!name) return alert("Nombre del administrador requerido");
     if (!email) return alert("Email del administrador requerido");
-    if (password && password.length < 4) return alert("Contraseña inválida (min 4)");
-    if (password && password !== confirm) return alert("Las contraseñas no coinciden");
+    if (password && password.length < 4) return alert("ContraseÃ±a invÃ¡lida (min 4)");
+    if (password && password !== confirm) return alert("Las contraseÃ±as no coinciden");
 
     const payload = { name, email };
     if (password) payload.password = password;
@@ -692,7 +736,7 @@ export default function Launchergestor() {
 
   const onDeleteClient = async (clientId) => {
     if (!clientId || deletingClientId) return;
-    if (!window.confirm("¿Eliminar este cliente? Esta acción no se puede deshacer.")) return;
+    if (!window.confirm("Â¿Eliminar este cliente? Esta acciÃ³n no se puede deshacer.")) return;
     setDeletingClientId(clientId);
     try {
       await api.delete(`/gestor/clients/${encodeURIComponent(clientId)}`);
@@ -708,7 +752,7 @@ export default function Launchergestor() {
 
   const onDeleteHotel = async (hotelId) => {
     if (!hotelId || deletingHotelId) return;
-    if (!window.confirm("¿Eliminar este hotel? Esta acción no se puede deshacer.")) return;
+    if (!window.confirm("Â¿Eliminar este hotel? Esta acciÃ³n no se puede deshacer.")) return;
     setDeletingHotelId(hotelId);
     try {
       await api.delete(`/gestor/hotels/${encodeURIComponent(hotelId)}`);
@@ -727,7 +771,7 @@ export default function Launchergestor() {
     if (!month) return alert("Selecciona el mes (YYYY-MM).");
 
     const amount = Number(billingForm.amount || 0);
-    if (!Number.isFinite(amount) || amount < 0) return alert("Monto inválido.");
+    if (!Number.isFinite(amount) || amount < 0) return alert("Monto invÃ¡lido.");
 
     setBillingSaving(true);
     try {
@@ -779,7 +823,7 @@ export default function Launchergestor() {
   };
   const onDeleteBilling = async (paymentId) => {
     if (!selectedHotelId || !paymentId) return;
-    if (!window.confirm("¿Eliminar este cobro?")) return;
+    if (!window.confirm("Â¿Eliminar este cobro?")) return;
     try {
       await api.delete(
         `/gestor/hotels/${encodeURIComponent(selectedHotelId)}/billing/${encodeURIComponent(paymentId)}`
@@ -806,7 +850,7 @@ export default function Launchergestor() {
     const membershipMonthlyFee = Number(hotelEditForm.membershipMonthlyFee || 0);
     if (!hotelEditForm.name.trim()) return alert("Nombre del hotel requerido");
     if (!Number.isFinite(membershipMonthlyFee) || membershipMonthlyFee < 0) {
-      return alert("Costo mensual inválido.");
+      return alert("Costo mensual invÃ¡lido.");
     }
 
     const payload = {
@@ -852,17 +896,34 @@ const importEndpoints = useMemo(
     if (!file) return alert("Selecciona un archivo (.csv o .xlsx).");
 
     const endpointFn = importEndpoints[key];
-    if (!endpointFn) return alert("Importación no soportada.");
+    if (!endpointFn) return alert("ImportaciÃ³n no soportada.");
 
     if (importing[key]) return;
     setImporting((p) => ({ ...p, [key]: true }));
     try {
       const form = new FormData();
       form.append("file", file);
-      const { data } = await api.post(endpointFn(selectedHotelId), form);
+      const { data } = await api.post(endpointFn(selectedHotelId), form, {
+        timeout: 120000,
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setLastImport({ key, ...data });
-      alert(`Importación completada: ${data?.created ?? 0} creados, ${data?.updated ?? 0} actualizados.`);
+      const skipped = Number(data?.skipped || 0);
+      const skippedText = skipped > 0 ? `, ${skipped} omitidos` : "";
+      const errors = Array.isArray(data?.errors) ? data.errors : [];
+      const preview = errors
+        .slice(0, 5)
+        .map((e) => `L${e?.row ?? "?"}: ${e?.message || "Error"}`)
+        .join("\n");
+      const details = preview ? `\n\nDetalles:\n${preview}${errors.length > 5 ? `\n... y ${errors.length - 5} más` : ""}` : "";
+      alert(`ImportaciÃ³n completada: ${data?.created ?? 0} creados, ${data?.updated ?? 0} actualizados${skippedText}.${details}`);
     } catch (err) {
+      const msg = String(err?.message || "");
+      const code = String(err?.code || "");
+      if (code === "ECONNABORTED" || msg.toLowerCase().includes("timeout")) {
+        alert("La importación tardó demasiado en responder. Inténtalo de nuevo o usa un archivo más pequeño.");
+        return;
+      }
       alert(err?.response?.data?.message || err?.message || "No se pudo importar");
     } finally {
       setImporting((p) => ({ ...p, [key]: false }));
@@ -898,7 +959,7 @@ const importEndpoints = useMemo(
             </Button>
             <Button variant="outline" onClick={onLogout}>
               <LogOut className="h-4 w-4 mr-2" />
-              Cerrar sesión
+              Cerrar sesiÃ³n
             </Button>
           </div>
         </div>
@@ -934,24 +995,26 @@ const importEndpoints = useMemo(
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-            <span className="text-[11px] uppercase tracking-wide text-slate-500">M??dulos</span>
-            {PRINT_FORM_MODULES.map((mod) => (
-              <label key={mod.id} className="flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={Boolean(globalModules?.[mod.id])}
-                  disabled={printFormsSaving}
-                  onChange={(e) => {
-                    const next = { ...globalModules, [mod.id]: e.target.checked };
-                    setGlobalModules(next);
-                    saveGlobalForms(globalFormIds, next);
-                  }}
-                />
-                {mod.label}
-              </label>
-            ))}
-          </div>
+          {printFormsOpen && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+              <span className="text-[11px] uppercase tracking-wide text-slate-500">M??dulos</span>
+              {PRINT_FORM_MODULES.map((mod) => (
+                <label key={mod.id} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(globalModules?.[mod.id])}
+                    disabled={printFormsSaving}
+                    onChange={(e) => {
+                      const next = { ...globalModules, [mod.id]: e.target.checked };
+                      setGlobalModules(next);
+                      saveGlobalForms(globalFormIds, next);
+                    }}
+                  />
+                  {mod.label}
+                </label>
+              ))}
+            </div>
+          )}
 
           {!printFormsOpen ? (
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
@@ -965,44 +1028,7 @@ const importEndpoints = useMemo(
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-3">
               <div className="space-y-2">
-                {(printForms || []).map((f) => {
-                  const id = String(f.id || "");
-                  const isSelected = id === selectedPrintFormId;
-                  const isGlobal = globalFormIds.includes(id);
-                  return (
-                    <div
-                      key={id}
-                      className={`rounded-lg border p-2 flex items-center justify-between gap-2 ${
-                        isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
-                      }`}
-                    >
-                      <button type="button" className="text-left flex-1" onClick={() => setSelectedPrintFormId(id)}>
-                        <div className="text-sm font-semibold text-slate-900">{f.name || id}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {String(f.module || "").toUpperCase()} ? {String(f.docType || "").toUpperCase()} ? {f.paperType}
-                        </div>
-                      </button>
-                      <label className="text-[11px] text-slate-600 flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={isGlobal}
-                          disabled={printFormsSaving}
-                          onChange={() => {
-                            const nextIds = isGlobal
-                              ? globalFormIds.filter((x) => x !== id)
-                              : [...globalFormIds, id];
-                            setGlobalFormIds(nextIds);
-                            saveGlobalForms(nextIds, globalModules);
-                          }}
-                        />
-                        Global
-                      </label>
-                    </div>
-                  );
-                })}
-                {(printForms || []).length === 0 && (
-                  <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>
-                )}
+                {renderPrintFormItems()}
               </div>
               <div className="rounded-lg border bg-slate-50 p-3">
                 <div className="text-xs text-slate-500 mb-2">Vista previa</div>
@@ -1022,64 +1048,45 @@ const importEndpoints = useMemo(
         <Card className="p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Plantillas de impresión</div>
+              <div className="text-sm font-semibold text-slate-900">Plantillas de impresion</div>
               <div className="text-xs text-slate-500">
-                Vista previa y activación global de formatos para todos los módulos.
+                Vista previa y activacion global de formatos para todos los modulos.
               </div>
             </div>
-            <Button variant="outline" onClick={() => loadPrintForms()} disabled={printFormsLoading}>
-              <RefreshCcw className="h-4 w-4 mr-2" />
-              Actualizar
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => loadPrintForms()} disabled={printFormsLoading}>
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Actualizar
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setPrintFormsOpen((v) => !v)}>
+                {printFormsOpen ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-2" />
+                    Ocultar
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                    Mostrar
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
-          {printFormsLoading ? (
+          {!printFormsOpen ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+              <div>
+                {printForms.length} plantillas - {globalFormIds.length} globales
+              </div>
+              <div>{selectedPrintForm ? selectedPrintForm.name : "Sin seleccion"}</div>
+            </div>
+          ) : printFormsLoading ? (
             <div className="text-sm text-slate-500">Cargando plantillas...</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
               <div className="space-y-2">
-                {(printForms || []).map((f) => {
-                  const id = String(f.id || "");
-                  const isSelected = id === selectedPrintFormId;
-                  const isGlobal = globalFormIds.includes(id);
-                  return (
-                    <div
-                      key={id}
-                      className={`rounded-lg border p-2 flex items-center justify-between gap-2 ${
-                        isSelected ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="text-left flex-1"
-                        onClick={() => setSelectedPrintFormId(id)}
-                      >
-                        <div className="text-sm font-semibold text-slate-900">{f.name || id}</div>
-                        <div className="text-[11px] text-slate-500">
-                          {String(f.module || "").toUpperCase()} • {String(f.docType || "").toUpperCase()} • {f.paperType}
-                        </div>
-                      </button>
-                      <label className="text-[11px] text-slate-600 flex items-center gap-1">
-                        <input
-                          type="checkbox"
-                          checked={isGlobal}
-                          disabled={printFormsSaving}
-                          onChange={() => {
-                            const nextIds = isGlobal
-                              ? globalFormIds.filter((x) => x !== id)
-                              : [...globalFormIds, id];
-                            setGlobalFormIds(nextIds);
-                            saveGlobalForms(nextIds, globalModules);
-                          }}
-                        />
-                        Global
-                      </label>
-                    </div>
-                  );
-                })}
-                {(printForms || []).length === 0 && (
-                  <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>
-                )}
+                {renderPrintFormItems()}
               </div>
               <div className="rounded-lg border bg-slate-50 p-3">
                 <div className="text-xs text-slate-500 mb-2">Vista previa</div>
@@ -1563,7 +1570,7 @@ const importEndpoints = useMemo(
                     <div className="mt-1 border-t border-slate-200 pt-3 grid grid-cols-1 gap-2">
                       <div className="text-sm font-semibold text-slate-900">Usuario del hotel (login principal)</div>
                       <div className="text-xs text-slate-500">
-                        Si dejas el email o la contraseña vacíos, se generarán automáticamente.
+                        Si dejas el email o la contraseÃ±a vacÃ­os, se generarÃ¡n automÃ¡ticamente.
                       </div>
 
                       <div className="space-y-1">
@@ -1590,7 +1597,7 @@ const importEndpoints = useMemo(
                           />
                         </div>
                         <div className="space-y-1">
-                          <div className="px-1 text-xs text-slate-600">Contraseña</div>
+                          <div className="px-1 text-xs text-slate-600">ContraseÃ±a</div>
                           <Input
                             name="hotelUserPassword"
                             type="password"
@@ -1629,7 +1636,7 @@ const importEndpoints = useMemo(
                       </div>
 
                       <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Contraseña</div>
+                      <div className="px-1 text-xs text-slate-600">ContraseÃ±a</div>
                         <Input
                           name="hotelAdminPassword"
                           type="password"
@@ -1651,7 +1658,7 @@ const importEndpoints = useMemo(
                           </span>
                         </div>
                         <div className="text-xs">
-                          Contraseña:{" "}
+                          ContraseÃ±a:{" "}
                           <span className="font-mono">
                             {lastCreatedCredentials?.hotelUser?.password || "-"}
                           </span>
@@ -1663,7 +1670,7 @@ const importEndpoints = useMemo(
                           </span>
                         </div>
                         <div className="text-xs">
-                          Contraseña:{" "}
+                          ContraseÃ±a:{" "}
                           <span className="font-mono">
                             {lastCreatedCredentials?.launcherAdmin?.password || "-"}
                           </span>
@@ -1861,14 +1868,14 @@ const importEndpoints = useMemo(
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Identificación empresa</div>
+                      <div className="px-1 text-xs text-slate-600">IdentificaciÃ³n empresa</div>
                       <Input
                         value={hotelEditForm.companyId}
                         onChange={(e) => setHotelEditForm((p) => ({ ...p, companyId: e.target.value }))}
                       />
                     </div>
                     <div className="space-y-1">
-                      <div className="px-1 text-xs text-slate-600">Identificación encargado</div>
+                      <div className="px-1 text-xs text-slate-600">IdentificaciÃ³n encargado</div>
                       <Input
                         value={hotelEditForm.managerId}
                         onChange={(e) => setHotelEditForm((p) => ({ ...p, managerId: e.target.value }))}
@@ -1914,7 +1921,7 @@ const importEndpoints = useMemo(
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <div className="px-1 text-xs text-slate-600">Nueva contraseña</div>
+                          <div className="px-1 text-xs text-slate-600">Nueva contraseÃ±a</div>
                           <Input
                             type="password"
                             value={adminForm.password}
@@ -1922,7 +1929,7 @@ const importEndpoints = useMemo(
                           />
                         </div>
                         <div className="space-y-1">
-                          <div className="px-1 text-xs text-slate-600">Confirmar contraseña</div>
+                          <div className="px-1 text-xs text-slate-600">Confirmar contraseÃ±a</div>
                           <Input
                             type="password"
                             value={adminForm.confirmPassword}
@@ -2171,7 +2178,7 @@ const importEndpoints = useMemo(
                       <div className="font-semibold text-slate-900">Restaurant</div>
 
                       <div className="space-y-2">
-                        <div className="text-xs text-slate-600">Artículos de TPV (CSV/XLSX)</div>
+                        <div className="text-xs text-slate-600">ArtÃ­culos de TPV (CSV/XLSX)</div>
                         <input
                           type="file"
                           accept=".csv,.xlsx,.xls"
@@ -2186,7 +2193,7 @@ const importEndpoints = useMemo(
                       </div>
 
                       <div className="space-y-2">
-                        <div className="text-xs text-slate-600">Artículos de inventario (CSV/XLSX)</div>
+                        <div className="text-xs text-slate-600">ArtÃ­culos de inventario (CSV/XLSX)</div>
                         <input
                           type="file"
                           accept=".csv,.xlsx,.xls"
@@ -2227,7 +2234,7 @@ const importEndpoints = useMemo(
 
                   {lastImport ? (
                     <div className="text-xs text-slate-500">
-                      Última importación ({lastImport.key}): {lastImport.created ?? 0} creados,{" "}
+                      Ãšltima importaciÃ³n ({lastImport.key}): {lastImport.created ?? 0} creados,{" "}
                       {lastImport.updated ?? 0} actualizados, {lastImport.errors ?? 0} errores.
                     </div>
                   ) : null}
@@ -2240,6 +2247,8 @@ const importEndpoints = useMemo(
     </div>
   );
 }
+
+
 
 
 
