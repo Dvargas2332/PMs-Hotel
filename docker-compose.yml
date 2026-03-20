@@ -1,7 +1,7 @@
 services:
   frontend:
     build:
-      context: ./Frondend/pms-frontend
+      context: ./PMS centralizado/Frontend/pms-frontend
     ports:
       - "80:80"
     depends_on:
@@ -9,7 +9,7 @@ services:
 
   backend:
     build:
-      context: ./Backend/pms-backend
+      context: ./PMS centralizado/Backend/pms-backend
     environment:
       NODE_ENV: production
       PORT: 4000
