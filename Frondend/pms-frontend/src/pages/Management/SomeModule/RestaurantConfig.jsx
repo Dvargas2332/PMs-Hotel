@@ -23,6 +23,7 @@ import { Textarea } from "../../../components/ui/textarea";
 
 
 import { Button } from "../../../components/ui/button";
+import ConfirmDialog from "../../../components/common/ConfirmDialog";
 
 
 
@@ -123,6 +124,14 @@ const applyTableStylesToSections = (sectionsList, tableStyles) => {
 
 
 
+        const x = Number(st.x);
+
+
+
+        const y = Number(st.y);
+
+
+
         const color = String(st.color || st.colorHex || st.iconColor || "").trim();
 
 
@@ -136,6 +145,14 @@ const applyTableStylesToSections = (sectionsList, tableStyles) => {
 
 
         if (Number.isFinite(rotation)) next.rotation = rotation;
+
+
+
+        if (Number.isFinite(x)) next.x = x;
+
+
+
+        if (Number.isFinite(y)) next.y = y;
 
 
 
@@ -179,7 +196,7 @@ export default function RestaurantConfig() {
 
 
 
-  const [active, setActive] = useState("sections");
+  const [active, setActive] = useState("generalConfig");
 
 
 
@@ -229,25 +246,6 @@ export default function RestaurantConfig() {
     ],
     [t]
   );
-
-  const sectionMenuRows = useMemo(() => {
-    const list = Array.isArray(menus) ? menus : [];
-    const byMenu = new Map((sectionMenuAssignments || []).map((a) => [a.menuId, a]));
-    const rows = list.map((menu) => ({ menu, assignment: byMenu.get(menu?.id) }));
-    (sectionMenuAssignments || []).forEach((assignment) => {
-      if (!assignment?.menuId) return;
-      if (list.some((menu) => menu?.id === assignment.menuId)) return;
-      rows.push({
-        menu: { id: assignment.menuId, name: assignment?.menu?.name || assignment.menuId },
-        assignment,
-      });
-    });
-    return rows;
-  }, [menus, sectionMenuAssignments]);
-
-
-
-
 
   const readFileAsDataUrl = (file) =>
 
@@ -458,6 +456,9 @@ export default function RestaurantConfig() {
 
 
   const [selectedMenuId, setSelectedMenuId] = useState("");
+  const [menuDeleteTargetId, setMenuDeleteTargetId] = useState("");
+  const [discountDeleteTarget, setDiscountDeleteTarget] = useState(null);
+  const [paymentMethodDeleteTargetId, setPaymentMethodDeleteTargetId] = useState("");
 
 
 
@@ -470,6 +471,7 @@ export default function RestaurantConfig() {
 
 
   const [sectionMenuAssignments, setSectionMenuAssignments] = useState([]);
+  const [menuVisibilityMap, setMenuVisibilityMap] = useState({});
   const [editingAssignmentId, setEditingAssignmentId] = useState("");
 
 
@@ -521,6 +523,59 @@ export default function RestaurantConfig() {
 
 
   const [menuEntrySearch, setMenuEntrySearch] = useState("");
+  const managementPrimaryButtonClass = "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600";
+
+  const sectionMenuRows = useMemo(() => {
+    const list = Array.isArray(menus) ? menus : [];
+    const assignmentList = Array.isArray(sectionMenuAssignments) ? sectionMenuAssignments : [];
+    const visibilityByMenu = menuVisibilityMap && typeof menuVisibilityMap === "object" ? menuVisibilityMap : {};
+
+    const menuById = new Map(list.map((menu) => [String(menu?.id || "").trim(), menu]).filter(([id]) => !!id));
+    const assignmentByMenuId = new Map();
+    assignmentList.forEach((assignment) => {
+      const menuId = String(assignment?.menuId || assignment?.menu?.id || "").trim();
+      if (!menuId || assignmentByMenuId.has(menuId)) return;
+      assignmentByMenuId.set(menuId, assignment);
+    });
+
+    const rows = [];
+    const seen = new Set();
+    const pushRow = (menuIdRaw, fallbackName) => {
+      const menuId = String(menuIdRaw || "").trim();
+      if (!menuId || seen.has(menuId)) return;
+      seen.add(menuId);
+      const visibleSections = Array.isArray(visibilityByMenu[menuId]) ? visibilityByMenu[menuId] : [];
+      const directAssignment = assignmentByMenuId.get(menuId) || null;
+      const fallbackVisible = directAssignment ? null : visibleSections[0] || null;
+      const assignment = directAssignment
+        ? directAssignment
+        : fallbackVisible
+        ? {
+            id: String(fallbackVisible?.assignmentId || "").trim(),
+            sectionId: String(fallbackVisible?.sectionId || fallbackVisible?.id || "").trim(),
+            menuId,
+            daysMask: Number(fallbackVisible?.daysMask ?? 127),
+            startTime: fallbackVisible?.startTime || null,
+            endTime: fallbackVisible?.endTime || null,
+            active: fallbackVisible?.active !== false,
+          }
+        : null;
+      rows.push({
+        menuId,
+        menu: menuById.get(menuId) || { id: menuId, name: fallbackName || assignment?.menu?.name || menuId },
+        assignment,
+        visibleSections,
+      });
+    };
+
+    list.forEach((menu) => pushRow(menu?.id, menu?.name));
+    assignmentList.forEach((assignment) => pushRow(assignment?.menuId || assignment?.menu?.id, assignment?.menu?.name));
+    Object.keys(visibilityByMenu || {}).forEach((menuId) => pushRow(menuId, ""));
+
+    return rows
+      .filter((row) => row?.assignment || (Array.isArray(row?.visibleSections) && row.visibleSections.length > 0))
+      .sort((a, b) => String(a?.menu?.name || a?.menuId || "").localeCompare(String(b?.menu?.name || b?.menuId || "")));
+  }, [menus, sectionMenuAssignments, menuVisibilityMap]);
 
 
 
@@ -814,6 +869,8 @@ export default function RestaurantConfig() {
         const entry = {};
         if (Number.isFinite(Number(t.size))) entry.size = Number(t.size);
         if (Number.isFinite(Number(t.rotation))) entry.rotation = Number(t.rotation);
+        if (Number.isFinite(Number(t.x))) entry.x = Number(t.x);
+        if (Number.isFinite(Number(t.y))) entry.y = Number(t.y);
         const color = String(t.color || t.colorHex || "").trim();
         if (color) entry.color = color;
         if (Object.keys(entry).length > 0) styleById[t.id] = entry;
@@ -2116,6 +2173,72 @@ export default function RestaurantConfig() {
 
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadMenuVisibility = async () => {
+      const sectionList = Array.isArray(sections) ? sections : [];
+      if (sectionList.length === 0) {
+        setMenuVisibilityMap({});
+        return;
+      }
+
+      const results = await Promise.all(
+        sectionList.map(async (section) => {
+          const sectionId = String(section?.id || "").trim();
+          if (!sectionId) return { section, assignments: [] };
+          try {
+            const { data } = await api.get(`/restaurant/sections/${encodeURIComponent(sectionId)}/menus`);
+            return { section, assignments: Array.isArray(data) ? data : [] };
+          } catch {
+            return { section, assignments: [] };
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      const next = {};
+      results.forEach(({ section, assignments }) => {
+        const sectionId = String(section?.id || "").trim();
+        if (!sectionId) return;
+        const sectionName = String(section?.name || sectionId).trim();
+        assignments.forEach((assignment) => {
+          const menuId = String(assignment?.menuId || assignment?.menu?.id || "").trim();
+          if (!menuId) return;
+          if (!Array.isArray(next[menuId])) next[menuId] = [];
+          if (!next[menuId].some((entry) => entry.id === sectionId)) {
+            next[menuId].push({
+              id: sectionId,
+              name: sectionName,
+              sectionId,
+              assignmentId: String(assignment?.id || "").trim(),
+              menuId,
+              daysMask: Number(assignment?.daysMask ?? 127),
+              startTime: assignment?.startTime || null,
+              endTime: assignment?.endTime || null,
+              active: assignment?.active !== false,
+            });
+          }
+        });
+      });
+
+      Object.keys(next).forEach((menuId) => {
+        next[menuId] = (next[menuId] || []).sort((a, b) =>
+          String(a?.name || a?.id || "").localeCompare(String(b?.name || b?.id || ""))
+        );
+      });
+
+      setMenuVisibilityMap(next);
+    };
+
+    loadMenuVisibility();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sections, menus, sectionMenuAssignments]);
+
+  useEffect(() => {
 
 
 
@@ -2765,35 +2888,44 @@ export default function RestaurantConfig() {
   const createMenu = async () => {
     const nm = String(menuName || "").trim();
     if (!nm) return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuNameRequired"));
-    if (!Array.isArray(menuCreateSectionIds) || menuCreateSectionIds.length === 0) {
+    const sectionIds = (Array.isArray(menuCreateSectionIds) ? menuCreateSectionIds : [])
+      .map((sid) => String(sid || "").trim())
+      .filter(Boolean);
+    if (sectionIds.length === 0) {
       return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.selectSection"));
     }
+
     if (!menuAssignForm.startTime || !menuAssignForm.endTime) {
       return alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.scheduleRequiresTimes"));
     }
 
     try {
-      const { data } = await api.post("/restaurant/menus", { name: nm });
-      setMenus((prev) => [...prev, data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
-
-      const schedulePayload = {
-        menuId: data.id,
+      const { data } = await api.post("/restaurant/menus", {
+        name: nm,
+        sectionIds,
         daysMask: Number(menuAssignForm.daysMask ?? 127),
         startTime: String(menuAssignForm.startTime || "").trim() || null,
         endTime: String(menuAssignForm.endTime || "").trim() || null,
-        active: menuAssignForm.active !== false,
-      };
+        assignmentActive: menuAssignForm.active !== false,
+      });
+      const createdMenuId = String(data?.id || "").trim();
+      if (!createdMenuId) {
+        throw new Error("menu_without_id");
+      }
 
-      const assignments = await Promise.all(
-        menuCreateSectionIds.map((sid) =>
-          api
-            .post(`/restaurant/sections/${encodeURIComponent(String(sid))}/menus`, schedulePayload)
-            .then((r) => r.data)
-        )
-      );
+      setMenus((prev) => [...prev, data].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))));
+      setSelectedMenuId(createdMenuId);
+      setMenuPickerMenuId(createdMenuId);
 
-      if (selectedSectionId && menuCreateSectionIds.includes(selectedSectionId)) {
-        setSectionMenuAssignments((prev) => [...assignments.filter(Boolean), ...(prev || [])]);
+      if (selectedSectionId) {
+        try {
+          const { data: refreshedAssignments } = await api.get(
+            `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/menus`
+          );
+          setSectionMenuAssignments(Array.isArray(refreshedAssignments) ? refreshedAssignments : []);
+        } catch {
+          // ignore refresh errors; next section change will reload
+        }
       }
 
       setMenuName("");
@@ -2807,7 +2939,6 @@ export default function RestaurantConfig() {
         active: true,
       }));
 
-      if (!selectedMenuId) setSelectedMenuId(data.id);
       alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuCreated"));
     } catch (err) {
       alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuCreateFailed")));
@@ -2899,61 +3030,27 @@ export default function RestaurantConfig() {
 
 
 
-  const deleteSelectedMenu = async () => {
-
-
-
-    if (!selectedMenuId) return;
-
-
-
-    if (!window.confirm(t("mgmt.restaurant.confirm.deleteMenu"))) return;
-
-
-
-    try {
-
-
-
-      await api.delete(`/restaurant/menus/${encodeURIComponent(String(selectedMenuId))}`);
-
-
-
-      setMenus((prev) => (prev || []).filter((m) => m.id !== selectedMenuId));
-
-
-
-      setSelectedMenuId("");
-
-
-
-      setMenuEntries([]);
-
-
-
-      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.menuDeleted"));
-
-
-
-    } catch (err) {
-
-
-
-      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.menuDeleteFailed")));
-
-
-
-    }
-
-
-
+  const openDeleteMenuConfirm = (menuId) => {
+    const id = String(menuId || "").trim();
+    if (!id) return;
+    setMenuDeleteTargetId(id);
   };
 
-  const deleteMenuById = async (menuId) => {
+  const deleteSelectedMenu = () => {
+    if (!selectedMenuId) return;
+    openDeleteMenuConfirm(selectedMenuId);
+  };
+
+  const deleteMenuById = (menuId) => {
+    openDeleteMenuConfirm(menuId);
+  };
+
+  const confirmDeleteMenu = async () => {
+    const menuId = String(menuDeleteTargetId || "").trim();
     if (!menuId) return;
-    if (!window.confirm(t("mgmt.restaurant.confirm.deleteMenu"))) return;
+    setMenuDeleteTargetId("");
     try {
-      await api.delete(`/restaurant/menus/${encodeURIComponent(String(menuId))}`);
+      await api.delete(`/restaurant/menus/${encodeURIComponent(menuId)}`);
       setMenus((prev) => (prev || []).filter((m) => m.id !== menuId));
       setSectionMenuAssignments((prev) => (prev || []).filter((a) => a.menuId !== menuId));
       if (selectedMenuId === menuId) {
@@ -3495,54 +3592,6 @@ export default function RestaurantConfig() {
 
 
 
-  const removeMenuAssignment = async (assignmentId) => {
-
-
-
-    if (!selectedSectionId) return;
-
-
-
-    try {
-
-
-
-      await api.delete(
-
-
-
-        `/restaurant/sections/${encodeURIComponent(String(selectedSectionId))}/menus/${encodeURIComponent(String(assignmentId))}`
-
-
-
-      );
-
-
-
-      setSectionMenuAssignments((prev) => prev.filter((a) => a.id !== assignmentId));
-
-
-
-    } catch (err) {
-
-
-
-      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.assignmentDeleteFailed")));
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
   const savePrinters = async () => {
 
 
@@ -3949,26 +3998,25 @@ export default function RestaurantConfig() {
 
 
 
-  const deleteDiscount = async (d) => {
+  const deleteDiscount = (d) => {
 
     if (!d?.id) return;
 
-    if (!window.confirm(t("mgmt.restaurant.discounts.deleteConfirm", { name: d.name || d.id }))) return;
+    setDiscountDeleteTarget({ id: d.id, name: d.name || d.id });
 
+  };
+
+  const confirmDeleteDiscount = async () => {
+    const target = discountDeleteTarget;
+    if (!target?.id) return;
+    setDiscountDeleteTarget(null);
     try {
-
-      await api.delete(`/discounts/${encodeURIComponent(d.id)}`);
-
-      setDiscountsList((prev) => (prev || []).filter((x) => x.id !== d.id));
-
+      await api.delete(`/discounts/${encodeURIComponent(target.id)}`);
+      setDiscountsList((prev) => (prev || []).filter((x) => x.id !== target.id));
     } catch (err) {
-
       const msg = err?.response?.data?.message || err?.message || "No se pudo eliminar el descuento.";
-
       alert(t("mgmt.restaurant.alert.title"), msg);
-
     }
-
   };
 
 
@@ -5575,7 +5623,11 @@ export default function RestaurantConfig() {
 
 
 
-            <Button onClick={addSection} disabled={saving.section || !String(formSection.name || "").trim()}>
+            <Button
+              onClick={addSection}
+              disabled={saving.section || !String(formSection.name || "").trim()}
+              className={managementPrimaryButtonClass}
+            >
 
 
 
@@ -6183,11 +6235,15 @@ export default function RestaurantConfig() {
 
 
 
-            <Button onClick={addTable} disabled={!selectedSectionId || saving.table} className="min-w-[140px]">
+            <Button
+              onClick={addTable}
+              disabled={!selectedSectionId || saving.table}
+              className={`${managementPrimaryButtonClass} min-w-[140px]`}
+            >
 
 
 
-              {saving.table ? "Saving..." : "Add table"}
+              {saving.table ? t("mgmt.restaurant.tables.saving") : t("mgmt.restaurant.tables.add")}
 
 
 
@@ -6227,7 +6283,7 @@ export default function RestaurantConfig() {
 
 
 
-                {(selectedSection.tables || []).map((t) => (
+                {(selectedSection.tables || []).map((table) => (
 
 
 
@@ -6235,7 +6291,7 @@ export default function RestaurantConfig() {
 
 
 
-                    key={t.id}
+                    key={table.id}
 
 
 
@@ -6251,11 +6307,11 @@ export default function RestaurantConfig() {
 
 
 
-                    <div className="text-base font-bold text-gray-800">{t.id}</div>
+                    <div className="text-base font-bold text-gray-800">{table.id}</div>
 
 
 
-                    <div className="text-sm text-gray-500">{t.seats} personas</div>
+                    <div className="text-sm text-gray-500">{table.seats} {t("mgmt.restaurant.tables.people")}</div>
 
 
 
@@ -6267,7 +6323,7 @@ export default function RestaurantConfig() {
 
 
 
-                      onClick={() => removeTable(t.id)}
+                      onClick={() => removeTable(table.id)}
 
 
 
@@ -6379,19 +6435,24 @@ export default function RestaurantConfig() {
               <div className="text-sm font-semibold">{t("mgmt.restaurant.menus.createTitle")}</div>
               <div className="flex flex-wrap gap-2">
                 <Input
+                  className="w-full md:w-[320px] lg:w-[340px]"
                   placeholder={t("mgmt.restaurant.menus.newMenuPlaceholder")}
                   value={menuName}
                   onChange={(e) => setMenuName(e.target.value)}
                 />
                 {editingAssignmentId ? (
                   <>
-                    <Button onClick={applyAssignmentEdit}>{t("mgmt.restaurant.menus.updateAssignment")}</Button>
+                    <Button onClick={applyAssignmentEdit} className={managementPrimaryButtonClass}>
+                      {t("mgmt.restaurant.menus.updateAssignment")}
+                    </Button>
                     <Button variant="outline" onClick={cancelAssignmentEdit}>
                       {t("mgmt.restaurant.menus.cancel")}
                     </Button>
                   </>
                 ) : (
-                  <Button onClick={createMenu}>{t("mgmt.restaurant.menus.createButton")}</Button>
+                  <Button onClick={createMenu} className={managementPrimaryButtonClass}>
+                    {t("mgmt.restaurant.menus.createButton")}
+                  </Button>
                 )}
               </div>
               <div className="space-y-2">
@@ -6504,39 +6565,115 @@ export default function RestaurantConfig() {
                     {(sectionMenuRows || []).map((row, idx) => {
                       const a = row.assignment;
                       const menu = row.menu;
+                      const rowMenuId = String(row?.menuId || menu?.id || a?.menuId || a?.menu?.id || "").trim();
+                      const visibleSections = Array.isArray(row?.visibleSections) ? row.visibleSections : [];
+                      const isSelectedRow = rowMenuId && String(selectedMenuId || "").trim() === rowMenuId;
+                      const assignmentSectionId = String(a?.sectionId || a?.section?.id || "").trim();
+                      const canEditAssignment = !!a && !!String(a?.id || "").trim() && !!assignmentSectionId;
+                      const statusMeta = a
+                        ? a.active === false
+                          ? {
+                              label: t("mgmt.restaurant.assignments.status.inactive"),
+                              className: "bg-rose-50 text-rose-700 border-rose-200",
+                            }
+                          : {
+                              label: t("mgmt.restaurant.assignments.status.active"),
+                              className: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                            }
+                        : {
+                            label: t("mgmt.restaurant.assignments.status.unassigned"),
+                            className: "bg-slate-100 text-slate-700 border-slate-200",
+                          };
                       return (
-                        <tr key={menu?.id || a?.id || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
-                          <td className="px-3 py-2">{selectedSection?.name || selectedSectionId || "-"}</td>
-                          <td className="px-3 py-2">{menu?.name || a?.menu?.name || a?.menuId || menu?.id}</td>
+                        <tr
+                          key={rowMenuId || menu?.id || a?.id || idx}
+                          className={[
+                            idx % 2 === 0 ? "bg-white" : "bg-slate-50/60",
+                            isSelectedRow ? "bg-indigo-50/50" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          <td className="px-3 py-2">
+                            {visibleSections.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {visibleSections.map((sectionRef, sectionIdx) => {
+                                  const sectionId = String(sectionRef?.id || "").trim();
+                                  const isCurrentSection = sectionId && String(selectedSectionId || "").trim() === sectionId;
+                                  return (
+                                    <span
+                                      key={`${rowMenuId || "menu"}-${sectionId || sectionRef?.name || sectionIdx}`}
+                                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
+                                        isCurrentSection
+                                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                          : "bg-slate-100 text-slate-700 border-slate-200"
+                                      }`}
+                                    >
+                                      {sectionRef?.name || sectionId || "-"}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              className={`inline-flex h-8 items-center rounded-md border px-2 text-xs font-medium transition ${
+                                isSelectedRow
+                                  ? "bg-indigo-600 text-white border-indigo-600"
+                                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                              }`}
+                              onClick={() => {
+                                if (!rowMenuId) return;
+                                setSelectedMenuId(rowMenuId);
+                                setMenuAssignForm((prev) => ({ ...prev, menuId: rowMenuId }));
+                                setMenuPickerMenuId(rowMenuId);
+                              }}
+                              title={t("mgmt.restaurant.menuItems.selectMenu")}
+                            >
+                              {menu?.name || a?.menu?.name || rowMenuId || "-"}
+                            </button>
+                          </td>
                           <td className="px-3 py-2">
                             {a ? `${a.startTime || "00:00"} - ${a.endTime || "24:00"}` : "-"}
                           </td>
                           <td className="px-3 py-2">{a ? formatDaysMask(a.daysMask) : "-"}</td>
                           <td className="px-3 py-2">
-                            {a
-                              ? a.active === false
-                                ? t("mgmt.restaurant.assignments.status.inactive")
-                                : t("mgmt.restaurant.assignments.status.active")
-                              : t("mgmt.restaurant.assignments.status.unassigned")}
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${statusMeta.className}`}>
+                              {statusMeta.label}
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {a && (
-                                <button
-                                  className="text-xs text-slate-600 hover:underline"
-                                  onClick={() => startEditAssignment(a)}
+                            <div className="flex flex-wrap items-center justify-end gap-1">
+                              {canEditAssignment && (
+                                <Button
+                                  variant="outline"
+                                  className="h-8 px-2 text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+                                  onClick={() => {
+                                    if (!a) return;
+                                    const targetSectionId = String(a?.sectionId || a?.section?.id || "").trim();
+                                    if (targetSectionId && targetSectionId !== String(selectedSectionId || "").trim()) {
+                                      setSelectedSectionId(targetSectionId);
+                                    }
+                                    startEditAssignment({
+                                      ...a,
+                                      menuId: String(a?.menuId || rowMenuId || "").trim(),
+                                    });
+                                  }}
                                 >
-                                  Edit
-                                </button>
+                                  {t("mgmt.restaurant.assignments.action.edit")}
+                                </Button>
                               )}
-                              {a && (
-                                <button className="text-xs text-red-600" onClick={() => removeMenuAssignment(a.id)}>
-                                  Delete
-                                </button>
-                              )}
-                              <button className="text-xs text-red-600" onClick={() => deleteMenuById(menu?.id)}>
+                              <Button
+                                variant="outline"
+                                className="h-8 px-2 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
+                                onClick={() => deleteMenuById(rowMenuId)}
+                              >
                                 {t("mgmt.restaurant.assignments.action.deleteMenu")}
-                              </button>
+                              </Button>
                             </div>
                           </td>
                         </tr>
@@ -6574,7 +6711,9 @@ export default function RestaurantConfig() {
                     <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>
                       {t("mgmt.restaurant.menuItems.reload")}
                     </Button>
-                    <Button onClick={() => setMenuPickerOpen(true)}>{t("mgmt.restaurant.menuItems.openPicker")}</Button>
+                    <Button onClick={() => setMenuPickerOpen(true)} className={managementPrimaryButtonClass}>
+                      {t("mgmt.restaurant.menuItems.openPicker")}
+                    </Button>
                   </div>
                 </div>
                 <div className="text-xs text-gray-500">{t("mgmt.restaurant.menuItems.helper")}</div>
@@ -6663,13 +6802,14 @@ export default function RestaurantConfig() {
                               </div>
                             </td>
                             <td className="px-3 py-2 text-right">
-                              <button
-                                className="text-xs text-red-600 hover:underline"
+                              <Button
+                                variant="outline"
+                                className="h-8 px-2 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
                                 onClick={() => removeMenuEntry(e.id)}
                                 disabled={saving.menuEntries}
                               >
-                                Remove
-                              </button>
+                                {t("mgmt.restaurant.menuItems.action.remove")}
+                              </Button>
                             </td>
                           </tr>
                         );
@@ -6932,7 +7072,13 @@ export default function RestaurantConfig() {
                     </select>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button onClick={saveMenuPickerSelection} disabled={saving.menuEntries || !menuPickerMenuId}>{t("mgmt.restaurant.menuPicker.save")}</Button>
+                    <Button
+                      onClick={saveMenuPickerSelection}
+                      disabled={saving.menuEntries || !menuPickerMenuId}
+                      className={managementPrimaryButtonClass}
+                    >
+                      {t("mgmt.restaurant.menuPicker.save")}
+                    </Button>
                     <Button variant="outline" onClick={reloadMenuPickerEntries} disabled={saving.menuEntries}>{t("mgmt.restaurant.menuPicker.refresh")}</Button>
                   </div>
                 </div>
@@ -7448,14 +7594,14 @@ export default function RestaurantConfig() {
 
 
 
-          ].map((t) => {
+          ].map((printType) => {
 
 
-            const cfg = printing.types?.[t.key] || { enabled: true, printerId: "", copies: 1, formId: "" };
+            const cfg = printing.types?.[printType.key] || { enabled: true, printerId: "", copies: 1, formId: "" };
 
 
 
-            const docType = t.docType;
+            const docType = printType.docType;
 
 
 
@@ -7471,11 +7617,11 @@ export default function RestaurantConfig() {
 
 
 
-              <div key={t.key} className="grid md:grid-cols-[140px_120px_1fr_1fr_120px] gap-2 items-center border rounded-lg p-3 bg-slate-50">
+              <div key={printType.key} className="grid md:grid-cols-[140px_120px_1fr_1fr_120px] gap-2 items-center border rounded-lg p-3 bg-slate-50">
 
 
 
-                <div className="font-semibold text-sm">{t.label}</div>
+                <div className="font-semibold text-sm">{printType.label}</div>
 
 
 
@@ -7507,7 +7653,7 @@ export default function RestaurantConfig() {
 
 
 
-                        types: { ...p.types, [t.key]: { ...cfg, enabled: e.target.checked } },
+                        types: { ...p.types, [printType.key]: { ...cfg, enabled: e.target.checked } },
 
 
 
@@ -7555,7 +7701,7 @@ export default function RestaurantConfig() {
 
 
 
-                      types: { ...p.types, [t.key]: { ...cfg, printerId: e.target.value } },
+                      types: { ...p.types, [printType.key]: { ...cfg, printerId: e.target.value } },
 
 
 
@@ -7595,7 +7741,7 @@ export default function RestaurantConfig() {
 
 
 
-                      types: { ...p.types, [t.key]: { ...cfg, formId: e.target.value } },
+                      types: { ...p.types, [printType.key]: { ...cfg, formId: e.target.value } },
 
 
 
@@ -7671,7 +7817,7 @@ export default function RestaurantConfig() {
 
 
 
-                      types: { ...p.types, [t.key]: { ...cfg, copies: Number(e.target.value || 1) } },
+                      types: { ...p.types, [printType.key]: { ...cfg, copies: Number(e.target.value || 1) } },
 
 
 
@@ -7715,7 +7861,9 @@ export default function RestaurantConfig() {
 
 
 
-        <Button onClick={savePrinters}>{t("mgmt.restaurant.printers.save")}</Button>
+        <Button onClick={savePrinters} className={managementPrimaryButtonClass}>
+          {t("mgmt.restaurant.printers.save")}
+        </Button>
 
 
 
@@ -8019,7 +8167,9 @@ export default function RestaurantConfig() {
 
 
 
-                <Button onClick={createDiscount}>{t("mgmt.restaurant.discounts.create")}</Button>
+                <Button onClick={createDiscount} className={managementPrimaryButtonClass}>
+                  {t("mgmt.restaurant.discounts.create")}
+                </Button>
 
 
 
@@ -8235,7 +8385,11 @@ export default function RestaurantConfig() {
 
 
 
-        {showSave && <Button onClick={saveGeneral}>{t("mgmt.restaurant.common.save")}</Button>}
+        {showSave && (
+          <Button onClick={saveGeneral} className={managementPrimaryButtonClass}>
+            {t("mgmt.restaurant.common.save")}
+          </Button>
+        )}
 
 
 
@@ -8306,7 +8460,11 @@ export default function RestaurantConfig() {
           <h3 className="font-semibold text-lg">{t("mgmt.restaurant.billing.title")}</h3>
           <p className="text-sm text-gray-600">{t("mgmt.restaurant.billing.subtitle")}</p>
         </div>
-        {showSave && <Button onClick={saveBilling}>{t("mgmt.restaurant.common.save")}</Button>}
+        {showSave && (
+          <Button onClick={saveBilling} className={managementPrimaryButtonClass}>
+            {t("mgmt.restaurant.common.save")}
+          </Button>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-3">
@@ -8643,47 +8801,25 @@ export default function RestaurantConfig() {
 
   const deleteSelectedPaymentMethod = () => {
 
-
-
     if (!selectedPaymentMethodId) return;
 
-
-
-    if (!window.confirm("Eliminar este método de pago?")) return;
-
-
-
-    setPayments((prev) => ({
-
-
-
-      ...prev,
-
-
-
-      paymentMethods: (prev.paymentMethods || []).filter((m) => m.id !== selectedPaymentMethodId),
-
-
-
-    }));
-
-
-
-    setSelectedPaymentMethodId("");
-
-
-
-    setPaymentMethodForm({ id: "", name: "", account: "" });
-
-
+    setPaymentMethodDeleteTargetId(selectedPaymentMethodId);
 
   };
 
+  const confirmDeletePaymentMethod = () => {
+    const targetId = String(paymentMethodDeleteTargetId || "").trim();
+    if (!targetId) return;
+    setPaymentMethodDeleteTargetId("");
 
+    setPayments((prev) => ({
+      ...prev,
+      paymentMethods: (prev.paymentMethods || []).filter((m) => m.id !== targetId),
+    }));
 
-
-
-
+    setSelectedPaymentMethodId("");
+    setPaymentMethodForm({ id: "", name: "", account: "" });
+  };
 
   const renderPayments = ({ showSave = true } = {}) => (
 
@@ -8713,7 +8849,11 @@ export default function RestaurantConfig() {
 
 
 
-        {showSave && <Button onClick={savePayments}>{t("mgmt.restaurant.payments.save")}</Button>}
+        {showSave && (
+          <Button onClick={savePayments} className={managementPrimaryButtonClass}>
+            {t("mgmt.restaurant.payments.save")}
+          </Button>
+        )}
 
 
 
@@ -9829,7 +9969,11 @@ export default function RestaurantConfig() {
 
 
 
-                <Button onClick={addRecipeLine} disabled={!recipeLineForm.inventoryItemId || !(Number(recipeLineForm.qty) > 0)}>
+                <Button
+                  onClick={addRecipeLine}
+                  disabled={!recipeLineForm.inventoryItemId || !(Number(recipeLineForm.qty) > 0)}
+                  className={managementPrimaryButtonClass}
+                >
 
 
 
@@ -10185,7 +10329,9 @@ export default function RestaurantConfig() {
 
 
 
-          <Button onClick={saveGeneralConfig} className="mt-3">{t("mgmt.restaurant.menuPicker.save")}</Button>
+          <Button onClick={saveGeneralConfig} className={`${managementPrimaryButtonClass} mt-3`}>
+            {t("mgmt.restaurant.menuPicker.save")}
+          </Button>
 
 
 
@@ -10484,12 +10630,43 @@ export default function RestaurantConfig() {
         ))}
 
 
-
       </Card>
 
 
 
       <div className="space-y-4">{renderContent()}</div>
+
+
+
+      <ConfirmDialog
+        open={Boolean(menuDeleteTargetId)}
+        title={t("mgmt.restaurant.alert.title")}
+        message={t("mgmt.restaurant.confirm.deleteMenu")}
+        cancelText={t("common.cancel")}
+        confirmText={t("mgmt.restaurant.common.delete")}
+        onCancel={() => setMenuDeleteTargetId("")}
+        onConfirm={confirmDeleteMenu}
+      />
+
+      <ConfirmDialog
+        open={Boolean(discountDeleteTarget)}
+        title={t("mgmt.restaurant.alert.title")}
+        message={t("mgmt.restaurant.discounts.deleteConfirm", { name: discountDeleteTarget?.name || "" })}
+        cancelText={t("common.cancel")}
+        confirmText={t("mgmt.restaurant.common.delete")}
+        onCancel={() => setDiscountDeleteTarget(null)}
+        onConfirm={confirmDeleteDiscount}
+      />
+
+      <ConfirmDialog
+        open={Boolean(paymentMethodDeleteTargetId)}
+        title={t("mgmt.restaurant.alert.title")}
+        message={t("mgmt.restaurant.payments.deleteConfirm")}
+        cancelText={t("common.cancel")}
+        confirmText={t("mgmt.restaurant.common.delete")}
+        onCancel={() => setPaymentMethodDeleteTargetId("")}
+        onConfirm={confirmDeletePaymentMethod}
+      />
 
 
 
@@ -10502,6 +10679,9 @@ export default function RestaurantConfig() {
 
 
 }
+
+
+
 
 
 

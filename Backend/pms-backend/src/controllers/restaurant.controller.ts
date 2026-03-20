@@ -1055,6 +1055,7 @@ export async function listMenu(req: Request, res: Response) {
           itemId: e.itemId,
           name: e.item?.name,
           code: e.item?.code,
+          barcode: e.item?.barcode || "",
           color: (e.item as any)?.color || "",
           imageUrl: (e.item as any)?.imageUrl || "",
           sizes: Array.isArray((e.item as any)?.sizes) ? (e.item as any)?.sizes : [],
@@ -1133,43 +1134,66 @@ export async function createMenu(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { name, active, sectionIds } = req.body || {};
+  const { name, active, sectionIds, daysMask, startTime, endTime, timezone, priority, assignmentActive } = req.body || {};
   const nm = String(name || "").trim();
   if (!nm) return res.status(400).json({ message: "name requerido" });
+  const sectionIdList = Array.from(
+    new Set((Array.isArray(sectionIds) ? sectionIds : []).map((x: any) => String(x || "").trim()).filter(Boolean))
+  );
+  if (!sectionIdList.length) {
+    return res.status(400).json({ message: "sectionIds requerido" });
+  }
 
-  const created = await prisma.restaurantMenu.create({
-    data: { hotelId, name: nm, active: active !== false },
-  });
+  const sections = await Promise.all(
+    sectionIdList.map(async (sid: string) => {
+      const internalSectionId = toInternalId(hotelId, sid);
+      return prisma.restaurantSection.findFirst({
+        where: { hotelId, OR: [{ id: internalSectionId }, { id: sid }] },
+        select: { id: true },
+      });
+    })
+  );
+  const sectionInternalIds = sections.filter(Boolean).map((s: any) => s.id);
+  if (sectionInternalIds.length !== sectionIdList.length) {
+    return res.status(404).json({ message: "Seccion no encontrada" });
+  }
 
-  // Optional: immediately make this menu visible in selected sections (always active schedule).
-  const rawSectionIds = Array.isArray(sectionIds) ? sectionIds : [];
-  const sectionIdList = rawSectionIds.map((x: any) => String(x || "").trim()).filter(Boolean);
-  if (sectionIdList.length) {
-    const sections = await Promise.all(
-      sectionIdList.map(async (sid: string) => {
-        const internalSectionId = toInternalId(hotelId, sid);
-        return prisma.restaurantSection.findFirst({
-          where: { hotelId, OR: [{ id: internalSectionId }, { id: sid }] },
-          select: { id: true },
-        });
-      })
-    );
-    const sectionInternalIds = sections.filter(Boolean).map((s: any) => s.id);
-    if (!sectionInternalIds.length) return res.json(created);
-    await prisma.restaurantMenuAssignment.createMany({
-      data: sectionInternalIds.map((internalId: string) => ({
-        hotelId,
-        sectionId: internalId,
-        menuId: created.id,
-        daysMask: 127,
-        startTime: null,
-        endTime: null,
-        timezone: "America/Costa_Rica",
-        priority: 0,
-        active: true,
-      })),
-      skipDuplicates: true,
+  const scheduleDaysMask = Number.isFinite(Number(daysMask)) ? Number(daysMask) : 127;
+  const scheduleStartTime = startTime ? String(startTime).trim() : null;
+  const scheduleEndTime = endTime ? String(endTime).trim() : null;
+  const scheduleTimezone = timezone ? String(timezone).trim() : "America/Costa_Rica";
+  const schedulePriority = Number.isFinite(Number(priority)) ? Number(priority) : 0;
+  const scheduleActive = assignmentActive !== false;
+
+  let created: any;
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const menu = await tx.restaurantMenu.create({
+        data: { hotelId, name: nm, active: active !== false },
+      });
+
+      await tx.restaurantMenuAssignment.createMany({
+        data: sectionInternalIds.map((internalId: string) => ({
+          hotelId,
+          sectionId: internalId,
+          menuId: menu.id,
+          daysMask: scheduleDaysMask,
+          startTime: scheduleStartTime,
+          endTime: scheduleEndTime,
+          timezone: scheduleTimezone,
+          priority: schedulePriority,
+          active: scheduleActive,
+        })),
+        skipDuplicates: true,
+      });
+
+      return menu;
     });
+  } catch (err: any) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ message: "Ya existe un men? con ese nombre" });
+    }
+    throw err;
   }
 
   res.json(created);
@@ -1191,7 +1215,15 @@ export async function updateMenu(req: Request, res: Response) {
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if ("active" in body) data.active = body.active !== false;
 
-  const updated = await prisma.restaurantMenu.update({ where: { id: existing.id }, data });
+  let updated: any;
+  try {
+    updated = await prisma.restaurantMenu.update({ where: { id: existing.id }, data });
+  } catch (err: any) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return res.status(409).json({ message: "Ya existe un men? con ese nombre" });
+    }
+    throw err;
+  }
   res.json(updated);
 }
 
@@ -1309,6 +1341,7 @@ export async function listMenuEntries(req: Request, res: Response) {
       ? {
           id: e.item.id,
           code: e.item.code,
+          barcode: e.item.barcode,
           name: e.item.name,
           price: e.item.price,
           tax: e.item.tax,
@@ -1729,6 +1762,7 @@ export async function listItems(req: Request, res: Response) {
       id: i.id,
       hotelId: i.hotelId,
       code: i.code,
+      barcode: i.barcode,
       name: i.name,
       cabys: i.cabys,
       color: (i as any).color || "",
@@ -1770,6 +1804,7 @@ export async function createItems(req: Request, res: Response) {
   const created: any[] = [];
   for (const raw of list) {
     const name = String(raw?.name || "").trim();
+    const barcode = raw?.barcode ? String(raw.barcode).trim() : "";
     const familyId = String(raw?.familyId || "").trim();
     const subFamilyId = raw?.subFamilyId ? String(raw.subFamilyId).trim() : null;
     const subSubFamilyId = raw?.subSubFamilyId ? String(raw.subSubFamilyId).trim() : null;
@@ -1813,6 +1848,7 @@ export async function createItems(req: Request, res: Response) {
         hotelId: user.hotelId,
         number,
         code,
+        barcode: barcode || null,
         name,
         cabys: family.cabys,
         color: raw?.color ? String(raw.color).trim() : null,
@@ -1840,6 +1876,7 @@ export async function createItems(req: Request, res: Response) {
       id: item.id,
       hotelId: item.hotelId,
       code: item.code,
+      barcode: item.barcode,
       name: item.name,
       cabys: item.cabys,
       color: (item as any).color || "",
@@ -1944,6 +1981,10 @@ export async function updateItem(req: Request, res: Response) {
     for (let attempt = 0; attempt < 6; attempt++) {
       const data: any = {};
       if (typeof body.name === "string") data.name = body.name.trim();
+      if ("barcode" in body) {
+        const nextBarcode = String(body.barcode || "").trim();
+        data.barcode = nextBarcode || null;
+      }
       if ("price" in body) data.price = Number(body.price || 0);
       if ("notes" in body) data.notes = body.notes ? String(body.notes) : null;
       if ("active" in body) data.active = body.active !== false;
@@ -1999,6 +2040,7 @@ export async function updateItem(req: Request, res: Response) {
       id: updated.id,
       hotelId: updated.hotelId,
       code: updated.code,
+      barcode: updated.barcode,
       name: updated.name,
       cabys: updated.cabys,
       color: (updated as any).color || "",
@@ -2520,6 +2562,9 @@ export async function closeOrder(req: Request, res: Response) {
   const serviceToSave = asNumber(totals?.service) || asNumber(order.tip10);
   const paidAt = new Date();
   const shouldAssignSaleNumber = !order.saleNumber;
+  const cfg = await getOrCreateRestaurantConfig(hotelId);
+  const inventoryEnabled =
+    cfg?.general && typeof cfg.general === "object" ? (cfg.general as any).inventoryEnabled !== false : true;
 
   // Cargo a habitaci?n (FrontDesk): creamos un InvoiceItem en la factura del hospedaje.
   const roomAmount = asNumber(payments?.room);
@@ -2568,7 +2613,10 @@ export async function closeOrder(req: Request, res: Response) {
     }
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  let updated: any = null;
+  try {
+    updated = await prisma.$transaction(
+      async (tx) => {
       const cashierIdToSave = resolvedCashierId || order.cashierId || null;
       let saleNumberToSave: string | null = null;
       let saleNumberIntToSave: number | null = null;
@@ -2628,9 +2676,6 @@ export async function closeOrder(req: Request, res: Response) {
     });
 
     // Consume inventory based on recipes (per sold item qty) when inventory is enabled.
-    const cfg = await getOrCreateRestaurantConfig(hotelId);
-    const inventoryEnabled =
-      cfg?.general && typeof cfg.general === "object" ? (cfg.general as any).inventoryEnabled !== false : true;
     if (inventoryEnabled) {
       // Recipe lines are stored in inventory unit; if a recipe line cannot be applied, we fail the close.
       const itemIds = Array.from(new Set((updatedOrder.items || []).map((i) => String(i.itemId))));
@@ -2649,44 +2694,85 @@ export async function closeOrder(req: Request, res: Response) {
           byItem.set(k, arr);
         }
 
+        const consumptionByInventory = new Map<
+          string,
+          {
+            id: string;
+            label: string;
+            unit: string;
+            consumption: number;
+          }
+        >();
+
         for (const oi of updatedOrder.items) {
           const soldQty = Number(oi.qty || 0);
           if (!soldQty) continue;
           const lines = byItem.get(String(oi.itemId)) || [];
           for (const line of lines) {
             const inv = line.inventoryItem;
-            if (inv?.inventoryControlled === false) continue;
+            if (!inv || inv.inventoryControlled === false) continue;
             const consumption = Number(line.qty) * soldQty;
             if (!Number.isFinite(consumption) || consumption <= 0) continue;
+            const prev = consumptionByInventory.get(inv.id);
+            if (prev) {
+              prev.consumption += consumption;
+            } else {
+              consumptionByInventory.set(inv.id, {
+                id: inv.id,
+                label: inv.sku || inv.desc || inv.id,
+                unit: inv.unit,
+                consumption,
+              });
+            }
+          }
+        }
 
+        if (consumptionByInventory.size) {
+          const movementRows: Prisma.RestaurantInventoryMovementCreateManyInput[] = [];
+          for (const entry of consumptionByInventory.values()) {
             // Ensure stock is enough (avoid negative/inconsistencies).
             const updatedInv = await tx.restaurantInventoryItem.updateMany({
-              where: { id: inv.id, hotelId, stock: { gte: consumption } },
-              data: { stock: { decrement: consumption } },
+              where: { id: entry.id, hotelId, stock: { gte: entry.consumption } },
+              data: { stock: { decrement: entry.consumption } },
             });
             if (updatedInv.count === 0) {
-              throw new Error(
-                `Stock insuficiente para ${inv.sku || inv.desc || inv.id}: requiere ${consumption} ${inv.unit}`
-              );
+              throw new Error(`Stock insuficiente para ${entry.label}: requiere ${entry.consumption} ${entry.unit}`);
             }
-            await tx.restaurantInventoryMovement.create({
-              data: {
-                hotelId,
-                itemId: inv.id,
-                qtyDelta: -consumption,
-                reason: `Recipe consumption for order ${updatedOrder.id}`,
-                refType: "RESTAURANT_ORDER",
-                refId: updatedOrder.id,
-                createdBy: user.sub,
-              },
+
+            movementRows.push({
+              hotelId,
+              itemId: entry.id,
+              qtyDelta: -entry.consumption,
+              reason: `Recipe consumption for order ${updatedOrder.id}`,
+              refType: "RESTAURANT_ORDER",
+              refId: updatedOrder.id,
+              createdBy: user.sub,
             });
+          }
+          if (movementRows.length) {
+            await tx.restaurantInventoryMovement.createMany({ data: movementRows });
           }
         }
       }
     }
 
     return updatedOrder;
-  });
+      },
+      { maxWait: 10_000, timeout: 20_000 }
+    );
+  } catch (err: any) {
+    const message = err instanceof Error ? err.message : String(err ?? "");
+    if (message.startsWith("Stock insuficiente para")) {
+      return res.status(409).json({ code: "INSUFFICIENT_STOCK", message });
+    }
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2028") {
+      return res.status(503).json({
+        code: "CLOSE_ORDER_TIMEOUT",
+        message: "No se pudo cerrar la orden por carga temporal. Reintenta en unos segundos.",
+      });
+    }
+    throw err;
+  }
   if (!updated) return res.status(404).json({ message: "Orden no encontrada" });
 
   try {
