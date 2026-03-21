@@ -9,7 +9,9 @@ import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
 const BASE_URL = import.meta.env.BASE_URL || "/";
-const OCCUPIED_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-occupied.png`;
+const ICON_ASSET_VERSION = "20260320-occupied";
+const FREE_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
+const OCCUPIED_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-occupied.png?v=${ICON_ASSET_VERSION}`;
 const CAMASTRO_FREE_ICON_URL = `${BASE_URL}assets/restaurant/camastro-free.png`;
 const CAMASTRO_OCCUPIED_ICON_URL = `${BASE_URL}assets/restaurant/camastro-occupied.png`;
 const TABURETE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/taburete-free.png`;
@@ -315,6 +317,7 @@ export default function RestaurantPage() {
   const [printConfirmTitle, setPrintConfirmTitle] = useState("");
   const [printConfirmText, setPrintConfirmText] = useState("");
   const [printConfirmBusy, setPrintConfirmBusy] = useState(false);
+  const [freeIconOk, setFreeIconOk] = useState(true);
   const [occupiedIconOk, setOccupiedIconOk] = useState(true);
   const [camastroFreeIconOk, setCamastroFreeIconOk] = useState(true);
   const [camastroOccupiedIconOk, setCamastroOccupiedIconOk] = useState(true);
@@ -628,8 +631,19 @@ const [subCategory, setSubCategory] = useState("");
       creatingOrderRef.current[localKey] = true;
     }
 
-    const { data } = await api.post("/restaurant/order", payload);
+    let data = null;
+    try {
+      const response = await api.post("/restaurant/order", payload);
+      data = response?.data;
+    } catch (err) {
+      if (payload?.createNew && localKey) {
+        creatingOrderRef.current[localKey] = false;
+      }
+      throw err;
+    }
+
     if (data && typeof data === "object") {
+      const pendingCreateSnapshot = payload?.createNew && localKey ? pendingCreateUpdateRef.current[localKey] : null;
       setOrdersByTable((prev) => {
         const list = normalizeOrderList(prev[payload.tableId]);
         const incoming = {
@@ -646,7 +660,36 @@ const [subCategory, setSubCategory] = useState("");
         const idx = list.findIndex((o) => getOrderKey(o) === String(matchKey));
         const nextList = [...list];
         if (idx >= 0) {
-          nextList[idx] = { ...nextList[idx], ...incoming, localId: nextList[idx].localId || payload.localId };
+          const prevOrder = nextList[idx];
+          if (pendingCreateSnapshot) {
+            // Keep latest optimistic snapshot while the initial create request is still catching up.
+            nextList[idx] = {
+              ...prevOrder,
+              ...incoming,
+              items: Array.isArray(pendingCreateSnapshot.items)
+                ? pendingCreateSnapshot.items
+                : Array.isArray(prevOrder.items)
+                  ? prevOrder.items
+                  : incoming.items,
+              covers: pendingCreateSnapshot.covers ?? prevOrder.covers ?? incoming.covers,
+              note:
+                typeof pendingCreateSnapshot.note === "string"
+                  ? pendingCreateSnapshot.note
+                  : typeof prevOrder.note === "string"
+                    ? prevOrder.note
+                    : incoming.note,
+              serviceType: pendingCreateSnapshot.serviceType || prevOrder.serviceType || incoming.serviceType || "DINE_IN",
+              roomId: pendingCreateSnapshot.roomId ?? prevOrder.roomId ?? incoming.roomId ?? "",
+              discountId: pendingCreateSnapshot.discountId ?? prevOrder.discountId ?? incoming.discountId ?? "",
+              discountPercent: Number(
+                pendingCreateSnapshot.discountPercent ?? prevOrder.discountPercent ?? incoming.discountPercent ?? 0
+              ) || 0,
+              waiterId: pendingCreateSnapshot.waiterId ?? prevOrder.waiterId ?? incoming.waiterId,
+              localId: prevOrder.localId || payload.localId || incoming.localId || undefined,
+            };
+          } else {
+            nextList[idx] = { ...prevOrder, ...incoming, localId: prevOrder.localId || payload.localId };
+          }
         } else {
           nextList.push({ ...incoming, localId: payload.localId || incoming.localId || undefined });
         }
@@ -678,6 +721,8 @@ const [subCategory, setSubCategory] = useState("");
           });
         }
       }
+    } else if (payload?.createNew && localKey) {
+      creatingOrderRef.current[localKey] = false;
     }
   }, []);
 
@@ -761,60 +806,92 @@ const [subCategory, setSubCategory] = useState("");
     return summary;
   }, [ordersByTable]);
 
-const categories = useMemo(() => {
-    const set = new Set((menuItems || []).map((m) => m.category).filter(Boolean));
-    return Array.from(set);
-  }, [menuItems]);
+  const pickMenuHierarchyValue = useCallback((item, keys = [], fallback = "") => {
+    for (const key of keys) {
+      const val = String(item?.[key] || "").trim();
+      if (val) return val;
+    }
+    return String(fallback || "").trim();
+  }, []);
 
-const subCategories = useMemo(() => {
-    if (!category) return [];
-    const set = new Set(
-      (menuItems || [])
-        .filter((m) => m.category === category)
-        .map((m) => m.subfamily || m.subCategory || m.subFamily || m.subCategoria || m.subcategoria)
-        .filter(Boolean)
-    );
+  const getMenuFamily = useCallback(
+    (item) =>
+      pickMenuHierarchyValue(
+        item,
+        ["familyName", "family", "familia", "familyLabel", "familyCategory", "categoryName", "category"],
+        "General"
+      ),
+    [pickMenuHierarchyValue]
+  );
+
+  const getMenuSubFamily = useCallback(
+    (item) =>
+      pickMenuHierarchyValue(item, [
+        "subFamilyName",
+        "subfamily",
+        "subFamily",
+        "subCategoria",
+        "subcategoria",
+        "subCategory",
+        "subFamilyLabel",
+      ]),
+    [pickMenuHierarchyValue]
+  );
+
+  const getMenuSubSubFamily = useCallback(
+    (item) =>
+      pickMenuHierarchyValue(item, [
+        "subSubFamilyName",
+        "subSubFamily",
+        "subsubfamily",
+        "subSubFamilia",
+        "subsubFamilia",
+        "subSubCategory",
+        "subsubCategory",
+      ]),
+    [pickMenuHierarchyValue]
+  );
+
+  const categories = useMemo(() => {
+    const set = new Set();
+    (menuItems || []).forEach((m) => {
+      const family = getMenuFamily(m);
+      if (family) set.add(family);
+    });
     return Array.from(set);
-  }, [menuItems, category]);
+  }, [menuItems, getMenuFamily]);
+
+  const subCategories = useMemo(() => {
+    if (!category) return [];
+    const set = new Set();
+    (menuItems || []).forEach((m) => {
+      if (getMenuFamily(m) !== category) return;
+      const sub = getMenuSubFamily(m);
+      if (sub) set.add(sub);
+    });
+    return Array.from(set);
+  }, [menuItems, category, getMenuFamily, getMenuSubFamily]);
 
   const subSubCategories = useMemo(() => {
     if (!category || !subCategory) return [];
-    const set = new Set(
-      (menuItems || [])
-        .filter((m) => m.category === category)
-        .filter((m) =>
-          !subCategory
-            ? true
-            : m.subfamily === subCategory ||
-              m.subCategory === subCategory ||
-              m.subFamily === subCategory ||
-              m.subCategoria === subCategory ||
-              m.subcategoria === subCategory
-        )
-        .map((m) => m.subSubFamily || m.subsubfamily || m.subSubFamilia || m.subsubFamilia)
-        .filter(Boolean)
-    );
+    const set = new Set();
+    (menuItems || []).forEach((m) => {
+      if (getMenuFamily(m) !== category) return;
+      if (getMenuSubFamily(m) !== subCategory) return;
+      const subSub = getMenuSubSubFamily(m);
+      if (subSub) set.add(subSub);
+    });
     return Array.from(set);
-  }, [menuItems, category, subCategory]);
+  }, [menuItems, category, subCategory, getMenuFamily, getMenuSubFamily, getMenuSubSubFamily]);
 
   const filteredMenu = useMemo(() => {
     return (menuItems || []).filter((m) => {
-      const inCat = !category || m.category === category;
-      const inSub = (
-        !subCategory ||
-        m.subfamily === subCategory ||
-        m.subCategory === subCategory ||
-        m.subFamily === subCategory ||
-        m.subCategoria === subCategory ||
-        m.subcategoria === subCategory
-      );
-      const inSubSub = (
-        !subSubCategory ||
-        m.subSubFamily === subSubCategory ||
-        m.subsubfamily === subSubCategory ||
-        m.subSubFamilia === subSubCategory ||
-        m.subsubFamilia === subSubCategory
-      );
+      const family = getMenuFamily(m);
+      const subFamily = getMenuSubFamily(m);
+      const subSubFamily = getMenuSubSubFamily(m);
+      const inCat = !category || family === category;
+      const inSub = !subCategory || subFamily === subCategory;
+      const inSubSub = !subSubCategory || subSubFamily === subSubCategory;
       const term = String(search || "").toLowerCase();
       const matches =
         !term ||
@@ -823,7 +900,37 @@ const subCategories = useMemo(() => {
           .some((v) => v.includes(term));
       return inCat && inSub && inSubSub && matches;
     });
-  }, [menuItems, category, subCategory, subSubCategory, search]);
+  }, [menuItems, category, subCategory, subSubCategory, search, getMenuFamily, getMenuSubFamily, getMenuSubSubFamily]);
+
+  useEffect(() => {
+    if (!category) return;
+    if (categories.includes(category)) return;
+    setCategory("");
+    setSubCategory("");
+    setSubSubCategory("");
+  }, [category, categories]);
+
+  useEffect(() => {
+    if (!category) {
+      if (subCategory) setSubCategory("");
+      if (subSubCategory) setSubSubCategory("");
+      return;
+    }
+    if (!subCategory) return;
+    if (subCategories.includes(subCategory)) return;
+    setSubCategory("");
+    setSubSubCategory("");
+  }, [category, subCategory, subSubCategory, subCategories]);
+
+  useEffect(() => {
+    if (!subCategory) {
+      if (subSubCategory) setSubSubCategory("");
+      return;
+    }
+    if (!subSubCategory) return;
+    if (subSubCategories.includes(subSubCategory)) return;
+    setSubSubCategory("");
+  }, [subCategory, subSubCategory, subSubCategories]);
 
   const shift = useMemo(() => {
     const h = now.getHours();
@@ -1518,7 +1625,9 @@ const subCategories = useMemo(() => {
         const { data } = await api.get(`/restaurant/menu?section=${encodeURIComponent(sectionId || "")}&serviceType=${serviceType}`);
         if (Array.isArray(data) && data.length > 0) {
           setMenuItems(data);
-          setCategory(data[0]?.category || "");
+          setCategory("");
+          setSubCategory("");
+          setSubSubCategory("");
           return;
         }
       } catch {
@@ -1526,6 +1635,8 @@ const subCategories = useMemo(() => {
       }
       setMenuItems([]);
       setCategory("");
+      setSubCategory("");
+      setSubSubCategory("");
     },
     [serviceType]
   );
@@ -2597,7 +2708,7 @@ const subCategories = useMemo(() => {
                   <img
                     alt=""
                     src={item.imageUrl}
-                    className="h-full w-full object-contain p-1"
+                    className="h-full w-full object-contain p-0 scale-110"
                     onError={(ev) => {
                       ev.currentTarget.style.display = "none";
                     }}
@@ -4365,6 +4476,7 @@ const subCategories = useMemo(() => {
                                             const isCamastro = kind === "camastro";
                                             const isTaburete =
                                               kind === "taburete" || kind === "butaca" || kind === "stool" || kind === "barstool";
+                                            const isMesa = kind === "mesa";
                                             if (hasOrder) {
                                               if (isCamastro && camastroOccupiedIconOk) {
                                                 return (
@@ -4417,6 +4529,16 @@ const subCategories = useMemo(() => {
                                                   />
                                                 );
                                               }
+                                              if (isMesa && freeIconOk) {
+                                                return (
+                                                  <img
+                                                    alt="Mesa libre"
+                                                    src={FREE_TABLE_ICON_URL}
+                                                    className="w-full h-full object-contain"
+                                                    onError={() => setFreeIconOk(false)}
+                                                  />
+                                                );
+                                              }
                                             }
                                             const Icon = hasOrder ? Occupied : Free;
                                             return <Icon className="w-full h-full" />;
@@ -4459,40 +4581,107 @@ const subCategories = useMemo(() => {
               </div>
             ) : (
               <div key={`restaurant-pos-${String(selectedTable?.id || "none")}`} className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto items-start">
-                {/* Barra superior: familias + búsqueda */}
-                <div className="col-span-3 self-start w-full flex flex-col md:flex-row md:items-center md:space-x-4 gap-2 bg-gradient-to-r from-lime-50 via-emerald-50 to-lime-100 border border-lime-100 rounded-2xl shadow-sm px-4 py-2">
-                  <div className="flex-1 flex flex-nowrap items-center gap-2 overflow-x-auto min-w-0">
-                    <button
-                      className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
-                        !category ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
-                      }`}
-                      onClick={() => {
-                        setCategory("");
-                        setSubCategory("");
-                      }}
-                    >
-                      All
-                    </button>
-                    {categories.map((cat) => (
-                      <button
-                        key={cat}
-                        className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
-                          category === cat ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
-                        }`}
-                        onClick={() => {
-                          setCategory(cat);
-                          setSubCategory("");
-                        }}
-                      >
-                        {cat}
-                      </button>
-                    ))}
+                {/* Top filter bar: family -> sub-family -> sub-sub-family */}
+                <div className="col-span-3 self-start w-full flex flex-col lg:flex-row lg:items-start gap-3 bg-gradient-to-r from-lime-50 via-emerald-50 to-lime-100 border border-lime-100 rounded-2xl shadow-sm px-4 py-3">
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 shrink-0 text-[11px] uppercase text-lime-700 font-semibold">Familias</div>
+                      <div className="flex-1 min-w-0 flex flex-nowrap items-center gap-2 overflow-x-auto">
+                        <button
+                          className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                            !category ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                          }`}
+                          onClick={() => {
+                            setCategory("");
+                            setSubCategory("");
+                            setSubSubCategory("");
+                          }}
+                        >
+                          All
+                        </button>
+                        {categories.map((cat) => (
+                          <button
+                            key={cat}
+                            className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                              category === cat ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                            }`}
+                            onClick={() => {
+                              setCategory(cat);
+                              setSubCategory("");
+                              setSubSubCategory("");
+                            }}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {category && subCategories.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 shrink-0 text-[11px] uppercase text-lime-700 font-semibold">Sub-familias</div>
+                        <div className="flex-1 min-w-0 flex flex-nowrap items-center gap-2 overflow-x-auto">
+                          <button
+                            className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                              !subCategory ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                            }`}
+                            onClick={() => {
+                              setSubCategory("");
+                              setSubSubCategory("");
+                            }}
+                          >
+                            All
+                          </button>
+                          {subCategories.map((sub) => (
+                            <button
+                              key={String(sub)}
+                              className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                                subCategory === sub ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                              }`}
+                              onClick={() => {
+                                setSubCategory(sub);
+                                setSubSubCategory("");
+                              }}
+                            >
+                              {sub}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {category && subCategory && subSubCategories.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 shrink-0 text-[11px] uppercase text-lime-700 font-semibold">Sub-sub-familias</div>
+                        <div className="flex-1 min-w-0 flex flex-nowrap items-center gap-2 overflow-x-auto">
+                          <button
+                            className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                              !subSubCategory ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                            }`}
+                            onClick={() => setSubSubCategory("")}
+                          >
+                            All
+                          </button>
+                          {subSubCategories.map((sub2) => (
+                            <button
+                              key={String(sub2)}
+                              className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
+                                subSubCategory === sub2 ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
+                              }`}
+                              onClick={() => setSubSubCategory(sub2)}
+                            >
+                              {sub2}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2 w-full md:w-auto md:shrink-0 md:basis-72">
+                  <div className="flex items-center gap-2 w-full lg:w-auto lg:shrink-0 lg:basis-80">
                     <input
-                      className="h-10 w-full md:w-[260px] rounded-lg border border-lime-200 px-3 text-sm"
-                      placeholder="Buscar artículo..."
+                      className="h-10 w-full lg:w-[260px] rounded-lg border border-lime-200 px-3 text-sm"
+                      placeholder="Buscar articulo..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
                     />
@@ -4505,68 +4694,9 @@ const subCategories = useMemo(() => {
                   </div>
                 </div>
 
-                <div className="col-span-2 min-h-0 flex flex-col xl:flex-row gap-4">
-                  <div className="flex-1 min-h-0 flex gap-3 items-start">
-                    {category && subCategories.length > 0 && (
-                      <div className="w-40 shrink-0 rounded-2xl border border-lime-100 bg-lime-50/60 p-3 space-y-2">
-                        <div className="text-[11px] uppercase text-lime-600">Subfamilias</div>
-                        <button
-                          className={`w-full h-9 rounded-lg border text-sm font-semibold ${
-                            !subCategory ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
-                          }`}
-                          onClick={() => {
-                            setSubCategory("");
-                            setSubSubCategory("");
-                          }}
-                        >
-                          All
-                        </button>
-                        {subCategories.map((sub) => (
-                          <button
-                            key={String(sub)}
-                            className={`w-full text-left h-9 px-3 rounded-lg border text-sm font-semibold ${
-                              subCategory === sub ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
-                            }`}
-                            onClick={() => {
-                              setSubCategory(sub);
-                              setSubSubCategory("");
-                            }}
-                          >
-                            {sub}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {subCategory && subSubCategories.length > 0 && (
-                      <div className="w-40 shrink-0 rounded-2xl border border-lime-100 bg-lime-50/60 p-3 space-y-2">
-                        <div className="text-[11px] uppercase text-lime-600">Sub-subfamilias</div>
-                        <button
-                          className={`w-full h-9 rounded-lg border text-sm font-semibold ${
-                            !subSubCategory ? "bg-lime-100 border-lime-300 text-lime-900" : "bg-white border-lime-200 text-lime-700"
-                          }`}
-                          onClick={() => setSubSubCategory("")}
-                        >
-                          All
-                        </button>
-                        {subSubCategories.map((sub2) => (
-                          <button
-                            key={String(sub2)}
-                            className={`w-full text-left h-9 px-3 rounded-lg border text-sm font-semibold ${
-                              subSubCategory === sub2 ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"
-                            }`}
-                            onClick={() => setSubSubCategory(sub2)}
-                          >
-                            {sub2}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {menuGrid}
-                  </div>
+                <div className="col-span-2 min-h-0 flex flex-col">
+                  {menuGrid}
                 </div>
-
                 <div className="bg-white border border-lime-100 rounded-2xl shadow p-4 flex flex-col">
                   <div className="flex items-center justify-between gap-2 mb-3">
                     <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-1">

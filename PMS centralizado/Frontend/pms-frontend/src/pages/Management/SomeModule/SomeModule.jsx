@@ -48,7 +48,7 @@ export default function SomeModule() {
                 <td className="py-2 pl-4">{it.name}</td>
                 <td>{it.code}</td>
                 <td className="pr-4 py-2 text-right">
-                  <button onClick={() => setConfirm(it.id)} className="rounded border px-2 py-1 text-xs">{t("mgmt.someModule.delete")}</button>
+                  <button onClick={() => setConfirm(it.id)} className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700">{t("mgmt.someModule.delete")}</button>
                 </td>
               </tr>
             ))}

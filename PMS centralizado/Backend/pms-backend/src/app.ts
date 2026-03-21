@@ -27,6 +27,7 @@ import contractsRoutes from "./routes/contracts.route.js";
 import geoRoutes from "./routes/geo.route.js";
 import cashAuditRoutes from "./routes/cashAudit.route.js";
 import usersRoutes from "./routes/users.route.js";
+import auditRoutes from "./routes/audit.route.js";
 import launcherRoutes from "./routes/launcher.route.js";
 import einvoicingRoutes from "./routes/einvoicing.route.js";
 import gestorRoutes from "./routes/gestor.route.js";
@@ -37,6 +38,7 @@ import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
 import { auth, requireGestor } from "./middleware/auth.js";
 import { requireMembership } from "./middleware/membership.js";
+import { auditMiddleware } from "./middleware/audit.js";
 import { logger } from "./lib/logger.js";
 
 
@@ -82,6 +84,7 @@ api.use("/gestor", auth, requireGestor, gestorRoutes);
 // Protegidas (requieren Authorization: Bearer <token>)
 api.use(auth);
 api.use(tenantCtx);
+api.use(auditMiddleware);
 api.use("/rooms", requireMembership("frontdesk"), rooms); //-> GET/POST /api/rooms
 api.use("/roomTypes", requireMembership("frontdesk"), roomTypes); // -> /api/roomTypes
 api.use("/reservations", requireMembership("frontdesk"), reservations);
@@ -102,6 +105,7 @@ api.use("/einvoicing", requireMembership("einvoicing"), einvoicingRoutes);
 api.use("/geo", requireMembership("frontdesk"), geoRoutes);
 api.use("/cash-audits", requireMembership("frontdesk", "restaurant", "accounting"), cashAuditRoutes);
 api.use("/users", requireMembership("management"), usersRoutes);
+api.use("/audit", requireMembership("management"), auditRoutes);
 
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

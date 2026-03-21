@@ -222,7 +222,7 @@ export default function Contracts() {
                 type="button"
                 onClick={() => onDelete()}
                 disabled={submitting}
-                className="bg-red-600 hover:bg-red-700 text-white"
+                variant="destructive"
               >
                 {t("mgmt.contracts.delete")}
               </Button>
@@ -277,7 +277,7 @@ export default function Contracts() {
                   <td className="pr-4 py-2 text-right space-x-1">
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs hover:bg-blue-100"
+                      className="rounded border border-indigo-600 bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700"
                       onClick={() => onRowSelect(x)}
                       disabled={submitting}
                     >
@@ -285,7 +285,7 @@ export default function Contracts() {
                     </button>
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                      className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                       onClick={() => onDelete(x.id)}
                       disabled={submitting}
                     >

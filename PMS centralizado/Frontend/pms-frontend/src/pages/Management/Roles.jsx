@@ -1,4 +1,4 @@
-//src/pages/Management/Roles.jsx
+﻿//src/pages/Management/Roles.jsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { Card } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -8,6 +8,42 @@ import { SimpleTable } from "../../components/ui/table";
 import { api } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useLanguage } from "../../context/LanguageContext";
+
+const RESTAURANT_MANAGEMENT_SECTIONS = new Set([
+  "config",
+  "general",
+  "billing",
+  "floorplan",
+  "section",
+  "sections",
+  "table",
+  "tables",
+  "menu",
+  "family",
+  "families",
+  "item",
+  "items",
+  "inventory",
+  "recipe",
+  "recipes",
+  "payment",
+  "payments",
+  "tax",
+  "taxes",
+  "discount",
+  "discounts",
+  "printer",
+  "printers",
+  "staff",
+]);
+
+const resolvePermissionModule = (perm) => {
+  const parts = String(perm || "").toLowerCase().split(".");
+  const mod = parts[0] || "other";
+  if (mod !== "restaurant") return mod;
+  const section = parts[1] || "";
+  return RESTAURANT_MANAGEMENT_SECTIONS.has(section) ? "management" : "restaurant";
+};
 
 export default function Roles() {
   const { hotel } = useAuth();
@@ -83,7 +119,7 @@ export default function Roles() {
   const filteredPermissions = useMemo(() => {
     if (!allowedModules) return permissions;
     return (permissions || []).filter((perm) => {
-      const [mod] = String(perm || "").split(".");
+      const mod = resolvePermissionModule(perm);
       return isModuleEnabled(mod);
     });
   }, [permissions, allowedModules, isModuleEnabled]);
@@ -96,7 +132,7 @@ export default function Roles() {
       if (!Array.isArray(list) || list.length === 0) return true;
       if (list.includes("*")) return true;
       return list.some((perm) => {
-        const [mod] = String(perm || "").split(".");
+        const mod = resolvePermissionModule(perm);
         return isModuleEnabled(mod);
       });
     });
@@ -243,7 +279,7 @@ export default function Roles() {
               ...role,
               actions: (
                 <div className="flex gap-2">
-                  <Button size="xs" variant="outline" onClick={() => startEdit(role)}>
+                  <Button size="xs" variant="indigo" onClick={() => startEdit(role)}>
                     {t("mgmt.roles.edit")}
                   </Button>
                   <Button
@@ -333,8 +369,7 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
   const grouped = useMemo(() => {
     const groups = {};
     (permissions || []).forEach((perm) => {
-      const [mod] = perm.split(".");
-      const key = mod || "other";
+      const key = resolvePermissionModule(perm);
       groups[key] = groups[key] || [];
       groups[key].push(perm);
     });
@@ -365,6 +400,32 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
     });
     return bySection;
   }, [grouped]);
+
+  const managementModuleLabel = (moduleKey) => {
+    const map = {
+      management: t("modules.management.name"),
+      restaurant: t("modules.restaurant.name"),
+      frontdesk: t("modules.frontdesk.name"),
+      accounting: t("modules.accounting.name"),
+      einvoicing: t("modules.einvoicing.name"),
+    };
+    return map[moduleKey] || moduleKey;
+  };
+
+  const managementGroups = useMemo(() => {
+    const perms = grouped.management || [];
+    const bySource = {};
+    perms.forEach((perm) => {
+      const source = (String(perm || "").split(".")[0] || "other").toLowerCase();
+      bySource[source] = bySource[source] || [];
+      bySource[source].push(perm);
+    });
+    Object.keys(bySource).forEach((k) => {
+      bySource[k] = bySource[k].slice().sort((a, b) => a.localeCompare(b));
+    });
+    return bySource;
+  }, [grouped]);
+
 
   const prettyLabel = (perm) => {
     const raw = String(perm || "");
@@ -462,6 +523,33 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
                     </div>
                   ))}
                 </div>
+              ) : mod === "management" ? (
+                <div className="space-y-3">
+                  {Object.entries(managementGroups).map(([source, list]) => (
+                    <div key={source} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2">
+                      <div className="text-xs font-semibold uppercase text-slate-600 mb-2">
+                        {managementModuleLabel(source)}
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-2">
+                        {(list || []).map((p) => {
+                          const listPerms = rolePerms[selectedRole] || [];
+                          const checked = selectedRole === "ADMIN" || listPerms.includes("*") || listPerms.includes(p);
+                          return (
+                            <label key={p} className="text-sm flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={selectedRole === "ADMIN"}
+                                onChange={(e) => toggle(p, e.target.checked)}
+                              />
+                              {prettyLabel(p)}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="grid md:grid-cols-2 gap-2">
                   {perms.map((p) => {
@@ -488,3 +576,5 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
     </div>
   );
 }
+
+

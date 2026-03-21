@@ -205,7 +205,7 @@ export default function Discounts() {
               <Button type="button" onClick={onUpdate} disabled={submitting}>
                 {t("common.save")}
               </Button>
-              <Button type="button" onClick={onDelete} disabled={submitting} className="bg-red-600 hover:bg-red-700 text-white">
+              <Button type="button" variant="destructive" onClick={onDelete} disabled={submitting}>
                 {t("mgmt.discounts.delete")}
               </Button>
               <Button
@@ -259,7 +259,7 @@ export default function Discounts() {
                   <td className="pr-4 py-2 text-right space-x-1">
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs hover:bg-blue-100"
+                      className="rounded border border-indigo-600 bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700"
                       onClick={() => onRowSelect(x)}
                       disabled={submitting}
                     >
@@ -267,7 +267,7 @@ export default function Discounts() {
                     </button>
                     <button
                       type="button"
-                      className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                      className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                       onClick={async () => {
                         if (submitting) return;
                         const ok = window.confirm(t("mgmt.discounts.confirmDeleteByName", { name: x.name }));

@@ -262,7 +262,7 @@ function LauncherProfiles() {
               <div className="flex gap-2">
                 <Button
                   size="xs"
-                  variant="outline"
+                  variant="indigo"
                   type="button"
                   onClick={() => handleEdit(r)}
                 >

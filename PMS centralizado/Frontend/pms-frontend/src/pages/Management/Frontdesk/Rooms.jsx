@@ -113,7 +113,7 @@ export default function Rooms() {
           ]}
           rows={rows}
           actions={(row) => (
-            <Button variant="ghost" size="sm" className="text-red-600" onClick={() => onDelete(row.id)}>
+            <Button variant="destructive" size="sm" onClick={() => onDelete(row.id)}>
               {t("mgmt.rooms.delete")}
             </Button>
           )}

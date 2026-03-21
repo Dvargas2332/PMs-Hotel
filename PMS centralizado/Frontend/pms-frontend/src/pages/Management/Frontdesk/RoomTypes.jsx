@@ -244,7 +244,7 @@ export default function RoomTypes() {
                   type="button"
                   onClick={() => onTypeDelete()}
                   disabled={typeSubmitting}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  variant="destructive"
                 >
                   {t("mgmt.roomTypes.delete")}
                 </Button>
@@ -295,7 +295,7 @@ export default function RoomTypes() {
                     <td className="pr-4 py-2 text-right space-x-1">
                       <button
                         type="button"
-                        className="rounded border px-2 py-1 text-xs hover:bg-blue-100"
+                        className="rounded border border-indigo-600 bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700"
                         onClick={() => onTypeRowSelect(x)}
                         disabled={typeSubmitting}
                       >
@@ -303,7 +303,7 @@ export default function RoomTypes() {
                       </button>
                       <button
                         type="button"
-                        className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                        className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                         onClick={() => onTypeDelete(x.id)}
                         disabled={typeSubmitting}
                       >
@@ -391,7 +391,7 @@ export default function RoomTypes() {
                   type="button"
                   onClick={() => onRoomDelete()}
                   disabled={roomSubmitting}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  variant="destructive"
                 >
                   {t("mgmt.roomTypes.delete")}
                 </Button>
@@ -444,7 +444,7 @@ export default function RoomTypes() {
                     <td className="pr-4 py-2 text-right space-x-1">
                       <button
                         type="button"
-                        className="rounded border px-2 py-1 text-xs hover:bg-blue-100"
+                        className="rounded border border-indigo-600 bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700"
                         onClick={() => onRoomRowSelect(room)}
                         disabled={roomSubmitting}
                       >
@@ -452,7 +452,7 @@ export default function RoomTypes() {
                       </button>
                       <button
                         type="button"
-                        className="rounded border px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                        className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                         onClick={() => onRoomDelete(room.id)}
                         disabled={roomSubmitting}
                       >

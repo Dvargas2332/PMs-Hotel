@@ -973,10 +973,13 @@ export async function importRestaurantItems(req: Request, res: Response) {
         "subfamily",
         "subfamilia",
         "sub_family",
+        "sub_familia",
         "sub_family_name",
+        "sub_familia_name",
         "subfamily_name",
         "subfamilia_name",
         "subfamilia_nombre",
+        "sub_familia_nombre",
         "subcategory",
         "subcategoria",
         "sub_group",
@@ -984,11 +987,17 @@ export async function importRestaurantItems(req: Request, res: Response) {
       const subSubFamilyName = pickFirst(row, [
         "subsubfamily",
         "subsubfamilia",
+        "subsub_familia",
         "sub_subfamily",
+        "sub_subfamilia",
+        "sub_sub_familia",
         "sub_sub_family",
         "sub_subfamily_name",
+        "sub_subfamilia_name",
+        "sub_sub_familia_name",
         "subsubfamily_name",
         "subsubfamilia_name",
+        "subsub_familia_name",
         "sub_subfamilia",
         "sub_subcategoria",
       ]);
@@ -1116,6 +1125,18 @@ export async function importRestaurantItems(req: Request, res: Response) {
             subSubFamilyId: subSubFamily?.id || null,
           },
         });
+      }
+
+      // Fallback para imports antiguos que crearon articulos sin subfamilia/subsubfamilia.
+      if (!existing) {
+        const sameNameInFamily = await prisma.restaurantItem.findMany({
+          where: { hotelId, name, familyId: family.id },
+          orderBy: { createdAt: "asc" },
+          take: 2,
+        });
+        if (sameNameInFamily.length === 1) {
+          existing = sameNameInFamily[0];
+        }
       }
 
       if (existing) {

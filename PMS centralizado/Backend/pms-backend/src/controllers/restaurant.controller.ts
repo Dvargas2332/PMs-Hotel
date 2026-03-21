@@ -49,6 +49,90 @@ const fromInternalId = (hotelId: string, internalId: string) => {
   return internalId.startsWith(prefix) ? internalId.slice(prefix.length) : internalId;
 };
 
+const DEFAULT_RESTAURANT_TIMEZONE = "America/Costa_Rica";
+const WEEKDAY_INDEX: Record<string, number> = {
+  SUN: 0,
+  MON: 1,
+  TUE: 2,
+  WED: 3,
+  THU: 4,
+  FRI: 5,
+  SAT: 6,
+};
+
+function parseClockToMinutes(value?: string | null): number | null {
+  if (!value) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(value).trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+function normalizeTimeZone(value?: string | null): string {
+  const tz = String(value || "").trim() || DEFAULT_RESTAURANT_TIMEZONE;
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date());
+    return tz;
+  } catch {
+    return DEFAULT_RESTAURANT_TIMEZONE;
+  }
+}
+
+function getZonedClockParts(timezone?: string | null, now = new Date()) {
+  const tz = normalizeTimeZone(timezone);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const weekdayShort = String(parts.find((p) => p.type === "weekday")?.value || "Sun").slice(0, 3).toUpperCase();
+  const hour = Number(parts.find((p) => p.type === "hour")?.value || 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value || 0);
+  const day = WEEKDAY_INDEX[weekdayShort] ?? 0;
+  const prevDay = (day + 6) % 7;
+
+  return {
+    day,
+    prevDay,
+    minutesNow: (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0),
+  };
+}
+
+function isAssignmentActiveNow(input: {
+  daysMask?: number | null;
+  startTime?: string | null;
+  endTime?: string | null;
+  timezone?: string | null;
+}, now = new Date()) {
+  const { day, prevDay, minutesNow } = getZonedClockParts(input.timezone, now);
+  const daysMask = Number.isFinite(Number(input.daysMask)) ? Number(input.daysMask) : 127;
+  const dayEnabled = (daysMask & (1 << day)) !== 0;
+  const prevDayEnabled = (daysMask & (1 << prevDay)) !== 0;
+
+  const start = parseClockToMinutes(input.startTime);
+  const end = parseClockToMinutes(input.endTime);
+
+  if (start == null && end == null) return dayEnabled;
+  if (start != null && end == null) return dayEnabled && minutesNow >= start;
+  if (start == null && end != null) return dayEnabled && minutesNow < end;
+  if (start == null || end == null) return dayEnabled;
+  if (start === end) return dayEnabled;
+
+  if (start < end) {
+    return dayEnabled && minutesNow >= start && minutesNow < end;
+  }
+
+  // Ventana que cruza medianoche (ej: 19:00 -> 06:00)
+  if (minutesNow >= start) return dayEnabled;
+  if (minutesNow < end) return prevDayEnabled;
+  return false;
+}
+
 const padLeft = (input: string, len: number, char = "0") => {
   const s = String(input ?? "");
   if (s.length >= len) return s.slice(-len);
@@ -428,30 +512,6 @@ export async function listSections(req: Request, res: Response) {
     orderBy: { name: "asc" },
   });
 
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun..6=Sat
-  const minutesNow = now.getHours() * 60 + now.getMinutes();
-  const isActiveInWindow = (startTime?: string | null, endTime?: string | null) => {
-    const parse = (t?: string | null) => {
-      if (!t) return null;
-      const m = /^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
-      if (!m) return null;
-      const hh = Number(m[1]);
-      const mm = Number(m[2]);
-      if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-      return hh * 60 + mm;
-    };
-    const start = parse(startTime);
-    const end = parse(endTime);
-    if (start == null && end == null) return true;
-    if (start != null && end == null) return minutesNow >= start;
-    if (start == null && end != null) return minutesNow < end;
-    if (start == null || end == null) return true;
-    if (start === end) return true;
-    if (start < end) return minutesNow >= start && minutesNow < end;
-    return minutesNow >= start || minutesNow < end;
-  };
-
   const assignments = await prisma.restaurantMenuAssignment.findMany({
     where: { hotelId, active: true, sectionId: { in: sections.map((s) => s.id) } },
     include: { menu: { select: { id: true, name: true, active: true } } },
@@ -469,11 +529,7 @@ export async function listSections(req: Request, res: Response) {
     id: fromInternalId(hotelId, s.id),
     activeMenu: (() => {
       const list = assignmentsBySection.get(s.id) || [];
-      const activeAssignment = list.find((a) => {
-        const dayOk = (Number(a.daysMask || 0) & (1 << day)) !== 0;
-        if (!dayOk) return false;
-        return isActiveInWindow(a.startTime, a.endTime);
-      });
+      const activeAssignment = list.find((a) => isAssignmentActiveNow(a));
       if (!activeAssignment?.menu || activeAssignment.menu.active === false) return null;
       return { id: activeAssignment.menu.id, name: activeAssignment.menu.name };
     })(),
@@ -991,31 +1047,6 @@ export async function listMenu(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
 
   const sectionId = (req.query.section as string | undefined) || undefined;
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun..6=Sat
-  const minutesNow = now.getHours() * 60 + now.getMinutes();
-
-  const isActiveInWindow = (startTime?: string | null, endTime?: string | null) => {
-    const parse = (t?: string | null) => {
-      if (!t) return null;
-      const m = /^(\d{1,2}):(\d{2})$/.exec(String(t).trim());
-      if (!m) return null;
-      const hh = Number(m[1]);
-      const mm = Number(m[2]);
-      if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-      return hh * 60 + mm;
-    };
-    const start = parse(startTime);
-    const end = parse(endTime);
-    if (start == null && end == null) return true;
-    if (start != null && end == null) return minutesNow >= start;
-    if (start == null && end != null) return minutesNow < end;
-    if (start == null || end == null) return true;
-    if (start === end) return true;
-    // ventana que cruza medianoche
-    if (start < end) return minutesNow >= start && minutesNow < end;
-    return minutesNow >= start || minutesNow < end;
-  };
 
   if (sectionId) {
     const internalSectionId = toInternalId(user.hotelId, sectionId);
@@ -1028,11 +1059,7 @@ export async function listMenu(req: Request, res: Response) {
       orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
     });
 
-    const activeAssignment = assignments.find((a) => {
-      const dayOk = (Number(a.daysMask || 0) & (1 << day)) !== 0;
-      if (!dayOk) return false;
-      return isActiveInWindow(a.startTime, a.endTime);
-    });
+    const activeAssignment = assignments.find((a) => isAssignmentActiveNow(a));
 
     if (activeAssignment) {
       const entries = await prisma.restaurantMenuEntry.findMany({
@@ -1056,6 +1083,12 @@ export async function listMenu(req: Request, res: Response) {
           name: e.item?.name,
           code: e.item?.code,
           barcode: e.item?.barcode || "",
+          familyId: e.item?.familyId || "",
+          subFamilyId: e.item?.subFamilyId || "",
+          subSubFamilyId: e.item?.subSubFamilyId || "",
+          familyName: e.item?.family?.name || "",
+          subFamilyName: e.item?.subFamily?.name || "",
+          subSubFamilyName: e.item?.subSubFamily?.name || "",
           color: (e.item as any)?.color || "",
           imageUrl: (e.item as any)?.imageUrl || "",
           sizes: Array.isArray((e.item as any)?.sizes) ? (e.item as any)?.sizes : [],

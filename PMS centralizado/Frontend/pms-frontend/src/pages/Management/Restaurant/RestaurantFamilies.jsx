@@ -288,7 +288,7 @@ export default function RestaurantFamilies() {
                     <span
                       role="button"
                       tabIndex={0}
-                      className="text-xs text-red-600 hover:underline"
+                      className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -363,7 +363,7 @@ export default function RestaurantFamilies() {
                     <span
                       role="button"
                       tabIndex={0}
-                      className="text-xs text-red-600 hover:underline"
+                      className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
@@ -429,7 +429,7 @@ export default function RestaurantFamilies() {
                     className="w-full rounded-lg border border-indigo-100 px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60"
                   >
                     <span className="text-sm font-semibold truncate">{ssf.name}</span>
-                    <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => removeSubSubFamily(ssf.id)}>
+                    <button type="button" className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700" onClick={() => removeSubSubFamily(ssf.id)}>
                       {t("mgmt.restaurant.common.delete")}
                     </button>
                   </div>

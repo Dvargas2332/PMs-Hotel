@@ -42,6 +42,7 @@ const BACKEND_PREFIXES = [
   "/version",
   "/roles",
   "/permissions",
+  "/audit",
   "/taxes",
   "/restaurant",
   "/invoices",

@@ -25,6 +25,12 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     details: [],
     active: true,
   };
+  const makeItemFilter = () => ({
+    search: "",
+    familyId: "",
+    status: "",
+    code: "",
+  });
 
   const [form, setForm] = useState(empty);
   const [items, setItems] = useState([]);
@@ -39,8 +45,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   const [sizesEnabled, setSizesEnabled] = useState(false);
   const [detailsEnabled, setDetailsEnabled] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [itemFilter, setItemFilter] = useState("");
-  const [itemFilterDraft, setItemFilterDraft] = useState("");
+  const [itemFilter, setItemFilter] = useState(() => makeItemFilter());
+  const [itemFilterDraft, setItemFilterDraft] = useState(() => makeItemFilter());
+  const [itemsPanelTab, setItemsPanelTab] = useState("form");
 
   const pushAlert = (desc) => {
     window.dispatchEvent(
@@ -155,10 +162,45 @@ export default function RestaurantItems({ onItemsChange } = {}) {
     return cabys ? String(cabys) : "";
   }, [familiesById, form.familyId]);
 
+  const hasActiveItemFilter = useMemo(
+    () =>
+      Object.values(itemFilter || {}).some((value) => String(value || "").trim() !== ""),
+    [itemFilter]
+  );
+
+  const itemCodeOptions = useMemo(() => {
+    const seen = new Set();
+    return (items || [])
+      .map((i) => String(i.code || i.id || "").trim())
+      .filter(Boolean)
+      .filter((code) => {
+        const key = code.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base", numeric: true }));
+  }, [items]);
+
   const filteredItems = useMemo(() => {
-    const term = String(itemFilter || "").trim().toLowerCase();
-    if (!term) return items || [];
+    const term = String(itemFilter?.search || "").trim().toLowerCase();
+    const filterFamilyId = String(itemFilter?.familyId || "").trim();
+    const filterStatus = String(itemFilter?.status || "").trim();
+    const filterCode = String(itemFilter?.code || "").trim().toLowerCase();
+
+    const hasAnyFilter = term || filterFamilyId || filterStatus || filterCode;
+    if (!hasAnyFilter) return items || [];
+
     return (items || []).filter((i) => {
+      if (filterFamilyId && String(i.familyId || "") !== filterFamilyId) return false;
+      if (filterStatus === "active" && i.active !== true) return false;
+      if (filterStatus === "inactive" && i.active !== false) return false;
+      if (filterCode) {
+        const code = String(i.code || i.id || "").trim().toLowerCase();
+        if (code !== filterCode) return false;
+      }
+      if (!term) return true;
+
       const familyName = i.family || familiesById.get(i.familyId)?.name || "";
       const subFamilyName = i.subFamily || subFamiliesById.get(i.subFamilyId)?.name || "";
       const subSubFamilyName = i.subSubFamily || subSubFamiliesById.get(i.subSubFamilyId)?.name || "";
@@ -169,6 +211,11 @@ export default function RestaurantItems({ onItemsChange } = {}) {
       return haystack.includes(term);
     });
   }, [itemFilter, items, familiesById, subFamiliesById, subSubFamiliesById]);
+
+  const activeTaxCatalog = useMemo(
+    () => (taxCatalog || []).filter((tax) => tax.active !== false),
+    [taxCatalog]
+  );
 
   const normalizeSizes = (sizes) =>
     Array.isArray(sizes)
@@ -238,6 +285,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
 
   const startEdit = (it) => {
     if (!it?.id) return;
+    setItemsPanelTab("form");
     setEditingId(it.id);
     setForm({
       name: String(it.name || ""),
@@ -367,21 +415,33 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   return (
     <div className="space-y-3">
       <Card className="p-4 space-y-3 border border-indigo-700/30 shadow-sm bg-white">
-        <div className="rounded-lg bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-indigo-50 px-3 py-2 flex items-center justify-between gap-2">
-          <div>
-            <h3 className="text-base font-semibold">{t("mgmt.restaurantItems.title")}</h3>
-            <p className="text-xs text-indigo-200">{t("mgmt.restaurantItems.subtitle")}</p>
-          </div>
-          <Button
-            variant="outline"
-            className="!bg-white border-indigo-200 text-indigo-800 hover:!bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={savingItem || !form.name || !form.familyId || !form.price}
-            onClick={saveItem}
+        <div className="rounded-xl border border-indigo-700/40 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 p-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setItemsPanelTab("form")}
+            className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${
+              itemsPanelTab === "form"
+                ? "bg-indigo-600 border-indigo-400/60 text-white shadow-sm"
+                : "bg-white/20 border-indigo-300/40 text-indigo-100 hover:bg-white/30 hover:text-white"
+            }`}
           >
-            {savingItem ? t("mgmt.restaurantItems.saving") : t("mgmt.restaurantItems.saveItem")}
-          </Button>
+            {t("mgmt.restaurantItems.title")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setItemsPanelTab("created")}
+            className={`rounded-md border px-4 py-2 text-sm font-semibold transition ${
+              itemsPanelTab === "created"
+                ? "bg-indigo-600 border-indigo-400/60 text-white shadow-sm"
+                : "bg-white/20 border-indigo-300/40 text-indigo-100 hover:bg-white/30 hover:text-white"
+            }`}
+          >
+            {t("mgmt.restaurantItems.createdItems", { filtered: filteredItems.length, total: items.length })}
+          </button>
         </div>
 
+        {itemsPanelTab === "form" ? (
+          <>
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 grid md:grid-cols-5 gap-2">
           <Input className="w-full md:max-w-[190px] border-indigo-200 bg-white" placeholder={t("mgmt.restaurantItems.codeAuto")} value="" disabled />
           <Input
@@ -597,10 +657,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           </Card>
         </div>
 
-        <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50/20 p-2">
-          {(taxCatalog || [])
-            .filter((tax) => tax.active !== false)
-            .map((tax) => {
+        {activeTaxCatalog.length > 0 ? (
+          <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50/20 p-2">
+            {activeTaxCatalog.map((tax) => {
               const checked = Array.isArray(form.taxIds) && form.taxIds.includes(tax.id);
               return (
                 <label
@@ -626,56 +685,123 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 </label>
               );
             })}
-        </div>
-
-        <Textarea
-          placeholder={t("mgmt.restaurantItems.notes")}
-          className="min-h-[80px] w-full md:max-w-[520px] border-indigo-200 bg-white"
-          value={form.notes}
-          onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-        />
-
-        {editingId ? (
-          <div className="flex justify-end gap-2">
-            <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={cancelEdit}>
-              {t("common.cancel")}
-            </Button>
-            <Button className="bg-indigo-600 border border-indigo-600 text-white hover:bg-indigo-700" onClick={saveEdit}>{t("common.save")}</Button>
           </div>
         ) : null}
-      </Card>
 
-      <Card className="p-4 space-y-3 border border-indigo-700/20 shadow-sm bg-white">
-        <div className="rounded-lg border border-indigo-100 bg-indigo-50/70 px-3 py-2 flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold text-indigo-900">{t("mgmt.restaurantItems.createdItems", { filtered: filteredItems.length, total: items.length })}</div>
+        <div className="grid md:grid-cols-[minmax(0,520px)_1fr] gap-3 items-end">
+          <Textarea
+            placeholder={t("mgmt.restaurantItems.notes")}
+            className="min-h-[80px] w-full border-indigo-200 bg-white"
+            value={form.notes}
+            onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+          />
+
+          {editingId ? (
+            <div className="flex justify-end gap-2">
+              <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={cancelEdit}>
+                {t("common.cancel")}
+              </Button>
+              <Button className="bg-indigo-600 border border-indigo-600 text-white hover:bg-indigo-700" onClick={saveEdit}>{t("common.save")}</Button>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                className="!bg-white border-indigo-200 text-indigo-800 hover:!bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                disabled={savingItem || !form.name || !form.familyId || !form.price}
+                onClick={saveItem}
+              >
+                Save
+              </Button>
+            </div>
+          )}
+        </div>
+          </>
+        ) : null}
+
+        {itemsPanelTab === "created" ? (
+          <div className="space-y-3">
+        <div className="rounded-lg bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 text-indigo-50 px-3 py-2 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-indigo-50">{t("mgmt.restaurantItems.createdItems", { filtered: filteredItems.length, total: items.length })}</div>
           <div className="flex items-center gap-2">
-            <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-100" variant="outline" size="sm" onClick={() => setFilterOpen((v) => !v)}>
+            <Button
+              className="!bg-indigo-700/30 border-indigo-300/40 !text-indigo-50 hover:!bg-indigo-700/45"
+              variant="outline"
+              size="sm"
+              onClick={() => setFilterOpen((v) => !v)}
+            >
               {filterOpen ? t("mgmt.restaurantItems.hideFilter") : t("mgmt.restaurantItems.filter")}
             </Button>
-            {itemFilter ? <span className="text-xs border border-indigo-200 text-indigo-800 bg-indigo-50 rounded px-2 py-1">{t("mgmt.restaurantItems.activeFilter")}</span> : null}
+            {hasActiveItemFilter ? <span className="text-xs border border-indigo-300 text-white bg-indigo-700/50 rounded px-2 py-1">{t("mgmt.restaurantItems.activeFilter")}</span> : null}
           </div>
         </div>
 
         {filterOpen ? (
-          <div className="flex items-center gap-2">
-            <Input
-              className="border-indigo-200 bg-white"
-              placeholder={t("mgmt.restaurantItems.searchItem")}
-              value={itemFilterDraft}
-              onChange={(e) => setItemFilterDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") setItemFilter(itemFilterDraft);
-              }}
-            />
-            <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={() => setItemFilter(itemFilterDraft)}>
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-2">
+            <div className="w-[170px]">
+              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("common.search")}</div>
+              <Input
+                className="h-10 border-indigo-200 bg-white"
+                placeholder={t("mgmt.restaurantItems.searchItem")}
+                value={itemFilterDraft.search}
+                onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, search: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") setItemFilter({ ...itemFilterDraft });
+                }}
+              />
+            </div>
+
+            <div className="w-[180px]">
+              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.family")}</div>
+              <select
+                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+                value={itemFilterDraft.familyId}
+                onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, familyId: e.target.value }))}
+              >
+                <option value="">{t("common.all")}</option>
+                {(families || []).map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="w-[140px]">
+              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.status")}</div>
+              <select
+                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+                value={itemFilterDraft.status}
+                onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, status: e.target.value }))}
+              >
+                <option value="">{t("common.all")}</option>
+                <option value="active">{t("mgmt.restaurantItems.active")}</option>
+                <option value="inactive">{t("mgmt.restaurantItems.inactive")}</option>
+              </select>
+            </div>
+
+            <div className="w-[150px]">
+              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.code")}</div>
+              <select
+                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+                value={itemFilterDraft.code}
+                onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, code: e.target.value }))}
+              >
+                <option value="">{t("common.all")}</option>
+                {itemCodeOptions.map((code) => (
+                  <option key={code} value={code}>{code}</option>
+                ))}
+              </select>
+            </div>
+
+            <Button className="h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={() => setItemFilter({ ...itemFilterDraft })}>
               {t("mgmt.restaurantItems.applyFilter")}
             </Button>
             <Button
-              className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              className="h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
               variant="outline"
               onClick={() => {
-                setItemFilterDraft("");
-                setItemFilter("");
+                const clean = makeItemFilter();
+                setItemFilterDraft(clean);
+                setItemFilter(clean);
               }}
             >
               {t("common.clear")}
@@ -683,9 +809,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           </div>
         ) : null}
 
-        <div className="overflow-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-indigo-50 text-indigo-900">
+        <div className="overflow-auto max-h-[52vh] rounded-lg border border-indigo-100">
+          <table className="w-full min-w-[900px] text-xs">
+            <thead className="bg-indigo-50 text-indigo-900 sticky top-0 z-10">
               <tr>
                 <th className="text-left px-2 py-2">{t("mgmt.restaurantItems.columns.code")}</th>
                 <th className="text-left px-2 py-2">{t("mgmt.restaurantItems.columns.name")}</th>
@@ -725,10 +851,10 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                       </span>
                     </td>
                     <td className="px-2 py-2 text-right space-x-1">
-                      <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={() => startEdit(i)}>
+                      <Button variant="indigo" size="sm" onClick={() => startEdit(i)}>
                         {t("common.edit")}
                       </Button>
-                      <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={() => removeItem(i.id)}>
+                      <Button variant="destructive" size="sm" onClick={() => removeItem(i.id)}>
                         {t("mgmt.restaurant.common.delete")}
                       </Button>
                     </td>
@@ -745,6 +871,8 @@ export default function RestaurantItems({ onItemsChange } = {}) {
             </tbody>
           </table>
         </div>
+          </div>
+        ) : null}
       </Card>
     </div>
   );

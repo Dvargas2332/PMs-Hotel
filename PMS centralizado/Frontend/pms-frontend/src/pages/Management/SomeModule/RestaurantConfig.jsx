@@ -132,10 +132,6 @@ const applyTableStylesToSections = (sectionsList, tableStyles) => {
 
 
 
-        const color = String(st.color || st.colorHex || st.iconColor || "").trim();
-
-
-
         const kind = st.kind;
 
 
@@ -153,10 +149,6 @@ const applyTableStylesToSections = (sectionsList, tableStyles) => {
 
 
         if (Number.isFinite(y)) next.y = y;
-
-
-
-        if (color) next.color = color;
 
 
 
@@ -525,6 +517,19 @@ export default function RestaurantConfig() {
   const [menuEntrySearch, setMenuEntrySearch] = useState("");
   const managementPrimaryButtonClass = "bg-indigo-600 text-white hover:bg-indigo-700 border-indigo-600";
 
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, Number.isFinite(Number(value)) ? Number(value) : min));
+  const snap = (value, step) => {
+    const st = Number(step) || 0;
+    const v = Number(value) || 0;
+    if (!st) return v;
+    return Math.round(v / st) * st;
+  };
+  const normDeg = (value) => {
+    const v = Number(value) || 0;
+    return ((v % 360) + 360) % 360;
+  };
+
+
   const sectionMenuRows = useMemo(() => {
     const list = Array.isArray(menus) ? menus : [];
     const assignmentList = Array.isArray(sectionMenuAssignments) ? sectionMenuAssignments : [];
@@ -626,7 +631,7 @@ export default function RestaurantConfig() {
 
 
 
-  const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation/color changed
+  const [dirtyStyleTableIds, setDirtyStyleTableIds] = useState([]); // size/rotation changed
 
   const filteredMenuEntries = useMemo(() => {
     const list = Array.isArray(menuEntries) ? menuEntries : [];
@@ -832,9 +837,7 @@ export default function RestaurantConfig() {
     }
     if (
       Object.prototype.hasOwnProperty.call(patch, "size") ||
-      Object.prototype.hasOwnProperty.call(patch, "rotation") ||
-      Object.prototype.hasOwnProperty.call(patch, "color") ||
-      Object.prototype.hasOwnProperty.call(patch, "colorHex")
+      Object.prototype.hasOwnProperty.call(patch, "rotation")
     ) {
       markStyleDirty(tableId);
     }
@@ -843,8 +846,90 @@ export default function RestaurantConfig() {
   const onCanvasPointerDown = (e, type, id) => {
     e.preventDefault();
     e.stopPropagation();
-    if (type === "table") setSelectedTableId(String(id));
+    if (type !== "table" || !selectedSectionId) return;
+
+    const tableId = String(id || "").trim();
+    if (!tableId) return;
+    setSelectedTableId(tableId);
+
+    const canvasEl = e.currentTarget?.closest?.("[data-canvas]");
+    const rect = canvasEl?.getBoundingClientRect?.();
+    if (!rect || !rect.width || !rect.height) return;
+
+    const section = sections.find((sec) => String(sec?.id || "") === String(selectedSectionId));
+    const table = (section?.tables || []).find((t) => String(t?.id || "") === tableId);
+    if (!table) return;
+
+    setDrag({
+      type: "table",
+      mode: "move",
+      id: tableId,
+      sectionId: String(selectedSectionId),
+      rect,
+      startX: Number(e.clientX),
+      startY: Number(e.clientY),
+      baseX: Number.isFinite(Number(table.x)) ? Number(table.x) : 50,
+      baseY: Number.isFinite(Number(table.y)) ? Number(table.y) : 50,
+    });
   };
+
+  useEffect(() => {
+    if (!drag || drag.type !== "table" || drag.mode !== "move") return undefined;
+
+    let rafId = null;
+
+    const commit = () => {
+      rafId = null;
+      const latest = dragLatestRef.current;
+      if (!latest) return;
+
+      const dx = Number(latest.x) - Number(drag.startX);
+      const dy = Number(latest.y) - Number(drag.startY);
+      const x = clamp(Number(drag.baseX) + (dx / Number(drag.rect.width || 1)) * 100, 2, 98);
+      const y = clamp(Number(drag.baseY) + (dy / Number(drag.rect.height || 1)) * 100, 5, 95);
+
+      setSections((prev) =>
+        (prev || []).map((s) => {
+          if (String(s?.id || "") !== String(drag.sectionId)) return s;
+          return {
+            ...s,
+            tables: (s.tables || []).map((t) => (String(t?.id || "") === String(drag.id) ? { ...t, x, y } : t)),
+          };
+        })
+      );
+      setTableEdit((prev) => (prev && String(prev.id || "") === String(drag.id) ? { ...prev, x, y } : prev));
+      setDirtyPosTableIds((prev) => (prev.includes(drag.id) ? prev : [...prev, drag.id]));
+    };
+
+    const onPointerMove = (ev) => {
+      dragLatestRef.current = { x: ev.clientX, y: ev.clientY };
+      if (rafId == null) rafId = window.requestAnimationFrame(commit);
+    };
+
+    const stopDrag = (ev) => {
+      if (ev && Number.isFinite(Number(ev.clientX)) && Number.isFinite(Number(ev.clientY))) {
+        dragLatestRef.current = { x: ev.clientX, y: ev.clientY };
+      }
+      if (rafId != null) {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      commit();
+      dragLatestRef.current = null;
+      setDrag(null);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopDrag);
+    window.addEventListener("pointercancel", stopDrag);
+
+    return () => {
+      if (rafId != null) window.cancelAnimationFrame(rafId);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+    };
+  }, [drag]);
 
   const saveFloorplan = async () => {
     if (!selectedSectionId || floorplanSaving) return;
@@ -871,8 +956,6 @@ export default function RestaurantConfig() {
         if (Number.isFinite(Number(t.rotation))) entry.rotation = Number(t.rotation);
         if (Number.isFinite(Number(t.x))) entry.x = Number(t.x);
         if (Number.isFinite(Number(t.y))) entry.y = Number(t.y);
-        const color = String(t.color || t.colorHex || "").trim();
-        if (color) entry.color = color;
         if (Object.keys(entry).length > 0) styleById[t.id] = entry;
       });
       if (Object.keys(styleById).length > 0) {
@@ -2329,18 +2412,10 @@ export default function RestaurantConfig() {
   }, [menuPickerOpen, menuPickerMenuId]);
 
   useEffect(() => {
-
-
-
     setDirtyPosTableIds([]);
-
-
-
     setDirtyStyleTableIds([]);
-
-
-
-
+    setDrag(null);
+    dragLatestRef.current = null;
 
 
   }, [selectedSectionId]);
@@ -2357,7 +2432,6 @@ export default function RestaurantConfig() {
       rotation: Number(selectedTable.rotation ?? 0) || 0,
       x: Number(selectedTable.x ?? 50),
       y: Number(selectedTable.y ?? 50),
-      color: selectedTable.color || selectedTable.colorHex || "",
     });
   }, [selectedTable]);
 
@@ -4070,154 +4144,24 @@ export default function RestaurantConfig() {
 
 
   const MesaFreeIcon = ({ className = "" }) => {
-
-
-
-    return (
-
-
-
-      <svg viewBox="0 0 512 512" className={className} aria-hidden="true" focusable="false">
-
-
-
-        <rect x="150" y="148" width="212" height="212" rx="22" fill="currentColor" />
-
-
-
-        <rect x="164" y="162" width="184" height="184" rx="18" fill="currentColor" opacity="0.22" />
-
-
-
-
-
-
-
-        <rect x="210" y="70" width="92" height="70" rx="30" fill="#374151" opacity="0.95" />
-
-
-
-        <path d="M202 92c18-16 90-16 108 0" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-
-
-
-        {Array.from({ length: 9 }).map((_, i) => {
-
-
-
-          const x = 210 + i * 10;
-
-
-
-          return <line key={`t-${i}`} x1={x} y1="88" x2={x + 6} y2="128" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
-
-
-
-        })}
-
-
-
-
-
-
-
-        <rect x="210" y="372" width="92" height="70" rx="30" fill="#374151" opacity="0.95" />
-
-
-
-        <path d="M202 420c18 16 90 16 108 0" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-
-
-
-        {Array.from({ length: 9 }).map((_, i) => {
-
-
-
-          const x = 210 + i * 10;
-
-
-
-          return <line key={`b-${i}`} x1={x} y1="384" x2={x + 6} y2="424" stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
-
-
-
-        })}
-
-
-
-
-
-
-
-        <rect x="70" y="210" width="70" height="92" rx="30" fill="#374151" opacity="0.95" />
-
-
-
-        <path d="M92 202c-16 18-16 90 0 108" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-
-
-
-        {Array.from({ length: 9 }).map((_, i) => {
-
-
-
-          const y = 210 + i * 10;
-
-
-
-          return <line key={`l-${i}`} x1="88" y1={y} x2="128" y2={y + 6} stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
-
-
-
-        })}
-
-
-
-
-
-
-
-        <rect x="372" y="210" width="70" height="92" rx="30" fill="#374151" opacity="0.95" />
-
-
-
-        <path d="M420 202c16 18 16 90 0 108" fill="none" stroke="currentColor" strokeWidth="10" strokeLinecap="round" />
-
-
-
-        {Array.from({ length: 9 }).map((_, i) => {
-
-
-
-          const y = 210 + i * 10;
-
-
-
-          return <line key={`r-${i}`} x1="384" y1={y} x2="424" y2={y + 6} stroke="currentColor" strokeWidth="6" strokeLinecap="round" />;
-
-
-
-        })}
-
-
-
-      </svg>
-
-
-
-    );
-
-
-
-  };
-
-
-
-
-
-
-
-  const BASE_URL = import.meta.env.BASE_URL || "/";
+  const [ok, setOk] = React.useState(true);
+  if (!ok) {
+    return <div className={`${className} rounded bg-slate-200`} />;
+  }
+  return (
+    <img
+      alt="Mesa"
+      src={TABLE_FREE_ICON_URL}
+      className={className}
+      style={{ objectFit: "contain" }}
+      onError={() => setOk(false)}
+    />
+  );
+};
+
+const BASE_URL = import.meta.env.BASE_URL || "/";
+
+const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
@@ -4436,8 +4380,6 @@ export default function RestaurantConfig() {
             <h3 className="font-semibold text-lg">{t("mgmt.restaurant.floorplan.subtitle")}</h3>
 
 
-
-            <p className="text-sm text-gray-600">{t("mgmt.restaurant.floorplan.help")}</p>
 
 
 
@@ -4721,10 +4663,6 @@ export default function RestaurantConfig() {
 
 
 
-                  const color = String(t.color || t.colorHex || t.iconColor || "").trim();
-
-
-
                   const selected = selectedTableId === t.id;
 
 
@@ -4745,7 +4683,7 @@ export default function RestaurantConfig() {
 
 
 
-                      className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none group"
+                      className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-1 select-none group cursor-grab active:cursor-grabbing touch-none"
 
 
 
@@ -4773,7 +4711,7 @@ export default function RestaurantConfig() {
 
 
 
-                        style={{ width: size, height: size, transform: `rotate(${rotation}deg)`, color: color || undefined }}
+                        style={{ width: size, height: size, transform: `rotate(${rotation}deg)` }}
 
 
 
@@ -4915,223 +4853,35 @@ export default function RestaurantConfig() {
 
                     <div className="grid grid-cols-2 gap-2">
 
-
-
-                      <select
-
-
-
-                        className="h-10 rounded-lg border px-3 text-sm"
-
-
-
-                        value={tableEdit.kind || "mesa"}
-
-
-
-                        onChange={(e) => applyTableEdit({ kind: e.target.value })}
-
-
-
-                        title="Tipo"
-
-
-
-                      >
-
-
-
-                        {TABLE_KIND_OPTIONS.map((opt) => (
-
-
-
-                          <option key={opt.id} value={opt.id}>
-
-
-
-                            {opt.label}
-
-
-
-                          </option>
-
-
-
-                        ))}
-
-
-
-                      </select>
-
-
-
                       <Input
 
-
-
                         type="number"
-
-
 
                         placeholder="Size (px)"
 
-
-
                         value={tableEdit.size ?? 56}
-
-
 
                         onChange={(e) => applyTableEdit({ size: clamp(Number(e.target.value || 56), 24, 160) })}
 
-
-
                       />
-
-
-
-
-
-
 
                       <Input
 
-
-
                         type="number"
-
-
-
-                        placeholder={t("mgmt.restaurant.tables.x")}
-
-
-
-                        value={tableEdit.x}
-
-
-
-                        onChange={(e) => applyTableEdit({ x: clamp(Number(e.target.value || 50), 2, 98) })}
-
-
-
-                      />
-
-
-
-                      <Input
-
-
-
-                        type="number"
-
-
-
-                        placeholder={t("mgmt.restaurant.tables.y")}
-
-
-
-                        value={tableEdit.y}
-
-
-
-                        onChange={(e) => applyTableEdit({ y: clamp(Number(e.target.value || 50), 5, 95) })}
-
-
-
-                      />
-
-
-
-
-
-
-
-                      <Input
-
-
-
-                        type="number"
-
-
 
                         placeholder="Rotation (deg)"
 
-
-
                         value={tableEdit.rotation}
-
-
 
                         onChange={(e) => applyTableEdit({ rotation: normDeg(snap(Number(e.target.value || 0), rotationSnap)) })}
 
-
-
                       />
 
+                      <div className="col-span-2 rounded-lg border px-3 py-2 text-xs text-slate-600">
 
-
-                      <div className="flex items-center gap-2 rounded-lg border px-2 h-10">
-
-
-
-                        <input
-
-
-
-                          type="color"
-
-
-
-                          className="h-7 w-7 p-0 border-0 bg-transparent"
-
-
-
-                          value={tableEdit.color || "#f59e0b"}
-
-
-
-                          onChange={(e) => applyTableEdit({ color: e.target.value })}
-
-
-
-                          title={t("mgmt.restaurant.common.color")}
-
-
-
-                        />
-
-
-
-                        <Input
-
-
-
-                          placeholder="#rrggbb"
-
-
-
-                          value={tableEdit.color || ""}
-
-
-
-                          onChange={(e) => applyTableEdit({ color: e.target.value })}
-
-
-
-                          className="border-0 h-9 px-2"
-
-
-
-                        />
-
-
+                        Drag table on canvas to change position. X: {Number(tableEdit.x ?? 50).toFixed(1)}% | Y: {Number(tableEdit.y ?? 50).toFixed(1)}%
 
                       </div>
-
-
-
-
-
-
 
                       <div className="col-span-2 rounded-lg border px-3 py-2">
 
@@ -5847,7 +5597,7 @@ export default function RestaurantConfig() {
 
 
 
-                      className="text-xs text-red-600"
+                      className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
 
 
 
@@ -6650,8 +6400,8 @@ export default function RestaurantConfig() {
                             <div className="flex flex-wrap items-center justify-end gap-1">
                               {canEditAssignment && (
                                 <Button
-                                  variant="outline"
-                                  className="h-8 px-2 text-xs border-slate-300 text-slate-700 hover:bg-slate-50"
+                                  variant="indigo"
+                                  className="h-8 px-2 text-xs"
                                   onClick={() => {
                                     if (!a) return;
                                     const targetSectionId = String(a?.sectionId || a?.section?.id || "").trim();
@@ -6668,8 +6418,8 @@ export default function RestaurantConfig() {
                                 </Button>
                               )}
                               <Button
-                                variant="outline"
-                                className="h-8 px-2 text-xs border-rose-200 text-rose-700 hover:bg-rose-50"
+                                variant="destructive"
+                                className="h-8 px-2 text-xs"
                                 onClick={() => deleteMenuById(rowMenuId)}
                               >
                                 {t("mgmt.restaurant.assignments.action.deleteMenu")}
@@ -6727,7 +6477,6 @@ export default function RestaurantConfig() {
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.article")}</th>
                         <th className="text-center px-3 py-2">{t("mgmt.restaurant.menuItems.column.active")}</th>
                         <th className="text-center px-3 py-2">{t("mgmt.restaurant.menuItems.column.color")}</th>
-                        <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.thumbnail")}</th>
                         <th className="text-right px-3 py-2">{t("mgmt.restaurant.menuItems.column.actions")}</th>
                       </tr>
                     </thead>
@@ -6773,34 +6522,6 @@ export default function RestaurantConfig() {
                                 title={t("mgmt.restaurant.menuItems.action.color")}
                               />
                             </td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-2">
-                                <input
-                                  className="h-9 w-full rounded-lg border px-2 text-xs"
-                                  placeholder={t("mgmt.restaurant.menuItems.imagePlaceholder")}
-                                  value={it.imageUrl || ""}
-                                  onChange={(ev) => {
-                                    const v = ev.target.value;
-                                    setMenuEntries((prev) =>
-                                      (prev || []).map((x) =>
-                                        x.itemId === e.itemId && x.item ? { ...x, item: { ...x.item, imageUrl: v } } : x
-                                      )
-                                    );
-                                  }}
-                                  onBlur={(ev) => patchItemQuick(e.itemId, { imageUrl: ev.target.value })}
-                                />
-                                {it.imageUrl ? (
-                                  <img
-                                    src={it.imageUrl}
-                                    alt=""
-                                    className="h-9 w-9 rounded-lg object-cover border"
-                                    onError={(ev) => {
-                                      ev.currentTarget.style.display = "none";
-                                    }}
-                                  />
-                                ) : null}
-                              </div>
-                            </td>
                             <td className="px-3 py-2 text-right">
                               <Button
                                 variant="outline"
@@ -6816,7 +6537,7 @@ export default function RestaurantConfig() {
                       })}
                       {(filteredMenuEntries || []).length === 0 && (
                         <tr>
-                          <td className="px-3 py-4 text-center text-slate-500" colSpan={8}>
+                          <td className="px-3 py-4 text-center text-slate-500" colSpan={7}>
                             {t("mgmt.restaurant.menuItems.empty")}
                           </td>
                         </tr>
@@ -8287,7 +8008,7 @@ export default function RestaurantConfig() {
 
 
 
-                                className="text-xs text-red-600"
+                                className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700"
 
 
 
@@ -9299,7 +9020,7 @@ export default function RestaurantConfig() {
 
 
 
-              variant="outline"
+              variant="indigo"
 
 
 
@@ -9323,7 +9044,7 @@ export default function RestaurantConfig() {
 
 
 
-            <Button type="button" variant="outline" onClick={deleteSelectedPaymentMethod} disabled={!selectedPaymentMethodId}>{t("mgmt.restaurant.common.delete")}</Button>
+            <Button type="button" variant="destructive" onClick={deleteSelectedPaymentMethod} disabled={!selectedPaymentMethodId}>{t("mgmt.restaurant.common.delete")}</Button>
 
 
 
@@ -10099,7 +9820,7 @@ export default function RestaurantConfig() {
 
 
 
-                      <button className="text-xs text-red-600" onClick={() => removeRecipeLine(l.id)}>
+                      <button className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700" onClick={() => removeRecipeLine(l.id)}>
 
 
 
@@ -10573,7 +10294,8 @@ export default function RestaurantConfig() {
 
 
 
-      <Card className="p-3 space-y-2 h-max bg-indigo-900 text-indigo-50 border border-indigo-900 shadow-lg">
+      <Card className="p-3 space-y-2 h-max bg-indigo-900 text-indigo-50 border border-indigo-900 shadow-lg lg:sticky lg:self-start lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+
 
 
 
@@ -10681,118 +10403,4 @@ export default function RestaurantConfig() {
 
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

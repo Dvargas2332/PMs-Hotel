@@ -16,7 +16,7 @@ export default function AuditLog() {
   const [to, setTo] = useState("");
 
   const load = async () => {
-    const { data } = await api.get("/api/audit");
+    const { data } = await api.get("/audit");
     setRows(Array.isArray(data) ? data : []);
   };
   useEffect(()=>{ load(); },[]);
