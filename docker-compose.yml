@@ -1,0 +1,27 @@
+services:
+  frontend:
+    build:
+      context: ./PMS centralizado/Frontend/pms-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./PMS centralizado/Backend/pms-backend
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL}
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES: ${JWT_EXPIRES:-7d}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+      GESTOR_EMAIL: ${GESTOR_EMAIL}
+      GESTOR_PASSWORD: ${GESTOR_PASSWORD}
+      GESTOR_NAME: ${GESTOR_NAME:-Gestor SaaS}
+      GESTOR_SYSTEM_HOTEL_NAME: ${GESTOR_SYSTEM_HOTEL_NAME:-Gestor SaaS}
+    ports:
+      - "4000:4000"
