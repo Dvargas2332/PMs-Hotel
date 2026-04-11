@@ -2,6 +2,7 @@
   "name": "pms-backend",
   "version": "1.0.0",
   "type": "module",
+  "license": "UNLICENSED",
   "prisma": {
     "schema": "prisma/schema.prisma"
   },
