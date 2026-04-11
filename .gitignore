@@ -1,39 +1,42 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-node_modules
-**/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-dist
-**/dist
-local_pgdata
-*.rar
-
-# misc
-.DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Secrets
 .env
-**/.env
-.env.prod
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+coverage/
+.cache/
+
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# apps/binaries not tracked in this repo
-restaurant-pos-android/
-PrintAgent/pms-print-agent/
-API_Hacienda-4.4/
+# OS / editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# local secrets / keys
-pms-proyect-key.pem
-pms-ec2.txt
+# Python
+__pycache__/
+*.pyc
+
+# Go / binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Local runtime files
+*.pid
+*.seed
+*.tmp
+*.temp
