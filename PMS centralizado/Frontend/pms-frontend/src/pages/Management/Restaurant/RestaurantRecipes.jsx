@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -55,7 +56,7 @@ export default function RestaurantRecipes() {
       <Card className="p-5 space-y-3">
         <div>
           <h3 className="font-semibold text-lg">{t("mgmt.restaurantRecipes.title")}</h3>
-          <p className="text-sm text-gray-600">{t("mgmt.restaurantRecipes.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurantRecipes.subtitle")}</p>
         </div>
         <div className="grid md:grid-cols-4 gap-3">
           <div>
@@ -83,8 +84,8 @@ export default function RestaurantRecipes() {
             value={recipeForm.cantidad}
             onChange={(e) => setRecipeForm((f) => ({ ...f, cantidad: e.target.value }))}
           />
-          <select
-            className="h-11 rounded-lg border px-3 text-sm bg-white"
+          <CustomSelect
+            className="h-11 w-full"
             value={recipeForm.unidad}
             onChange={(e) => setRecipeForm((f) => ({ ...f, unidad: e.target.value }))}
           >
@@ -94,7 +95,7 @@ export default function RestaurantRecipes() {
                 {t(`mgmt.restaurantRecipes.unit.${u}`)}
               </option>
             ))}
-          </select>
+          </CustomSelect>
         </div>
         <div className="flex justify-end">
           <Button variant="secondary" onClick={addRecipe} disabled={saving}>
@@ -109,7 +110,7 @@ export default function RestaurantRecipes() {
                   <div className="font-semibold">
                     {r.codigo} - {r.ingrediente}
                   </div>
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-slate-400">
                     {r.cantidad} {r.unidad}
                   </div>
                 </div>

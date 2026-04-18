@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -254,7 +255,7 @@ export default function RoomTypes() {
                     setTypeSelectedId(null);
                     resetTypeForm();
                   }}
-                  className="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  className="bg-white/10 text-slate-300 hover:bg-white/15"
                 >
                   {t("common.cancel")}
                 </Button>
@@ -265,7 +266,7 @@ export default function RoomTypes() {
 
         <Card className="p-0 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-white/5 text-slate-400">
               <tr>
                 <th className="py-2 pl-4 text-left">{t("mgmt.roomTypes.columns.id")}</th>
                 <th className="text-left">{t("mgmt.roomTypes.columns.name")}</th>
@@ -278,7 +279,7 @@ export default function RoomTypes() {
             <tbody>
               {types.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-500">
+                  <td colSpan={6} className="py-6 text-center text-slate-400">
                     {t("mgmt.roomTypes.emptyTypes")}
                   </td>
                 </tr>
@@ -286,7 +287,7 @@ export default function RoomTypes() {
               {types.map((x) => {
                 const isSel = x.id === typeSelectedId;
                 return (
-                  <tr key={x.id} className={`border-t ${isSel ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                  <tr key={x.id} className={`border-t ${isSel ? "bg-indigo-500/10" : "hover:bg-white/5"}`}>
                     <td className="py-2 pl-4">{x.id}</td>
                     <td>{x.name}</td>
                     <td>{x.capacity}</td>
@@ -345,8 +346,8 @@ export default function RoomTypes() {
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col">
               <label className="text-sm mb-1">{t("mgmt.roomTypes.typeLabel")}</label>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm"
+              <CustomSelect
+                className="h-10 w-full"
                 value={roomForm.typeId}
                 onChange={(e) => setRoomForm((f) => ({ ...f, typeId: e.target.value }))}
                 disabled={types.length === 0}
@@ -357,14 +358,14 @@ export default function RoomTypes() {
                     {roomType.id} - {roomType.name}
                   </option>
                 ))}
-              </select>
+              </CustomSelect>
               {types.length === 0 && <span className="mt-1 text-xs text-red-500">{t("mgmt.roomTypes.createTypeFirst")}</span>}
             </div>
 
             <div className="flex flex-col">
               <label className="text-sm mb-1">{t("common.status")}</label>
-              <select
-                className="h-10 rounded-lg border px-3 text-sm"
+              <CustomSelect
+                className="h-10 w-full"
                 value={roomForm.status}
                 onChange={(e) => setRoomForm((f) => ({ ...f, status: e.target.value }))}
               >
@@ -373,7 +374,7 @@ export default function RoomTypes() {
                     {statusLabel(value)}
                   </option>
                 ))}
-              </select>
+              </CustomSelect>
             </div>
           </div>
 
@@ -401,7 +402,7 @@ export default function RoomTypes() {
                     setRoomSelectedId(null);
                     resetRoomForm();
                   }}
-                  className="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  className="bg-white/10 text-slate-300 hover:bg-white/15"
                 >
                   {t("common.cancel")}
                 </Button>
@@ -412,7 +413,7 @@ export default function RoomTypes() {
 
         <Card className="p-0 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600">
+            <thead className="bg-white/5 text-slate-400">
               <tr>
                 <th className="py-2 pl-4 text-left">{t("mgmt.roomTypes.roomColumns.number")}</th>
                 <th className="text-left">{t("mgmt.roomTypes.roomColumns.type")}</th>
@@ -425,7 +426,7 @@ export default function RoomTypes() {
             <tbody>
               {rooms.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-500">
+                  <td colSpan={6} className="py-6 text-center text-slate-400">
                     {t("mgmt.roomTypes.emptyRooms")}
                   </td>
                 </tr>
@@ -435,7 +436,7 @@ export default function RoomTypes() {
                 const typeFound = types.find((roomType) => roomType.id === room.type);
                 const typeLabel = typeFound ? `${typeFound.id} - ${typeFound.name}` : room.type || "";
                 return (
-                  <tr key={room.id} className={`border-t ${isSel ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                  <tr key={room.id} className={`border-t ${isSel ? "bg-indigo-500/10" : "hover:bg-white/5"}`}>
                     <td className="py-2 pl-4">{room.number}</td>
                     <td>{typeLabel}</td>
                     <td>{room.floor}</td>

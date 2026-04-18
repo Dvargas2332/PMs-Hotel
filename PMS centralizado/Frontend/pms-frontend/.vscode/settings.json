@@ -1,5 +1,11 @@
 {
     "chatgpt.openOnStartup": true,
     "chatgpt.runCodexInWindowsSubsystemForLinux": true,
-    "deepscan.ignoreConfirmWarning": true
+    "deepscan.ignoreConfirmWarning": true,
+    "css.lint.unknownAtRules": "ignore",
+    "scss.lint.unknownAtRules": "ignore",
+    "less.lint.unknownAtRules": "ignore",
+    "files.associations": {
+        "*.css": "tailwindcss"
+    }
 }

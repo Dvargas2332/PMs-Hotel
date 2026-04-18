@@ -828,7 +828,7 @@ export async function listEInvoicingDocuments(req: Request, res: Response) {
     where,
     include: {
       invoice: { select: { id: true, number: true, total: true, currency: true } },
-      restaurantOrder: { select: { id: true, tableId: true, sectionId: true, total: true, serviceType: true, roomId: true } },
+      restaurantOrder: { select: { id: true, saleNumber: true, tableId: true, sectionId: true, total: true, serviceType: true, roomId: true } },
       _count: { select: { acknowledgements: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -864,7 +864,7 @@ export async function getEInvoicingDocument(req: Request, res: Response) {
     where: { id, hotelId },
     include: {
       invoice: { select: { id: true, number: true, total: true, currency: true, status: true, createdAt: true } },
-      restaurantOrder: { select: { id: true, tableId: true, sectionId: true, total: true, serviceType: true, roomId: true, createdAt: true, updatedAt: true } },
+      restaurantOrder: { select: { id: true, saleNumber: true, tableId: true, sectionId: true, total: true, serviceType: true, roomId: true, createdAt: true, updatedAt: true } },
       acknowledgements: {
         select: { id: true, type: true, status: true, message: true, createdAt: true },
         orderBy: { createdAt: "desc" },

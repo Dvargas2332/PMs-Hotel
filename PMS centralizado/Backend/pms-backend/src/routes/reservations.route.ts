@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { auth, requirePermission, requireRole } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
-import { createReservation, listReservations, listActiveCheckins, checkIn, checkOut, cancelReservation } from "../controllers/reservations.controller.js";
+import { createReservation, listReservations, listActiveCheckins, checkIn, checkOut, cancelReservation, updateReservation } from "../controllers/reservations.controller.js";
 import { createReservationSchema } from "../schemas/reservations.schema.js";
 
 const router = Router();
@@ -17,5 +17,6 @@ router.post("/", requirePermission("frontdesk.create_reservation"), validate(cre
 router.post("/:id/checkin", requirePermission("frontdesk.checkin"), requireRole("ADMIN", "MANAGER", "RECEPTION"), checkIn); // POST /api/reservations/:id/checkin
 router.post("/:id/checkout", requirePermission("frontdesk.checkout"), requireRole("ADMIN", "MANAGER", "RECEPTION"), checkOut); // POST /api/reservations/:id/checkout
 router.post("/:id/cancel", requirePermission("frontdesk.checkout"), requireRole("ADMIN", "MANAGER"), cancelReservation); // POST /api/reservations/:id/cancel
+router.patch("/:id", requirePermission("frontdesk.write"), requireRole("ADMIN", "MANAGER", "RECEPTION"), updateReservation); // PATCH /api/reservations/:id
 
 export default router;

@@ -11,6 +11,8 @@ import {
   microfacturaStatus,
   microfacturaToken,
 } from "../services/microfacturaCr.js";
+import { issueNote } from "./einvoicing.creditdebit.controller.js";
+import { onEInvoicingDocument } from "../services/accounting.integration.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -325,6 +327,7 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
 
   if (doc.status === "ACCEPTED") return res.json(doc);
   if (doc.status === "CANCELED") return res.status(400).json({ message: "Documento cancelado" });
+  // Documentos en CONTINGENCY se transmiten igual que DRAFT pero con situación 3/4/5 ya grabada en el payload
 
   const xmlSigned = doc.xmlSigned || buildSandboxXml(doc);
 
@@ -405,7 +408,16 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
   }
 
   const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
-  return res.json(fresh);
+  res.json(fresh);
+
+  onEInvoicingDocument({
+    hotelId,
+    documentId: doc.id,
+    docType: String(doc.docType),
+    // @ts-ignore
+    actorId: (req as any)?.user?.sub ?? null,
+  });
+  return;
 }
 
 export async function refreshEInvoicingDocumentStatus(req: Request, res: Response) {
@@ -537,7 +549,9 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
   const id = String((req.params as any)?.id || "").trim();
   if (!id) return res.status(400).json({ message: "id requerido" });
 
-  await ensureEinvoicingEnabled(hotelId);
+  const cfg = await ensureEinvoicingEnabled(hotelId);
+  const settings = (cfg.settings || {}) as any;
+  const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: { id, hotelId },
@@ -567,24 +581,91 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
     });
     const orderPaidAt = order?.updatedAt || doc.createdAt;
     if (lastClose?.createdAt && orderPaidAt <= lastClose.createdAt) {
-      return res.status(403).json({ message: "No se puede anular un documento de restaurante despu?s del cierre Z" });
+      return res.status(403).json({ message: "No se puede anular un documento de restaurante después del cierre Z" });
     }
   }
 
+  // Documentos ACCEPTED en modo API: cancelación real mediante NC (Nota de Crédito)
+  // Hacienda no permite "borrar" documentos aceptados; la forma legal es emitir NC con reasonCode=01
+  if (atvMode === "api" && doc.status === "ACCEPTED" && (doc.docType === "FE" || doc.docType === "TE")) {
+    const reason = String((req.body as any)?.reason || "Anulación del comprobante");
+    const reasonCode = String((req.body as any)?.reasonCode || "01");
+
+    // Emitir NC automáticamente reutilizando el controlador de notas
+    const fakeReq: any = {
+      user: (req as any).user,
+      body: {
+        referenceDocId: doc.id,
+        docType: "NC",
+        reason,
+        reasonCode,
+      },
+      params: {},
+    };
+    let ncDoc: any = null;
+    const fakeRes: any = {
+      status: (code: number) => ({ json: (body: any) => { ncDoc = { code, body }; } }),
+      json: (body: any) => { ncDoc = { code: 200, body }; },
+    };
+    await issueNote(fakeReq, fakeRes);
+
+    if (!ncDoc || ncDoc.code !== 200) {
+      return res.status(502).json({
+        message: "No se pudo emitir la Nota de Crédito de anulación",
+        detail: ncDoc?.body,
+      });
+    }
+
+    // Registrar ack de cancelación y marcar el original como CANCELED
+    await prisma.eInvoicingAcknowledgement.create({
+      data: {
+        hotelId,
+        documentId: doc.id,
+        type: "OTHER",
+        status: "RECEIVED",
+        message: `Cancelado mediante NC ${ncDoc.body?.consecutive || ""}`,
+        payload: { ncDocId: ncDoc.body?.id, ncKey: ncDoc.body?.key, reason, at: nowIso() },
+      },
+    });
+
+    await prisma.eInvoicingDocument.updateMany({
+      where: { id: doc.id, hotelId },
+      data: {
+        status: "CANCELED",
+        response: { step: "CANCELED_VIA_NC", ncDocId: ncDoc.body?.id, at: nowIso() },
+      },
+    });
+
+    if (doc.invoiceId) {
+      await updateInvoiceEinvoiceStatus({
+        hotelId,
+        invoiceId: doc.invoiceId,
+        docType: String(doc.docType),
+        status: "CANCELED",
+        consecutive: doc.consecutive,
+        key: doc.key,
+      });
+    }
+
+    const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
+    return res.json({ canceled: fresh, creditNote: ncDoc.body });
+  }
+
+  // Modo sandbox o documentos DRAFT/SIGNED/SENT: cancelar localmente
   await prisma.eInvoicingAcknowledgement.create({
     data: {
       hotelId,
       documentId: doc.id,
       type: "OTHER",
       status: "RECEIVED",
-      message: "Canceled manually (sandbox)",
-      payload: { sandboxSimulated: true, at: nowIso() },
+      message: "Cancelado localmente",
+      payload: { sandboxSimulated: atvMode !== "api", at: nowIso() },
     },
   });
 
   await prisma.eInvoicingDocument.updateMany({
     where: { id: doc.id, hotelId },
-    data: { status: "CANCELED", response: { sandboxSimulated: true, step: "CANCELED", at: nowIso() } },
+    data: { status: "CANCELED", response: { step: "CANCELED", at: nowIso() } },
   });
 
   if (doc.invoiceId) {
@@ -599,5 +680,15 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
   }
 
   const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
-  return res.json(fresh);
+  res.json(fresh);
+
+  onEInvoicingDocument({
+    hotelId,
+    documentId: doc.id,
+    docType: String(doc.docType),
+    isVoid: true,
+    // @ts-ignore
+    actorId: (req as any)?.user?.sub ?? null,
+  });
+  return;
 }

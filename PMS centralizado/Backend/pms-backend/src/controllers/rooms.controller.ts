@@ -41,6 +41,21 @@ export async function upsertRoom(req: Request, res: Response) {
   res.status(201).json(room);
 }
 
+export async function updateRoomStatus(req: Request, res: Response) {
+  const { id } = req.params;
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const hotelId = user.hotelId;
+  const ALLOWED = ["AVAILABLE", "OCCUPIED", "CLEANING", "BLOCKED", "MAINTENANCE"];
+  const { status, notes } = req.body ?? {};
+  if (!ALLOWED.includes(status)) return res.status(400).json({ message: "Estado inválido" });
+  const updated = await prisma.room.updateMany({ where: { id, hotelId }, data: { status, notes: notes ?? undefined } });
+  if (updated.count === 0) return res.status(404).json({ message: "Habitación no encontrada" });
+  const room = await prisma.room.findFirst({ where: { id, hotelId } });
+  res.json(room);
+}
+
 export async function archiveRoom(req: Request, res: Response) {
   const { id } = req.params;
   // @ts-ignore

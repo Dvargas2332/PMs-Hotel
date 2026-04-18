@@ -22,6 +22,7 @@ import frontdeskTaxesRoutes from "./routes/frontdeskTaxes.route.js";
 import discountsRoutes from "./routes/discounts.route.js";
 import invoiceRoutes from "./routes/invoice.route.js";
 import ratePlansRoutes from "./routes/ratePlans.route.js";
+import rateOverridesRoutes from "./routes/rateOverrides.route.js";
 import mealPlansRoutes from "./routes/mealPlans.route.js";
 import contractsRoutes from "./routes/contracts.route.js";
 import geoRoutes from "./routes/geo.route.js";
@@ -33,10 +34,13 @@ import einvoicingRoutes from "./routes/einvoicing.route.js";
 import gestorRoutes from "./routes/gestor.route.js";
 import versionRoutes from "./routes/version.route.js";
 import forminfoRoutes from "./routes/forminfo.route.js";
+import accountingRoutes from "./routes/accounting.route.js";
+import reportsRoutes from "./routes/reports.route.js";
 
 import { tenantCtx } from "./middleware/tenant.js";
 import prisma from "./lib/prisma.js";
 import { auth, requireGestor } from "./middleware/auth.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { requireMembership } from "./middleware/membership.js";
 import { auditMiddleware } from "./middleware/audit.js";
 import { logger } from "./lib/logger.js";
@@ -79,7 +83,8 @@ api.use("/launcher", launcherRoutes);
 api.use("/forminfo", forminfoRoutes);
 
 // Gestor SaaS (sin tenant scoping)
-api.use("/gestor", auth, requireGestor, gestorRoutes);
+const gestorLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, keyPrefix: "gestor" });
+api.use("/gestor", gestorLimiter, auth, requireGestor, gestorRoutes);
 
 // Protegidas (requieren Authorization: Bearer <token>)
 api.use(auth);
@@ -99,9 +104,12 @@ api.use("/taxes", requireMembership("accounting", "restaurant"), taxesRoutes);
 api.use("/frontdesk/taxes", requireMembership("frontdesk"), frontdeskTaxesRoutes);
 api.use("/invoices", requireMembership("frontdesk", "accounting", "einvoicing"), invoiceRoutes);
 api.use("/ratePlans", requireMembership("frontdesk"), ratePlansRoutes);
+api.use("/rateOverrides", requireMembership("frontdesk"), rateOverridesRoutes);
 api.use("/mealPlans", requireMembership("frontdesk"), mealPlansRoutes);
 api.use("/contracts", requireMembership("frontdesk"), contractsRoutes);
 api.use("/einvoicing", requireMembership("einvoicing"), einvoicingRoutes);
+api.use("/accounting", requireMembership("accounting"), accountingRoutes);
+api.use("/reports", requireMembership("frontdesk"), reportsRoutes);
 api.use("/geo", requireMembership("frontdesk"), geoRoutes);
 api.use("/cash-audits", requireMembership("frontdesk", "restaurant", "accounting"), cashAuditRoutes);
 api.use("/users", requireMembership("management"), usersRoutes);

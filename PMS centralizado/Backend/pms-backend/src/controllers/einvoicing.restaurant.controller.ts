@@ -1,7 +1,16 @@
+import { randomInt } from "node:crypto";
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { Prisma } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth.js";
+import {
+  buildCrXml,
+  buildLinesFromPmsItems,
+  buildSummaryFromLines,
+  type CrIssuer,
+  type CrReceiver,
+  type CrPayment,
+} from "../services/einvoicing.xml.builder.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -19,12 +28,12 @@ function typeCode(docType: "FE" | "TE") {
   return docType === "FE" ? "01" : "04";
 }
 
-function todayDDMMYY() {
-  const d = new Date();
-  const yy = String(d.getFullYear()).slice(-2);
+// Formato DDMMAAAA (8 dígitos) requerido por Hacienda CR para la clave
+function dateDDMMAAAA(d: Date = new Date()) {
+  const yyyy = String(d.getFullYear());
   const mm = padLeft(String(d.getMonth() + 1), 2);
   const dd = padLeft(String(d.getDate()), 2);
-  return `${dd}${mm}${yy}`;
+  return `${dd}${mm}${yyyy}`;
 }
 
 async function nextConsecutive(hotelId: string, docType: "FE" | "TE", branch: string, terminal: string) {
@@ -54,7 +63,7 @@ async function nextConsecutive(hotelId: string, docType: "FE" | "TE", branch: st
 }
 
 function randomSecurityCode() {
-  return padLeft(String(Math.floor(Math.random() * 100_000_000)), 8);
+  return padLeft(String(randomInt(0, 100_000_000)), 8);
 }
 
 function normalizeReceiver(input: unknown) {
@@ -66,29 +75,33 @@ function normalizeReceiver(input: unknown) {
   return hasData ? (data as Prisma.InputJsonValue) : undefined;
 }
 
+// Clave: País(3) + DDMMAAAA(8) + Cédula(12) + Consecutivo(20) + Situación(1) + Seguridad(8)
 function crOfficialKey(opts: {
   countryCode: string;
   issuerId: string;
   consecutive: string;
   situation: string;
   securityCode: string;
+  date?: Date;
 }) {
-  const country = padLeft(String(opts.countryCode || "506").replace(/\D/g, ""), 3);
-  const issuer = padLeft(String(opts.issuerId || "").replace(/\D/g, ""), 12);
+  const country     = padLeft(String(opts.countryCode || "506").replace(/\D/g, ""), 3);
+  const dateStr     = dateDDMMAAAA(opts.date);
+  const issuer      = padLeft(String(opts.issuerId || "").replace(/\D/g, ""), 12);
   const consecutive = String(opts.consecutive || "").replace(/\D/g, "");
-  const situation = padLeft(String(opts.situation || "1").replace(/\D/g, ""), 1);
-  const security = padLeft(String(opts.securityCode || "").replace(/\D/g, ""), 8);
-  return `${country}${todayDDMMYY()}${issuer}${consecutive}${situation}${security}`;
+  const situation   = padLeft(String(opts.situation || "1").replace(/\D/g, ""), 1);
+  const security    = padLeft(String(opts.securityCode || "").replace(/\D/g, ""), 8);
+  return `${country}${dateStr}${issuer}${consecutive}${situation}${security}`;
 }
 
 export async function issueRestaurantElectronicDoc(req: Request, res: Response) {
   const hotelId = resolveHotelId(req);
   if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
 
-  const { restaurantOrderId, docType, receiver } = (req.body || {}) as {
+  const { restaurantOrderId, docType, receiver, situation: bodySituation } = (req.body || {}) as {
     restaurantOrderId?: string;
     docType?: "FE" | "TE";
     receiver?: any;
+    situation?: string;
   };
   if (!restaurantOrderId) return res.status(400).json({ message: "restaurantOrderId requerido" });
   if (docType !== "FE" && docType !== "TE") return res.status(400).json({ message: "docType inválido (FE/TE)" });
@@ -111,7 +124,8 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
   const issuerIdNumber = String(issuer.idNumber || "");
   const branch = String(rs.branch || "001");
   const terminal = String(rs.terminal || "00001");
-  const situation = String(rs.situation || "1");
+  const situation = String(bodySituation || rs.situation || "1");
+  const isContingency = ["3", "4", "5"].includes(situation);
   if (!issuerIdNumber.trim()) {
     return res.status(400).json({
       message: "Configure el emisor en Facturación Electrónica (número de identificación del emisor) antes de emitir FE/TE.",
@@ -135,6 +149,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
   });
   if (existing) return res.json(existing);
 
+  const now = new Date();
   const consecutive = await nextConsecutive(hotelId, effectiveDocType, branch, terminal);
   const key = crOfficialKey({
     countryCode,
@@ -142,6 +157,92 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     consecutive,
     situation,
     securityCode: randomSecurityCode(),
+    date: now,
+  });
+
+  // Construir XML CR V4.4
+  const crIssuer: CrIssuer = {
+    name: String(issuer.name || issuer.legalName || ""),
+    idType: String(issuer.idType || issuer.idTypeCode || "02"),
+    idNumber: issuerIdNumber,
+    commercialName: issuer.commercialName || undefined,
+    province: issuer.province || undefined,
+    canton: issuer.canton || undefined,
+    district: issuer.district || undefined,
+    address: issuer.address || undefined,
+    phone: issuer.phone || undefined,
+    email: issuer.email || undefined,
+    economicActivity: issuer.economicActivity || "563001",  // 563001 = Restaurantes
+  };
+
+  const receiverData = normalizedReceiver as any;
+  const crReceiver: CrReceiver | undefined = receiverData?.idNumber ? {
+    name: String(receiverData.name || receiverData.legalName || ""),
+    idType: String(receiverData.idType || receiverData.idTypeCode || "01"),
+    idNumber: String(receiverData.idNumber || receiverData.identification || ""),
+    commercialName: receiverData.commercialName || undefined,
+    phone: receiverData.phone || undefined,
+    email: receiverData.email || undefined,
+  } : undefined;
+
+  const tip = parseFloat(String(order.tip10 ?? 0));
+  const payBreakdown = (order.paymentBreakdown || {}) as any;
+
+  const crLines = buildLinesFromPmsItems(
+    (order.items || []).map((item: any) => ({
+      name: item.name || "Producto",
+      price: parseFloat(String(item.price ?? 0)),
+      qty: item.qty ?? 1,
+      cabysCode: item.cabysCode || undefined,
+      commercialCode: item.itemId || item.id || undefined,
+      taxRate: item.taxRate ?? 13,
+      taxExempt: item.taxExempt ?? false,
+    }))
+  );
+
+  // El 10% de servicio va como línea adicional si existe
+  if (tip > 0) {
+    crLines.push({
+      lineNumber: crLines.length + 1,
+      description: "10% Servicio",
+      unitCode: "Sp",
+      qty: 1,
+      unitPrice: tip,
+      subtotal: tip,
+      total: tip,
+      discount: 0,
+      taxCode: undefined,
+      taxRate: undefined,
+      taxAmount: undefined,
+    });
+  }
+
+  const crPayments: CrPayment[] = [];
+  if (payBreakdown && typeof payBreakdown === "object") {
+    for (const [method, amount] of Object.entries(payBreakdown)) {
+      if (parseFloat(String(amount)) > 0) {
+        crPayments.push({ method: String(method), amount: parseFloat(String(amount)) });
+      }
+    }
+  }
+  if (!crPayments.length) {
+    crPayments.push({ method: "01", amount: parseFloat(String(order.total ?? 0)) });
+  }
+
+  const summary = buildSummaryFromLines(crLines);
+  const xmlUnsigned = buildCrXml({
+    docType: effectiveDocType,
+    key,
+    consecutive,
+    issueDate: now,
+    issuer: crIssuer,
+    receiver: crReceiver,
+    currency: "CRC",
+    items: crLines,
+    payments: crPayments,
+    summary,
+    condition: "01",
+    tip: tip > 0 ? tip : undefined,
   });
 
   const payload = {
@@ -167,6 +268,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
       updatedAt: order.updatedAt,
       items: order.items,
     },
+    xml: xmlUnsigned,
   };
 
   const doc = await prisma.eInvoicingDocument.create({
@@ -174,7 +276,7 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
       hotelId,
       restaurantOrderId: String(restaurantOrderId),
       docType: effectiveDocType,
-      status: "DRAFT",
+      status: isContingency ? "CONTINGENCY" : "DRAFT",
       branch: padLeft(branch, 3),
       terminal: padLeft(terminal, 5),
       consecutive,

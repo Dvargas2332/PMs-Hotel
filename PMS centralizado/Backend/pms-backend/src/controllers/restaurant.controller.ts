@@ -7,6 +7,7 @@ import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
+import { onRestaurantSale } from "../services/accounting.integration.js";
 import { DEFAULT_PRINT_FORMS } from "../lib/printForms.js";
 
 const ROUNDS = 10;
@@ -2229,7 +2230,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { sectionId, tableId, items, note, covers, serviceType, roomId, orderId, restaurantOrderId, createNew, forceNew, status, waiterId, discountId, discountPercent } = req.body as {
+  const { sectionId, tableId, items, note, covers, serviceType, roomId, guestId, orderId, restaurantOrderId, createNew, forceNew, status, waiterId, discountId, discountPercent, sentItemsMap: sentItemsMapInput } = req.body as {
     sectionId?: string;
     tableId: string;
     items: { id?: string; itemId?: string; variantKey?: string; detailNote?: string; name: string; category?: string; price: number; qty: number; discountId?: string; discountPercent?: number }[];
@@ -2237,6 +2238,7 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     covers?: number;
     serviceType?: string;
     roomId?: string;
+    guestId?: string;
     orderId?: string;
     restaurantOrderId?: string;
     createNew?: boolean;
@@ -2245,7 +2247,15 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
     waiterId?: string;
     discountId?: string;
     discountPercent?: number;
+    sentItemsMap?: Record<string, number>;
   };
+
+  // Validar que el guest pertenece al mismo hotel
+  const safeGuestId = guestId ? String(guestId).trim() : null;
+  if (safeGuestId) {
+    const guestExists = await prisma.guest.findFirst({ where: { id: safeGuestId, hotelId }, select: { id: true } });
+    if (!guestExists) return res.status(400).json({ message: "Cliente no encontrado en este hotel" });
+  }
   if (!tableId || !Array.isArray(items)) return res.status(400).json({ message: "tableId e items requeridos" });
   const mergeItems = Boolean((req.body as any)?.mergeItems);
 
@@ -2389,12 +2399,14 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             covers: covers ?? existing.covers,
             serviceType: inferredServiceType,
             roomId: roomId ?? existing.roomId,
+            guestId: safeGuestId !== undefined ? safeGuestId : existing.guestId,
             discountId: safeOrderDiscountId,
             discountPercent: normalizedDiscountPercent,
             discountAmount,
             total,
             tip10: service,
             status: nextStatus,
+            ...(sentItemsMapInput !== undefined ? { sentItemsMap: sentItemsMapInput } : {}),
           },
         });
 
@@ -2491,11 +2503,13 @@ export async function createOrUpdateOrder(req: Request, res: Response) {
             covers: covers || 0,
             serviceType: inferredServiceType,
             roomId: roomId || null,
+            guestId: safeGuestId || null,
             discountId: safeOrderDiscountId,
             discountPercent: normalizedDiscountPercent,
             discountAmount,
             total,
             tip10: service,
+            ...(sentItemsMapInput !== undefined ? { sentItemsMap: sentItemsMapInput } : {}),
             items: {
               create: normalizedItems.map((i) => {
                 const itemId = String(i.itemId || i.id);
@@ -2835,6 +2849,19 @@ export async function closeOrder(req: Request, res: Response) {
       sectionId: updated.sectionId ? fromInternalId(hotelId, updated.sectionId) : null,
       tableId: fromInternalId(hotelId, updated.tableId),
     },
+  });
+
+  // Fire-and-forget: generate accounting entry if integration is enabled
+  onRestaurantSale({
+    hotelId,
+    orderId: updated.id,
+    saleNumber: updated.saleNumber ?? null,
+    total: Number(updated.total ?? 0),
+    tax: Number(updated.tax ?? 0),
+    service: Number(updated.tip10 ?? 0),
+    currency: "CRC",
+    paidAt: paidAt,
+    actorId: user?.sub ?? null,
   });
 }
 
@@ -3206,7 +3233,7 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
   const hotelId = user.hotelId;
 
-  const { orderId, restaurantOrderId, tableId, reason, adminCode } = req.body || {};
+  const { orderId, restaurantOrderId, tableId, reason, adminCode, adminUser } = req.body || {};
   const incomingOrderId = String(orderId || restaurantOrderId || "").trim();
   if (!incomingOrderId && !tableId) return res.status(400).json({ message: "orderId o tableId requerido" });
 
@@ -3231,7 +3258,7 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   const order = await prisma.restaurantOrder.findFirst({
     where,
     orderBy: { updatedAt: "desc" },
-    select: { id: true, note: true, updatedAt: true },
+    select: { id: true, note: true, updatedAt: true, items: { select: { id: true, name: true, qty: true, status: true, area: true, detailNote: true } } },
   });
   if (!order) return res.status(404).json({ message: "Orden abierta no encontrada" });
 
@@ -3245,23 +3272,36 @@ export async function cancelRestaurantOrder(req: Request, res: Response) {
   }
 
   const cancelReason = String(reason || "").trim();
+  const cancelAdminUserStr = String(adminUser || "").trim();
   const nextNote = cancelReason ? `${order.note || ""}\n[CANCELED] ${cancelReason}`.trim() : order.note || "";
+  const canceledAt = new Date();
 
   await prisma.$transaction(async (tx) => {
     await tx.restaurantOrder.updateMany({
       where: { id: order.id, hotelId, status: { in: OPEN_ORDER_STATUSES } },
-      data: { status: "CLOSED", note: nextNote },
+      data: {
+        status: "CLOSED",
+        note: nextNote,
+        canceledAt,
+        canceledBy: user.sub,
+        cancelAdminUser: cancelAdminUserStr || null,
+        cancelReason: cancelReason || null,
+      },
+    });
+    await tx.restaurantOrderItem.updateMany({
+      where: { orderId: order.id, hotelId, status: { notIn: ["SERVED", "VOIDED"] } },
+      data: { status: "VOIDED" },
     });
     await recordOrderEvent(tx, {
       hotelId,
       orderId: order.id,
       eventType: "ORDER_VOID",
       actorId: user.sub,
-      payload: { reason: cancelReason, note: nextNote } as any,
+      payload: { reason: cancelReason, adminUser: cancelAdminUserStr, note: nextNote } as any,
     });
   });
 
-  return res.json({ ok: true, id: order.id });
+  return res.json({ ok: true, id: order.id, items: order.items });
 }
 
 export async function moveOrderTable(req: Request, res: Response) {
@@ -4287,6 +4327,18 @@ export async function closeShift(req: Request, res: Response) {
   const closeTypeRaw = String(req.body?.type || "Z").trim().toUpperCase();
   const stage = closeTypeRaw === "X" ? "X" : "Z";
 
+  if (user.role !== "ADMIN") {
+    const allowedPerms = stage === "X"
+      ? ["restaurant.shift.closeX", "restaurant.shift.close"]
+      : ["restaurant.shift.closeZ", "restaurant.shift.close"];
+    const granted = await prisma.rolePermission.findFirst({
+      where: { hotelId, roleId: user.role, permissionId: { in: allowedPerms } },
+    });
+    if (!granted) {
+      return res.status(403).json({ message: `No tienes permiso para realizar el Cierre ${stage}` });
+    }
+  }
+
   const shift = await prisma.cashAudit.findFirst({
     where: { hotelId, module: "RESTAURANT", closedAt: null },
     orderBy: { openedAt: "desc" },
@@ -4426,11 +4478,27 @@ export async function listClosedRestaurantShifts(req: Request, res: Response) {
     take: 60,
   });
   const shiftNumberMap = await buildShiftNumberMap(user.hotelId);
+
+  const closes = await prisma.restaurantClose.findMany({
+    where: { hotelId: user.hotelId, turno: { in: shifts.map((s) => s.id) }, stage: "Z" },
+    orderBy: { createdAt: "desc" },
+  });
+  const closesByShift = new Map<string, typeof closes[0]>();
+  for (const c of closes) {
+    if (!closesByShift.has(c.turno)) closesByShift.set(c.turno, c);
+  }
+
   res.json(
-    shifts.map((s) => ({
-      ...buildShiftPayload(s),
-      shiftNumber: buildShiftPayload(s).shiftNumber || shiftNumberMap.get(s.id) || null,
-    }))
+    shifts.map((s) => {
+      const close = closesByShift.get(s.id);
+      return {
+        ...buildShiftPayload(s),
+        shiftNumber: buildShiftPayload(s).shiftNumber || shiftNumberMap.get(s.id) || null,
+        closeTotals: (close?.totals ?? null) as any,
+        closePayments: (close?.payments ?? null) as any,
+        closeNote: close?.note ?? null,
+      };
+    })
   );
 }
 
@@ -4443,12 +4511,6 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
 
   const type = String((req.query as any)?.type || "SALES").trim().toUpperCase();
   const missing: string[] = [];
-  if (type !== "SALES") {
-    return res.json({
-      items: [],
-      missing: [`Tipo no disponible en TPV: ${type}`],
-    });
-  }
 
   const useTurno = String((req.query as any)?.useTurno || "").toLowerCase() === "true";
   const shiftId = String((req.query as any)?.shiftId || "").trim();
@@ -4471,6 +4533,64 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   if (dateTimeTo) dateTimeTo.setSeconds(59, 999);
   if (useFecha && !dateFrom && !dateTo) missing.push("Filtro Fecha requiere rango.");
   if (useFechaHora && !dateTimeFrom && !dateTimeTo) missing.push("Filtro Fecha y hora requiere rango.");
+
+  if (type === "VOIDS") {
+    const voidDateFrom = (req.query as any)?.dateFrom ? new Date(String((req.query as any).dateFrom)) : null;
+    const voidDateTo = (req.query as any)?.dateTo ? new Date(String((req.query as any).dateTo)) : null;
+    if (voidDateTo) voidDateTo.setHours(23, 59, 59, 999);
+    const voidShiftId = String((req.query as any)?.shiftId || "").trim();
+    const voidUseTurno = String((req.query as any)?.useTurno || "").toLowerCase() === "true";
+
+    let voidRanges: { canceledAt: { gte: Date; lte: Date } }[] = [];
+    if (voidUseTurno && voidShiftId) {
+      const chosenShift = await prisma.cashAudit.findFirst({ where: { id: voidShiftId, hotelId } });
+      if (chosenShift?.openedAt && chosenShift?.closedAt) {
+        voidRanges = [{ canceledAt: { gte: chosenShift.openedAt, lte: chosenShift.closedAt } }];
+      }
+    } else if (voidDateFrom || voidDateTo) {
+      const allShifts = await prisma.cashAudit.findMany({
+        where: {
+          hotelId, module: "RESTAURANT", closedAt: { not: null },
+          ...(voidDateFrom || voidDateTo ? { closedAt: { ...(voidDateFrom ? { gte: voidDateFrom } : {}), ...(voidDateTo ? { lte: voidDateTo } : {}), not: null } } : {}),
+        },
+        orderBy: { closedAt: "desc" }, take: 60,
+      });
+      voidRanges = allShifts.filter((s) => s.openedAt && s.closedAt).map((s) => ({ canceledAt: { gte: s.openedAt as Date, lte: s.closedAt as Date } }));
+    } else {
+      const latestShift = await prisma.cashAudit.findFirst({
+        where: { hotelId, module: "RESTAURANT", closedAt: { not: null } },
+        orderBy: { closedAt: "desc" },
+      });
+      if (latestShift?.openedAt && latestShift?.closedAt) {
+        voidRanges = [{ canceledAt: { gte: latestShift.openedAt, lte: latestShift.closedAt } }];
+      }
+    }
+
+    if (voidRanges.length === 0) {
+      return res.json({ items: [], missing: ["No hay turnos cerrados en el rango indicado."] });
+    }
+
+    const canceledOrders = await prisma.restaurantOrder.findMany({
+      where: { hotelId, canceledAt: { not: null }, OR: voidRanges },
+      include: { items: true },
+      orderBy: { canceledAt: "desc" },
+    });
+
+    const rows = canceledOrders.map((o) => ({
+      id: o.id,
+      saleNumber: (o as any).invoiceNumber || o.id?.slice(-6),
+      sectionId: (o as any).sectionId || "-",
+      tableId: (o as any).tableId || "-",
+      total: Number((o as any).total || 0).toFixed(2),
+      canceledAt: (o as any).canceledAt,
+      canceledBy: (o as any).canceledBy || "-",
+      cancelAdminUser: (o as any).cancelAdminUser || "-",
+      cancelReason: (o as any).cancelReason || "-",
+      itemCount: o.items?.length || 0,
+    }));
+
+    return res.json({ items: rows, missing: [] });
+  }
 
   const restCfg = await prisma.restaurantConfig.findUnique({ where: { hotelId } });
   const storedPayments = (restCfg?.payments && typeof restCfg.payments === "object" ? restCfg.payments : {}) as any;
@@ -4620,15 +4740,37 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   if (includeVoidedInvoices) missing.push("Filtro Facturas Anuladas pendiente (TPV no expone).");
   if (detailedByFamily) missing.push("Detallado por Familia pendiente (TPV no expone).");
   if (includeItemsMode) missing.push("Filtro de inclusión de artículos pendiente (TPV no expone).");
-  if (focus) missing.push(`Enfoque rápido '${focus}' pendiente (TPV no expone).`);
+
+  if (focus === "Cajero") {
+    filtered = [...filtered].sort((a, b) => String(a.cashierId || "").localeCompare(String(b.cashierId || "")));
+    filtered.forEach((o) => { (o as any).__groupKey = o.cashierId || "-"; });
+  } else if (focus === "Mesero") {
+    filtered = [...filtered].sort((a, b) => String(a.waiterId || "").localeCompare(String(b.waiterId || "")));
+    filtered.forEach((o) => { (o as any).__groupKey = o.waiterId || "-"; });
+  } else if (focus === "Servicio") {
+    filtered = [...filtered].sort((a, b) => String(a.serviceType || "").localeCompare(String(b.serviceType || "")));
+    filtered.forEach((o) => { (o as any).__groupKey = (o as any).serviceType || "-"; });
+  } else if (focus === "Fecha") {
+    filtered = [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    filtered.forEach((o) => { (o as any).__groupKey = new Date(o.createdAt).toLocaleDateString(); });
+  } else if (focus === "Cliente") {
+    filtered = filtered.filter((o) => (o as any).guestId || (o as any).guestName);
+    filtered.forEach((o) => { (o as any).__groupKey = (o as any).guestName || (o as any).guestId || "-"; });
+  } else if (focus && !["Familia", "Subfamilia", "Artículo", "Artículo / Observación", "Fecha / Artículo", "Cuenta Casa"].includes(focus)) {
+    missing.push(`Enfoque rápido '${focus}' pendiente.`);
+  }
 
   const groupBy = String((req.query as any)?.groupBy || "").trim();
   const orderBy = String((req.query as any)?.orderBy || "").trim();
 
-  if (orderBy === "Cobros") {
+  if (orderBy === "Cobros" || orderBy === "Total (mayor a menor)") {
     filtered = [...filtered].sort((a, b) => asNumber(b.total) - asNumber(a.total));
-  } else if (orderBy === "Extra Tip") {
-    filtered = [...filtered].sort((a, b) => asNumber((b as any).tip10) - asNumber((a as any).tip10));
+  } else if (orderBy === "Total (menor a mayor)") {
+    filtered = [...filtered].sort((a, b) => asNumber(a.total) - asNumber(b.total));
+  } else if (orderBy === "Cantidad") {
+    filtered = [...filtered].sort((a, b) => (b.items?.length || 0) - (a.items?.length || 0));
+  } else if (orderBy === "Fecha") {
+    filtered = [...filtered].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   } else if (orderBy === "Código") {
     filtered = [...filtered].sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }
@@ -4656,7 +4798,49 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
       (o as any).__groupKey = o.waiterId || "-";
       return o;
     });
-  } else if (groupBy && groupBy !== "Familia" && groupBy !== "Mesero") {
+  } else if (groupBy === "Cajero") {
+    filtered = filtered.map((o) => {
+      (o as any).__groupKey = o.cashierId || "-";
+      return o;
+    });
+  } else if (groupBy === "Turno") {
+    const shiftMap = shiftNumberMap;
+    filtered = filtered.map((o) => {
+      const matchShift = useShifts.find((s) => {
+        const start = s.openedAt || s.createdAt || new Date(0);
+        const end = s.closedAt as Date;
+        return o.createdAt >= start && o.createdAt <= end;
+      });
+      (o as any).__groupKey = matchShift ? `#${shiftMap.get(matchShift.id) ?? matchShift.id.slice(-6)}` : "-";
+      return o;
+    });
+  } else if (groupBy === "Artículo" || groupBy === "Articulo") {
+    filtered = filtered.map((o) => {
+      const names = (o.items || []).map((it: any) => it?.name || it?.itemId || "").filter(Boolean);
+      (o as any).__groupKey = names.length > 0 ? names[0] : "-";
+      return o;
+    });
+  } else if (groupBy === "Fecha") {
+    filtered = filtered.map((o) => {
+      (o as any).__groupKey = o.createdAt ? new Date(o.createdAt).toLocaleDateString() : "-";
+      return o;
+    });
+  } else if (groupBy === "Subfamilia") {
+    const allItemIds = new Set<string>();
+    filtered.forEach((o) => (o.items || []).forEach((it: any) => it?.itemId && allItemIds.add(it.itemId)));
+    if (allItemIds.size > 0) {
+      const itemRows = await prisma.restaurantItem.findMany({
+        where: { hotelId, id: { in: Array.from(allItemIds) } },
+        select: { id: true, subFamilyId: true },
+      });
+      const subFamilyMap = new Map(itemRows.map((r) => [r.id, r.subFamilyId || "-"]));
+      filtered = filtered.map((o) => {
+        const firstItem = (o.items || []).find((it: any) => it?.itemId);
+        (o as any).__groupKey = firstItem ? subFamilyMap.get(firstItem.itemId) || "-" : "-";
+        return o;
+      });
+    }
+  } else if (groupBy && !["Familia", "Subfamilia", "Mesero", "Cajero", "Turno", "Artículo", "Fecha"].includes(groupBy)) {
     missing.push(`Agrupar por ${groupBy} pendiente.`);
   }
 
@@ -4671,22 +4855,37 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   }
 
   return res.json({
-    items: filtered.map((o) => ({
-      id: o.id,
-      saleNumber: (o as any).saleNumber || null,
-      saleNumberInt: (o as any).saleNumberInt || null,
-      tableId: fromInternalId(hotelId, o.tableId),
-      sectionId: o.sectionId ? fromInternalId(hotelId, o.sectionId) : null,
-      waiterId: o.waiterId,
-      cashierId: o.cashierId,
-      status: o.status,
-      serviceType: o.serviceType,
-      total: o.total,
-      createdAt: o.createdAt,
-      updatedAt: o.updatedAt,
-      items: o.items,
-      groupKey: (o as any).__groupKey,
-    })),
+    items: filtered.map((o) => {
+      const matchShift = useShifts.find((s) => {
+        const start = s.openedAt || s.createdAt || new Date(0);
+        const end = s.closedAt as Date;
+        return o.createdAt >= start && o.createdAt <= end;
+      });
+      const shiftNum = matchShift ? shiftNumberMap.get(matchShift.id) ?? null : null;
+      const pb = (o.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
+      const paymentMethods = Object.entries(pb).filter(([, v]) => Number(v) > 0).map(([name, amount]) => ({ name, amount: Number(amount) }));
+      return {
+        id: o.id,
+        saleNumber: (o as any).saleNumber || null,
+        saleNumberInt: (o as any).saleNumberInt || null,
+        shiftNumber: shiftNum,
+        tableId: fromInternalId(hotelId, o.tableId),
+        sectionId: o.sectionId ? fromInternalId(hotelId, o.sectionId) : null,
+        waiterId: o.waiterId,
+        cashierId: o.cashierId,
+        status: o.status,
+        serviceType: o.serviceType,
+        subtotal: (o as any).subtotal ?? null,
+        tax: (o as any).tax ?? null,
+        tip10: (o as any).tip10 ?? null,
+        total: o.total,
+        paymentMethods,
+        itemCount: o.items?.length || 0,
+        createdAt: o.createdAt,
+        closedAt: (o as any).closedAt ?? o.updatedAt,
+        groupKey: (o as any).__groupKey,
+      };
+    }),
     missing,
   });
 }

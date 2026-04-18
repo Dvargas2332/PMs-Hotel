@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { CircleUser, LogOut, Bell } from "lucide-react";
+import { CircleUser, LogOut, Bell, Sun, Moon } from "lucide-react";
 import useConfigStore from "../store/configStore";
 import { api } from "../lib/api";
 import { frontdeskTheme } from "../theme/frontdeskTheme";
 import { useLanguage } from "../context/LanguageContext";
+import { useTheme } from "../context/ThemeContext";
 import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
 
 const TYPE_STYLES = {
@@ -16,6 +17,27 @@ const TYPE_STYLES = {
   system:       "bg-gray-100 text-gray-900",
 };
 
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  return (
+    <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+      {[{ value: "light", icon: Sun }, { value: "dark", icon: Moon }].map(({ value, icon: Icon }) => (
+        <button
+          key={value}
+          onClick={() => setTheme(value)}
+          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+            theme === value ? "bg-emerald-500/30 text-emerald-700 dark:text-emerald-300" : "hover:bg-black/5 dark:hover:bg-white/10"
+          }`}
+          style={{ color: theme === value ? undefined : "var(--color-text-muted)" }}
+          title={value}
+        >
+          <Icon className="w-3.5 h-3.5" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Layout() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -24,28 +46,22 @@ export default function Layout() {
   const fx = config?.accounting?.fx || {};
   const fmtFx = (v) => (v || v === 0 ? Number(v).toFixed(2) : "—");
 
-  // Alerts panel
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [alerts, setAlerts] = useState([]); // [{id?, type, title, desc, at?}]
+  const [alerts, setAlerts] = useState([]);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const panelRef = useRef(null);
   const menusRef = useRef(null);
 
   useEffect(() => {
-    // Toggle abierto/cerrado
     const onToggle = () => setAlertsOpen((v) => !v);
     const onOpen   = () => setAlertsOpen(true);
     const onClose  = () => setAlertsOpen(false);
-
-    // Reemplazar lista completa
     const onSet = (e) => {
       const list = Array.isArray(e.detail) ? e.detail : [];
       setAlerts(filterAllowedAlerts(list));
       setAlertsOpen(true);
     };
-
-    // Agregar una alerta
     const onPush = (e) => {
       const item = e.detail;
       if (!item || !isAllowedAlert(item)) return;
@@ -53,8 +69,6 @@ export default function Layout() {
       setAlerts((prev) => [{ id, ...item }, ...prev]);
       setAlertsOpen(true);
     };
-
-    // Clear
     const onClear = () => setAlerts([]);
 
     window.addEventListener("pms:toggle-alerts", onToggle);
@@ -64,21 +78,14 @@ export default function Layout() {
     window.addEventListener("pms:push-alert", onPush);
     window.addEventListener("pms:clear-alerts", onClear);
 
-    // Close with ESC
-    const onKey = (e) => {
-      if (e.key === "Escape") setAlertsOpen(false);
-    };
+    const onKey = (e) => { if (e.key === "Escape") setAlertsOpen(false); };
     window.addEventListener("keydown", onKey);
 
-    // Close on outside click
     const onDocClick = (e) => {
       if (!alertsOpen && !userMenuOpen) return;
       const clickAlerts = panelRef.current && panelRef.current.contains(e.target);
       const clickMenus = menusRef.current && menusRef.current.contains(e.target);
-      if (!clickAlerts && !clickMenus) {
-        setAlertsOpen(false);
-        setUserMenuOpen(false);
-      }
+      if (!clickAlerts && !clickMenus) { setAlertsOpen(false); setUserMenuOpen(false); }
     };
     document.addEventListener("mousedown", onDocClick);
 
@@ -95,7 +102,6 @@ export default function Layout() {
   }, [alertsOpen, userMenuOpen]);
 
   useEffect(() => {
-    // Traer el fx del backend por hotel
     const loadFx = async () => {
       try {
         const { data } = await api.get("/hotel/currency");
@@ -114,12 +120,11 @@ export default function Layout() {
       }
     };
     loadFx();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const menu = React.useMemo(
     () => [
-      { to: ".", label: t("frontdesk.menu.dashboard"), end: true }, // index de /frontdesk
+      { to: ".", label: t("frontdesk.menu.dashboard"), end: true },
       { to: "planning", label: t("frontdesk.menu.planning") },
       { to: "reservas", label: t("frontdesk.menu.reservations") },
       { to: "inhouse", label: t("frontdesk.menu.inhouse") },
@@ -132,19 +137,11 @@ export default function Layout() {
   );
 
   return (
-    <div
-      className="flex h-screen"
-      style={{ background: frontdeskTheme.background.app }}
-    >
-      {/* Sidebar */}
+    <div className="flex h-screen" style={{ background: "var(--shell-bg)" }}>
+      {/* Sidebar — mantiene gradiente de identidad de FrontDesk */}
       <aside className="w-48 flex-shrink-0 overflow-hidden bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-lg">
         <div className="px-2 py-4 border-b border-emerald-500/50 flex items-center justify-center">
-          <img
-            src="/kazehanalogo.png"
-            alt="Logo del hotel"
-            className="object-contain max-w-full"
-            style={{ width: 130, height: 130 }}
-          />
+          <img src="/kazehanalogo.png" alt="Logo del hotel" className="object-contain max-w-full" style={{ width: 130, height: 130 }} />
         </div>
         <nav className="flex-1 p-2.5 space-y-2">
           {menu.map((m) => (
@@ -153,7 +150,7 @@ export default function Layout() {
               to={m.to}
               end={m.end}
               className={({ isActive }) =>
-                `block p-2 rounded ${isActive ? "bg-white/10 font-semibold" : "hover:bg-white/10"}`
+                `block p-2 rounded ${isActive ? "bg-white/20 font-semibold" : "hover:bg-white/10"}`
               }
             >
               {m.label}
@@ -172,9 +169,13 @@ export default function Layout() {
       {/* Main */}
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Header */}
-        <header className="bg-white/90 backdrop-blur border-b border-emerald-100 shadow p-4 flex justify-between items-center relative z-20">
-          <h1 className="text-xl font-bold text-emerald-900">Hotel Project</h1>
-          <div className="flex items-center gap-4 relative" ref={menusRef}>
+        <header
+          className="backdrop-blur border-b shadow-sm p-4 flex justify-between items-center relative z-20"
+          style={{ background: "var(--header-bg)", borderColor: "var(--card-border)" }}
+        >
+          <h1 className="text-xl font-bold text-emerald-700 dark:text-emerald-400">Hotel Project</h1>
+          <div className="flex items-center gap-3 relative" ref={menusRef}>
+            {/* FX rate */}
             <div className="hidden md:flex items-center">
               <div className="rounded-lg px-4 py-2 text-sm text-white bg-gradient-to-r from-emerald-600 via-emerald-700 to-sky-700 shadow">
                 <span className="font-semibold">USD</span>
@@ -182,12 +183,14 @@ export default function Layout() {
                 <span className="ml-2">Sell {fmtFx(fx.sell || fx.rates?.USD)}</span>
               </div>
             </div>
+
+            <ThemeToggle />
+
+            {/* Bell */}
             <button
-              className="relative p-2 rounded-lg border border-emerald-100 bg-white hover:bg-emerald-50/60"
-              onClick={() => {
-                setAlertsOpen((s) => !s);
-                setUserMenuOpen(false);
-              }}
+              className="relative p-2 rounded-lg transition-colors"
+              style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--color-text-base)" }}
+              onClick={() => { setAlertsOpen((s) => !s); setUserMenuOpen(false); }}
               aria-label={t("layout.alertsTitle")}
             >
               <Bell className="w-4 h-4" />
@@ -197,42 +200,41 @@ export default function Layout() {
                 </span>
               )}
             </button>
+
+            {/* User menu */}
             <div className="relative">
               <button
-                className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-white hover:bg-emerald-50/60 text-sm"
-                onClick={() => {
-                  setUserMenuOpen((v) => !v);
-                  setAlertsOpen(false);
-                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--color-text-base)" }}
+                onClick={() => { setUserMenuOpen((v) => !v); setAlertsOpen(false); }}
                 aria-expanded={userMenuOpen}
                 aria-haspopup="menu"
               >
-                <CircleUser className="w-5 h-5 text-gray-600" />
+                <CircleUser className="w-5 h-5" style={{ color: "var(--color-text-muted)" }} />
                 <div className="text-left text-sm leading-tight">
-                  <div className="font-medium text-gray-800">{user?.name || user?.email || "User"}</div>
-                  <div className="text-xs text-gray-500">{user?.role || "Hotel"}</div>
+                  <div className="font-medium" style={{ color: "var(--color-text-base)" }}>{user?.name || user?.email || "User"}</div>
+                  <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{user?.role || "Hotel"}</div>
                 </div>
               </button>
               {userMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white border shadow-xl rounded-xl overflow-hidden z-30">
-                  <div className="px-3 py-2 text-sm border-b">
-                    <div className="font-semibold text-gray-800">{user?.name || "User"}</div>
-                    <div className="text-xs text-gray-500">{user?.email || user?.role || ""}</div>
+                <div className="absolute right-0 mt-2 w-56 shadow-xl rounded-xl overflow-hidden z-30" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+                  <div className="px-3 py-2 text-sm" style={{ borderBottom: "1px solid var(--card-border)" }}>
+                    <div className="font-semibold" style={{ color: "var(--color-text-base)" }}>{user?.name || "User"}</div>
+                    <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{user?.email || user?.role || ""}</div>
                   </div>
                   <button
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 text-left"
-                    onClick={() => {
-                      setUserMenuOpen(false);
-                      navigate("/launcher");
-                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    style={{ color: "var(--color-text-base)" }}
+                    onClick={() => { setUserMenuOpen(false); navigate("/launcher"); }}
                   >
-                    <LogOut className="w-4 h-4 text-emerald-700" />
+                    <LogOut className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                     <span>{t("common.logout")}</span>
                   </button>
                 </div>
               )}
             </div>
-            <span className="text-sm text-gray-600">{new Date().toLocaleDateString()}</span>
+
+            <span className="text-sm" style={{ color: "var(--color-text-muted)" }}>{new Date().toLocaleDateString()}</span>
           </div>
         </header>
 
@@ -245,11 +247,11 @@ export default function Layout() {
       {/* Panel de Alertas */}
       {alertsOpen && (
         <>
-          {/* Backdrop */}
           <div className="fixed inset-0 bg-black/20 z-40" />
           <div
             ref={panelRef}
-            className="fixed top-20 right-6 w-[420px] max-h-[70vh] overflow-auto bg-white border shadow-2xl rounded-xl p-4 z-50"
+            className="fixed top-20 right-6 w-[420px] max-h-[70vh] overflow-auto shadow-2xl rounded-xl p-4 z-50"
+            style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--color-text-base)" }}
             role="dialog"
             aria-modal="true"
             aria-label={t("layout.alertsTitle")}
@@ -257,74 +259,36 @@ export default function Layout() {
             <div className="flex items-center justify-between mb-2">
               <div className="font-semibold">{t("layout.alertsTitle")}</div>
               <div className="flex items-center gap-2">
-                <button
-                  className="text-xs text-gray-500 hover:text-gray-700 underline"
-                  onClick={() => setAlerts([])}
-                  title={t("common.clear")}
-                >
-                  {t("common.clear")}
-                </button>
-                <button
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                  onClick={() => setAlertsOpen(false)}
-                >
-                  {t("common.close")}
-                </button>
+                <button className="text-xs underline transition-colors" style={{ color: "var(--color-text-muted)" }} onClick={() => setAlerts([])}>{t("common.clear")}</button>
+                <button className="text-sm transition-colors" style={{ color: "var(--color-text-muted)" }} onClick={() => setAlertsOpen(false)}>{t("common.close")}</button>
               </div>
             </div>
-
             {alerts.length === 0 ? (
-              <div className="text-sm text-gray-600">{t("layout.noPendingAlerts")}</div>
+              <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("layout.noPendingAlerts")}</div>
             ) : (
               <ul className="space-y-3">
                 {alerts.map((a) => {
                   const badge = TYPE_STYLES[a.type] || TYPE_STYLES.system;
                   return (
-                    <li key={a.id || a.title} className="rounded-lg border bg-white p-3">
+                    <li key={a.id || a.title} className="rounded-lg p-3" style={{ background: "var(--color-surface)", border: "1px solid var(--card-border)" }}>
                       <div className="flex items-center justify-between">
-                        <span className={`px-2 py-0.5 rounded text-xs ${badge}`}>
-                          {a.type || "system"}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {a.at ? new Date(a.at).toLocaleTimeString() : ""}
-                        </span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${badge}`}>{a.type || "system"}</span>
+                        <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>{a.at ? new Date(a.at).toLocaleTimeString() : ""}</span>
                       </div>
-                      <div className="mt-1 font-medium">{a.title}</div>
-                      {a.desc && <div className="text-sm text-gray-600">{a.desc}</div>}
-
-                      {/* Acciones rápidas sugeridas */}
+                      <div className="mt-1 font-medium" style={{ color: "var(--color-text-base)" }}>{a.title}</div>
+                      {a.desc && <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{a.desc}</div>}
                       <div className="mt-2 flex flex-wrap gap-2">
                         {a.type === "checkin" && (
-                          <button
-                            className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
-                            onClick={() => navigate("/frontdesk/reservas?q=today")}
-                          >
-                            {t("layout.viewCheckins")}
-                          </button>
+                          <button className="text-xs px-2 py-1 rounded transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ border: "1px solid var(--card-border)", color: "var(--color-text-base)" }} onClick={() => navigate("/frontdesk/reservas?q=today")}>{t("layout.viewCheckins")}</button>
                         )}
                         {a.type === "checkout" && (
-                          <button
-                            className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
-                            onClick={() => navigate("/frontdesk/reservas?q=today")}
-                          >
-                            {t("layout.viewCheckouts")}
-                          </button>
+                          <button className="text-xs px-2 py-1 rounded transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ border: "1px solid var(--card-border)", color: "var(--color-text-base)" }} onClick={() => navigate("/frontdesk/reservas?q=today")}>{t("layout.viewCheckouts")}</button>
                         )}
                         {a.type === "housekeeping" && (
-                          <button
-                            className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
-                            onClick={() => navigate("/frontdesk/habitaciones")}
-                          >
-                            {t("layout.goToRooms")}
-                          </button>
+                          <button className="text-xs px-2 py-1 rounded transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ border: "1px solid var(--card-border)", color: "var(--color-text-base)" }} onClick={() => navigate("/frontdesk/habitaciones")}>{t("layout.goToRooms")}</button>
                         )}
                         {a.type === "payment" && (
-                          <button
-                            className="text-xs px-2 py-1 rounded border hover:bg-gray-50"
-                            onClick={() => navigate("/frontdesk/facturacion")}
-                          >
-                            {t("layout.goToBilling")}
-                          </button>
+                          <button className="text-xs px-2 py-1 rounded transition-colors hover:bg-black/5 dark:hover:bg-white/10" style={{ border: "1px solid var(--card-border)", color: "var(--color-text-base)" }} onClick={() => navigate("/frontdesk/facturacion")}>{t("layout.goToBilling")}</button>
                         )}
                       </div>
                     </li>

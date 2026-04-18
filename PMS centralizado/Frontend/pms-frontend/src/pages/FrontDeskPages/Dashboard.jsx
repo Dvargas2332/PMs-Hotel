@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { useHotelData } from "../../context/useHotelData";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
+import { api } from "../../lib/api";
 
 const Card = ({ className = "", children }) => (
   <div
@@ -100,6 +101,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const searchRef = useRef(null);
   const { rooms, reservations } = useHotelData();
+
+  const [flash, setFlash] = useState(null);
+  useEffect(() => {
+    api.get("/reports/daily").then(({ data }) => setFlash(data)).catch(() => {});
+  }, []);
 
   const today = useMemo(() => new Date(), []);
   const todayStr = useMemo(() => toYMD(today), [today]);
@@ -261,32 +267,31 @@ export default function Dashboard() {
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 <KPI
                   label={t("frontdesk.dashboard.occupancyToday")}
-                  value={`${Math.round(
-                    (inHouseToday.length / Math.max(1, rooms.length)) * 100
-                  )}%`}
+                  value={flash ? `${flash.occupancyPct}%` : `${Math.round((inHouseToday.length / Math.max(1, rooms.length)) * 100)}%`}
+                  tone="primary"
                 />
                 <KPI
                   label={t("frontdesk.dashboard.arrivalsToday")}
-                  value={arrivalsToday.length}
+                  value={flash ? flash.arrivals : arrivalsToday.length}
                   sub={t("frontdesk.dashboard.tapToView")}
                   onClick={() => navigate("/reservas")}
                 />
                 <KPI
                   label={t("frontdesk.dashboard.departuresToday")}
-                  value={departuresToday.length}
+                  value={flash ? flash.departures : departuresToday.length}
                   sub={t("frontdesk.dashboard.tapToView")}
                   onClick={() => navigate("/reservas")}
                 />
-                <KPI label={t("frontdesk.dashboard.rooms")} value={rooms.length} />
+                <KPI label={t("frontdesk.dashboard.rooms")} value={flash ? flash.totalRooms : rooms.length} />
                 <KPI
-                  label={t("frontdesk.dashboard.waitlist")}
-                  value={waitlistReservations.length}
-                  sub={t("frontdesk.dashboard.waitlistSub")}
+                  label="En casa"
+                  value={flash ? flash.inHouse : inHouseToday.length}
+                  tone="success"
                 />
                 <KPI
-                  label={t("frontdesk.dashboard.revenue30d")}
-                  value={revenue30d.toFixed(2)}
-                  sub={t("frontdesk.dashboard.revenue30dSub")}
+                  label="Ingresos hoy"
+                  value={flash ? `${flash.currency} ${Number(flash.revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : revenue30d.toFixed(2)}
+                  sub={flash ? `${flash.invoiceCount} fact.` : t("frontdesk.dashboard.revenue30dSub")}
                 />
               </div>
             </Card>

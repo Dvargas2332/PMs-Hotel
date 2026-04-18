@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 
 import { useLocation } from "react-router-dom";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 
 
 
@@ -29,6 +30,7 @@ import ConfirmDialog from "../../../components/common/ConfirmDialog";
 
 import { api } from "../../../lib/api";
 import { useLanguage } from "../../../context/LanguageContext";
+import { sanitizeCssBackgroundImage, sanitizeImageUrl } from "../../../lib/security";
 
 
 
@@ -4365,225 +4367,63 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <div className="flex items-start justify-between gap-3">
-
-
-
+        {/* Row 1: title + section selector */}
+        <div className="flex items-center justify-between gap-3">
           <div>
-
-
-
-            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.floorplan.title")}</div>
-
-
-
-            <h3 className="font-semibold text-lg">{t("mgmt.restaurant.floorplan.subtitle")}</h3>
-
-
-
-
-
+            <div className="text-xs uppercase tracking-widest" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.floorplan.title")}</div>
+            <h3 className="font-semibold text-lg" style={{ color: "var(--color-text-base)" }}>{t("mgmt.restaurant.floorplan.subtitle")}</h3>
           </div>
-
-
-
-          {selectedSectionId && (
-
-
-
-            <div className="flex flex-col gap-1 text-xs text-slate-700">
-
-
-
-              <div className="font-semibold">{t("mgmt.restaurant.floorplan.backgroundTitle")}</div>
-
-
-
-              <div className="flex items-center gap-2">
-
-
-
-                <input
-
-
-
-                  type="color"
-
-
-
-                  value={backgroundForm.color || "#eefce5"}
-
-
-
-                  onChange={(e) => setBackgroundForm((f) => ({ ...f, color: e.target.value }))}
-
-
-
-                  className="h-10 w-16 rounded border"
-
-
-
-                  title={t("mgmt.restaurant.floorplan.backgroundColor")}
-
-
-
-                />
-
-
-
-                <input
-
-
-
-                  type="text"
-
-
-
-                  value={backgroundForm.image || ""}
-
-
-
-                  onChange={(e) => setBackgroundForm((f) => ({ ...f, image: e.target.value }))}
-
-
-
-                  placeholder={t("mgmt.restaurant.floorplan.backgroundImage")}
-
-
-
-                  className="h-10 w-64 rounded border px-3 text-sm"
-
-
-
-                />
-
-
-
-              </div>
-
-
-
-            </div>
-
-
-
-          )}
-
-
-
-          <div className="flex items-center gap-2">
-
-
-
-            {selectedSectionId && (
-
-
-
-              <div className="flex items-center gap-2 text-xs text-slate-600">
-
-
-
-                {(floorplanHasChanges || backgroundDirty) ? (
-
-
-
-                  <span className="px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">{t("mgmt.restaurant.floorplan.unsaved")}</span>
-
-
-
-                ) : (
-
-
-
-                  <span className="px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800">{t("mgmt.restaurant.floorplan.saved")}</span>
-
-
-
-                )}
-
-
-
-                <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || (!floorplanHasChanges && !backgroundDirty)}>
-
-
-
-                  {floorplanSaving ? t("mgmt.restaurant.floorplan.saving") : t("mgmt.restaurant.floorplan.save")}
-
-
-
-                </Button>
-
-
-
-              </div>
-
-
-
-            )}
-
-
-
-            <select
-
-
-
-              className="h-10 rounded-lg border px-3 text-sm"
-
-
-
-              value={selectedSectionId || ""}
-
-
-
-              onChange={(e) => setSelectedSectionId(e.target.value)}
-
-
-
-              title={t("mgmt.restaurant.floorplan.selectSectionTitle")}
-
-
-
-            >
-
-
-
-              {(sections || []).map((s) => (
-
-
-
-                <option key={s.id} value={s.id}>
-
-
-
-                  {s.name || s.id}
-
-
-
-                </option>
-
-
-
-              ))}
-
-
-
-            </select>
-
-
-
-          </div>
-
-
-
+          <CustomSelect
+            className="h-9"
+            value={selectedSectionId || ""}
+            onChange={(e) => setSelectedSectionId(e.target.value)}
+            title={t("mgmt.restaurant.floorplan.selectSectionTitle")}
+          >
+            {(sections || []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name || s.id}</option>
+            ))}
+          </CustomSelect>
         </div>
 
+        {/* Row 2: background controls + status + save */}
+        {selectedSectionId && (
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t" style={{ borderColor: "var(--card-border)" }}>
+            <span className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.floorplan.backgroundTitle")}</span>
+            <input
+              type="color"
+              value={backgroundForm.color || "#eefce5"}
+              onChange={(e) => setBackgroundForm((f) => ({ ...f, color: e.target.value }))}
+              className="h-8 w-10 rounded cursor-pointer"
+              style={{ border: "1px solid var(--input-border)" }}
+              title={t("mgmt.restaurant.floorplan.backgroundColor")}
+            />
+            <input
+              type="text"
+              value={backgroundForm.image || ""}
+              onChange={(e) => setBackgroundForm((f) => ({ ...f, image: e.target.value }))}
+              placeholder={t("mgmt.restaurant.floorplan.backgroundImage")}
+              className="h-8 flex-1 min-w-[180px] max-w-xs"
+            />
+            <div className="ml-auto flex items-center gap-2">
+              {(floorplanHasChanges || backgroundDirty) ? (
+                <span className="px-2 py-0.5 rounded-lg text-xs bg-amber-500/20 border border-amber-500/40 text-amber-300">{t("mgmt.restaurant.floorplan.unsaved")}</span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-lg text-xs bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">{t("mgmt.restaurant.floorplan.saved")}</span>
+              )}
+              <Button type="button" onClick={saveFloorplan} disabled={floorplanSaving || (!floorplanHasChanges && !backgroundDirty)}>
+                {floorplanSaving ? t("mgmt.restaurant.floorplan.saving") : t("mgmt.restaurant.floorplan.save")}
+              </Button>
+            </div>
+          </div>
+        )}
 
 
 
 
 
 
-        {!selectedSectionId && <div className="text-sm text-gray-600">{t("mgmt.restaurant.assignments.selectSection")}</div>}
+
+        {!selectedSectionId && <div className="text-sm text-slate-400">{t("mgmt.restaurant.assignments.selectSection")}</div>}
 
 
 
@@ -4595,10 +4435,73 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="grid lg:grid-cols-[1fr_360px] gap-4">
+          <div className="space-y-3">
 
+            {/* ── Panel Selected Table — barra horizontal compacta ── */}
+            <Card className="p-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wide shrink-0">
+                  {t("mgmt.restaurant.floorplan.selectedTable")}
+                </div>
 
+                {!selectedTable || !tableEdit ? (
+                  <div className="text-sm text-slate-400 italic">{t("mgmt.restaurant.floorplan.selectedTableHint")}</div>
+                ) : (
+                  <>
+                    {/* Nombre + tipo */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-bold text-slate-800">{selectedTable.id}</span>
+                      <span className="text-xs text-slate-400 bg-white/10 rounded px-1.5 py-0.5">
+                        {(TABLE_KIND_OPTIONS.find((o) => o.id === String(tableEdit.kind || "mesa").toLowerCase())?.label) || "Mesa"}
+                      </span>
+                    </div>
 
+                    {/* Posición */}
+                    <div className="text-xs text-slate-500 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 shrink-0">
+                      X: {Number(tableEdit.x ?? 50).toFixed(1)}% · Y: {Number(tableEdit.y ?? 50).toFixed(1)}%
+                    </div>
+
+                    {/* Tamaño */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-semibold text-slate-600">{t("mgmt.restaurant.floorplan.iconSize")}</span>
+                      <input
+                        type="range" min="24" max="160"
+                        value={Number(tableEdit.size ?? 56)}
+                        onChange={(e) => applyTableEdit({ size: clamp(Number(e.target.value || 56), 24, 160) })}
+                        className="w-28"
+                      />
+                      <span className="text-xs text-slate-500 w-10">{Number(tableEdit.size ?? 56)}px</span>
+                    </div>
+
+                    {/* Rotation snap */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs font-semibold text-slate-600">{t("mgmt.restaurant.floorplan.rotationSnap")}</span>
+                      <CustomSelect
+                        className="h-7"
+                        value={rotationSnap}
+                        onChange={(e) => setRotationSnap(Number(e.target.value || 0))}
+                      >
+                        {[0, 5, 10, 15, 30, 45, 90].map((v) => (
+                          <option key={v} value={v}>{v === 0 ? "Off" : `${v}°`}</option>
+                        ))}
+                      </CustomSelect>
+                      <button type="button" className="h-7 w-7 rounded border hover:bg-white/5 text-xs font-bold"
+                        onClick={() => applyTableEdit({ rotation: normDeg(Number(tableEdit.rotation || 0) - (Number(rotationSnap) || 15)) })}>-</button>
+                      <span className="text-xs text-slate-500 w-8 text-center">{tableEdit.rotation ?? 0}°</span>
+                      <button type="button" className="h-7 w-7 rounded border hover:bg-white/5 text-xs font-bold"
+                        onClick={() => applyTableEdit({ rotation: normDeg(Number(tableEdit.rotation || 0) + (Number(rotationSnap) || 15)) })}>+</button>
+                    </div>
+
+                    {/* Estado guardado */}
+                    <div className="ml-auto text-xs text-slate-400 shrink-0">
+                      {dirtyStyleTableIds.includes(selectedTable.id) ? "Estilo sin guardar" : "Estilo guardado"} · {t("mgmt.restaurant.floorplan.useSave")}
+                    </div>
+                  </>
+                )}
+              </div>
+            </Card>
+
+            {/* ── Canvas — ahora ocupa todo el ancho ── */}
             <div className="space-y-3">
 
 
@@ -4611,7 +4514,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                className="relative w-full h-[420px] rounded-2xl border overflow-hidden"
+                className="relative w-full h-[580px] rounded-2xl border overflow-hidden"
 
 
 
@@ -4623,7 +4526,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  backgroundImage: backgroundForm.image ? `url(${backgroundForm.image})` : undefined,
+                  backgroundImage: sanitizeCssBackgroundImage(backgroundForm.image),
 
 
 
@@ -4731,7 +4634,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                        className={`text-sm font-bold bg-white/90 border rounded-lg px-2 py-0.5 shadow-sm transition ${selected ? "border-amber-400 text-amber-900" : "border-slate-200 text-amber-900 group-hover:border-amber-300"}`}
+                        className={`text-sm font-bold bg-slate-800 border border-white/10 rounded-lg px-2 py-0.5 shadow-sm transition ${selected ? "border-amber-400 text-amber-300" : "border-white/10 text-amber-300 group-hover:border-amber-400"}`}
 
 
 
@@ -4783,369 +4686,20 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="text-xs text-gray-500 hidden">{t("mgmt.restaurant.floorplan.tip")}</div>
+              <div className="text-xs text-slate-400 hidden">{t("mgmt.restaurant.floorplan.tip")}</div>
 
 
 
             </div>
-
-
-
-
-
-
-
-            <div className="space-y-3">
-
-
-
-              <Card className="p-3 space-y-2">
-
-
-
-                <div className="font-semibold text-sm">{t("mgmt.restaurant.floorplan.selectedTable") }</div>
-
-
-
-                {!selectedTable || !tableEdit ? (
-
-
-
-                  <div className="text-sm text-gray-600">{t("mgmt.restaurant.floorplan.selectedTableHint")}</div>
-
-
-
-                ) : (
-
-
-
-                  <>
-
-
-
-                    <div className="flex items-center justify-between gap-2">
-
-
-
-                      <div className="text-sm font-semibold truncate">{selectedTable.id}</div>
-
-
-
-                      <div className="text-xs text-slate-500">
-
-
-
-                        {(TABLE_KIND_OPTIONS.find((o) => o.id === String(tableEdit.kind || "mesa").toLowerCase())?.label) || "Mesa"}
-
-
-
-                      </div>
-
-
-
-                    </div>
-
-
-
-
-
-
-
-                    <div className="grid grid-cols-2 gap-2">
-
-                      <Input
-
-                        type="number"
-
-                        placeholder="Size (px)"
-
-                        value={tableEdit.size ?? 56}
-
-                        onChange={(e) => applyTableEdit({ size: clamp(Number(e.target.value || 56), 24, 160) })}
-
-                      />
-
-                      <Input
-
-                        type="number"
-
-                        placeholder="Rotation (deg)"
-
-                        value={tableEdit.rotation}
-
-                        onChange={(e) => applyTableEdit({ rotation: normDeg(snap(Number(e.target.value || 0), rotationSnap)) })}
-
-                      />
-
-                      <div className="col-span-2 rounded-lg border px-3 py-2 text-xs text-slate-600">
-
-                        Drag table on canvas to change position. X: {Number(tableEdit.x ?? 50).toFixed(1)}% | Y: {Number(tableEdit.y ?? 50).toFixed(1)}%
-
-                      </div>
-
-                      <div className="col-span-2 rounded-lg border px-3 py-2">
-
-
-
-                        <div className="flex items-center justify-between gap-3">
-
-
-
-                          <div className="text-xs font-semibold text-slate-700">{t("mgmt.restaurant.floorplan.rotationSnap")}</div>
-
-
-
-                          <select
-
-
-
-                            className="h-8 rounded-md border px-2 text-xs"
-
-
-
-                            value={rotationSnap}
-
-
-
-                            onChange={(e) => setRotationSnap(Number(e.target.value || 0))}
-
-
-
-                          >
-
-
-
-                            {[0, 5, 10, 15, 30, 45, 90].map((v) => (
-
-
-
-                              <option key={v} value={v}>
-
-
-
-                                {v === 0 ? "Off" : `${v}\u00B0`}
-
-
-
-                              </option>
-
-
-
-                            ))}
-
-
-
-                          </select>
-
-
-
-                        </div>
-
-
-
-                        <div className="mt-2 flex items-center gap-2">
-
-
-
-                          <button
-
-
-
-                            type="button"
-
-
-
-                            className="h-8 px-2 rounded border hover:bg-slate-50 text-xs"
-
-
-
-                            onClick={() => applyTableEdit({ rotation: normDeg(Number(tableEdit.rotation || 0) - (Number(rotationSnap) || 0 || 15)) })}
-
-
-
-                          >
-
-
-
-                            -
-
-
-
-                          </button>
-
-
-
-                          <div className="text-xs text-slate-600">
-
-
-
-                            {rotationSnap ? `${rotationSnap}\u00B0` : "Manual"}
-
-
-
-                          </div>
-
-
-
-                          <button
-
-
-
-                            type="button"
-
-
-
-                            className="h-8 px-2 rounded border hover:bg-slate-50 text-xs"
-
-
-
-                            onClick={() => applyTableEdit({ rotation: normDeg(Number(tableEdit.rotation || 0) + (Number(rotationSnap) || 0 || 15)) })}
-
-
-
-                          >
-
-
-
-                            +
-
-
-
-                          </button>
-
-
-
-                        </div>
-
-
-
-                      </div>
-
-
-
-
-
-
-
-                      <div className="col-span-2 rounded-lg border px-3 py-2">
-
-
-
-                        <div className="flex items-center justify-between gap-2">
-
-
-
-                          <div className="text-xs font-semibold text-slate-700">{t("mgmt.restaurant.floorplan.iconSize")}</div>
-
-
-
-                          <div className="text-xs text-slate-600">{Number(tableEdit.size ?? 56)}px</div>
-
-
-
-                        </div>
-
-
-
-                        <input
-
-
-
-                          type="range"
-
-
-
-                          min="24"
-
-
-
-                          max="160"
-
-
-
-                          value={Number(tableEdit.size ?? 56)}
-
-
-
-                          onChange={(e) => applyTableEdit({ size: clamp(Number(e.target.value || 56), 24, 160) })}
-
-
-
-                          className="w-full"
-
-
-
-                        />
-
-
-
-                      </div>
-
-
-
-                    </div>
-
-
-
-
-
-
-
-                    <div className="flex items-center justify-between gap-2 pt-1">
-
-
-
-                      <div className="text-xs text-slate-500">
-
-
-
-                        {dirtyStyleTableIds.includes(selectedTable.id) ? "Estilo sin guardar" : "Estilo guardado"}
-
-
-
-                      </div>
-
-
-
-                      <div className="text-xs text-slate-400">{t("mgmt.restaurant.floorplan.useSave")}</div>
-
-
-
-                    </div>
-
-
-
-                  </>
-
-
-
-                )}
-
-
-
-              </Card>
-
-
-
-
-
-
-
-
-              
-
-
-
-
-              
-
-
-
-            </div>
-
-
-
           </div>
+
+
+
+
+
+
+
+
 
 
 
@@ -5361,7 +4915,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.sections.title")}</div>
+              <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.sections.title")}</div>
 
 
 
@@ -5517,7 +5071,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                className={`rounded-xl border bg-white overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer ${
+                className={`rounded-xl border border-white/10 bg-white/5 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer ${
 
 
 
@@ -5537,7 +5091,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <div className="relative h-28 bg-slate-100">
+                <div className="relative h-28 bg-white/5">
 
 
 
@@ -5545,7 +5099,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    <img src={s.imageUrl} alt={s.name || s.id} className="h-full w-full object-cover" />
+                    <img src={sanitizeImageUrl(s.imageUrl)} alt={s.name || s.id} className="h-full w-full object-cover" />
 
 
 
@@ -5569,7 +5123,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.sections.cardLabel")}</div>
+                  <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.sections.cardLabel")}</div>
 
 
 
@@ -5729,7 +5283,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.tables.title")}</div>
+            <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.tables.title")}</div>
 
 
 
@@ -5737,7 +5291,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <p className="text-xs text-gray-500 mt-1">{t("mgmt.restaurant.tables.help")}</p>
+            <p className="text-xs text-slate-400 mt-1">{t("mgmt.restaurant.tables.help")}</p>
 
 
 
@@ -5749,7 +5303,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="flex items-center gap-1 rounded-lg border bg-white px-2 py-1">
+            <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
 
 
 
@@ -5785,7 +5339,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                      activeKind ? "bg-amber-100 border-amber-300" : "bg-white border-slate-200 hover:bg-slate-50"
+                      activeKind ? "bg-amber-500/20 border-amber-500/40" : "bg-white/5 border-white/10 hover:bg-white/10"
 
 
 
@@ -5829,11 +5383,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 rounded-lg border px-3 text-sm"
+              className="h-10"
 
 
 
@@ -5873,7 +5427,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -6017,15 +5571,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500">{t("mgmt.restaurant.tables.layoutFor")} <span className="font-semibold">{selectedSection.name || selectedSection.id}</span></div>
+            <div className="text-xs text-slate-400">{t("mgmt.restaurant.tables.layoutFor")} <span className="font-semibold">{selectedSection.name || selectedSection.id}</span></div>
 
 
 
-            <div className="mt-2 border rounded-lg p-3 bg-slate-50">
+            <div className="mt-2 border border-white/10 rounded-lg p-3 bg-white/5">
 
 
 
-              <div className="text-[11px] text-gray-500 mb-2">{t("mgmt.restaurant.tables.gridHint")}</div>
+              <div className="text-[11px] text-slate-400 mb-2">{t("mgmt.restaurant.tables.gridHint")}</div>
 
 
 
@@ -6045,7 +5599,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    className="relative flex flex-col items-center justify-center rounded-xl border bg-white shadow-sm py-3 px-2"
+                    className="relative flex flex-col items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm py-3 px-2"
 
 
 
@@ -6053,15 +5607,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    <div className="text-sm text-gray-500">{selectedSection.name || selectedSection.id}</div>
+                    <div className="text-sm text-slate-400">{selectedSection.name || selectedSection.id}</div>
 
 
 
-                    <div className="text-base font-bold text-gray-800">{table.id}</div>
+                    <div className="text-base font-bold text-slate-200">{table.id}</div>
 
 
 
-                    <div className="text-sm text-gray-500">{table.seats} {t("mgmt.restaurant.tables.people")}</div>
+                    <div className="text-sm text-slate-400">{table.seats} {t("mgmt.restaurant.tables.people")}</div>
 
 
 
@@ -6105,7 +5659,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  <div className="text-sm text-gray-500 col-span-full">{t("mgmt.restaurant.tables.empty")}</div>
+                  <div className="text-sm text-slate-400 col-span-full">{t("mgmt.restaurant.tables.empty")}</div>
 
 
 
@@ -6129,7 +5683,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-sm text-gray-500">{t("mgmt.restaurant.tables.selectSection")}</div>
+          <div className="text-sm text-slate-400">{t("mgmt.restaurant.tables.selectSection")}</div>
 
 
 
@@ -6165,7 +5719,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.menus.title")}</div>
+            <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.menus.title")}</div>
 
 
 
@@ -6206,7 +5760,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                 )}
               </div>
               <div className="space-y-2">
-                <div className="text-xs text-gray-500">{t("mgmt.restaurant.menus.visibleInSections")}</div>
+                <div className="text-xs text-slate-400">{t("mgmt.restaurant.menus.visibleInSections")}</div>
                 <div className="grid gap-2">
                   {(sections || []).map((s) => (
                     <label key={s.id} className="flex items-center gap-2 text-sm">
@@ -6230,7 +5784,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                     </label>
                   ))}
                   {(sections || []).length === 0 && (
-                    <div className="text-sm text-gray-500">{t("mgmt.restaurant.menus.noSections")}</div>
+                    <div className="text-sm text-slate-400">{t("mgmt.restaurant.menus.noSections")}</div>
                   )}
                 </div>
               </div>
@@ -6270,7 +5824,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                 ].map((d) => {
                   const checked = (Number(menuAssignForm.daysMask) & d.bit) !== 0;
                   return (
-                    <label key={d.label} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border bg-white">
+                    <label key={d.label} className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-white/10 bg-white/5">
                       <input
                         type="checkbox"
                         checked={checked}
@@ -6297,11 +5851,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
           <div className="space-y-3">
             <div className="text-sm font-semibold">{t("mgmt.restaurant.assignments.title")}</div>
             {!selectedSectionId ? (
-              <div className="text-sm text-gray-500">{t("mgmt.restaurant.assignments.selectSection")}</div>
+              <div className="text-sm text-slate-400">{t("mgmt.restaurant.assignments.selectSection")}</div>
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-slate-600">
+                  <thead className="bg-white/5 text-slate-400">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.assignments.column.section")}</th>
                       <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.menus.title")}</th>
@@ -6332,14 +5886,14 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                             }
                         : {
                             label: t("mgmt.restaurant.assignments.status.unassigned"),
-                            className: "bg-slate-100 text-slate-700 border-slate-200",
+                            className: "bg-white/10 text-slate-300 border-white/10",
                           };
                       return (
                         <tr
                           key={rowMenuId || menu?.id || a?.id || idx}
                           className={[
-                            idx % 2 === 0 ? "bg-white" : "bg-slate-50/60",
-                            isSelectedRow ? "bg-indigo-50/50" : "",
+                            idx % 2 === 0 ? "bg-transparent" : "bg-white/3",
+                            isSelectedRow ? "bg-white/5" : "",
                           ]
                             .filter(Boolean)
                             .join(" ")}
@@ -6355,8 +5909,8 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                                       key={`${rowMenuId || "menu"}-${sectionId || sectionRef?.name || sectionIdx}`}
                                       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${
                                         isCurrentSection
-                                          ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                                          : "bg-slate-100 text-slate-700 border-slate-200"
+                                          ? "bg-white/5 text-indigo-300 border-indigo-500/40"
+                                          : "bg-white/10 text-slate-300 border-white/10"
                                       }`}
                                     >
                                       {sectionRef?.name || sectionId || "-"}
@@ -6374,7 +5928,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                               className={`inline-flex h-8 items-center rounded-md border px-2 text-xs font-medium transition ${
                                 isSelectedRow
                                   ? "bg-indigo-600 text-white border-indigo-600"
-                                  : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+                                  : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
                               }`}
                               onClick={() => {
                                 if (!rowMenuId) return;
@@ -6445,11 +5999,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
           <div className="space-y-3">
             <div className="text-sm font-semibold">{t("mgmt.restaurant.menuItems.title")}</div>
             {!selectedMenuId ? (
-              <div className="text-sm text-gray-500">{t("mgmt.restaurant.menuItems.selectMenu")}</div>
+              <div className="text-sm text-slate-400">{t("mgmt.restaurant.menuItems.selectMenu")}</div>
             ) : (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-slate-400">
                     {t("mgmt.restaurant.menuItems.count")} <span className="font-semibold">{menuEntries.length}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -6466,10 +6020,10 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                     </Button>
                   </div>
                 </div>
-                <div className="text-xs text-gray-500">{t("mgmt.restaurant.menuItems.helper")}</div>
+                <div className="text-xs text-slate-400">{t("mgmt.restaurant.menuItems.helper")}</div>
                 <div className="border rounded-lg overflow-auto max-h-[56vh]">
                   <table className="w-full min-w-[980px] text-sm">
-                    <thead className="bg-slate-50 sticky top-0 z-10">
+                    <thead className="bg-white/5 sticky top-0 z-10">
                       <tr className="text-xs text-slate-600">
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.family")}</th>
                         <th className="text-left px-3 py-2">{t("mgmt.restaurant.menuItems.column.subFamily")}</th>
@@ -6490,7 +6044,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                               : `#${it.color}`
                             : "#ffffff";
                         return (
-                          <tr key={e.id} className="hover:bg-slate-50">
+                          <tr key={e.id} className="hover:bg-white/5">
                             <td className="px-3 py-2">{it.familyName || "-"}</td>
                             <td className="px-3 py-2">{it.subFamilyName || "-"}</td>
                             <td className="px-3 py-2">{it.subSubFamilyName || "-"}</td>
@@ -6574,11 +6128,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="w-full max-w-[min(92vw,1240px)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-[min(92vw,1240px)] bg-slate-800 rounded-2xl shadow-2xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col">
 
 
 
-            <div className="flex items-center justify-between px-4 md:px-5 py-3 border-b bg-slate-50/70">
+            <div className="flex items-center justify-between px-4 md:px-5 py-3 border-b bg-white/5">
 
 
 
@@ -6586,7 +6140,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <div className="text-xs uppercase tracking-wide text-gray-500">{t("mgmt.restaurant.menuItems.openPicker")}</div>
+                <div className="text-xs uppercase tracking-wide text-slate-400">{t("mgmt.restaurant.menuItems.openPicker")}</div>
 
 
 
@@ -6598,7 +6152,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                className="h-9 w-9 rounded-lg border bg-white hover:bg-slate-50 flex items-center justify-center"
+                className="h-9 w-9 rounded-lg border bg-white/5 hover:bg-white/10 flex items-center justify-center"
 
 
 
@@ -6658,11 +6212,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.menuPicker.categories")}</div>
+                <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.menuPicker.categories")}</div>
 
 
 
-                <div className="space-y-2 overflow-auto pr-1 min-h-0 rounded-xl border border-slate-200 p-2 bg-slate-50/40">
+                <div className="space-y-2 overflow-auto pr-1 min-h-0 rounded-xl border border-white/10 p-2 bg-white/5">
 
 
 
@@ -6670,7 +6224,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${menuPickerCategory === "" ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
+                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${menuPickerCategory === "" ? "bg-white/5 border-indigo-500/40 text-indigo-200" : "bg-white/5 border-white/10 text-slate-300"}`}
 
 
 
@@ -6734,7 +6288,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                        className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${menuPickerCategory === cat ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
+                        className={`w-full text-left px-3 py-2 rounded-lg border text-sm ${menuPickerCategory === cat ? "bg-white/5 border-indigo-500/40 text-indigo-200" : "bg-white/5 border-white/10 text-slate-300"}`}
 
 
 
@@ -6774,10 +6328,10 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-2 bg-white">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 p-2 bg-white/5">
                   <div className="flex items-center gap-2">
-                    <select
-                      className="h-9 rounded-lg border px-2 text-sm bg-white"
+                    <CustomSelect
+                      className="h-9"
                       value={menuPickerMenuId}
                       onChange={(e) => {
                         setMenuPickerMenuId(e.target.value);
@@ -6790,7 +6344,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                           {m.name}
                         </option>
                       ))}
-                    </select>
+                    </CustomSelect>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -6804,9 +6358,9 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 p-2 bg-white">
-                  <select
-                    className="h-9 rounded-lg border px-2 text-sm bg-white"
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 p-2 bg-white/5">
+                  <CustomSelect
+                    className="h-9"
                     value={menuPickerFamily}
                     onChange={(e) => setMenuPickerFamily(e.target.value)}
                   >
@@ -6824,7 +6378,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                           {cat}
                         </option>
                       ))}
-                  </select>
+                  </CustomSelect>
                   <Button variant="outline" onClick={assignFamilyToMenu} disabled={!menuPickerFamily}>{t("mgmt.restaurant.menuPicker.assignFamily")}</Button>
                   <Button variant="outline" onClick={() => setMenuPickerSelectedIds([])}>
                     Limpiar seleccion
@@ -6946,7 +6500,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                            className={`text-left border rounded-xl p-3 hover:shadow-sm transition ${isInMenu ? "bg-emerald-50 border-emerald-200" : isSelected ? "bg-indigo-50 border-indigo-200" : "bg-white"}`}
+                            className={`text-left border rounded-xl p-3 hover:shadow-sm transition ${isInMenu ? "bg-emerald-900/30 border-emerald-500/40" : isSelected ? "bg-white/5 border-indigo-500/40" : "bg-white/5 border-white/10"}`}
 
 
 
@@ -6978,7 +6532,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                                <div className="text-xs text-gray-500">{it.code}</div>
+                                <div className="text-xs text-slate-400">{it.code}</div>
 
 
 
@@ -6986,7 +6540,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                                <div className="text-xs text-gray-500 truncate">
+                                <div className="text-xs text-slate-400 truncate">
 
 
 
@@ -7005,9 +6559,9 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                               {isInMenu ? (
                                 <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{t("mgmt.restaurant.menuPicker.inMenu")}</span>
                               ) : isSelected ? (
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">{t("mgmt.restaurant.menuPicker.selected")}</span>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 text-indigo-300 border border-indigo-500/40">{t("mgmt.restaurant.menuPicker.selected")}</span>
                               ) : (
-                                <span className="text-[11px] px-2 py-1 rounded-full bg-slate-50 text-slate-700 border border-slate-200">{t("mgmt.restaurant.menuPicker.select")}</span>
+                                <span className="text-[11px] px-2 py-1 rounded-full bg-white/5 text-slate-300 border border-white/10">{t("mgmt.restaurant.menuPicker.select")}</span>
                               )}
 
 
@@ -7032,7 +6586,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                      {filtered.length === 0 && <div className="text-sm text-gray-500 col-span-full">{t("mgmt.restaurant.menuPicker.noItems")}</div>}
+                      {filtered.length === 0 && <div className="text-sm text-slate-400 col-span-full">{t("mgmt.restaurant.menuPicker.noItems")}</div>}
 
 
 
@@ -7093,7 +6647,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <p className="text-sm text-gray-600">{t("mgmt.restaurant.printers.help")}</p>
+        <p className="text-sm text-slate-400">{t("mgmt.restaurant.printers.help")}</p>
 
 
 
@@ -7189,15 +6743,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.printers.paperType")}</div>
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.printers.paperType")}</div>
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 w-full rounded-lg border px-3 text-sm bg-white"
+              className="h-10 w-full rounded-lg px-3 text-sm"
 
 
 
@@ -7225,7 +6779,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -7237,15 +6791,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.printers.defaultDoc")}</div>
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.printers.defaultDoc")}</div>
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 w-full rounded-lg border px-3 text-sm bg-white"
+              className="h-10 w-full rounded-lg px-3 text-sm"
 
 
 
@@ -7269,7 +6823,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -7277,7 +6831,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-xs text-gray-500 flex items-end">{t("mgmt.restaurant.printers.typesHelp")}</div>
+          <div className="text-xs text-slate-400 flex items-end">{t("mgmt.restaurant.printers.typesHelp")}</div>
 
 
 
@@ -7340,7 +6894,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div key={printType.key} className="grid md:grid-cols-[140px_120px_1fr_1fr_120px] gap-2 items-center border rounded-lg p-3 bg-slate-50">
+              <div key={printType.key} className="grid md:grid-cols-[140px_120px_1fr_1fr_120px] gap-2 items-center border border-white/10 rounded-lg p-3 bg-white/5">
 
 
 
@@ -7440,11 +6994,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <select
+                <CustomSelect
 
 
 
-                  className="h-10 rounded-lg border px-3 text-sm bg-white"
+                  className="h-10"
 
 
 
@@ -7508,7 +7062,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                </select>
+                </CustomSelect>
 
 
 
@@ -7658,7 +7212,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="text-xs uppercase text-gray-500 mb-1">{t("mgmt.restaurant.taxes.vat")}</div>
+              <div className="text-xs uppercase text-slate-400 mb-1">{t("mgmt.restaurant.taxes.vat")}</div>
 
 
 
@@ -7698,7 +7252,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="text-xs uppercase text-gray-500 mb-1">{t("mgmt.restaurant.taxes.service")}</div>
+              <div className="text-xs uppercase text-slate-400 mb-1">{t("mgmt.restaurant.taxes.service")}</div>
 
 
 
@@ -7908,7 +7462,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="px-3 py-2 text-xs uppercase text-gray-500 bg-slate-50">{t("mgmt.restaurant.discounts.created")}</div>
+              <div className="px-3 py-2 text-xs uppercase text-slate-400 bg-white/5">{t("mgmt.restaurant.discounts.created")}</div>
 
 
 
@@ -8100,7 +7654,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <p className="text-sm text-gray-600">{t("mgmt.restaurant.general.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurant.general.subtitle")}</p>
 
 
 
@@ -8181,7 +7735,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold text-lg">{t("mgmt.restaurant.billing.title")}</h3>
-          <p className="text-sm text-gray-600">{t("mgmt.restaurant.billing.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurant.billing.subtitle")}</p>
         </div>
         {showSave && (
           <Button onClick={saveBilling} className={managementPrimaryButtonClass}>
@@ -8216,7 +7770,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
           onChange={(e) => setBilling((b) => ({ ...b, autoFactura: e.target.checked }))}
         />{t("mgmt.restaurant.billing.autoGenerate")}</label>
 
-      <Card className="p-4 space-y-3 border border-slate-200">
+      <Card className="p-4 space-y-3 border border-white/10">
         <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.previewTitle")}</div>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -8249,7 +7803,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
       </Card>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        <Card className="p-4 space-y-3 border border-slate-200">
+        <Card className="p-4 space-y-3 border border-white/10">
           <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.ticketTitle")}</div>
           <div className="grid gap-2">
             <div>
@@ -8273,7 +7827,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
           </div>
         </Card>
 
-        <Card className="p-4 space-y-3 border border-slate-200">
+        <Card className="p-4 space-y-3 border border-white/10">
           <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.invoiceTitle")}</div>
           <div className="grid gap-2">
             <div>
@@ -8298,7 +7852,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
         </Card>
       </div>
 
-      <Card className="p-4 space-y-3 border border-slate-200">
+      <Card className="p-4 space-y-3 border border-white/10">
         <div className="font-semibold text-sm text-slate-800">{t("mgmt.restaurant.billing.reprintTitle") }</div>
         <div className="grid md:grid-cols-2 gap-3">
           <div>
@@ -8564,7 +8118,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <p className="text-sm text-gray-600">{t("mgmt.restaurant.payments.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurant.payments.subtitle")}</p>
 
 
 
@@ -8596,7 +8150,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.payments.currencyTitle")}</div>
+          <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.payments.currencyTitle")}</div>
 
 
 
@@ -8604,7 +8158,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-slate-400">
 
 
 
@@ -8632,15 +8186,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.baseCurrency") }</div>
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.baseCurrency") }</div>
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 w-full rounded-lg border px-3 text-sm bg-white"
+              className="h-10 w-full rounded-lg px-3 text-sm"
 
 
 
@@ -8676,7 +8230,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -8692,15 +8246,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.exchangeCurrency") }</div>
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.exchangeCurrency") }</div>
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 w-full rounded-lg border px-3 text-sm bg-white"
+              className="h-10 w-full rounded-lg px-3 text-sm"
 
 
 
@@ -8744,7 +8298,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -8760,7 +8314,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-xs text-gray-500 mb-1">{t("mgmt.restaurant.payments.exchangeRate") }</div>
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.exchangeRate") }</div>
 
 
 
@@ -8796,7 +8350,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <div className="text-[11px] text-gray-500 mt-1">{t("mgmt.restaurant.payments.autoUpdate") }</div>
+              <div className="text-[11px] text-slate-400 mt-1">{t("mgmt.restaurant.payments.autoUpdate") }</div>
 
 
 
@@ -8872,7 +8426,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-xs uppercase text-gray-500">{t("mgmt.restaurant.payments.methodsTitle")}</div>
+          <div className="text-xs uppercase text-slate-400">{t("mgmt.restaurant.payments.methodsTitle")}</div>
 
 
 
@@ -8880,7 +8434,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-slate-400">
 
 
 
@@ -9072,7 +8626,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b">
+              <thead className="bg-white/5 text-xs uppercase text-slate-500 border-b">
 
 
 
@@ -9124,7 +8678,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    <tr key={m.id} className={`border-b ${selected ? "bg-indigo-50" : "bg-white"}`}>
+                    <tr key={m.id} className={`border-b ${selected ? "bg-white/5" : "bg-transparent"}`}>
 
 
 
@@ -9196,7 +8750,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                          className="text-xs px-2 py-1 rounded border hover:bg-slate-50"
+                          className="text-xs px-2 py-1 rounded border hover:bg-white/5"
 
 
 
@@ -9268,7 +8822,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <Card className="p-4 space-y-3 border border-slate-200">
+          <Card className="p-4 space-y-3 border border-white/10">
 
 
 
@@ -9348,7 +8902,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="text-[11px] text-gray-500">{t("mgmt.restaurant.payments.note")}</div>
+            <div className="text-[11px] text-slate-400">{t("mgmt.restaurant.payments.note")}</div>
 
 
 
@@ -9408,7 +8962,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <p className="text-sm text-gray-600">{t("mgmt.restaurant.recipes.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurant.recipes.subtitle")}</p>
 
 
 
@@ -9432,11 +8986,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <select
+            <CustomSelect
 
 
 
-              className="h-10 rounded-lg border px-3 text-sm w-full"
+              className="h-10 rounded-lg px-3 text-sm w-full"
 
 
 
@@ -9488,7 +9042,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            </select>
+            </CustomSelect>
 
 
 
@@ -9548,7 +9102,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <Card className="p-3 space-y-2 bg-slate-50">
+          <Card className="p-3 space-y-2 bg-white/5">
 
 
 
@@ -9568,11 +9122,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                <select
+                <CustomSelect
 
 
 
-                  className="h-10 rounded-lg border px-3 text-sm w-full"
+                  className="h-10 rounded-lg px-3 text-sm w-full"
 
 
 
@@ -9640,7 +9194,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                </select>
+                </CustomSelect>
 
 
 
@@ -9740,7 +9294,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-white/5 text-slate-400">
 
 
 
@@ -9948,7 +9502,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  : "bg-white text-slate-700 border-slate-200 hover:bg-indigo-50"
+                  : "bg-white/5 text-slate-300 border-white/10 hover:bg-indigo-800/500/10"
 
 
 
@@ -10114,11 +9668,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  ? "bg-white text-slate-900 border-slate-300 shadow-sm"
+                  ? "bg-white/10 text-white border-white/20 shadow-sm"
 
 
 
-                  : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-white"
+                  : "bg-white/5 text-slate-400 border-white/10 hover:bg-white/10"
 
 
 

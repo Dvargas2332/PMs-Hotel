@@ -1,6 +1,7 @@
 // src/pages/Management/Frontdesk/Contracts.jsx
 
 import React, { useEffect, useRef, useState } from "react";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -158,7 +159,7 @@ export default function Contracts() {
               <option key={c} value={c} />
             ))}
           </datalist>
-          <p className="text-xs text-gray-500 mt-1">{t("mgmt.contracts.customHint")}</p>
+          <p className="text-xs text-slate-400 mt-1">{t("mgmt.contracts.customHint")}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -171,8 +172,8 @@ export default function Contracts() {
 
           <div className="flex flex-col">
             <label className="text-sm mb-1">{t("mgmt.contracts.mealPlan")}</label>
-            <select
-              className="h-10 rounded-lg border px-3 text-sm"
+            <CustomSelect
+              className="h-10 w-full"
               value={form.mealPlanId}
               onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}
             >
@@ -182,7 +183,7 @@ export default function Contracts() {
                   {mp.id} - {mp.name}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
         </div>
 
@@ -191,6 +192,7 @@ export default function Contracts() {
           <select
             multiple
             className="min-h-[120px] rounded-lg border px-3 py-2 text-sm"
+            style={{ background: "var(--input-bg)", borderColor: "var(--input-border)", color: "var(--color-text-base)" }}
             value={form.ratePlanIds}
             onChange={(e) => {
               const opts = Array.from(e.target.selectedOptions).map((o) => o.value);
@@ -203,7 +205,7 @@ export default function Contracts() {
               </option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             {t("mgmt.contracts.multiSelectHint")}
           </p>
         </div>
@@ -232,7 +234,7 @@ export default function Contracts() {
                   setSelectedId(null);
                   resetForm();
                 }}
-                className="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                className="bg-white/10 text-slate-300 hover:bg-white/15"
               >
                 {t("mgmt.contracts.cancel")}
               </Button>
@@ -243,7 +245,7 @@ export default function Contracts() {
 
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
+          <thead className="bg-white/5 text-slate-400">
             <tr>
               <th className="py-2 pl-4 text-left">ID</th>
               <th className="text-left">{t("mgmt.contracts.columns.channel")}</th>
@@ -256,7 +258,7 @@ export default function Contracts() {
           <tbody>
             {items.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-gray-500">
+                <td colSpan={6} className="py-6 text-center text-slate-400">
                   {t("mgmt.contracts.empty")}
                 </td>
               </tr>
@@ -267,7 +269,7 @@ export default function Contracts() {
               return (
                 <tr
                   key={x.id}
-                  className={`border-t ${isSel ? "bg-blue-50" : "hover:bg-gray-50"}`}
+                  className={`border-t ${isSel ? "bg-indigo-500/10" : "hover:bg-white/5"}`}
                 >
                   <td className="py-2 pl-4">{x.id}</td>
                   <td>{x.channel}</td>

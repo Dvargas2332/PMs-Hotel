@@ -1,6 +1,7 @@
 // src/controllers/auth.controller.ts
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
+import { timingSafeEqual } from "crypto";
 import prisma from "../lib/prisma.js";
 import { sign } from "../lib/jwt.js";
 import { ALL_PERMISSIONS } from "../config/permissions.js";
@@ -18,7 +19,7 @@ export async function register(req: Request, res: Response) {
     };
 
     if (!email || !password) return res.status(400).json({ message: "Email y password son requeridos" });
-    if (String(password).length < 4) return res.status(400).json({ message: "La contraseña debe tener al menos 4 caracteres" });
+    if (String(password).length < 8) return res.status(400).json({ message: "La contraseña debe tener al menos 8 caracteres" });
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) return res.status(409).json({ message: "El email ya está registrado" });
@@ -77,7 +78,15 @@ export async function login(req: Request, res: Response) {
 
     const gestorEmail = String(process.env.GESTOR_EMAIL || "").trim().toLowerCase();
     const gestorPassword = String(process.env.GESTOR_PASSWORD || "").trim();
-    if (gestorEmail && gestorPassword && identifier.toLowerCase() === gestorEmail && password === gestorPassword) {
+    const gestorPasswordBuf = Buffer.from(gestorPassword);
+    const inputPasswordBuf = Buffer.from(password);
+    const gestorPasswordMatch =
+      gestorEmail &&
+      gestorPassword &&
+      identifier.toLowerCase() === gestorEmail &&
+      gestorPasswordBuf.length === inputPasswordBuf.length &&
+      timingSafeEqual(gestorPasswordBuf, inputPasswordBuf);
+    if (gestorPasswordMatch) {
       const token = sign({ sub: "gestor", email: gestorEmail, role: "ADMIN", hotelId: "saas-gestor", isGestor: true });
       return res.json({
         token,

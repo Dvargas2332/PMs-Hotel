@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Textarea } from "../../../components/ui/textarea";
@@ -414,7 +415,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
 
   return (
     <div className="space-y-3">
-      <Card className="p-4 space-y-3 border border-indigo-700/30 shadow-sm bg-white">
+      <Card className="p-4 space-y-3 border border-indigo-500/30 shadow-sm bg-white/5">
         <div className="rounded-xl border border-indigo-700/40 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 p-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -442,17 +443,17 @@ export default function RestaurantItems({ onItemsChange } = {}) {
 
         {itemsPanelTab === "form" ? (
           <>
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 grid md:grid-cols-5 gap-2">
-          <Input className="w-full md:max-w-[190px] border-indigo-200 bg-white" placeholder={t("mgmt.restaurantItems.codeAuto")} value="" disabled />
+        <div className="rounded-xl border border-indigo-500/20 bg-white/5 p-3 grid md:grid-cols-5 gap-2">
+          <Input className="w-full md:max-w-[190px] border-indigo-500/30 bg-white/5 text-white" placeholder={t("mgmt.restaurantItems.codeAuto")} value="" disabled />
           <Input
-            className="w-full md:col-span-2 border-indigo-200 bg-white"
+            className="w-full md:col-span-2 border-indigo-500/30 bg-white/5 text-white"
             placeholder={t("mgmt.restaurantItems.name")}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           />
-          <Input className="w-full md:col-span-2 border-indigo-200 bg-white" placeholder={t("mgmt.restaurantItems.cabysInherited")} value={familyCabys} disabled />
-          <select
-            className="h-10 w-full rounded-lg border border-indigo-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          <Input className="w-full md:col-span-2 border-indigo-500/30 bg-white/5 text-white" placeholder={t("mgmt.restaurantItems.cabysInherited")} value={familyCabys} disabled />
+          <CustomSelect
+            className="h-10 w-full"
             value={form.familyId}
             onChange={(e) => {
               const familyId = e.target.value;
@@ -465,9 +466,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 {f.name}
               </option>
             ))}
-          </select>
-          <select
-            className="h-10 w-full rounded-lg border border-indigo-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          </CustomSelect>
+          <CustomSelect
+            className="h-10 w-full"
             value={form.subFamilyId}
             onChange={(e) => {
               const subFamilyId = e.target.value;
@@ -481,9 +482,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 {sf.name}
               </option>
             ))}
-          </select>
-          <select
-            className="h-10 w-full rounded-lg border border-indigo-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          </CustomSelect>
+          <CustomSelect
+            className="h-10 w-full"
             value={form.subSubFamilyId}
             onChange={(e) => setForm((f) => ({ ...f, subSubFamilyId: e.target.value }))}
             disabled={!form.subFamilyId}
@@ -494,15 +495,15 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 {ssf.name}
               </option>
             ))}
-          </select>
+          </CustomSelect>
           <Input
-            className="border-indigo-200 bg-white"
+            className="border-indigo-500/30 bg-white/5 text-white"
             placeholder={t("mgmt.restaurantItems.barcodeOptional")}
             value={form.barcode}
             onChange={(e) => setForm((f) => ({ ...f, barcode: e.target.value }))}
           />
           <Input
-            className="w-full md:max-w-[160px] border-indigo-200 bg-white"
+            className="w-full md:max-w-[160px] border-indigo-500/30 bg-white/5 text-white"
             placeholder={t("mgmt.restaurantItems.price")}
             type="number"
             money
@@ -511,27 +512,27 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           />
         </div>
 
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 grid md:grid-cols-[minmax(260px,420px)_auto] gap-2 items-center">
+        <div className="rounded-xl border border-indigo-500/20 bg-white/5 p-3 grid md:grid-cols-[minmax(260px,420px)_auto] gap-2 items-center">
           <Input
-            className="w-full md:w-[420px] border-indigo-200 bg-white"
+            className="w-full md:w-[420px] border-indigo-500/30 bg-white/5 text-white"
             placeholder={t("mgmt.restaurantItems.imageUrlOptional")}
             value={form.imageUrl}
             onChange={(e) => setForm((f) => ({ ...f, imageUrl: e.target.value }))}
           />
           <div className="flex items-center gap-2">
-            <label className="text-xs px-3 py-2 rounded-lg border border-indigo-200 text-indigo-700 bg-white cursor-pointer hover:bg-indigo-50">
+            <label className="text-xs px-3 py-2 rounded-lg border border-indigo-500/30 text-indigo-300 bg-white/5 cursor-pointer hover:bg-indigo-800/500/10">
               {t("mgmt.restaurantItems.uploadImage")}
               <input type="file" accept="image/*,.svg" className="hidden" onChange={(e) => handleImageFile(e.target.files && e.target.files[0])} />
             </label>
             {form.imageUrl ? (
-              <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" size="sm" onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}>
+              <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" variant="outline" size="sm" onClick={() => setForm((f) => ({ ...f, imageUrl: "" }))}>
                 {t("mgmt.restaurantItems.removeImage")}
               </Button>
             ) : null}
           </div>
         </div>
 
-        <div className="space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2">
+        <div className="space-y-2 rounded-lg border border-indigo-500/20 bg-white/5 px-3 py-2">
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={form.active} onCheckedChange={(v) => setForm((f) => ({ ...f, active: Boolean(v) }))} />
             {t("mgmt.restaurantItems.activeItem")}
@@ -546,10 +547,10 @@ export default function RestaurantItems({ onItemsChange } = {}) {
         </div>
 
         <div className="grid md:grid-cols-2 gap-3">
-          <Card className="p-3 space-y-2 border border-indigo-200 bg-white shadow-sm">
+          <Card className="p-3 space-y-2 border border-indigo-500/30 bg-white/5 text-white shadow-sm">
             <div className="flex items-center justify-between">
-              <div className="font-medium text-sm text-indigo-900">{t("mgmt.restaurantItems.sizesTitle")}</div>
-              <label className="flex items-center gap-2 text-xs text-indigo-700">
+              <div className="font-medium text-sm text-indigo-200">{t("mgmt.restaurantItems.sizesTitle")}</div>
+              <label className="flex items-center gap-2 text-xs text-indigo-300">
                 <Checkbox checked={sizesEnabled} onCheckedChange={toggleSizes} />
                 {t("mgmt.restaurantItems.enable")}
               </label>
@@ -558,42 +559,42 @@ export default function RestaurantItems({ onItemsChange } = {}) {
               <>
                 <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2">
                   <Input
-                    className="border-indigo-200 bg-white"
+                    className="border-indigo-500/30 bg-white/5 text-white"
                     placeholder={t("mgmt.restaurantItems.size")}
                     value={sizeDraft.label}
                     onChange={(e) => setSizeDraft((s) => ({ ...s, label: e.target.value }))}
                   />
                   <Input
-                    className="border-indigo-200 bg-white"
+                    className="border-indigo-500/30 bg-white/5 text-white"
                     placeholder={t("mgmt.restaurantItems.sizePrice")}
                     type="number"
                     money
                     value={sizeDraft.price}
                     onChange={(e) => setSizeDraft((s) => ({ ...s, price: e.target.value }))}
                   />
-                  <label className="flex items-center gap-2 text-xs text-indigo-700">
+                  <label className="flex items-center gap-2 text-xs text-indigo-300">
                     <Checkbox
                       checked={sizeDraft.isDefault}
                       onCheckedChange={(v) => setSizeDraft((s) => ({ ...s, isDefault: Boolean(v) }))}
                     />
                     {t("mgmt.restaurantItems.default")}
                   </label>
-                  <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={addSize}>
+                  <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" size="sm" variant="outline" onClick={addSize}>
                     {t("mgmt.restaurantItems.add")}
                   </Button>
                 </div>
                 <div className="space-y-1">
                   {(form.sizes || []).map((s, idx) => (
-                    <div key={`${s.id || s.label}-${idx}`} className="flex items-center justify-between border border-indigo-100 rounded px-2 py-1 text-xs">
+                    <div key={`${s.id || s.label}-${idx}`} className="flex items-center justify-between border border-indigo-500/20 rounded px-2 py-1 text-xs">
                       <span>
                         {s.label} - {Number(s.price || 0).toFixed(2)}
                         {s.isDefault ? ` (${t("mgmt.restaurantItems.default")})` : ""}
                       </span>
                       <div className="flex gap-2">
-                        <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={() => setDefaultSize(idx)}>
+                        <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" size="sm" variant="outline" onClick={() => setDefaultSize(idx)}>
                           {t("mgmt.restaurantItems.default")}
                         </Button>
-                        <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={() => removeSize(idx)}>
+                        <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" size="sm" variant="outline" onClick={() => removeSize(idx)}>
                           {t("mgmt.restaurantItems.remove")}
                         </Button>
                       </div>
@@ -607,10 +608,10 @@ export default function RestaurantItems({ onItemsChange } = {}) {
             )}
           </Card>
 
-          <Card className="p-3 space-y-2 border border-indigo-200 bg-white shadow-sm">
+          <Card className="p-3 space-y-2 border border-indigo-500/30 bg-white/5 text-white shadow-sm">
             <div className="flex items-center justify-between">
-              <div className="font-medium text-sm text-indigo-900">{t("mgmt.restaurantItems.detailsTitle")}</div>
-              <label className="flex items-center gap-2 text-xs text-indigo-700">
+              <div className="font-medium text-sm text-indigo-200">{t("mgmt.restaurantItems.detailsTitle")}</div>
+              <label className="flex items-center gap-2 text-xs text-indigo-300">
                 <Checkbox checked={detailsEnabled} onCheckedChange={toggleDetails} />
                 {t("mgmt.restaurantItems.enable")}
               </label>
@@ -619,31 +620,31 @@ export default function RestaurantItems({ onItemsChange } = {}) {
               <>
                 <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
                   <Input
-                    className="border-indigo-200 bg-white"
+                    className="border-indigo-500/30 bg-white/5 text-white"
                     placeholder={t("mgmt.restaurantItems.detail")}
                     value={detailDraft.label}
                     onChange={(e) => setDetailDraft((d) => ({ ...d, label: e.target.value }))}
                   />
                   <Input
-                    className="border-indigo-200 bg-white"
+                    className="border-indigo-500/30 bg-white/5 text-white"
                     placeholder={t("mgmt.restaurantItems.detailPricePlus")}
                     type="number"
                     money
                     value={detailDraft.priceDelta}
                     onChange={(e) => setDetailDraft((d) => ({ ...d, priceDelta: e.target.value }))}
                   />
-                  <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={addDetail}>
+                  <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" size="sm" variant="outline" onClick={addDetail}>
                     {t("mgmt.restaurantItems.add")}
                   </Button>
                 </div>
                 <div className="space-y-1">
                   {(form.details || []).map((d, idx) => (
-                    <div key={`${d.id || d.label}-${idx}`} className="flex items-center justify-between border border-indigo-100 rounded px-2 py-1 text-xs">
+                    <div key={`${d.id || d.label}-${idx}`} className="flex items-center justify-between border border-indigo-500/20 rounded px-2 py-1 text-xs">
                       <span>
                         {d.label}
                         {Number(d.priceDelta || 0) ? ` - +${Number(d.priceDelta || 0).toFixed(2)}` : ""}
                       </span>
-                      <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" size="sm" variant="outline" onClick={() => removeDetail(idx)}>
+                      <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" size="sm" variant="outline" onClick={() => removeDetail(idx)}>
                         {t("mgmt.restaurantItems.remove")}
                       </Button>
                     </div>
@@ -658,14 +659,14 @@ export default function RestaurantItems({ onItemsChange } = {}) {
         </div>
 
         {activeTaxCatalog.length > 0 ? (
-          <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-100 bg-indigo-50/20 p-2">
+          <div className="flex flex-wrap gap-2 rounded-xl border border-indigo-500/20 bg-white/5 p-2">
             {activeTaxCatalog.map((tax) => {
               const checked = Array.isArray(form.taxIds) && form.taxIds.includes(tax.id);
               return (
                 <label
                   key={tax.id}
                   className={`px-2 py-1 rounded-lg border text-xs cursor-pointer ${
-                    checked ? "bg-indigo-50 border-indigo-300 text-indigo-800" : "bg-white border-indigo-100 text-slate-700 hover:bg-indigo-50/60"
+                    checked ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200" : "bg-white/5 border-white/10 text-slate-300 hover:bg-indigo-800/500/10"
                   }`}
                 >
                   <input
@@ -691,23 +692,23 @@ export default function RestaurantItems({ onItemsChange } = {}) {
         <div className="grid md:grid-cols-[minmax(0,520px)_1fr] gap-3 items-end">
           <Textarea
             placeholder={t("mgmt.restaurantItems.notes")}
-            className="min-h-[80px] w-full border-indigo-200 bg-white"
+            className="min-h-[80px] w-full border-indigo-500/30 bg-white/5 text-white"
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
           />
 
           {editingId ? (
             <div className="flex justify-end gap-2">
-              <Button className="border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={cancelEdit}>
+              <Button className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" variant="outline" onClick={cancelEdit}>
                 {t("common.cancel")}
               </Button>
-              <Button className="bg-indigo-600 border border-indigo-600 text-white hover:bg-indigo-700" onClick={saveEdit}>{t("common.save")}</Button>
+              <Button onClick={saveEdit}>{t("common.save")}</Button>
             </div>
           ) : (
             <div className="flex justify-end">
               <Button
                 variant="outline"
-                className="!bg-white border-indigo-200 text-indigo-800 hover:!bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="!bg-white/5 border-indigo-500/40 text-indigo-800 hover:!bg-indigo-50 disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={savingItem || !form.name || !form.familyId || !form.price}
                 onClick={saveItem}
               >
@@ -737,11 +738,11 @@ export default function RestaurantItems({ onItemsChange } = {}) {
         </div>
 
         {filterOpen ? (
-          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-indigo-100 bg-indigo-50/30 p-2">
+          <div className="flex flex-wrap items-end gap-2 rounded-lg border border-indigo-500/20 bg-white/5 p-2">
             <div className="w-[170px]">
-              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("common.search")}</div>
+              <div className="mb-1 text-[11px] font-medium text-indigo-300">{t("common.search")}</div>
               <Input
-                className="h-10 border-indigo-200 bg-white"
+                className="h-10 border-indigo-500/30 bg-white/5 text-white"
                 placeholder={t("mgmt.restaurantItems.searchItem")}
                 value={itemFilterDraft.search}
                 onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, search: e.target.value }))}
@@ -752,9 +753,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
             </div>
 
             <div className="w-[180px]">
-              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.family")}</div>
-              <select
-                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+              <div className="mb-1 text-[11px] font-medium text-indigo-300">{t("mgmt.restaurantItems.columns.family")}</div>
+              <CustomSelect
+                className="h-10 w-full"
                 value={itemFilterDraft.familyId}
                 onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, familyId: e.target.value }))}
               >
@@ -762,26 +763,26 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 {(families || []).map((f) => (
                   <option key={f.id} value={f.id}>{f.name}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </div>
 
             <div className="w-[140px]">
-              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.status")}</div>
-              <select
-                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+              <div className="mb-1 text-[11px] font-medium text-indigo-300">{t("mgmt.restaurantItems.columns.status")}</div>
+              <CustomSelect
+                className="h-10 w-full"
                 value={itemFilterDraft.status}
                 onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, status: e.target.value }))}
               >
                 <option value="">{t("common.all")}</option>
                 <option value="active">{t("mgmt.restaurantItems.active")}</option>
                 <option value="inactive">{t("mgmt.restaurantItems.inactive")}</option>
-              </select>
+              </CustomSelect>
             </div>
 
             <div className="w-[150px]">
-              <div className="mb-1 text-[11px] font-medium text-indigo-700">{t("mgmt.restaurantItems.columns.code")}</div>
-              <select
-                className="h-10 w-full rounded-md border border-indigo-200 bg-white px-2 text-sm"
+              <div className="mb-1 text-[11px] font-medium text-indigo-300">{t("mgmt.restaurantItems.columns.code")}</div>
+              <CustomSelect
+                className="h-10 w-full"
                 value={itemFilterDraft.code}
                 onChange={(e) => setItemFilterDraft((prev) => ({ ...prev, code: e.target.value }))}
               >
@@ -789,14 +790,14 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 {itemCodeOptions.map((code) => (
                   <option key={code} value={code}>{code}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </div>
 
-            <Button className="h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50" variant="outline" onClick={() => setItemFilter({ ...itemFilterDraft })}>
+            <Button className="h-10 border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50" variant="outline" onClick={() => setItemFilter({ ...itemFilterDraft })}>
               {t("mgmt.restaurantItems.applyFilter")}
             </Button>
             <Button
-              className="h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              className="h-10 border-indigo-500/40 text-indigo-300 hover:bg-indigo-800/50"
               variant="outline"
               onClick={() => {
                 const clean = makeItemFilter();
@@ -809,9 +810,9 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           </div>
         ) : null}
 
-        <div className="overflow-auto max-h-[52vh] rounded-lg border border-indigo-100">
+        <div className="overflow-auto max-h-[52vh] rounded-lg border border-indigo-500/20">
           <table className="w-full min-w-[900px] text-xs">
-            <thead className="bg-indigo-50 text-indigo-900 sticky top-0 z-10">
+            <thead className="bg-indigo-50 text-indigo-200 sticky top-0 z-10">
               <tr>
                 <th className="text-left px-2 py-2">{t("mgmt.restaurantItems.columns.code")}</th>
                 <th className="text-left px-2 py-2">{t("mgmt.restaurantItems.columns.name")}</th>
@@ -830,7 +831,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
                 const familyLabel = [familyName, subFamilyName, subSubFamilyName].filter(Boolean).join(" / ");
                 const cabys = String(i.cabys || familiesById.get(i.familyId)?.cabys || "");
                 return (
-                  <tr key={i.id} className="border-t border-indigo-100 hover:bg-indigo-50/40 transition-colors">
+                  <tr key={i.id} className="border-t border-indigo-500/20 hover:bg-indigo-800/50/40 transition-colors">
                     <td className="px-2 py-2">
                       <div>{i.code || i.id}</div>
                       {i.barcode ? <div className="text-[10px] text-slate-500">{t("mgmt.restaurantItems.barcode")}: {i.barcode}</div> : null}

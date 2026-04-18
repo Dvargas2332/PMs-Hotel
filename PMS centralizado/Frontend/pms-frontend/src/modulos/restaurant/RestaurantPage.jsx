@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom";
 import { CheckCircle, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { sanitizeImageUrl } from "../../lib/security";
 import { api } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
 import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
@@ -58,66 +59,150 @@ function composePrintText({ header, body, footer }) {
   return parts.join("\n");
 }
 
+function buildVoidTicketText({ tableId, sectionId, items, reason, authorizedBy }) {
+  const W = 32;
+  const center = (s) => {
+    const str = String(s || "");
+    const pad = Math.max(0, Math.floor((W - str.length) / 2));
+    return " ".repeat(pad) + str;
+  };
+  const sep = "-".repeat(W);
+  const lines = [];
+  lines.push(center("*** CANCELADO ***"));
+  lines.push(center("*** VOID / NO PREPARAR ***"));
+  lines.push(sep);
+  lines.push(`Fecha: ${new Date().toLocaleString()}`);
+  if (sectionId) lines.push(`Seccion: ${sectionId}`);
+  if (tableId) lines.push(`Mesa: ${tableId}`);
+  if (authorizedBy) lines.push(`Autorizado por: ${authorizedBy}`);
+  if (reason) lines.push(`Motivo: ${reason}`);
+  lines.push(sep);
+  const itemList = Array.isArray(items) ? items : [];
+  if (itemList.length > 0) {
+    lines.push("Items a CANCELAR:");
+    for (const it of itemList) {
+      const qty = Number(it?.qty || 1);
+      const name = String(it?.name || it?.label || "");
+      lines.push(`  [X] ${qty} x ${name}`);
+      const note = String(it?.detailNote || it?.note || "").trim();
+      if (note) lines.push(`      ${note}`);
+    }
+  }
+  lines.push(sep);
+  lines.push(center("*** CANCELADO ***"));
+  return lines.join("\n");
+}
+
+function buildCloseReportText({ stage, shiftNumber, hotelName, openedAt, closedAt, openingAmount, systemTotal, byMethod, declared, diff, salesCount, note, staffName }) {
+  const W = 40;
+  const center = (s) => { const str = String(s || ""); const pad = Math.max(0, Math.floor((W - str.length) / 2)); return " ".repeat(pad) + str; };
+  const sep  = "=".repeat(W);
+  const sep2 = "-".repeat(W);
+  const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
+  const lines = [];
+  lines.push(sep);
+  if (hotelName) lines.push(center(hotelName));
+  lines.push(center(`CIERRE ${String(stage || "Z").toUpperCase()} DE CAJA`));
+  lines.push(sep);
+  if (shiftNumber) lines.push(`Turno:    #${shiftNumber}`);
+  lines.push(`Apertura: ${openedAt ? new Date(openedAt).toLocaleString() : "-"}`);
+  lines.push(`Cierre:   ${closedAt ? new Date(closedAt).toLocaleString() : new Date().toLocaleString()}`);
+  if (staffName) lines.push(`Cajero:   ${staffName}`);
+  lines.push(sep2);
+  lines.push(center("VENTAS POR METODO (SISTEMA)"));
+  lines.push(sep2);
+  const methods = byMethod && typeof byMethod === "object" ? Object.entries(byMethod).filter(([, v]) => Number(v) > 0) : [];
+  for (const [key, amt] of methods) lines.push(rjust(`  ${key}:`, Number(amt || 0).toFixed(2)));
+  lines.push(sep2);
+  lines.push(rjust("TOTAL SISTEMA:", Number(systemTotal || 0).toFixed(2)));
+  lines.push(`Transacciones: ${salesCount || 0}`);
+  if (declared && typeof declared === "object") {
+    const entries = Object.entries(declared).filter(([k, v]) => k && k !== "notes" && Number(v) > 0);
+    if (entries.length > 0) {
+      lines.push(sep2);
+      lines.push(center("CONTEO FISICO DECLARADO"));
+      lines.push(sep2);
+      let declTotal = 0;
+      for (const [key, val] of entries) { const a = Number(val) || 0; declTotal += a; lines.push(rjust(`  ${key}:`, a.toFixed(2))); }
+      lines.push(sep2);
+      lines.push(rjust("TOTAL DECLARADO:", declTotal.toFixed(2)));
+      lines.push(rjust("DIFERENCIA:", Number(diff || 0).toFixed(2)));
+    }
+  }
+  if (Number(openingAmount) > 0) { lines.push(sep2); lines.push(rjust("Fondo apertura:", Number(openingAmount).toFixed(2))); }
+  if (note) { lines.push(sep2); lines.push("Notas:"); lines.push(String(note)); }
+  lines.push(sep);
+  lines.push("");
+  lines.push("Firma: ________________________");
+  lines.push(sep);
+  return lines.join("\n");
+}
+
 function buildPrintPreviewText({ title, payload, totals }) {
+  const W = 40;
   const now = new Date();
   const lines = [];
   const header = String(payload?.__printHeader || "").trim();
   const footer = String(payload?.__printFooter || "").trim();
+  const sep = "-".repeat(W);
+  const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
+
+  if (header) { lines.push(header); lines.push(""); }
 
   lines.push(String(title || "IMPRIMIR").toUpperCase());
-  lines.push(`Fecha: ${now.toLocaleString()}`);
-  if (payload?.saleNumber) lines.push(`Venta: ${String(payload.saleNumber)}`);
-  if (payload?.type) lines.push(`Tipo: ${String(payload.type)}`);
-  if (payload?.sectionId) lines.push(`Sección: ${String(payload.sectionId)}`);
-  if (payload?.tableId) lines.push(`Mesa: ${String(payload.tableId)}`);
+  lines.push(`Fecha:    ${now.toLocaleString()}`);
+  if (payload?.saleNumber) lines.push(`Venta #:  ${String(payload.saleNumber)}`);
+  if (payload?.type) lines.push(`Tipo:     ${String(payload.type)}`);
+  if (payload?.cashierName) lines.push(`Cajero:   ${String(payload.cashierName)}`);
+  if (payload?.sectionId) lines.push(`Sección:  ${String(payload.sectionId)}`);
+  if (payload?.tableId) lines.push(`Mesa:     ${String(payload.tableId)}`);
   if (payload?.covers != null) lines.push(`Personas: ${asInt(payload.covers, 0)}`);
   if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
-  if (payload?.roomId) lines.push(`Habitación: ${String(payload.roomId)}`);
-  lines.push("");
-
-  if (header) {
-    lines.push(header);
-    lines.push("");
-  }
+  if (payload?.roomId) lines.push(`Habitac.: ${String(payload.roomId)}`);
+  lines.push(sep);
 
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (items.length > 0) {
-    lines.push("Items:");
     for (const it of items) {
       const qty = asInt(it?.qty ?? it?.quantity ?? 1, 1);
       const name = String(it?.name || it?.label || it?.title || it?.id || "Item");
       const price = it?.price ?? it?.unitPrice ?? it?.amount;
       const hasPrice = price != null && String(price).trim() !== "";
-      if (hasPrice) lines.push(`- ${qty} x ${name} @ ${formatMoney(price)} = ${formatMoney(qty * (Number(price) || 0))}`);
-      else lines.push(`- ${qty} x ${name}`);
+      if (hasPrice) lines.push(rjust(`  ${qty} x ${name}`, formatMoney(qty * (Number(price) || 0))));
+      else lines.push(`  ${qty} x ${name}`);
       const note = String(it?.note || "").trim();
-      if (note) lines.push(`  Nota: ${note}`);
+      if (note) lines.push(`    * ${note}`);
     }
-    lines.push("");
+    lines.push(sep);
   }
 
   const note = String(payload?.note || "").trim();
-  if (note) {
-    lines.push("Nota:");
-    lines.push(note);
-    lines.push("");
-  }
+  if (note) { lines.push(`Nota: ${note}`); lines.push(""); }
 
   const t = totals && typeof totals === "object" ? totals : null;
   if (t) {
     const total = t.total ?? t.system ?? t.grandTotal ?? t.totalAmount;
     const tax = t.tax ?? t.iva ?? t.impuesto;
-    const service = t.service ?? t.servicio;
-    if (service != null) lines.push(`Servicio: ${formatMoney(service)}`);
-    if (tax != null) lines.push(`Impuesto: ${formatMoney(tax)}`);
-    if (t?.discountTotal) lines.push(`Descuento: ${formatMoney(t.discountTotal)}`);
-    if (total != null) lines.push(`Total: ${formatMoney(total)}`);
+    const service = t.service ?? t.servicio ?? t.tip10;
+    const subtotal = t.subtotal ?? t.base;
+    if (subtotal != null) lines.push(rjust("Subtotal:", formatMoney(subtotal)));
+    if (t?.discountTotal) lines.push(rjust("Descuento:", `- ${formatMoney(t.discountTotal)}`));
+    if (service != null) lines.push(rjust("Servicio (10%):", formatMoney(service)));
+    if (tax != null) lines.push(rjust("Impuesto (IVA):", formatMoney(tax)));
+    if (total != null) lines.push(rjust("TOTAL:", formatMoney(total)));
   }
 
-  if (footer) {
-    lines.push("");
-    lines.push(footer);
+  const payMethods = Array.isArray(payload?.paymentMethods) ? payload.paymentMethods : [];
+  if (payMethods.length > 0) {
+    lines.push(sep);
+    for (const pm of payMethods) {
+      if (pm?.name && Number(pm?.amount) > 0) lines.push(rjust(`  ${pm.name}:`, formatMoney(pm.amount)));
+    }
+    if (payload?.paid != null) lines.push(rjust("  Recibido:", formatMoney(payload.paid)));
+    if (payload?.change != null && Number(payload.change) > 0) lines.push(rjust("  Cambio:", formatMoney(payload.change)));
   }
+
+  if (footer) { lines.push(""); lines.push(footer); }
 
   return lines.join("\n");
 }
@@ -294,6 +379,7 @@ const buildLocalOrder = (overrides = {}) => ({
   status: "NEW",
   serviceType: "DINE_IN",
   roomId: "",
+  guestId: "",
   discountId: "",
   discountPercent: 0,
   ...overrides,
@@ -401,6 +487,7 @@ const [subCategory, setSubCategory] = useState("");
     impuestoIncluido: true,
   });
   const [discountsList, setDiscountsList] = useState([]);
+  const [guestsList, setGuestsList] = useState([]);
   const [billingCfg, setBillingCfg] = useState({
     ticketHeader: "",
     ticketFooter: "",
@@ -437,6 +524,9 @@ const [subCategory, setSubCategory] = useState("");
   const [floorDragging, setFloorDragging] = useState(false);
   const [serviceType, setServiceType] = useState("DINE_IN"); // DINE_IN, TAKEOUT, DELIVERY, ROOM
   const [roomCharge, setRoomCharge] = useState("");
+  const [selectedGuestId, setSelectedGuestId] = useState("");
+  const [guestSearch, setGuestSearch] = useState("");
+  const [showCustomerPanel, setShowCustomerPanel] = useState(false);
   const [activeStaff, setActiveStaff] = useState(null);
   const activeStaffRef = useRef(null);
   const [staffLoginOpen, setStaffLoginOpen] = useState(true);
@@ -654,6 +744,7 @@ const [subCategory, setSubCategory] = useState("");
           status: data.status || "OPEN",
           serviceType: data.serviceType || payload.serviceType || "DINE_IN",
           roomId: data.roomId || payload.roomId || "",
+          guestId: data.guestId || payload.guestId || "",
         };
         const incomingKey = getOrderKey(incoming);
         const matchKey = payload.orderId || payload.localId || incomingKey;
@@ -959,12 +1050,12 @@ const [subCategory, setSubCategory] = useState("");
   );
 
   const currentOrder = useMemo(() => {
-    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, discountId: "", discountPercent: 0 };
+    if (!selectedTable?.id) return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, guestId: selectedGuestId, discountId: "", discountPercent: 0 };
     const list = selectedTableOrders;
     const byKey = list.find((o) => getOrderKey(o) && getOrderKey(o) === activeOrderKey);
     const stored = byKey || list[0];
     if (!stored) {
-      return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, discountId: "", discountPercent: 0 };
+      return { items: [], covers, note: orderNote, status: "New", serviceType, roomId: roomCharge, guestId: selectedGuestId, discountId: "", discountPercent: 0 };
     }
     return {
       ...stored,
@@ -975,10 +1066,11 @@ const [subCategory, setSubCategory] = useState("");
       updatedAt: stored?.updatedAt,
       serviceType: stored?.serviceType || serviceType,
       roomId: stored?.roomId || roomCharge,
+      guestId: stored?.guestId || selectedGuestId,
       discountId: stored?.discountId || "",
       discountPercent: Number(stored?.discountPercent || 0) || 0,
     };
-  }, [selectedTable?.id, selectedTableOrders, activeOrderKey, covers, orderNote, serviceType, roomCharge]);
+  }, [selectedTable?.id, selectedTableOrders, activeOrderKey, covers, orderNote, serviceType, roomCharge, selectedGuestId]);
 
   useEffect(() => {
     if (!selectedTable?.id) return;
@@ -987,11 +1079,13 @@ const [subCategory, setSubCategory] = useState("");
     const nextNote = currentOrder.note || "";
     const nextService = currentOrder.serviceType || "DINE_IN";
     const nextRoom = currentOrder.roomId || "";
+    const nextGuest = currentOrder.guestId || "";
     if (covers !== nextCovers) setCovers(nextCovers);
     if (orderNote !== nextNote) setOrderNote(nextNote);
     if (serviceType !== nextService) setServiceType(nextService);
     if (roomCharge !== nextRoom) setRoomCharge(nextRoom);
-  }, [selectedTable?.id, selectedTable?.seats, currentOrder, covers, orderNote, serviceType, roomCharge]);
+    if (selectedGuestId !== nextGuest) setSelectedGuestId(nextGuest);
+  }, [selectedTable?.id, selectedTable?.seats, currentOrder, covers, orderNote, serviceType, roomCharge, selectedGuestId]);
 
   useEffect(() => {
     if (!selectedSection?.id || selectedTable) return;
@@ -1519,6 +1613,13 @@ const [subCategory, setSubCategory] = useState("");
     } catch {
       setDiscountsList([]);
     }
+
+    try {
+      const { data } = await api.get("/guests");
+      setGuestsList(Array.isArray(data) ? data : []);
+    } catch {
+      setGuestsList([]);
+    }
   }, []);
 
   const refreshOrders = useCallback(async () => {
@@ -1537,8 +1638,8 @@ const [subCategory, setSubCategory] = useState("");
             status: o.status || "ENVIADO",
             serviceType: o.serviceType || "DINE_IN",
             roomId: o.roomId || "",
-            sentItems: {},
-            sentAt: "",
+            sentItems: o.sentItemsMap && typeof o.sentItemsMap === "object" ? o.sentItemsMap : {},
+            sentAt: o.sentItemsMap ? new Date(o.updatedAt || Date.now()).toISOString() : "",
           };
           const incomingKey = getOrderKey(order);
           if (incomingKey) {
@@ -1548,8 +1649,9 @@ const [subCategory, setSubCategory] = useState("");
             if (prevStatus === "ENVIADO" && (incomingStatus === "OPEN" || !incomingStatus)) {
               order.status = "ENVIADO";
             }
-            if (prevMatch?.sentItems) order.sentItems = prevMatch.sentItems;
-            if (prevMatch?.sentAt) order.sentAt = prevMatch.sentAt;
+            // Prefer server sentItemsMap; fall back to local state if server doesn't have it yet
+            if (!o.sentItemsMap && prevMatch?.sentItems) order.sentItems = prevMatch.sentItems;
+            if (!o.sentItemsMap && prevMatch?.sentAt) order.sentAt = prevMatch.sentAt;
           }
           if (!getOrderKey(order)) {
             order.localId = `local-${o.tableId}-${idx}-${Date.now()}`;
@@ -1909,6 +2011,13 @@ const [subCategory, setSubCategory] = useState("");
       setCancelOrderError("Orden no seleccionada.");
       return;
     }
+
+    // Capture snapshots before state is cleared
+    const orderSnapshot = currentOrder;
+    const tableSnapshot = selectedTable;
+    const sectionSnapshot = selectedSection;
+    const wasComandada = isComandada;
+
     setCancelOrderBusy(true);
     setCancelOrderError("");
     try {
@@ -1942,6 +2051,29 @@ const [subCategory, setSubCategory] = useState("");
       window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Orden anulada." } }));
       closeCancelOrderModal();
       resetToLobby();
+
+      // Print void ticket to kitchen if items were already sent
+      if (wasComandada) {
+        const sentMap = getSentMap(orderSnapshot);
+        const hasSentMap = Object.values(sentMap).some((v) => Number(v) > 0);
+        const itemsToVoid = (orderSnapshot?.items || []).filter((i) => {
+          if (hasSentMap) return Number(sentMap[getOrderItemKey(i)] || 0) > 0;
+          return true;
+        });
+        if (itemsToVoid.length > 0) {
+          const voidText = buildVoidTicketText({
+            tableId: tableSnapshot?.name || tableSnapshot?.id,
+            sectionId: sectionSnapshot?.name || sectionSnapshot?.id,
+            items: itemsToVoid,
+            reason,
+            authorizedBy: username,
+          });
+          const kitchenPrinters = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
+          if (kitchenPrinters.length > 0) {
+            printToAgent({ printerNames: kitchenPrinters, text: voidText, copies: 1 }).catch(() => {});
+          }
+        }
+      }
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo anular la orden.";
       setCancelOrderError(msg);
@@ -2081,6 +2213,7 @@ const [subCategory, setSubCategory] = useState("");
       covers: currentOrder.covers || covers || 0,
       serviceType: currentOrder.serviceType || serviceType || "DINE_IN",
       roomId: currentOrder.roomId || roomCharge || "",
+      guestId: currentOrder.guestId || selectedGuestId || "",
       discountId: currentOrder.discountId || "",
       discountPercent: Number(currentOrder.discountPercent || 0) || 0,
     });
@@ -2095,6 +2228,7 @@ const [subCategory, setSubCategory] = useState("");
       covers: newOrder.covers || 0,
       serviceType: newOrder.serviceType || serviceType || "DINE_IN",
       roomId: newOrder.roomId || roomCharge || "",
+      guestId: currentOrder.guestId || selectedGuestId || "",
       discountId: "",
       discountPercent: 0,
     });
@@ -2323,6 +2457,7 @@ const [subCategory, setSubCategory] = useState("");
           note: typeof next?.note === "string" ? next.note : typeof cur?.note === "string" ? cur.note : orderNote || "",
           serviceType: next?.serviceType || cur?.serviceType || serviceType || "DINE_IN",
           roomId: next?.roomId || cur?.roomId || roomCharge || "",
+          guestId: next?.guestId || cur?.guestId || selectedGuestId || "",
           status: typeof next?.status === "string" ? next.status : cur?.status || "",
           sentItems: next?.sentItems || cur?.sentItems || {},
           sentAt: next?.sentAt || cur?.sentAt || "",
@@ -2344,6 +2479,7 @@ const [subCategory, setSubCategory] = useState("");
           covers: merged.covers || 0,
           serviceType: merged.serviceType || "DINE_IN",
           roomId: merged.roomId || "",
+          guestId: merged.guestId || "",
           discountId: merged.discountId || "",
           discountPercent: Number(merged.discountPercent || 0) || 0,
           waiterId: merged.waiterId || undefined,
@@ -2356,7 +2492,7 @@ const [subCategory, setSubCategory] = useState("");
         setActiveOrderByTable((prev) => ({ ...prev, [tableId]: nextActiveKey }));
       }
     },
-    [activeOrderByTable, covers, orderNote, serviceType, roomCharge, selectedSection?.id, queueOrderSave]
+    [activeOrderByTable, covers, orderNote, serviceType, roomCharge, selectedGuestId, selectedSection?.id, queueOrderSave]
   );
 
   const createNewOrderForTable = (tableId, { select = true } = {}) => {
@@ -2707,7 +2843,7 @@ const [subCategory, setSubCategory] = useState("");
                 <div className="flex-1 min-h-0 rounded-lg overflow-hidden bg-white flex items-center justify-center">
                   <img
                     alt=""
-                    src={item.imageUrl}
+                    src={sanitizeImageUrl(item.imageUrl)}
                     className="h-full w-full object-contain p-0 scale-110"
                     onError={(ev) => {
                       ev.currentTarget.style.display = "none";
@@ -2786,6 +2922,17 @@ const [subCategory, setSubCategory] = useState("");
       }
       return;
     }
+      const nextSentMap = markAsSent
+        ? (() => {
+            const base = getSentMap(currentOrder);
+            const map = { ...base };
+            (currentOrder.items || []).forEach((i) => {
+              map[getOrderItemKey(i)] = Number(i.qty || 0);
+            });
+            return map;
+          })()
+        : undefined;
+
       const payload = {
         sectionId: selectedSection?.id,
         tableId: selectedTable?.id,
@@ -2800,6 +2947,7 @@ const [subCategory, setSubCategory] = useState("");
         waiterId:
           currentOrder.waiterId || (activeStaffRef.current?.role === "WAITER" ? activeStaffRef.current?.id : undefined),
         mergeItems: markAsSent,
+        sentItemsMap: nextSentMap,
       };
 
     const run = async () => {
@@ -2916,6 +3064,12 @@ const [subCategory, setSubCategory] = useState("");
       const snapshotItems = (currentOrder.items || []).map((i) => ({ ...i }));
       const snapshotTotals = { ...totals };
       const invoiceCfg = getInvoicePrintConfig();
+      const paymentMethodsSnapshot = Object.entries(paymentForm)
+        .filter(([, v]) => Number(v) > 0)
+        .map(([key, amount]) => {
+          const def = (availablePaymentMethods || []).find((m) => String(m.key) === String(key));
+          return { name: def?.name || key, amount: Number(amount) };
+        });
       const snapshotPayload = {
         sectionId: selectedSection?.id,
         tableId: selectedTable.id,
@@ -2926,6 +3080,10 @@ const [subCategory, setSubCategory] = useState("");
         serviceType: currentOrder.serviceType || serviceType,
         roomId: currentOrder.roomId || roomCharge,
         printers: { ...printerCfg, paperType: printSettings.paperType || undefined },
+        cashierName: activeStaffRef.current?.name || undefined,
+        paymentMethods: paymentMethodsSnapshot,
+        paid: paidAmount,
+        change,
       };
       const paidAmount = sumNumbers(paymentForm);
       const change = Math.max(0, paidAmount - (snapshotTotals.total || 0));
@@ -2946,6 +3104,33 @@ const [subCategory, setSubCategory] = useState("");
       });
       const saleNumber = closeRes?.data?.order?.saleNumber || "";
       if (saleNumber) snapshotPayload.saleNumber = saleNumber;
+
+      // Si hay cargo a habitación: buscar la factura activa del huésped y agregar item
+      const roomTarget = currentOrder.roomId || roomCharge;
+      const isRoomCharge = paymentMethodsSnapshot.some((m) =>
+        String(m.name).toLowerCase().includes("habitac") || String(m.name).toLowerCase() === "room"
+      );
+      if (isRoomCharge && roomTarget) {
+        try {
+          const resActive = await api.get("/reservations/active");
+          const reservations = Array.isArray(resActive.data) ? resActive.data : [];
+          const match = reservations.find(
+            (r) => String(r.room?.number) === String(roomTarget) || String(r.roomId) === String(roomTarget)
+          );
+          if (match?.invoice?.id) {
+            const itemDesc = snapshotItems.length === 1
+              ? `Restaurante: ${snapshotItems[0].name || snapshotItems[0].description || "Consumo"}`
+              : `Restaurante: ${snapshotItems.length} productos`;
+            await api.post(`/invoices/${match.invoice.id}/items`, {
+              description: itemDesc,
+              quantity: 1,
+              unitPrice: snapshotTotals.total,
+            });
+          }
+        } catch {
+          // No bloquear el flujo si falla el cargo al folio
+        }
+      }
       let nextActiveKey = "";
       setOrdersByTable((prev) => {
         const list = normalizeOrderList(prev[selectedTable.id]);
@@ -3015,7 +3200,7 @@ const [subCategory, setSubCategory] = useState("");
       )}
       {shiftModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+          <div className="w-full max-w-md force-light bg-white rounded-2xl shadow-2xl p-5 space-y-3">
             <div>
               <div className="text-xs uppercase text-emerald-600">Apertura de turno</div>
               <div className="text-lg font-semibold text-slate-900">Abrir caja</div>
@@ -3083,7 +3268,7 @@ const [subCategory, setSubCategory] = useState("");
                     {["1","2","3","4","5","6","7","8","9"].map((d) => (
                       <button
                         key={d}
-                        className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                        className="h-10 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-sm font-semibold hover:bg-slate-100"
                         onClick={() => handleStaffDigit(d)}
                         type="button"
                       >
@@ -3091,21 +3276,21 @@ const [subCategory, setSubCategory] = useState("");
                       </button>
                     ))}
                     <button
-                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-10 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-sm font-semibold hover:bg-slate-100"
                       onClick={handleStaffClear}
                       type="button"
                     >
                       C
                     </button>
                     <button
-                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-10 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-sm font-semibold hover:bg-slate-100"
                       onClick={() => handleStaffDigit("0")}
                       type="button"
                     >
                       0
                     </button>
                     <button
-                      className="h-10 w-14 rounded-lg bg-white border text-sm font-semibold hover:bg-slate-100"
+                      className="h-10 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-sm font-semibold hover:bg-slate-100"
                       onClick={handleStaffBackspace}
                       type="button"
                     >
@@ -3170,7 +3355,7 @@ const [subCategory, setSubCategory] = useState("");
 
         {staffLoginOpen && !shiftModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-            <div className="w-full max-w-xl md:max-w-1xl bg-white rounded-2xl shadow-2xl p-5 space-y-4 overflow-hidden">
+            <div className="force-light w-full max-w-xl md:max-w-1xl force-light bg-white rounded-2xl shadow-2xl p-5 space-y-4 overflow-hidden">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-xl uppercase text-lime-600">Acceso TPV</div>
@@ -3222,12 +3407,12 @@ const [subCategory, setSubCategory] = useState("");
                   {staffLoginError && <div className="text-xs text-red-600">{staffLoginError}</div>}
                 </div>
 
-                <div className="rounded-xl border bg-slate-50 p-3 flex items-center justify-center">
+                <div className="rounded-xl border bg-slate-50 p-3">
                   <div className="grid grid-cols-3 gap-2">
                     {["1","2","3","4","5","6","7","8","9"].map((d) => (
                       <button
                         key={d}
-                        className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
+                        className="h-12 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-lg font-semibold hover:bg-slate-100"
                         onClick={() => handleStaffDigit(d)}
                         type="button"
                       >
@@ -3235,21 +3420,21 @@ const [subCategory, setSubCategory] = useState("");
                       </button>
                     ))}
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
+                      className="h-12 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-lg font-semibold hover:bg-slate-100"
                       onClick={handleStaffClear}
                       type="button"
                     >
                       C
                     </button>
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
+                      className="h-12 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-lg font-semibold hover:bg-slate-100"
                       onClick={() => handleStaffDigit("0")}
                       type="button"
                     >
                       0
                     </button>
                     <button
-                      className="h-12 w-16 rounded-lg bg-white border text-lg font-semibold hover:bg-slate-100"
+                      className="h-12 w-full rounded-lg bg-white border border-slate-200 text-slate-800 text-lg font-semibold hover:bg-slate-100"
                       onClick={handleStaffBackspace}
                       type="button"
                     >
@@ -3276,7 +3461,7 @@ const [subCategory, setSubCategory] = useState("");
 
         {printConfirmOpen && (
           <div className="fixed inset-0 z-[70] bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
+          <div className="w-full max-w-xl force-light bg-white rounded-2xl shadow-2xl p-4 space-y-3 overflow-hidden">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-indigo-600">Impresión</div>
@@ -3305,7 +3490,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {voidInvoiceModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
+          <div className="w-full max-w-4xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-red-600">Anular factura</div>
@@ -3406,7 +3591,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {voidInvoiceAuthOpen && (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+          <div className="w-full max-w-sm force-light bg-white rounded-2xl shadow-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-red-600">Autorizacion</div>
@@ -3465,7 +3650,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {voidInvoiceSuccessOpen && (
         <div className="fixed inset-0 z-50 bg-black/20 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-xs bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-3">
+          <div className="w-full max-w-xs force-light bg-white rounded-2xl shadow-2xl p-6 flex flex-col items-center gap-3">
             <div className="h-14 w-14 rounded-full bg-emerald-100 flex items-center justify-center">
               <CheckCircle className="h-9 w-9 text-emerald-600" />
             </div>
@@ -3476,7 +3661,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {cancelOrderModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+          <div className="w-full max-w-sm force-light bg-white rounded-2xl shadow-2xl p-5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-red-600">Autorizacion</div>
@@ -3580,7 +3765,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {closeModalOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
+          <div className="w-full max-w-sm force-light bg-white rounded-2xl shadow-2xl p-3 space-y-3 overflow-y-auto max-h-[65vh]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-lime-500">{closeStage === "Z" ? "Cash close Z" : "Cash close X"}</div>
@@ -3668,6 +3853,24 @@ const [subCategory, setSubCategory] = useState("");
                         setCloseSnapshot({ totals: closeSummary, byMethod: stats.byMethod || {} });
                         setCloseStage("Z");
                         setCloseAuditOk(false);
+                        // Print X close report
+                        try {
+                          const byMethodLabeled = {};
+                          for (const row of closeMethodRows) { if (row.amount > 0) byMethodLabeled[row.label] = row.amount; }
+                          const declaredLabeled = {};
+                          for (const row of closeCompareRows) {
+                            const val = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
+                            if (val > 0) declaredLabeled[row.label] = val;
+                          }
+                          const xText = buildCloseReportText({
+                            stage: "X", hotelName: hotel?.name || "", openedAt: openInfo.openedAt,
+                            closedAt: new Date().toISOString(), systemTotal: closeSummary.system,
+                            byMethod: byMethodLabeled, declared: declaredLabeled, diff: closeSummary.diff,
+                            salesCount: stats?.salesCount || 0, note: closeForm.notes,
+                            staffName: activeStaff?.name || openInfo.user,
+                          });
+                          if (printerCfg.cashierPrinter) await printToAgent({ printerNames: [printerCfg.cashierPrinter], text: xText, copies: 1 });
+                        } catch {}
                       } catch (e) {
                         const msg = e?.response?.data?.message || "Could not record the cash close.";
                         window.alert(msg);
@@ -3739,6 +3942,24 @@ const [subCategory, setSubCategory] = useState("");
                           breakdown: stats.byMethod || {},
                           type: "Z",
                         });
+                        // Print Z close report before resetting state
+                        try {
+                          const byMethodLabeled = {};
+                          for (const row of auditRows) { if (row.amount > 0) byMethodLabeled[row.label] = row.amount; }
+                          const declaredLabeled = {};
+                          for (const row of closeCompareRows) {
+                            const val = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
+                            if (val > 0) declaredLabeled[row.label] = val;
+                          }
+                          const zText = buildCloseReportText({
+                            stage: "Z", hotelName: hotel?.name || "", openedAt: openInfo.openedAt,
+                            closedAt: new Date().toISOString(), systemTotal: auditTotals.system,
+                            byMethod: byMethodLabeled, declared: declaredLabeled, diff: auditTotals.diff,
+                            salesCount: stats?.salesCount || 0, note: closeForm.notes,
+                            staffName: activeStaff?.name || openInfo.user,
+                          });
+                          if (printerCfg.cashierPrinter) await printToAgent({ printerNames: [printerCfg.cashierPrinter], text: zText, copies: 1 });
+                        } catch {}
                         setCloseModalOpen(false);
                         setCloseOpen(false);
                         setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
@@ -3771,14 +3992,14 @@ const [subCategory, setSubCategory] = useState("");
 
       {itemOptionsOpen && itemOptionsItem && (
         <div className="fixed inset-0 z-[55] bg-black/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl p-6 space-y-5 overflow-y-auto max-h-[85vh]">
+          <div className="w-full max-w-3xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-5 overflow-y-auto max-h-[85vh]">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
                 {itemOptionsItem.imageUrl ? (
                   <div className="h-16 w-16 rounded-xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center">
                     <img
                       alt=""
-                      src={itemOptionsItem.imageUrl}
+                      src={sanitizeImageUrl(itemOptionsItem.imageUrl)}
                       className="h-full w-full object-contain p-1"
                       onError={(ev) => {
                         ev.currentTarget.style.display = "none";
@@ -3904,7 +4125,7 @@ const [subCategory, setSubCategory] = useState("");
 
       {paymentsModalOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-4xl bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
+          <div className="w-full max-w-4xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-emerald-600">Payment</div>
@@ -4065,7 +4286,7 @@ const [subCategory, setSubCategory] = useState("");
       )}
       {splitOrderModalOpen && (
         <div className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-4 space-y-3">
+          <div className="w-full max-w-2xl force-light bg-white rounded-2xl shadow-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-xs uppercase text-slate-500">Dividir cuentas</div>
@@ -4326,7 +4547,7 @@ const [subCategory, setSubCategory] = useState("");
                         >
                           <div className="relative w-full aspect-[4/3] rounded-md overflow-hidden bg-white/70 border border-white/60 shadow-sm">
                             {sec?.imageUrl ? (
-                              <img src={sec.imageUrl} alt={sec.name || sec.id} className="h-full w-full object-cover" />
+                              <img src={sanitizeImageUrl(sec.imageUrl)} alt={sec.name || sec.id} className="h-full w-full object-cover" />
                             ) : (
                               <div className="h-full w-full flex items-center justify-center text-xs text-lime-500/70">
                                 Sin imagen
@@ -4746,14 +4967,70 @@ const [subCategory, setSubCategory] = useState("");
                         min={1}
                       />
                       <button
-                        className="h-9 px-3 rounded-lg bg-white border border-lime-300 text-sm font-semibold text-lime-800 hover:bg-lime-50"
-                        onClick={() => alert("Selecciona un cliente desde el listado de clientes.")}
+                        className={`h-9 px-3 rounded-lg border text-sm font-semibold hover:bg-lime-50 max-w-[140px] truncate ${selectedGuestId ? "bg-lime-100 border-lime-400 text-lime-900" : "bg-white border-lime-300 text-lime-800"}`}
+                        onClick={() => setShowCustomerPanel((v) => !v)}
+                        title={selectedGuestId ? (guestsList.find((g) => g.id === selectedGuestId) ? `${guestsList.find((g) => g.id === selectedGuestId).firstName} ${guestsList.find((g) => g.id === selectedGuestId).lastName}` : "Cliente") : "Customer"}
                       >
-                        Customer
-                      
+                        {selectedGuestId
+                          ? (() => { const g = guestsList.find((x) => x.id === selectedGuestId); return g ? `${g.firstName} ${g.lastName}`.trim() : "Cliente"; })()
+                          : "Customer"}
                       </button>
                     </div>
                   </div>
+
+                  {showCustomerPanel && (
+                    <div className="mb-3 p-2 rounded-lg border border-lime-200 bg-lime-50 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs uppercase text-lime-600 font-semibold">Cliente</span>
+                        {selectedGuestId && (
+                          <button
+                            className="text-xs text-red-500 hover:underline"
+                            onClick={() => {
+                              setSelectedGuestId("");
+                              if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, guestId: "" }));
+                            }}
+                          >
+                            Quitar
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        className="w-full h-8 rounded-lg border border-lime-200 px-3 text-sm"
+                        placeholder="Buscar cliente..."
+                        value={guestSearch}
+                        onChange={(e) => setGuestSearch(e.target.value)}
+                        autoFocus
+                      />
+                      <select
+                        className="w-full h-9 rounded-lg border border-lime-200 px-3 text-sm bg-white"
+                        value={selectedGuestId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedGuestId(val);
+                          if (selectedTable?.id) updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, guestId: val }));
+                          setShowCustomerPanel(false);
+                        }}
+                      >
+                        <option value="">Sin cliente</option>
+                        {(guestsList || [])
+                          .filter((g) => {
+                            if (!guestSearch.trim()) return true;
+                            const q = guestSearch.toLowerCase();
+                            return (
+                              `${g.firstName || ""} ${g.lastName || ""}`.toLowerCase().includes(q) ||
+                              (g.idNumber || "").toLowerCase().includes(q) ||
+                              (g.email || "").toLowerCase().includes(q)
+                            );
+                          })
+                          .slice(0, 50)
+                          .map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.firstName} {g.lastName}{g.idNumber ? ` — ${g.idNumber}` : ""}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
 
                   <textarea
                     className="w-full rounded-lg border border-lime-100 px-3 py-2 text-sm min-h-[70px]"

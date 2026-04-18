@@ -4415,6 +4415,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Perfiles",
     "mgmt.shell.menu.auditTitle": "Auditoria",
     "mgmt.shell.menu.auditItem": "Registro de uso de modulos",
+    "mgmt.shell.menu.frontdesk.config": "Configuracion",
+    "mgmt.shell.menu.frontdesk.rooms": "Habitaciones",
     "mgmt.shell.menu.frontdesk.roomTypes": "Tipos de habitacion y habitaciones",
     "mgmt.shell.menu.frontdesk.rates": "Planes tarifarios",
     "mgmt.shell.menu.frontdesk.contracts": "Contratos (Directos / OTAs)",
@@ -4431,6 +4433,14 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.accounting.config": "Parametros contables",
     "mgmt.shell.menu.channel.title": "Channel Manager",
     "mgmt.shell.menu.channel.config": "Conexion OTAs / Channel Manager",
+    "mgmt.shell.menu.general.title": "General",
+    "mgmt.shell.menu.general.appearance": "Apariencia",
+    "mgmt.appearance.title": "Apariencia",
+    "mgmt.appearance.subtitle": "Elige como se ve la interfaz del sistema",
+    "mgmt.appearance.light": "Claro",
+    "mgmt.appearance.dark": "Oscuro",
+    "mgmt.appearance.auto": "Automatico",
+    "mgmt.appearance.note": "El modo automatico sigue la configuracion de tu sistema operativo.",
 
     "mgmt.shell.selectPrompt": "Seleccione una opcion del menu.",
     "mgmt.shell.logoAlt": "Logo del hotel",
@@ -4439,7 +4449,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Configuracion y seguridad del hotel",
     "mgmt.shell.alertsAria": "Alertas",
     "mgmt.shell.userFallback": "Usuario",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "General",
+    "mgmt.shell.menu.general.appearance": "Apariencia",
+    "mgmt.appearance.title": "Apariencia",
+    "mgmt.appearance.subtitle": "Elige como se ve la interfaz del sistema",
+    "mgmt.appearance.light": "Claro",
+    "mgmt.appearance.dark": "Oscuro",
+    "mgmt.appearance.auto": "Automatico",
+    "mgmt.appearance.note": "El modo automatico sigue la configuracion de tu sistema operativo."
   },
   en: {
     "mgmt.launcherProfiles.title": "Login profiles",
@@ -4470,6 +4488,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Profiles",
     "mgmt.shell.menu.auditTitle": "Audit",
     "mgmt.shell.menu.auditItem": "Module usage log",
+    "mgmt.shell.menu.frontdesk.config": "Configuration",
+    "mgmt.shell.menu.frontdesk.rooms": "Rooms",
     "mgmt.shell.menu.frontdesk.roomTypes": "Room types and rooms",
     "mgmt.shell.menu.frontdesk.rates": "Rate plans",
     "mgmt.shell.menu.frontdesk.contracts": "Contracts (Direct / OTAs)",
@@ -4494,7 +4514,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Hotel configuration and security",
     "mgmt.shell.alertsAria": "Alerts",
     "mgmt.shell.userFallback": "User",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "General",
+    "mgmt.shell.menu.general.appearance": "Appearance",
+    "mgmt.appearance.title": "Appearance",
+    "mgmt.appearance.subtitle": "Choose how the system interface looks",
+    "mgmt.appearance.light": "Light",
+    "mgmt.appearance.dark": "Dark",
+    "mgmt.appearance.auto": "Automatic",
+    "mgmt.appearance.note": "Automatic mode follows your operating system preference."
   },
   fr: {
     "mgmt.launcherProfiles.title": "Profils de connexion",
@@ -4525,6 +4553,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Profils",
     "mgmt.shell.menu.auditTitle": "Audit",
     "mgmt.shell.menu.auditItem": "Journal d'utilisation des modules",
+    "mgmt.shell.menu.frontdesk.config": "Configuration",
+    "mgmt.shell.menu.frontdesk.rooms": "Chambres",
     "mgmt.shell.menu.frontdesk.roomTypes": "Types de chambre et chambres",
     "mgmt.shell.menu.frontdesk.rates": "Plans tarifaires",
     "mgmt.shell.menu.frontdesk.contracts": "Contrats (directs / OTAs)",
@@ -4549,7 +4579,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Configuration et securite de l'hotel",
     "mgmt.shell.alertsAria": "Alertes",
     "mgmt.shell.userFallback": "Utilisateur",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "General",
+    "mgmt.shell.menu.general.appearance": "Apparence",
+    "mgmt.appearance.title": "Apparence",
+    "mgmt.appearance.subtitle": "Choisissez l'apparence de l'interface",
+    "mgmt.appearance.light": "Clair",
+    "mgmt.appearance.dark": "Sombre",
+    "mgmt.appearance.auto": "Automatique",
+    "mgmt.appearance.note": "Le mode automatique suit les preferences de votre systeme."
   },
   pt: {
     "mgmt.launcherProfiles.title": "Perfis de login",
@@ -4580,6 +4618,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Perfis",
     "mgmt.shell.menu.auditTitle": "Auditoria",
     "mgmt.shell.menu.auditItem": "Registro de uso dos modulos",
+    "mgmt.shell.menu.frontdesk.config": "Configuracao",
+    "mgmt.shell.menu.frontdesk.rooms": "Quartos",
     "mgmt.shell.menu.frontdesk.roomTypes": "Tipos de quarto e quartos",
     "mgmt.shell.menu.frontdesk.rates": "Planos tarifarios",
     "mgmt.shell.menu.frontdesk.contracts": "Contratos (diretos / OTAs)",
@@ -4604,7 +4644,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Configuracao e seguranca do hotel",
     "mgmt.shell.alertsAria": "Alertas",
     "mgmt.shell.userFallback": "Usuario",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "Geral",
+    "mgmt.shell.menu.general.appearance": "Aparencia",
+    "mgmt.appearance.title": "Aparencia",
+    "mgmt.appearance.subtitle": "Escolha como a interface do sistema aparece",
+    "mgmt.appearance.light": "Claro",
+    "mgmt.appearance.dark": "Escuro",
+    "mgmt.appearance.auto": "Automatico",
+    "mgmt.appearance.note": "O modo automatico segue a preferencia do seu sistema operacional."
   },
   de: {
     "mgmt.launcherProfiles.title": "Anmeldeprofile",
@@ -4635,6 +4683,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Profile",
     "mgmt.shell.menu.auditTitle": "Audit",
     "mgmt.shell.menu.auditItem": "Modul-Nutzungsprotokoll",
+    "mgmt.shell.menu.frontdesk.config": "Konfiguration",
+    "mgmt.shell.menu.frontdesk.rooms": "Zimmer",
     "mgmt.shell.menu.frontdesk.roomTypes": "Zimmertypen und Zimmer",
     "mgmt.shell.menu.frontdesk.rates": "Tarifplane",
     "mgmt.shell.menu.frontdesk.contracts": "Vertrage (Direkt / OTAs)",
@@ -4659,7 +4709,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Hotelkonfiguration und Sicherheit",
     "mgmt.shell.alertsAria": "Benachrichtigungen",
     "mgmt.shell.userFallback": "Benutzer",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "Allgemein",
+    "mgmt.shell.menu.general.appearance": "Erscheinungsbild",
+    "mgmt.appearance.title": "Erscheinungsbild",
+    "mgmt.appearance.subtitle": "Wahlen Sie das Aussehen der Systemoberfliche",
+    "mgmt.appearance.light": "Hell",
+    "mgmt.appearance.dark": "Dunkel",
+    "mgmt.appearance.auto": "Automatisch",
+    "mgmt.appearance.note": "Der automatische Modus folgt den Einstellungen Ihres Betriebssystems."
   },
   it: {
     "mgmt.launcherProfiles.title": "Profili di accesso",
@@ -4690,6 +4748,8 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Profili",
     "mgmt.shell.menu.auditTitle": "Audit",
     "mgmt.shell.menu.auditItem": "Registro uso moduli",
+    "mgmt.shell.menu.frontdesk.config": "Configurazione",
+    "mgmt.shell.menu.frontdesk.rooms": "Camere",
     "mgmt.shell.menu.frontdesk.roomTypes": "Tipi di camera e camere",
     "mgmt.shell.menu.frontdesk.rates": "Piani tariffari",
     "mgmt.shell.menu.frontdesk.contracts": "Contratti (Diretti / OTAs)",
@@ -4714,7 +4774,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Configurazione e sicurezza hotel",
     "mgmt.shell.alertsAria": "Avvisi",
     "mgmt.shell.userFallback": "Utente",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "Generale",
+    "mgmt.shell.menu.general.appearance": "Aspetto",
+    "mgmt.appearance.title": "Aspetto",
+    "mgmt.appearance.subtitle": "Scegli come appare l'interfaccia del sistema",
+    "mgmt.appearance.light": "Chiaro",
+    "mgmt.appearance.dark": "Scuro",
+    "mgmt.appearance.auto": "Automatico",
+    "mgmt.appearance.note": "La modalita automatica segue le preferenze del sistema operativo."
   },
   ja: {
     "mgmt.launcherProfiles.title": "Login profiles",
@@ -4745,6 +4813,7 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.menu.profilesItem": "Profiles",
     "mgmt.shell.menu.auditTitle": "Audit",
     "mgmt.shell.menu.auditItem": "Module usage log",
+    "mgmt.shell.menu.frontdesk.rooms": "Rooms",
     "mgmt.shell.menu.frontdesk.roomTypes": "Room types and rooms",
     "mgmt.shell.menu.frontdesk.rates": "Rate plans",
     "mgmt.shell.menu.frontdesk.contracts": "Contracts (Direct / OTAs)",
@@ -4769,7 +4838,15 @@ const MANAGEMENT_I18N = {
     "mgmt.shell.header.subtitle": "Hotel configuration and security",
     "mgmt.shell.alertsAria": "Alerts",
     "mgmt.shell.userFallback": "User",
-    "mgmt.shell.roleFallback": "Hotel"
+    "mgmt.shell.roleFallback": "Hotel",
+    "mgmt.shell.menu.general.title": "General",
+    "mgmt.shell.menu.general.appearance": "Appearance",
+    "mgmt.appearance.title": "Appearance",
+    "mgmt.appearance.subtitle": "Choose how the system interface looks",
+    "mgmt.appearance.light": "Light",
+    "mgmt.appearance.dark": "Dark",
+    "mgmt.appearance.auto": "Automatic",
+    "mgmt.appearance.note": "Automatic mode follows your operating system preference."
   }
 };
 

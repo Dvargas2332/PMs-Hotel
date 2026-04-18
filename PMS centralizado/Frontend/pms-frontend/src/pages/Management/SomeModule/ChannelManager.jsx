@@ -9,7 +9,7 @@ export default function ChannelManager() {
   return (
     <Card className="space-y-4 p-5">
       <h3 className="font-semibold text-lg">{t("mgmt.channelManager.title")}</h3>
-      <p className="text-sm text-gray-600">{t("mgmt.channelManager.subtitle")}</p>
+      <p className="text-sm text-slate-400">{t("mgmt.channelManager.subtitle")}</p>
       <div className="grid md:grid-cols-2 gap-3">
         <Input placeholder={t("mgmt.channelManager.provider")} />
         <Input placeholder={t("mgmt.channelManager.apiKey")} />

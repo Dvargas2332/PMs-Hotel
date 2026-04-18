@@ -475,11 +475,11 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
         <div key={mod} className="rounded-lg border p-3">
           <button
             type="button"
-            className="w-full flex items-center justify-between text-sm font-semibold uppercase text-gray-700"
+            className="w-full flex items-center justify-between text-sm font-semibold uppercase text-slate-300"
             onClick={() => toggleModule(mod)}
           >
             <span>{mod}</span>
-            <span className="text-xs normal-case text-gray-500">{isModuleOpen(mod) ? t("mgmt.roles.hide") : t("mgmt.roles.show")}</span>
+            <span className="text-xs normal-case text-slate-400">{isModuleOpen(mod) ? t("mgmt.roles.hide") : t("mgmt.roles.show")}</span>
           </button>
           {isModuleOpen(mod) && (
             <div className="mt-3 space-y-3">
@@ -501,7 +501,7 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
               {mod === "restaurant" ? (
                 <div className="space-y-3">
                   {Object.entries(restaurantGroups).map(([section, list]) => (
-                    <div key={section} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2">
+                    <div key={section} className="rounded-lg border border-white/10 bg-white/5 p-2">
                       <div className="text-xs font-semibold uppercase text-slate-600 mb-2">{section}</div>
                       <div className="grid md:grid-cols-2 gap-2">
                         {(list || []).map((p) => {
@@ -526,7 +526,7 @@ function PermissionsByModule({ permissions, selectedRole, rolePerms, setRolePerm
               ) : mod === "management" ? (
                 <div className="space-y-3">
                   {Object.entries(managementGroups).map(([source, list]) => (
-                    <div key={source} className="rounded-lg border border-slate-100 bg-slate-50/50 p-2">
+                    <div key={source} className="rounded-lg border border-white/10 bg-white/5 p-2">
                       <div className="text-xs font-semibold uppercase text-slate-600 mb-2">
                         {managementModuleLabel(source)}
                       </div>

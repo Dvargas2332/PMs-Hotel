@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
+import { escapeHtml } from "../../lib/security";
 import {
   BarChart3,
   Receipt,
@@ -24,6 +25,12 @@ export default function RestaurantHistory() {
   const [salesDialogOpen, setSalesDialogOpen] = useState(false);
   const [invoicesDialogOpen, setInvoicesDialogOpen] = useState(false);
   const [shiftsDialogOpen, setShiftsDialogOpen] = useState(false);
+  const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+  const [statsData, setStatsData] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState("");
+  const [closePreviewOpen, setClosePreviewOpen] = useState(false);
+  const [closePreviewText, setClosePreviewText] = useState("");
   const [movementType, setMovementType] = useState("SALES");
   const [groupBy, setGroupBy] = useState("");
   const [orderBy, setOrderBy] = useState("");
@@ -201,6 +208,21 @@ export default function RestaurantHistory() {
     loadOptions();
   }, [salesDialogOpen, invoicesDialogOpen, shiftsDialogOpen]);
 
+  const openStatsDialog = async () => {
+    setStatsDialogOpen(true);
+    setStatsLoading(true);
+    setStatsError("");
+    setStatsData(null);
+    try {
+      const { data } = await api.get("/restaurant/stats");
+      setStatsData(data || null);
+    } catch {
+      setStatsError("No se pudo cargar estadísticas.");
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
   const handleShiftsApply = async () => {
     if (shiftBusy) return;
     setShiftBusy(true);
@@ -345,15 +367,15 @@ export default function RestaurantHistory() {
                 .map(
                   (r) => `
                 <tr>
-                  <td>${r.closedAt ? new Date(r.closedAt).toLocaleString() : ""}</td>
-                  <td>${r.shiftNumber ? `#${r.shiftNumber}` : r.shiftId ? String(r.shiftId).slice(-6) : ""}</td>
-                  <td>${r.consecutive || ""}</td>
-                  <td>${r.docType || ""}</td>
-                  <td>${r.order?.sectionId ? `${r.order.sectionId} - ` : ""}${r.order?.tableId || ""}</td>
-                  <td>${getStaffName(r.order?.cashierId)} / ${getStaffName(r.order?.waiterId)}</td>
-                  <td>${r.order?.currency || ""}</td>
+                  <td>${escapeHtml(r.closedAt ? new Date(r.closedAt).toLocaleString() : "")}</td>
+                  <td>${escapeHtml(r.shiftNumber ? `#${r.shiftNumber}` : r.shiftId ? String(r.shiftId).slice(-6) : "")}</td>
+                  <td>${escapeHtml(r.consecutive || "")}</td>
+                  <td>${escapeHtml(r.docType || "")}</td>
+                  <td>${escapeHtml(`${r.order?.sectionId ? `${r.order.sectionId} - ` : ""}${r.order?.tableId || ""}`)}</td>
+                  <td>${escapeHtml(`${getStaffName(r.order?.cashierId)} / ${getStaffName(r.order?.waiterId)}`)}</td>
+                  <td>${escapeHtml(r.order?.currency || "")}</td>
                   <td>${formatMoneyWithCurrency(r.order?.total, r.order?.currency || r.currency || "")}</td>
-                  <td>${r.status || ""}</td>
+                  <td>${escapeHtml(r.status || "")}</td>
                 </tr>
               `
                 )
@@ -373,54 +395,106 @@ export default function RestaurantHistory() {
   const buildInvoicePreviewText = ({ row, header, footer }) => {
     const order = row?.order || {};
     const items = Array.isArray(order.items) ? order.items : [];
+    const W = 40;
+    const sep  = "=".repeat(W);
+    const sep2 = "-".repeat(W);
+    const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
     const lines = [];
-    const title = row?.docType === "FE" ? "FACTURA ELECTRONICA" : "TICKET";
-    lines.push(title);
-    lines.push(`Fecha: ${row?.closedAt ? new Date(row.closedAt).toLocaleString() : new Date().toLocaleString()}`);
-    if (order?.sectionId) lines.push(`Sección: ${order.sectionId}`);
-    if (order?.tableId) lines.push(`Mesa: ${order.tableId}`);
-    if (order?.covers != null) lines.push(`Personas: ${order.covers}`);
-    if (order?.serviceType) lines.push(`Servicio: ${order.serviceType}`);
-    if (order?.roomId) lines.push(`Habitación: ${order.roomId}`);
-    lines.push("");
+    const isFE = String(row?.docType || "").toUpperCase() === "FE";
+    const title = isFE ? "FACTURA ELECTRONICA" : "TICKET";
 
     const h = String(header || "").trim();
-    if (h) {
-      lines.push(h);
-      lines.push("");
-    }
+    if (h) { lines.push(h); lines.push(""); }
+
+    lines.push(sep);
+    lines.push(title);
+    if (row?.consecutive) lines.push(`N° Documento: ${row.consecutive}`);
+    lines.push(`Fecha:    ${row?.closedAt ? new Date(row.closedAt).toLocaleString() : new Date().toLocaleString()}`);
+    if (row?.shiftNumber) lines.push(`Turno:    #${row.shiftNumber}`);
+    const cashierName = getStaffName(order?.cashierId);
+    const waiterName  = getStaffName(order?.waiterId);
+    if (cashierName && cashierName !== "-") lines.push(`Cajero:   ${cashierName}`);
+    if (waiterName  && waiterName  !== "-") lines.push(`Mesero:   ${waiterName}`);
+    if (order?.sectionId) lines.push(`Sección:  ${order.sectionId}`);
+    if (order?.tableId)   lines.push(`Mesa:     ${order.tableId}`);
+    if (order?.covers != null) lines.push(`Personas: ${order.covers}`);
+    if (order?.serviceType) lines.push(`Servicio: ${order.serviceType}`);
+    if (order?.roomId) lines.push(`Habitac.: ${order.roomId}`);
+    lines.push(sep2);
 
     if (items.length > 0) {
-      lines.push("Items:");
-      items.forEach((it) => {
-        const qty = Number(it?.qty || 1);
-        const name = String(it?.name || "Item");
+      for (const it of items) {
+        const qty   = Number(it?.qty || 1);
+        const name  = String(it?.name || "Item");
         const price = Number(it?.price || 0);
-        lines.push(`- ${qty} x ${name} @ ${formatMoneyWithCurrency(price, order.currency)} = ${formatMoneyWithCurrency(qty * price, order.currency)}`);
-        if (it?.detailNote) lines.push(`  Nota: ${String(it.detailNote)}`);
-      });
-      lines.push("");
+        lines.push(rjust(`  ${qty} x ${name}`, formatMoneyWithCurrency(qty * price, order.currency)));
+        if (it?.detailNote) lines.push(`    * ${String(it.detailNote)}`);
+      }
+      lines.push(sep2);
     }
 
-    if (order?.note) {
-      lines.push("Nota:");
-      lines.push(String(order.note));
-      lines.push("");
+    if (order?.note) { lines.push(`Nota: ${String(order.note)}`); lines.push(""); }
+
+    const subtotal = Number(order?.subtotal || 0);
+    const discount = Number(order?.discountAmount || 0);
+    const tip10    = Number(order?.tip10 || 0);
+    const iva      = Number(order?.tax || order?.iva || 0);
+    const total    = Number(order?.total || 0);
+    if (subtotal > 0) lines.push(rjust("Subtotal:", formatMoneyWithCurrency(subtotal, order.currency)));
+    if (discount > 0) lines.push(rjust("Descuento:", `- ${formatMoneyWithCurrency(discount, order.currency)}`));
+    if (tip10 > 0)    lines.push(rjust("Servicio (10%):", formatMoneyWithCurrency(tip10, order.currency)));
+    if (iva > 0)      lines.push(rjust("IVA:", formatMoneyWithCurrency(iva, order.currency)));
+    lines.push(rjust("TOTAL:", formatMoneyWithCurrency(total, order.currency)));
+
+    const payBreakdown = order?.paymentBreakdown && typeof order.paymentBreakdown === "object"
+      ? Object.entries(order.paymentBreakdown).filter(([, v]) => Number(v) > 0) : [];
+    if (payBreakdown.length > 0) {
+      lines.push(sep2);
+      for (const [method, amount] of payBreakdown) {
+        lines.push(rjust(`  ${method}:`, formatMoneyWithCurrency(Number(amount), order.currency)));
+      }
     }
 
-    if (order?.discountAmount) {
-      lines.push(`Descuento: ${formatMoneyWithCurrency(order.discountAmount, order.currency)}`);
+    if (row?.status === "CANCELED") {
+      lines.push(sep2);
+      lines.push("*** DOCUMENTO ANULADO ***");
+      if (row?.cancelReason) lines.push(`Motivo: ${row.cancelReason}`);
     }
-    if (order?.tip10) {
-      lines.push(`Servicio: ${formatMoneyWithCurrency(order.tip10, order.currency)}`);
-    }
-    lines.push(`Total: ${formatMoneyWithCurrency(order.total, order.currency)}`);
 
     const f = String(footer || "").trim();
-    if (f) {
-      lines.push("");
-      lines.push(f);
-    }
+    if (f) { lines.push(""); lines.push(f); }
+    lines.push(sep);
+    return lines.join("\n");
+  };
+
+  const buildCloseReportTextHistory = (row) => {
+    const W = 40;
+    const center = (s) => { const str = String(s || ""); const pad = Math.max(0, Math.floor((W - str.length) / 2)); return " ".repeat(pad) + str; };
+    const sep  = "=".repeat(W);
+    const sep2 = "-".repeat(W);
+    const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
+    const totals   = row?.closeTotals   && typeof row.closeTotals   === "object" ? row.closeTotals   : {};
+    const payments = row?.closePayments && typeof row.closePayments === "object" ? row.closePayments : {};
+    const systemTotal = Number(totals.system ?? totals.systemTotal ?? totals.totalSales ?? totals.total ?? 0);
+    const lines = [];
+    lines.push(sep);
+    lines.push(center("REIMPRESION CIERRE Z DE CAJA"));
+    lines.push(sep);
+    if (row?.shiftNumber) lines.push(`Turno:    #${row.shiftNumber}`);
+    lines.push(`Apertura: ${row?.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}`);
+    lines.push(`Cierre:   ${row?.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}`);
+    lines.push(sep2);
+    lines.push(center("VENTAS POR METODO"));
+    lines.push(sep2);
+    const payEntries = Object.entries(payments).filter(([, v]) => Number(v) > 0);
+    for (const [key, amt] of payEntries) lines.push(rjust(`  ${key}:`, Number(amt).toFixed(2)));
+    lines.push(sep2);
+    lines.push(rjust("TOTAL:", systemTotal.toFixed(2)));
+    if (row?.closeNote) { lines.push(sep2); lines.push(`Notas: ${row.closeNote}`); }
+    lines.push(sep);
+    lines.push("");
+    lines.push("Firma: ________________________");
+    lines.push(sep);
     return lines.join("\n");
   };
 
@@ -492,7 +566,7 @@ const handleInvoicesApply = async () => {
     { title: "Ventas / Devoluciones", icon: BarChart3, onClick: () => setSalesDialogOpen(true) },
     { title: "Facturas", icon: FileText, onClick: () => setInvoicesDialogOpen(true), tone: "amber" },
     { title: "Turnos de Trabajo", icon: Briefcase, onClick: () => setShiftsDialogOpen(true) },
-    { title: "Estad?sticas", icon: BarChart3 },
+    { title: "Estadísticas", icon: BarChart3, onClick: openStatsDialog, tone: "green" },
     { title: "Exenciones de Impuestos", icon: ShieldCheck },
     { title: "Rebajas de Inventario", icon: MinusSquare },
     { title: "Comandas", icon: UtensilsCrossed },
@@ -841,14 +915,14 @@ const handleInvoicesApply = async () => {
                 <div className="grid md:grid-cols-3 gap-3">
                   <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
                     <div className="text-xs uppercase text-lime-600">Agrupar por</div>
-                    {["Familia", "Mesero"].map((label) => (
+                    {["Familia", "Subfamilia", "Mesero", "Cajero", "Turno", "Artículo", "Fecha"].map((label) => (
                       <label key={label} className="flex items-center gap-2 text-sm">
                         <input
                           type="radio"
                           name="groupBy"
                           className="accent-lime-600"
                           checked={groupBy === label}
-                          onChange={() => setGroupBy(label)}
+                          onChange={() => setGroupBy((prev) => prev === label ? "" : label)}
                         />
                         {label}
                       </label>
@@ -856,14 +930,14 @@ const handleInvoicesApply = async () => {
                   </div>
                   <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
                     <div className="text-xs uppercase text-lime-600">Ordenar por</div>
-                    {["Código", "Cobros", "Extra Tip"].map((label) => (
+                    {["Código", "Total (mayor a menor)", "Total (menor a mayor)", "Cantidad", "Fecha"].map((label) => (
                       <label key={label} className="flex items-center gap-2 text-sm">
                         <input
                           type="radio"
                           name="orderBy"
                           className="accent-lime-600"
                           checked={orderBy === label}
-                          onChange={() => setOrderBy(label)}
+                          onChange={() => setOrderBy((prev) => prev === label ? "" : label)}
                         />
                         {label}
                       </label>
@@ -976,22 +1050,20 @@ const handleInvoicesApply = async () => {
               </div>
               <div className="space-y-2">
                 <div className="rounded-xl border border-lime-200 p-3">
-                  <div className="text-xs uppercase text-lime-600 mb-2">Enfoque r?pido</div>
+                  <div className="text-xs uppercase text-lime-600 mb-2">Enfoque rápido</div>
                   <div className="grid grid-cols-1 gap-2">
                     {[
                       "Familia",
                       "Subfamilia",
-                      "Art?culo",
-                      "Art?culo / Observaci?n",
+                      "Artículo",
+                      "Artículo / Observación",
                       "Fecha",
-                      "Fecha / Art?culo",
+                      "Fecha / Artículo",
                       "Cuenta Casa",
                       "Mesero",
                       "Cajero",
                       "Servicio",
-                      "Cuenta de Ingresos",
                       "Cliente",
-                      "Agente de Ventas",
                     ].map((label) => (
                       <button
                         key={label}
@@ -1000,7 +1072,7 @@ const handleInvoicesApply = async () => {
                             ? "bg-lime-200 text-lime-900"
                             : "bg-lime-100 text-lime-800 hover:bg-lime-150"
                         }`}
-                        onClick={() => setFocusKey(label)}
+                        onClick={() => setFocusKey((prev) => prev === label ? "" : label)}
                       >
                         {label}
                       </button>
@@ -1443,27 +1515,54 @@ const handleInvoicesApply = async () => {
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-lime-200 overflow-hidden">
-                  <div className="grid grid-cols-[120px_180px_180px_140px_1fr] bg-lime-100 text-xs font-semibold text-lime-900 px-3 py-2">
+                <div className="mt-4 rounded-xl border border-lime-200 overflow-hidden overflow-x-auto">
+                  <div className="grid grid-cols-[80px_160px_160px_110px_110px_1fr_90px] bg-lime-100 text-xs font-semibold text-lime-900 px-3 py-2 min-w-[920px]">
                     <div>Turno</div>
                     <div>Apertura</div>
                     <div>Cierre</div>
-                    <div>Apertura (monto)</div>
-                    <div>Nota</div>
+                    <div>Fondo apertura</div>
+                    <div>Ventas Z</div>
+                    <div>Pagos (desglose)</div>
+                    <div></div>
                   </div>
-                  <div className="min-h-[240px] bg-lime-50">
-                    {(shiftRows.length ? shiftRows : closedShifts).map((row) => (
-                      <div
-                        key={row.id}
-                        className="grid grid-cols-[120px_180px_180px_140px_1fr] text-xs px-3 py-2 border-t border-lime-200"
-                      >
-                        <div>{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</div>
-                        <div>{row.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}</div>
-                        <div>{row.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}</div>
-                        <div>{Number(row.openingAmount || 0).toFixed(2)}</div>
-                        <div className="truncate" title={row.note || ""}>{row.note || "-"}</div>
-                      </div>
-                    ))}
+                  <div className="min-h-[240px] bg-lime-50 min-w-[920px]">
+                    {(shiftRows.length ? shiftRows : closedShifts).map((row) => {
+                      const totals = row.closeTotals || {};
+                      const payments = row.closePayments || {};
+                      const saleTotal = Number(totals.system ?? totals.systemTotal ?? totals.totalSales ?? totals.total ?? 0);
+                      const paymentEntries = Object.entries(payments).filter(([, v]) => Number(v) > 0);
+                      return (
+                        <div
+                          key={row.id}
+                          className="grid grid-cols-[80px_160px_160px_110px_110px_1fr_90px] text-xs px-3 py-2 border-t border-lime-200 items-center"
+                        >
+                          <div className="font-semibold">{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</div>
+                          <div>{row.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}</div>
+                          <div>{row.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}</div>
+                          <div>{Number(row.openingAmount || 0).toFixed(2)}</div>
+                          <div className="font-semibold text-lime-800">
+                            {saleTotal > 0 ? saleTotal.toFixed(2) : "-"}
+                          </div>
+                          <div className="truncate text-slate-600">
+                            {paymentEntries.length > 0
+                              ? paymentEntries.map(([k, v]) => `${k}: ${Number(v).toFixed(2)}`).join(" | ")
+                              : row.closeNote || "-"}
+                          </div>
+                          <div>
+                            <button
+                              className="h-7 px-2 rounded-lg bg-lime-100 border border-lime-300 text-[11px] font-semibold text-lime-800 hover:bg-lime-200"
+                              onClick={() => {
+                                const txt = buildCloseReportTextHistory(row);
+                                setClosePreviewText(txt);
+                                setClosePreviewOpen(true);
+                              }}
+                            >
+                              Reimprimir
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                     {((shiftRows.length ? shiftRows : closedShifts).length === 0) && (
                       <div className="px-3 py-6 text-center text-xs text-slate-500">Sin resultados.</div>
                     )}
@@ -1488,7 +1587,98 @@ const handleInvoicesApply = async () => {
             </div>
           </div>
         )}
+
+        {statsDialogOpen && (
+          <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
+            <div className="w-full max-w-2xl rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
+                <div className="text-lg font-semibold text-lime-800">Estadísticas del turno</div>
+                <button
+                  type="button"
+                  className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
+                  onClick={() => setStatsDialogOpen(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+              <div className="p-6 space-y-4 overflow-y-auto max-h-[80vh]">
+                {statsLoading && <div className="text-center text-sm text-slate-500 py-8">Cargando estadísticas...</div>}
+                {statsError && <div className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{statsError}</div>}
+                {statsData && !statsLoading && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-lime-200 bg-lime-50 p-4">
+                        <div className="text-xs text-lime-600 uppercase font-semibold">Ventas del turno</div>
+                        <div className="text-2xl font-bold text-lime-900 mt-1">
+                          {Number(statsData.systemTotal || 0).toFixed(2)}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">{statsData.salesCount || 0} transacciones</div>
+                      </div>
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                        <div className="text-xs text-amber-600 uppercase font-semibold">Órdenes abiertas</div>
+                        <div className="text-2xl font-bold text-amber-900 mt-1">{statsData.openOrders || 0}</div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Valor: {Number(statsData.openOrderValue || 0).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {statsData.byMethod && Object.keys(statsData.byMethod).length > 0 && (
+                      <div className="rounded-xl border border-lime-200 overflow-hidden">
+                        <div className="bg-lime-100 px-4 py-2 text-xs font-semibold text-lime-900 uppercase">
+                          Desglose por método de pago
+                        </div>
+                        {Object.entries(statsData.byMethod).map(([method, amount]) => (
+                          <div key={method} className="flex items-center justify-between px-4 py-2 border-t border-lime-100 text-sm">
+                            <span className="text-slate-700">{method}</span>
+                            <span className="font-semibold text-lime-900">{Number(amount || 0).toFixed(2)}</span>
+                          </div>
+                        ))}
+                        <div className="flex items-center justify-between px-4 py-2 border-t border-lime-200 bg-lime-50 text-sm font-bold">
+                          <span>Total</span>
+                          <span className="text-lime-900">{Number(statsData.systemTotal || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-xs text-slate-500 text-right">
+                      {statsData.lastCloseAt
+                        ? `Último cierre Z: ${new Date(statsData.lastCloseAt).toLocaleString()}`
+                        : "Sin cierres Z registrados"}
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end pt-2">
+                  <button
+                    className="h-9 px-4 rounded-lg bg-lime-100 border border-lime-200 text-sm font-semibold"
+                    onClick={openStatsDialog}
+                    disabled={statsLoading}
+                  >
+                    {statsLoading ? "Cargando..." : "Actualizar"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </>
+      {closePreviewOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
+            <style>{`@media print { .close-preview-header { display:none!important; } }`}</style>
+            <div className="close-preview-header flex items-center justify-between gap-3 px-4 py-3 bg-lime-100 border-b border-lime-200">
+              <div className="text-sm font-semibold text-lime-900">Reporte de Cierre</div>
+              <div className="flex items-center gap-2">
+                <button className="h-9 px-3 rounded-lg bg-lime-700 text-white text-sm font-semibold" onClick={() => window.print()}>Imprimir</button>
+                <button className="h-9 px-3 rounded-lg border border-lime-200 text-sm" onClick={() => setClosePreviewOpen(false)}>Cerrar</button>
+              </div>
+            </div>
+            <div className="p-4 max-h-[75vh] overflow-auto">
+              <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">{closePreviewText}</pre>
+            </div>
+          </div>
+        </div>
+      )}
       {salesPreviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-5xl rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
@@ -1521,41 +1711,118 @@ const handleInvoicesApply = async () => {
                 <div>Agrupar: {groupBy || "-"} | Ordenar: {orderBy || "-"}</div>
                 <div>Filtro rápido: {focusKey || "-"}</div>
               </div>
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr className="bg-lime-50 text-left">
-                    {groupBy ? <th className="border border-lime-200 px-2 py-1">Grupo</th> : null}
-                    <th className="border border-lime-200 px-2 py-1">Venta</th>
-                    <th className="border border-lime-200 px-2 py-1">Sección</th>
-                    <th className="border border-lime-200 px-2 py-1">Mesa</th>
-                    <th className="border border-lime-200 px-2 py-1">Total</th>
-                    <th className="border border-lime-200 px-2 py-1">Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salesPreviewRows.map((row) => (
-                    <tr key={row.id || `${row.sectionId}-${row.tableId}-${row.createdAt}`}>
-                      {groupBy ? (
-                        <td className="border border-lime-100 px-2 py-1">{row.groupKey || "-"}</td>
-                      ) : null}
-                      <td className="border border-lime-100 px-2 py-1">{row.saleNumber || row.id || "-"}</td>
-                      <td className="border border-lime-100 px-2 py-1">{row.sectionId || "-"}</td>
-                      <td className="border border-lime-100 px-2 py-1">{row.tableId || "-"}</td>
-                      <td className="border border-lime-100 px-2 py-1">{row.total ?? "-"}</td>
-                      <td className="border border-lime-100 px-2 py-1">
-                        {row.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}
-                      </td>
+              {movementType === "VOIDS" ? (
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-red-50 text-left">
+                      <th className="border border-red-200 px-2 py-1">Orden</th>
+                      <th className="border border-red-200 px-2 py-1">Sección</th>
+                      <th className="border border-red-200 px-2 py-1">Mesa</th>
+                      <th className="border border-red-200 px-2 py-1">Total</th>
+                      <th className="border border-red-200 px-2 py-1">Cancelado por</th>
+                      <th className="border border-red-200 px-2 py-1">Autorizado por</th>
+                      <th className="border border-red-200 px-2 py-1">Motivo</th>
+                      <th className="border border-red-200 px-2 py-1">Fecha anulación</th>
                     </tr>
-                  ))}
-                  {salesPreviewRows.length === 0 && (
-                    <tr>
-                      <td className="border border-lime-100 px-2 py-2 text-center text-slate-500" colSpan={groupBy ? 6 : 5}>
-                        Sin resultados.
-                      </td>
+                  </thead>
+                  <tbody>
+                    {salesPreviewRows.map((row) => (
+                      <tr key={row.id} className="hover:bg-red-50">
+                        <td className="border border-red-100 px-2 py-1">{row.saleNumber || row.id?.slice(-6) || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">{row.sectionId || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">{row.tableId || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1 font-semibold">{row.total ?? "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">{row.canceledBy || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">{row.cancelAdminUser || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">{row.cancelReason || "-"}</td>
+                        <td className="border border-red-100 px-2 py-1">
+                          {row.canceledAt ? new Date(row.canceledAt).toLocaleString() : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                    {salesPreviewRows.length === 0 && (
+                      <tr>
+                        <td className="border border-red-100 px-2 py-2 text-center text-slate-500" colSpan={8}>
+                          Sin anulaciones en el período.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <>
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-lime-50 text-left">
+                      {groupBy ? <th className="border border-lime-200 px-2 py-1">Grupo</th> : null}
+                      <th className="border border-lime-200 px-2 py-1">#Venta</th>
+                      <th className="border border-lime-200 px-2 py-1">Turno</th>
+                      <th className="border border-lime-200 px-2 py-1">Sección</th>
+                      <th className="border border-lime-200 px-2 py-1">Mesa</th>
+                      <th className="border border-lime-200 px-2 py-1">Cajero</th>
+                      <th className="border border-lime-200 px-2 py-1">Mesero</th>
+                      <th className="border border-lime-200 px-2 py-1">Items</th>
+                      <th className="border border-lime-200 px-2 py-1">Método</th>
+                      <th className="border border-lime-200 px-2 py-1">Subtotal</th>
+                      <th className="border border-lime-200 px-2 py-1">IVA</th>
+                      <th className="border border-lime-200 px-2 py-1">Serv.10%</th>
+                      <th className="border border-lime-200 px-2 py-1 font-bold">Total</th>
+                      <th className="border border-lime-200 px-2 py-1">Fecha</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {salesPreviewRows.map((row) => (
+                      <tr key={row.id || `${row.sectionId}-${row.tableId}-${row.createdAt}`} className="hover:bg-lime-50">
+                        {groupBy ? (
+                          <td className="border border-lime-100 px-2 py-1">{row.groupKey || "-"}</td>
+                        ) : null}
+                        <td className="border border-lime-100 px-2 py-1 font-semibold">{row.saleNumber || row.id?.slice(-6) || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.sectionId || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.tableId || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{getStaffName(row.cashierId) || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{getStaffName(row.waiterId) || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1 text-center">{row.itemCount ?? "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1 text-xs text-slate-500">
+                          {Array.isArray(row.paymentMethods) && row.paymentMethods.length > 0
+                            ? row.paymentMethods.map((p) => p.name || p.key || p).join(", ")
+                            : row.paymentKey || "-"}
+                        </td>
+                        <td className="border border-lime-100 px-2 py-1">{row.subtotal != null ? Number(row.subtotal).toFixed(2) : "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.tax != null ? Number(row.tax).toFixed(2) : "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.tip10 != null ? Number(row.tip10).toFixed(2) : "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1 font-bold text-lime-900">{row.total != null ? Number(row.total).toFixed(2) : "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">
+                          {row.closedAt ? new Date(row.closedAt).toLocaleString() : row.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                    {salesPreviewRows.length === 0 && (
+                      <tr>
+                        <td className="border border-lime-100 px-2 py-2 text-center text-slate-500" colSpan={groupBy ? 14 : 13}>
+                          Sin resultados.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                {salesPreviewRows.length > 0 && (() => {
+                  const grandTotal = salesPreviewRows.reduce((s, r) => s + Number(r.total || 0), 0);
+                  const grandSubtotal = salesPreviewRows.reduce((s, r) => s + Number(r.subtotal || 0), 0);
+                  const grandTax = salesPreviewRows.reduce((s, r) => s + Number(r.tax || 0), 0);
+                  const grandTip = salesPreviewRows.reduce((s, r) => s + Number(r.tip10 || 0), 0);
+                  return (
+                    <div className="mt-2 flex justify-end gap-6 text-xs font-semibold border-t border-lime-200 pt-2">
+                      <span>Registros: {salesPreviewRows.length}</span>
+                      <span>Subtotal: {grandSubtotal.toFixed(2)}</span>
+                      <span>IVA: {grandTax.toFixed(2)}</span>
+                      <span>Serv.10%: {grandTip.toFixed(2)}</span>
+                      <span className="text-lime-900 text-sm">TOTAL: {grandTotal.toFixed(2)}</span>
+                    </div>
+                  );
+                })()}
+                </>
+              )}
             </div>
           </div>
         </div>

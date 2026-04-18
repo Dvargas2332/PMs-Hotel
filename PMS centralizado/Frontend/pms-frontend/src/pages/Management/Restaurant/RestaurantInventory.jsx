@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
+import { escapeHtml as securityEscapeHtml } from "../../../lib/security";
 import { api } from "../../../lib/api";
 import { useLanguage } from "../../../context/LanguageContext";
 
@@ -420,13 +421,7 @@ export default function RestaurantInventory() {
     return `${code} ${safeAmount}`;
   };
 
-  const escapeHtml = (raw) =>
-    String(raw || "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+  const escapeHtml = (raw) => securityEscapeHtml(raw);
 
   const getInvoiceSupplierMeta = (inv) => {
     const supplierObj = inv?.supplier && typeof inv.supplier === "object" ? inv.supplier : {};
@@ -525,7 +520,7 @@ export default function RestaurantInventory() {
 
   const renderInvoicePrintHtml = (inv) => {
     const lines = Array.isArray(inv?.lines) ? inv.lines : [];
-    const title = `${t("mgmt.restaurant.inventory.print.invoiceTitle")} ${inv?.docNumber || inv?.id || ""}`.trim();
+    const title = escapeHtml(`${t("mgmt.restaurant.inventory.print.invoiceTitle")} ${inv?.docNumber || inv?.id || ""}`.trim());
     const total = getInvoiceDisplayTotal(inv);
     const iva = getInvoiceDisplayTax(inv);
     const discount = getInvoiceDisplayDiscount(inv);
@@ -589,12 +584,12 @@ export default function RestaurantInventory() {
               .map(
                 (l) => `
               <tr>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${l.sku || "-"}</td>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${l.name || "-"}</td>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${l.qty || 0}</td>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${l.unit || ""}</td>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${l.cost || 0}</td>
-                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${l.taxRate || "-"}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${escapeHtml(l.sku || "-")}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${escapeHtml(l.name || "-")}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${escapeHtml(l.qty || 0)}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;">${escapeHtml(l.unit || "")}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${escapeHtml(l.cost || 0)}</td>
+                <td style="border-bottom:1px solid #f0f0f0;padding:6px;text-align:right;">${escapeHtml(l.taxRate || "-")}</td>
               </tr>
             `
               )
@@ -630,7 +625,7 @@ export default function RestaurantInventory() {
     win.document.write(`
       <html>
         <head>
-          <title>${t("mgmt.restaurant.inventory.print.title")}</title>
+          <title>${escapeHtml(t("mgmt.restaurant.inventory.print.title"))}</title>
         </head>
         <body style="font-family:Arial, sans-serif; color:#111; padding:24px;">
           ${body}
@@ -669,14 +664,14 @@ export default function RestaurantInventory() {
           <div className="space-y-3">
             <div>
               <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.items.title")}</div>
-              <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.items.subtitle")}</div>
+              <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.items.subtitle")}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setControlMode((v) => !v)}
                 className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-                  controlMode ? "bg-slate-900 text-white border-slate-900" : "bg-white hover:bg-slate-50"
+                  controlMode ? "bg-indigo-600 text-white border-indigo-600" : "bg-white/5 text-slate-300 hover:bg-white/10"
                 }`}
               >
                 {t("mgmt.restaurant.inventory.items.control")}
@@ -690,7 +685,7 @@ export default function RestaurantInventory() {
                     })
                   )
                 }
-                className="px-4 py-2 rounded-lg border bg-white text-sm font-semibold hover:bg-slate-50"
+                className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-slate-200 text-sm font-semibold hover:bg-white/10"
               >
                 {t("mgmt.restaurant.inventory.items.adjustments")}
               </button>
@@ -703,20 +698,20 @@ export default function RestaurantInventory() {
                     })
                   )
                 }
-                className="px-4 py-2 rounded-lg border bg-white text-sm font-semibold hover:bg-slate-50"
+                className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-slate-200 text-sm font-semibold hover:bg-white/10"
               >
                 {t("mgmt.restaurant.inventory.items.count")}
               </button>
             </div>
             {loading ? (
-              <div className="text-sm text-gray-500">{t("common.loading")}</div>
+              <div className="text-sm text-slate-400">{t("common.loading")}</div>
             ) : inventory.length === 0 ? (
-              <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.items.empty")}</div>
+              <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.items.empty")}</div>
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
+                    <thead className="bg-white/5 text-slate-400">
                       <tr>
                         {controlMode && <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.control")}</th>}
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
@@ -733,7 +728,7 @@ export default function RestaurantInventory() {
                       {inventory.map((i, idx) => (
                         <tr
                           key={i.id}
-                          className={`${idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"} ${
+                          className={`${idx % 2 === 0 ? "bg-transparent" : "bg-white/3"} ${
                             i.inventoryControlled === false ? "text-slate-400" : ""
                           }`}
                         >
@@ -785,7 +780,7 @@ export default function RestaurantInventory() {
               </div>
             )}
             {invoices.length === 0 ? (
-              <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.invoices.empty")}</div>
+              <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.invoices.empty")}</div>
             ) : (
               <div className="space-y-2">
                 {invoices.map((inv) => (
@@ -803,20 +798,20 @@ export default function RestaurantInventory() {
                       <div className="font-semibold flex-1 min-w-[220px]">
                         {(getInvoiceSupplierMeta(inv).displayName || inv.proveedor || inv.supplierName)} {inv.docNumber ? `- ${inv.docNumber}` : ""}
                       </div>
-                      <div className="text-xs text-gray-500 ml-auto">
+                      <div className="text-xs text-slate-400 ml-auto">
                         {inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : ""}
                       </div>
                       <Button variant="outline" onClick={() => setPreviewInvoice(inv)}>
                         {t("mgmt.restaurant.inventory.invoices.view")}
                       </Button>
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-slate-400">
                       {t("mgmt.restaurant.inventory.labels.total")}: {formatAmountWithCurrency(getInvoiceDisplayTotal(inv), getInvoiceCurrency(inv))} |{" "}
                       {t("mgmt.restaurant.inventory.labels.tax")}: {formatAmountWithCurrency(getInvoiceDisplayTax(inv), getInvoiceCurrency(inv))} |{" "}
                       {inv.source || t("mgmt.restaurant.inventory.invoices.sourceManual")}
                     </div>
                     {(inv.currency || inv.exchangeRate || inv.totalFromXml || inv.taxTotalFromXml || inv.totalSaleFromXml) && (
-                      <div className="text-xs text-gray-600">
+                      <div className="text-xs text-slate-400">
                         {t("mgmt.restaurant.inventory.labels.currency")}: {inv.currency || "-"} |{" "}
                         {t("mgmt.restaurant.inventory.labels.exchangeRate")}: {inv.exchangeRate || "-"} |{" "}
                         {t("mgmt.restaurant.inventory.invoices.totalXml")}: {inv.totalFromXml || "-"} |{" "}
@@ -836,7 +831,7 @@ export default function RestaurantInventory() {
           <div className="space-y-4">
             <div>
               <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.manual.title")}</div>
-              <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.manual.subtitle")}</div>
+              <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.manual.subtitle")}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" onClick={() => setXmlModalOpen(true)}>
@@ -905,12 +900,12 @@ export default function RestaurantInventory() {
                   <span className="font-semibold">{xmlPreview.totals?.totalVenta || "-"}</span>
                 </div>
                 {xmlPreview.lines.length === 0 ? (
-                  <div className="text-sm text-gray-500">{t("mgmt.restaurant.inventory.manual.xmlNoLines")}</div>
+                  <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.manual.xmlNoLines")}</div>
                 ) : (
                   <div className="border rounded-lg overflow-hidden">
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
-                        <thead className="bg-slate-50 text-slate-600">
+                        <thead className="bg-white/5 text-slate-400">
                           <tr>
                             <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
                             <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
@@ -922,7 +917,7 @@ export default function RestaurantInventory() {
                         </thead>
                         <tbody>
                           {xmlPreview.lines.map((l, idx) => (
-                            <tr key={`${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                            <tr key={`${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-transparent" : "bg-white/3"}>
                               <td className="px-3 py-2">{l.sku || "-"}</td>
                               <td className="px-3 py-2">{l.name || "-"}</td>
                               <td className="px-3 py-2">{l.qty || 0}</td>
@@ -969,8 +964,8 @@ export default function RestaurantInventory() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2 text-sm font-semibold border rounded-t-lg transition ${
                   activeTab === tab.id
-                    ? "bg-white border-b-white text-slate-900"
-                    : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"
+                    ? "bg-white/5 border-b-indigo-500/20 text-white"
+                    : "bg-white/10 text-slate-300 border-white/10 hover:bg-white/15"
                 }`}
               >
                 {tab.label}
@@ -982,7 +977,7 @@ export default function RestaurantInventory() {
       </Card>
       {previewInvoice && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
-          <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
+          <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-white/10 bg-slate-800 shadow-2xl overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
               <div className="flex items-center gap-3">
                 <div className="text-lg font-semibold text-lime-800">{t("mgmt.restaurant.inventory.preview.title")}</div>
@@ -1006,7 +1001,7 @@ export default function RestaurantInventory() {
             </div>
             <div className="p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)] space-y-3 text-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex-1 min-w-[340px] rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex-1 min-w-[340px] rounded-xl border border-white/10 bg-white/5 p-3">
                   <div className="text-base font-semibold">{previewSupplierName}</div>
                   {previewSupplierMeta?.legalName && previewSupplierMeta.legalName !== previewSupplierName && (
                     <div className="text-xs text-slate-600">
@@ -1039,7 +1034,7 @@ export default function RestaurantInventory() {
                     </div>
                   )}
                 </div>
-                <div className="min-w-[280px] rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                <div className="min-w-[280px] rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
                   <div>
                     <span className="font-semibold">{t("mgmt.restaurant.inventory.labels.doc")}:</span> {previewInvoice.docNumber || previewInvoice.id || "-"}
                   </div>
@@ -1058,7 +1053,7 @@ export default function RestaurantInventory() {
               <div className="border rounded-lg overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
+                    <thead className="bg-white/5 text-slate-400">
                       <tr>
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
@@ -1070,7 +1065,7 @@ export default function RestaurantInventory() {
                     </thead>
                     <tbody>
                       {(previewInvoice.lines || []).map((l, idx) => (
-                        <tr key={l.id || `${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"}>
+                        <tr key={l.id || `${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-transparent" : "bg-white/3"}>
                           <td className="px-3 py-2">{l.sku || "-"}</td>
                           <td className="px-3 py-2">{l.name || "-"}</td>
                           <td className="px-3 py-2">{l.qty || 0}</td>
@@ -1084,7 +1079,7 @@ export default function RestaurantInventory() {
                 </div>
               </div>
               <div className="flex justify-end pt-2">
-                <div className="w-full max-w-md rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-right">
+                <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-right">
                   <div className="flex items-center justify-between gap-4 text-sm text-slate-700">
                     <span>{t("mgmt.restaurant.inventory.labels.discount")}</span>
                     <span className="font-semibold">
@@ -1111,7 +1106,7 @@ export default function RestaurantInventory() {
       )}
       {xmlModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+          <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div className="text-base font-semibold">{t("mgmt.restaurant.inventory.manual.selectXml")}</div>
               <button
@@ -1134,7 +1129,7 @@ export default function RestaurantInventory() {
                   setXmlModalOpen(false);
                 }}
               />
-              {xmlBusy && <div className="text-xs text-gray-500">{t("mgmt.restaurant.inventory.manual.importingXml")}</div>}
+              {xmlBusy && <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.manual.importingXml")}</div>}
             </div>
           </div>
         </div>

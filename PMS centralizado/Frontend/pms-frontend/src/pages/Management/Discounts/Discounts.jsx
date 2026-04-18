@@ -128,7 +128,7 @@ export default function Discounts() {
           {editing && (
             <button
               type="button"
-              className="text-xs underline text-gray-500 hover:text-gray-700"
+              className="text-xs underline text-slate-400 hover:text-slate-300"
               onClick={() => {
                 setSelectedId(null);
                 resetForm();
@@ -214,7 +214,7 @@ export default function Discounts() {
                   setSelectedId(null);
                   resetForm();
                 }}
-                className="bg-gray-200 text-gray-700 hover:bg-gray-300"
+                className="bg-white/10 text-slate-300 hover:bg-white/15"
               >
                 {t("common.cancel")}
               </Button>
@@ -225,7 +225,7 @@ export default function Discounts() {
 
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
+          <thead className="bg-white/5 text-slate-400">
             <tr>
               <th className="py-2 pl-4 text-left">{t("mgmt.discounts.columns.id")}</th>
               <th className="text-left">{t("mgmt.discounts.columns.name")}</th>
@@ -240,7 +240,7 @@ export default function Discounts() {
           <tbody>
             {items.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-gray-500">
+                <td colSpan={8} className="py-6 text-center text-slate-400">
                   {t("mgmt.discounts.empty")}
                 </td>
               </tr>
@@ -248,7 +248,7 @@ export default function Discounts() {
             {items.map((x) => {
               const isSel = x.id === selectedId;
               return (
-                <tr key={x.id} className={`border-t ${isSel ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                <tr key={x.id} className={`border-t ${isSel ? "bg-indigo-500/10" : "hover:bg-white/5"}`}>
                   <td className="py-2 pl-4">{x.id}</td>
                   <td>{x.name}</td>
                   <td>{x.type}</td>

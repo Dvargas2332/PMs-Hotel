@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
@@ -237,7 +238,7 @@ export default function RestaurantFamilies() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 border-0 disabled:opacity-60 disabled:cursor-not-allowed"
                   onClick={addFamily}
                   disabled={loading}
                 >
@@ -264,7 +265,7 @@ export default function RestaurantFamilies() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                   onClick={runCabysSearch}
                   disabled={!selectedFamilyId}
                 >
@@ -276,8 +277,10 @@ export default function RestaurantFamilies() {
                   <button
                     key={f.id}
                     type="button"
-                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60 ${
-                      selectedFamilyId === f.id ? "border-indigo-300 bg-indigo-50" : "border-indigo-100"
+                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 transition-colors ${
+                      selectedFamilyId === f.id
+                        ? "border-indigo-500/60 bg-white/5 text-white"
+                        : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
                     }`}
                     onClick={() => setSelectedFamilyId(f.id)}
                   >
@@ -306,7 +309,7 @@ export default function RestaurantFamilies() {
                     </span>
                   </button>
                 ))}
-                {(families || []).length === 0 && <div className="text-sm text-gray-500">{t("mgmt.restaurantFamilies.emptyFamilies")}</div>}
+                {(families || []).length === 0 && <div className="text-sm text-slate-400">{t("mgmt.restaurantFamilies.emptyFamilies")}</div>}
               </div>
             </Card>
 
@@ -316,15 +319,15 @@ export default function RestaurantFamilies() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 border-0 disabled:opacity-60 disabled:cursor-not-allowed"
                   onClick={addSubFamily}
                   disabled={!selectedFamilyId}
                 >
                   {t("mgmt.restaurant.common.add")}
                 </Button>
               </div>
-              <select
-                className="h-8 rounded-lg border px-2 text-[14px] bg-white"
+              <CustomSelect
+                className="h-8"
                 value={selectedFamilyId}
                 onChange={(e) => setSelectedFamilyId(e.target.value)}
                 title={t("mgmt.restaurantFamilies.family")}
@@ -335,7 +338,7 @@ export default function RestaurantFamilies() {
                     {f.name}
                   </option>
                 ))}
-              </select>
+              </CustomSelect>
               <Input
                 placeholder={t("mgmt.restaurantFamilies.familyCabysInherited")}
                 value={familyCabys}
@@ -354,8 +357,10 @@ export default function RestaurantFamilies() {
                   <button
                     key={sf.id}
                     type="button"
-                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60 ${
-                      selectedSubFamilyId === sf.id ? "border-indigo-300 bg-indigo-50" : "border-indigo-100"
+                    className={`w-full rounded-lg border px-3 py-2 text-left flex items-center justify-between gap-2 transition-colors ${
+                      selectedSubFamilyId === sf.id
+                        ? "border-indigo-500/60 bg-white/5 text-white"
+                        : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
                     }`}
                     onClick={() => setSelectedSubFamilyId(sf.id)}
                   >
@@ -381,9 +386,9 @@ export default function RestaurantFamilies() {
                     </span>
                   </button>
                 ))}
-                {!selectedFamilyId && <div className="text-sm text-gray-500">{t("mgmt.restaurantFamilies.selectFamilyFirst")}</div>}
+                {!selectedFamilyId && <div className="text-sm text-slate-400">{t("mgmt.restaurantFamilies.selectFamilyFirst")}</div>}
                 {selectedFamilyId && (subFamilies || []).length === 0 && (
-                  <div className="text-sm text-gray-500">{t("mgmt.restaurantFamilies.emptySubFamilies")}</div>
+                  <div className="text-sm text-slate-400">{t("mgmt.restaurantFamilies.emptySubFamilies")}</div>
                 )}
               </div>
             </Card>
@@ -394,15 +399,15 @@ export default function RestaurantFamilies() {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-indigo-800 bg-indigo-600 text-indigo-600 hover:bg-indigo-700 hover:border-indigo-700 disabled:opacity-80 disabled:cursor-not-allowed"
+                  className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white hover:from-indigo-500 hover:to-blue-500 border-0 disabled:opacity-80 disabled:cursor-not-allowed"
                   onClick={addSubSubFamily}
                   disabled={!selectedSubFamilyId}
                 >
                   {t("mgmt.restaurant.common.add")}
                 </Button>
               </div>
-              <select
-                className="h-8 rounded-lg border px-2 text-[14px] bg-white"
+              <CustomSelect
+                className="h-8"
                 value={selectedSubFamilyId}
                 onChange={(e) => setSelectedSubFamilyId(e.target.value)}
                 title={t("mgmt.restaurantFamilies.subFamily")}
@@ -414,7 +419,7 @@ export default function RestaurantFamilies() {
                     {sf.name}
                   </option>
                 ))}
-              </select>
+              </CustomSelect>
               <Input
                 placeholder={t("mgmt.restaurantFamilies.newSubSubFamily")}
                 value={subSubFamilyName}
@@ -426,7 +431,7 @@ export default function RestaurantFamilies() {
                 {(subSubFamilies || []).map((ssf) => (
                   <div
                     key={ssf.id}
-                    className="w-full rounded-lg border border-indigo-100 px-3 py-2 text-left flex items-center justify-between gap-2 hover:bg-indigo-50/60"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left flex items-center justify-between gap-2 text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
                   >
                     <span className="text-sm font-semibold truncate">{ssf.name}</span>
                     <button type="button" className="rounded border border-red-600 bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700" onClick={() => removeSubSubFamily(ssf.id)}>
@@ -434,9 +439,9 @@ export default function RestaurantFamilies() {
                     </button>
                   </div>
                 ))}
-                {!selectedSubFamilyId && <div className="text-sm text-gray-500">{t("mgmt.restaurantFamilies.selectSubFamilyFirst")}</div>}
+                {!selectedSubFamilyId && <div className="text-sm text-slate-400">{t("mgmt.restaurantFamilies.selectSubFamilyFirst")}</div>}
                 {selectedSubFamilyId && (subSubFamilies || []).length === 0 && (
-                  <div className="text-sm text-gray-500">{t("mgmt.restaurantFamilies.emptySubSubFamilies")}</div>
+                  <div className="text-sm text-slate-400">{t("mgmt.restaurantFamilies.emptySubSubFamilies")}</div>
                 )}
               </div>
             </Card>
@@ -446,15 +451,15 @@ export default function RestaurantFamilies() {
 
       {cabysModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-white shadow-xl border">
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="w-full max-w-2xl rounded-xl bg-slate-800/80 shadow-xl border border-white/10">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <div>
                 <div className="text-sm font-semibold">{t("mgmt.restaurantFamilies.cabysModal.title")}</div>
                 <div className="text-xs text-slate-500">{t("mgmt.restaurantFamilies.cabysModal.subtitle")}</div>
               </div>
               <button
                 type="button"
-                className="h-9 w-9 rounded-lg border bg-white hover:bg-slate-50 flex items-center justify-center"
+                className="h-9 w-9 rounded-lg border bg-white/5 hover:bg-white/10 flex items-center justify-center"
                 onClick={() => setCabysModalOpen(false)}
               >
                 X
@@ -476,16 +481,16 @@ export default function RestaurantFamilies() {
                   {t("common.search")}
                 </Button>
               </div>
-              <div className="border rounded-lg max-h-[420px] overflow-y-auto">
-                {familyCabysLoading && <div className="px-3 py-2 text-sm text-slate-600">{t("mgmt.restaurantFamilies.searching")}</div>}
+              <div className="border border-white/10 rounded-lg max-h-[420px] overflow-y-auto">
+                {familyCabysLoading && <div className="px-3 py-2 text-sm text-slate-400">{t("mgmt.restaurantFamilies.searching")}</div>}
                 {!familyCabysLoading && (familyCabysResults || []).length === 0 && (
-                  <div className="px-3 py-2 text-sm text-slate-600">{t("mgmt.restaurantFamilies.noResults")}</div>
+                  <div className="px-3 py-2 text-sm text-slate-400">{t("mgmt.restaurantFamilies.noResults")}</div>
                 )}
                 {(familyCabysResults || []).map((r) => (
                   <button
                     key={r.id}
                     type="button"
-                    className="w-full px-3 py-2 text-left hover:bg-slate-50 border-b last:border-b-0"
+                    className="w-full px-3 py-2 text-left hover:bg-white/5 border-b border-white/5 last:border-b-0 transition-colors"
                     onClick={() => {
                       const code = String(r.id);
                       setFamilyCabys(code);
@@ -495,8 +500,8 @@ export default function RestaurantFamilies() {
                       setCabysModalOpen(false);
                     }}
                   >
-                    <div className="text-sm font-semibold text-slate-900">{r.id}</div>
-                    <div className="text-xs text-slate-600 line-clamp-2">{r.description}</div>
+                    <div className="text-sm font-semibold text-white">{r.id}</div>
+                    <div className="text-xs text-slate-400 line-clamp-2">{r.description}</div>
                   </button>
                 ))}
               </div>

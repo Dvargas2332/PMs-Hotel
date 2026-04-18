@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
 import { Prisma, ReservationStatus } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth.js";
+import { onFrontdeskCheckout } from "../services/accounting.integration.js";
 
 async function nextReservationCode(hotelId: string): Promise<string> {
   const seq = await prisma.reservationSequence.upsert({
@@ -23,6 +24,13 @@ export async function createReservation(req: Request, res: Response) {
 
   const checkInDate = new Date(checkIn);
   const checkOutDate = new Date(checkOut);
+
+  if (isNaN(checkInDate.getTime()) || isNaN(checkOutDate.getTime())) {
+    return res.status(400).json({ message: "Fechas inválidas" });
+  }
+  if (checkInDate >= checkOutDate) {
+    return res.status(400).json({ message: "La fecha de check-in debe ser antes del check-out" });
+  }
 
   // Validar que la habitación pertenece al hotel
   const room = await prisma.room.findFirst({ where: { id: roomId, hotelId: user.hotelId } });
@@ -155,34 +163,45 @@ export async function checkIn(req: Request, res: Response) {
   const hotelId = user.hotelId;
   const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
-  const updated = await prisma.reservation.updateMany({
-    where: { id, hotelId },
-    data: { status: ReservationStatus.CHECKED_IN },
-  });
-  if (updated.count === 0) return res.status(404).json({ message: "Reserva no encontrada" });
-  const r = await prisma.reservation.findFirst({
-    where: { id, hotelId },
-    include: { room: true, guest: true },
-  });
-  if (r?.roomId) {
-    await prisma.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "OCCUPIED" } });
-  }
-  if (r) {
-    const invoiceNumber = `INV-${r.id}`;
-    await prisma.invoice.upsert({
-      where: { reservationId: r.id },
-      update: {},
-      create: {
-        reservationId: r.id,
-        guestId: r.guestId,
-        number: invoiceNumber,
-        status: "DRAFT",
-        currency: r.room?.currency || "CRC",
-        hotelId,
-      },
+
+  try {
+    const r = await prisma.$transaction(async (tx) => {
+      const updated = await tx.reservation.updateMany({
+        where: { id, hotelId },
+        data: { status: ReservationStatus.CHECKED_IN },
+      });
+      if (updated.count === 0) throw Object.assign(new Error("NOT_FOUND"), { statusCode: 404 });
+
+      const r = await tx.reservation.findFirst({
+        where: { id, hotelId },
+        include: { room: true, guest: true },
+      });
+      if (r?.roomId) {
+        await tx.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "OCCUPIED" } });
+      }
+      if (r) {
+        const invoiceNumber = `INV-${r.id}`;
+        await tx.invoice.upsert({
+          where: { reservationId: r.id },
+          update: {},
+          create: {
+            reservationId: r.id,
+            guestId: r.guestId,
+            number: invoiceNumber,
+            status: "DRAFT",
+            currency: r.room?.currency || "CRC",
+            hotelId,
+          },
+        });
+      }
+      return r;
     });
+    res.json(r);
+  } catch (err: any) {
+    if (err?.statusCode === 404) return res.status(404).json({ message: "Reserva no encontrada" });
+    console.error("checkIn error", err);
+    return res.status(500).json({ message: "No se pudo completar el check-in" });
   }
-  res.json(r);
 }
 
 export async function checkOut(req: Request, res: Response) {
@@ -193,16 +212,109 @@ export async function checkOut(req: Request, res: Response) {
   const hotelId = user.hotelId;
   const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
-  const updated = await prisma.reservation.updateMany({
-    where: { id, hotelId },
-    data: { status: ReservationStatus.CHECKED_OUT },
-  });
-  if (updated.count === 0) return res.status(404).json({ message: "Reserva no encontrada" });
-  const r = await prisma.reservation.findFirst({ where: { id, hotelId } });
-  if (r?.roomId) {
-    await prisma.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "CLEANING" } });
+
+  try {
+    const r = await prisma.$transaction(async (tx) => {
+      const updated = await tx.reservation.updateMany({
+        where: { id, hotelId },
+        data: { status: ReservationStatus.CHECKED_OUT },
+      });
+      if (updated.count === 0) throw Object.assign(new Error("NOT_FOUND"), { statusCode: 404 });
+
+      const r = await tx.reservation.findFirst({ where: { id, hotelId } });
+      if (r?.roomId) {
+        await tx.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "CLEANING" } });
+      }
+      return r;
+    });
+    res.json(r);
+    onFrontdeskCheckout({
+      hotelId,
+      reservationId: id,
+      reservationCode: (existing as any).code ?? null,
+      total: Number((existing as any).total ?? 0),
+      currency: "CRC",
+      actorId: user?.sub ?? null,
+    });
+  } catch (err: any) {
+    if (err?.statusCode === 404) return res.status(404).json({ message: "Reserva no encontrada" });
+    console.error("checkOut error", err);
+    return res.status(500).json({ message: "No se pudo completar el check-out" });
   }
-  res.json(r);
+}
+
+export async function updateReservation(req: Request, res: Response) {
+  const { id } = req.params;
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+  const hotelId = user.hotelId;
+
+  const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
+  if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
+  if (existing.status === "CANCELED") return res.status(400).json({ message: "No se puede modificar una reserva cancelada" });
+
+  const { roomId, checkIn, checkOut, adults, children, ratePlanId, mealPlanId, contractId } = req.body ?? {};
+
+  const newCheckIn  = checkIn  ? new Date(checkIn)  : existing.checkIn;
+  const newCheckOut = checkOut ? new Date(checkOut) : existing.checkOut;
+
+  if (newCheckIn >= newCheckOut) return res.status(400).json({ message: "La fecha de check-in debe ser antes del check-out" });
+
+  const newRoomId = roomId || existing.roomId;
+
+  // Check overbooking (exclude this reservation)
+  if (roomId || checkIn || checkOut) {
+    const overlapping = await prisma.reservation.findFirst({
+      where: {
+        hotelId,
+        roomId: newRoomId,
+        id: { not: id },
+        status: { not: "CANCELED" as any },
+        checkIn: { lt: newCheckOut },
+        checkOut: { gt: newCheckIn },
+      },
+    });
+    if (overlapping) return res.status(400).json({ message: "La habitación ya tiene otra reserva en ese rango de fechas" });
+  }
+
+  const data: any = {
+    checkIn:  newCheckIn,
+    checkOut: newCheckOut,
+    adults:   adults   !== undefined ? Number(adults)   : undefined,
+    children: children !== undefined ? Number(children) : undefined,
+    roomId:   newRoomId,
+  };
+  if (ratePlanId  !== undefined) data.ratePlanId  = ratePlanId  || null;
+  if (mealPlanId  !== undefined) data.mealPlanId  = mealPlanId  || null;
+  if (contractId  !== undefined) data.contractId  = contractId  || null;
+
+  // If room changed and guest is checked in, update room statuses
+  if (roomId && roomId !== existing.roomId && existing.status === "CHECKED_IN") {
+    await prisma.room.updateMany({ where: { id: existing.roomId, hotelId }, data: { status: "AVAILABLE" } });
+    await prisma.room.updateMany({ where: { id: newRoomId, hotelId }, data: { status: "OCCUPIED" } });
+  }
+
+  const updated = await prisma.reservation.update({
+    where: { id },
+    data,
+    include: { room: true, guest: true, contract: true, ratePlan: true, mealPlan: true },
+  });
+
+  try {
+    await prisma.auditLog.create({
+      data: {
+        actorId: user.sub,
+        action: "RESERVATION_MODIFICADA",
+        entity: "Reservation",
+        entityId: id,
+        payload: { before: existing, after: updated } as any,
+        hotelId,
+      },
+    });
+  } catch {}
+
+  return res.json(updated);
 }
 
 export async function cancelReservation(req: Request, res: Response) {

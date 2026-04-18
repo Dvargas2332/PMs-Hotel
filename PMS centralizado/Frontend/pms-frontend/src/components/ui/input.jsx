@@ -21,7 +21,12 @@ export function Input({ className = "", money = false, onBlur, onChange, type, i
 
   return (
     <input
-      className={`h-10 w-full rounded-xl border pl-3 pr-3 text-sm ${className}`}
+      className={`h-10 w-full rounded-xl text-sm pl-3 pr-3 placeholder:text-[var(--color-text-muted)] ${className}`}
+      style={{
+        background: "var(--input-bg)",
+        border: "1px solid var(--input-border)",
+        color: "var(--color-text-base)",
+      }}
       {...props}
       type={nextType}
       inputMode={nextInputMode}
@@ -31,4 +36,3 @@ export function Input({ className = "", money = false, onBlur, onChange, type, i
     />
   );
 }
-  

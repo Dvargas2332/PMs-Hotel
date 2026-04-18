@@ -3,10 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { api } from "../../lib/api";
-import { FileCheck2 } from "lucide-react";
+import { FileCheck2, Search, RefreshCw, Download, Upload, BookOpen, Tag, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
 import EInvoicingUserMenu from "./EInvoicingUserMenu";
 import * as XLSX from "xlsx";
 import { useLanguage } from "../../context/LanguageContext";
+import { sanitizeImageUrl } from "../../lib/security";
 
 export default function EInvoicingPage() {
   const navigate = useNavigate();
@@ -90,6 +91,23 @@ export default function EInvoicingPage() {
   const [cabysImportItems, setCabysImportItems] = React.useState([]);
   const [xmlImporting, setXmlImporting] = React.useState(false);
   const [catalogImportItems, setCatalogImportItems] = React.useState([]);
+  const [cabysSyncLoading, setCabysSyncLoading] = React.useState(false);
+  const [cabysSyncQuery, setCabysSyncQuery] = React.useState("");
+  const [cabysSavedCount, setCabysSavedCount] = React.useState(null);
+  const [cabysHaciendaRows, setCabysHaciendaRows] = React.useState([]);
+  const [cabysHaciendaLoading, setCabysHaciendaLoading] = React.useState(false);
+  const [cabysHaciendaQuery, setCabysHaciendaQuery] = React.useState("");
+  const [cabysHaciendaSelected, setCabysHaciendaSelected] = React.useState({});
+
+  const formatOnlyDate = React.useCallback((value) => {
+    if (!value) return "";
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? "" : dt.toLocaleDateString();
+  }, []);
+
+  const getInvoiceDisplayNumber = React.useCallback((doc) => {
+    return doc?.invoice?.number || doc?.restaurantOrder?.saleNumber || "-";
+  }, []);
 
   const parseCsv = React.useCallback((input) => {
     const text = String(input || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -388,6 +406,67 @@ export default function EInvoicingPage() {
       })
     );
   };
+  const searchCabysHacienda = async () => {
+    const q = cabysHaciendaQuery.trim();
+    if (q.length < 3) return;
+    setCabysHaciendaLoading(true);
+    setCabysHaciendaRows([]);
+    setCabysHaciendaSelected({});
+    try {
+      const { data } = await api.get(`/einvoicing/cabys/hacienda?q=${encodeURIComponent(q)}&top=80`);
+      setCabysHaciendaRows(Array.isArray(data) ? data : []);
+    } catch {
+      setCabysHaciendaRows([]);
+    } finally {
+      setCabysHaciendaLoading(false);
+    }
+  };
+
+  const importSelectedFromHacienda = async () => {
+    const selectedIds = Object.keys(cabysHaciendaSelected).filter((k) => cabysHaciendaSelected[k]);
+    if (!selectedIds.length) return;
+    const items = cabysHaciendaRows
+      .filter((r) => selectedIds.includes(String(r.id)))
+      .map((r) => ({ code: String(r.id), label: String(r.description) }));
+    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
+    setCabysHaciendaSelected({});
+    await loadCabys();
+    window.dispatchEvent(new CustomEvent("pms:push-alert", {
+      detail: { title: "CABYS", desc: `${items.length} código(s) guardados en catálogo del hotel` },
+    }));
+  };
+
+  const importAllFromHacienda = async () => {
+    if (!cabysHaciendaRows.length) return;
+    const items = cabysHaciendaRows.map((r) => ({ code: String(r.id), label: String(r.description) }));
+    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
+    await loadCabys();
+    window.dispatchEvent(new CustomEvent("pms:push-alert", {
+      detail: { title: "CABYS", desc: `${items.length} código(s) guardados en catálogo del hotel` },
+    }));
+  };
+
+  const syncCabysFromHacienda = async () => {
+    const q = cabysSyncQuery.trim();
+    if (!q) return;
+    setCabysSyncLoading(true);
+    setCabysSavedCount(null);
+    try {
+      const { data } = await api.post("/einvoicing/cabys/sync", { q, top: 200, mode: "merge" });
+      setCabysSavedCount(data?.synced ?? 0);
+      await loadCabys();
+      window.dispatchEvent(new CustomEvent("pms:push-alert", {
+        detail: { title: "CABYS Sync", desc: `${data?.synced ?? 0} código(s) sincronizados desde Hacienda` },
+      }));
+    } catch (err) {
+      window.dispatchEvent(new CustomEvent("pms:push-alert", {
+        detail: { title: "CABYS Sync", desc: err?.response?.data?.message || "Error al sincronizar" },
+      }));
+    } finally {
+      setCabysSyncLoading(false);
+    }
+  };
+
   const doImportCatalog = async (mode = "replace") => {
     const hasItems = Array.isArray(catalogImportItems) && catalogImportItems.length > 0;
     const hasText = catalogImportText.trim().length > 0;
@@ -912,26 +991,48 @@ export default function EInvoicingPage() {
   );
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#ff7ac8]/35 via-[#14060d] to-[#080407]">
-      <header className="h-14 flex items-center justify-between px-6 bg-[#160812]/80 backdrop-blur border-b border-[#ff7ac8]/25 text-white">
-        <div className="space-y-0.5">
-          <div className="text-xs uppercase text-[#ffb3dd]">{t("einv.title")}</div>
-          <div className="text-sm font-semibold">{t("einv.subtitle")}</div>
+    <div
+      className="min-h-screen w-full flex flex-col"
+      style={{
+        background: "var(--shell-bg)",
+        backgroundAttachment: "fixed",
+      }}
+    >
+      {/* Header */}
+      <header className="shrink-0 flex items-center justify-between px-6 py-4 backdrop-blur-sm" style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--sidebar-border)" }}>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-violet-500/90 to-fuchsia-600/80 shadow-lg shadow-violet-900/40">
+            <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-6 w-6 object-contain" />
+          </div>
+          <div className="space-y-0.5">
+            <div className="text-xs uppercase tracking-wide font-medium bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">{t("einv.title")}</div>
+            <div className="text-sm font-semibold" style={{ color: "var(--color-text-base)" }}>{t("einv.subtitle")}</div>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs text-[#ffd1ea]">
+        <div className="flex items-center gap-3 text-xs" style={{ color: "var(--color-text-muted)" }}>
           <div>
             {t("einv.status.label")}{" "}
-            <span className="font-semibold text-white">{cfg.enabled ? t("einv.status.enabled") : t("einv.status.disabled")}</span>{" "}
-            · {cfg.environment || "sandbox"}
+            <span className={`font-semibold ${cfg.enabled ? "text-emerald-400" : "text-slate-500"}`}>
+              {cfg.enabled ? t("einv.status.enabled") : t("einv.status.disabled")}
+            </span>{" "}
+            · <span style={{ color: "var(--color-text-base)" }}>{cfg.environment || "sandbox"}</span>
           </div>
           <EInvoicingUserMenu />
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto p-6 grid gap-4 lg:grid-cols-[240px_1fr]">
-        <aside className="bg-white/95 border border-[#ffb3dd]/30 rounded-2xl p-3 h-fit shadow-[0_15px_45px_rgba(255,122,200,0.15)]">
-          <div className="text-[11px] uppercase tracking-wide text-[#b14a85]">{t("einv.nav.title")}</div>
-          <div className="mt-2 space-y-1">
+      {/* Body */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-56 shrink-0 flex flex-col overflow-hidden" style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
+          <div className="flex flex-col items-center justify-center py-6 gap-3" style={{ borderBottom: "1px solid var(--sidebar-border)" }}>
+            <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500/90 to-fuchsia-600/80 shadow-lg shadow-violet-900/40">
+              <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-12 w-12 object-contain" />
+            </div>
+            <div className="text-xs font-semibold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent uppercase tracking-wide">{t("einv.title")}</div>
+          </div>
+          <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+            <div className="text-[11px] uppercase tracking-wide px-1 mb-2" style={{ color: "var(--color-text-muted)" }}>{t("einv.nav.title")}</div>
             {[
               { id: "documents", label: t("einv.nav.documents") },
               { id: "acks", label: t("einv.nav.acks") },
@@ -941,30 +1042,40 @@ export default function EInvoicingPage() {
             ].map((item) => (
               <button
                 key={item.id}
-                className={`w-full text-left px-3 py-2 rounded-xl text-sm font-semibold transition ${
-                  panel === item.id
-                    ? "bg-[#ff4fa5] text-white shadow-[0_10px_25px_rgba(255,79,165,0.35)]"
-                    : "text-slate-700 hover:bg-[#ffe1f0]"
-                }`}
                 onClick={() => setPanel(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  panel === item.id
+                    ? "bg-violet-500/20 text-violet-300 shadow shadow-violet-900/40"
+                    : "hover:bg-black/5 dark:hover:bg-white/5"
+                }`}
+                style={panel !== item.id ? { color: "var(--color-text-muted)" } : {}}
               >
                 {item.label}
               </button>
             ))}
             <button
-              className="w-full text-left px-3 py-2 rounded-xl text-sm font-semibold text-slate-700 hover:bg-[#ffe1f0]"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all hover:bg-black/5 dark:hover:bg-white/5"
+              style={{ color: "var(--color-text-muted)" }}
               onClick={() => navigate("/launcher")}
             >
               {t("einv.nav.back")}
             </button>
+          </nav>
+          <div className="flex items-center gap-3 px-4 py-4 shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+            <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-10 w-10 object-contain opacity-70" />
+            <div>
+              <div className="text-sm font-semibold leading-tight" style={{ color: "var(--color-text-base)" }}>Kazehana PMS</div>
+              <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{t("einv.title")}</div>
+            </div>
           </div>
         </aside>
 
-        <main className="bg-white border border-[#ffb3dd]/30 rounded-2xl p-5 space-y-4 shadow-[0_15px_45px_rgba(255,122,200,0.12)]">
+        {/* Content */}
+        <main className="flex-1 overflow-y-auto p-6 space-y-6">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-xs uppercase text-[#b14a85]">{t("einv.title")}</div>
-              <div className="text-lg font-semibold text-slate-900">
+              <div className="text-xs uppercase tracking-wide text-violet-400">{t("einv.title")}</div>
+              <div className="text-lg font-semibold text-white">
                 {panelTitle[panel] || t("einv.panel.settings")}
               </div>
             </div>
@@ -981,25 +1092,25 @@ export default function EInvoicingPage() {
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-6 gap-2">
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm md:col-span-2"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
                       placeholder={t("einv.documents.searchPlaceholder")}
                       value={docsFilters.q}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, q: e.target.value }))}
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.documents.dateFrom")}
                       value={docsFilters.dateFrom}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, dateFrom: e.target.value }))}
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.documents.dateTo")}
                       value={docsFilters.dateTo}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, dateTo: e.target.value }))}
                     />
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       value={docsFilters.docType}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, docType: e.target.value }))}
                     >
@@ -1008,7 +1119,7 @@ export default function EInvoicingPage() {
                       <option value="TE">TE</option>
                     </select>
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       value={docsFilters.status}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, status: e.target.value }))}
                     >
@@ -1025,7 +1136,7 @@ export default function EInvoicingPage() {
 
                   <div className="grid md:grid-cols-6 gap-2">
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm md:col-span-2"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
                       value={docsFilters.source}
                       onChange={(e) => setDocsFilters((p) => ({ ...p, source: e.target.value }))}
                     >
@@ -1037,7 +1148,7 @@ export default function EInvoicingPage() {
                     <Button variant="outline" onClick={loadDocuments} disabled={docsLoading}>
                       {docsLoading ? t("common.loading") : t("common.applyFilters")}
                     </Button>
-                    <label className="h-10 inline-flex items-center justify-center rounded-lg border px-3 text-sm font-semibold cursor-pointer hover:bg-slate-50">
+                    <label className="h-10 inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 px-3 text-sm font-semibold cursor-pointer hover:bg-white/10">
                       {xmlImporting ? t("einv.documents.importing") : t("einv.documents.importXml")}
                       <input
                         type="file"
@@ -1061,9 +1172,9 @@ export default function EInvoicingPage() {
                     </div>
                   </div>
 
-                  <div className="overflow-auto border rounded-lg">
+                  <div className="overflow-auto border border-white/10 rounded-lg">
                     <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-slate-600">
+                      <thead className="bg-white/5 text-slate-400">
                         <tr>
                           <th className="px-3 py-2 text-left">{t("common.date")}</th>
                           <th className="px-3 py-2 text-left">{t("einv.documents.type")}</th>
@@ -1083,9 +1194,9 @@ export default function EInvoicingPage() {
                           </tr>
                         ) : docs.length ? (
                           docs.map((d) => (
-                            <tr key={d.id} className="border-t hover:bg-slate-50">
+                            <tr key={d.id} className="border-t hover:bg-white/5">
                               <td className="px-3 py-2">
-                                {d.createdAt ? new Date(d.createdAt).toLocaleString() : ""}
+                                {formatOnlyDate(d.createdAt)}
                               </td>
                               <td className="px-3 py-2">
                                 <button
@@ -1100,16 +1211,13 @@ export default function EInvoicingPage() {
                               <td className="px-3 py-2">{d.status}</td>
                               <td className="px-3 py-2">{d.source || "-"}</td>
                               <td className="px-3 py-2">
-                                {d.invoice?.number ||
-                                  (d.restaurantOrder?.id
-                                    ? `${t("einv.order")} ${String(d.restaurantOrder.id).slice(0, 8)}`
-                                    : "-")}
+                                {getInvoiceDisplayNumber(d)}
                               </td>
                               <td className="px-3 py-2 font-mono text-xs">{d.consecutive || "-"}</td>
                               <td className="px-3 py-2">
                                 <button
                                   type="button"
-                                  className="px-2 py-1 rounded border text-xs hover:bg-slate-50"
+                                  className="px-2 py-1 rounded border border-white/10 bg-white/5 text-slate-300 text-xs hover:bg-white/10"
                                   onClick={() => {
                                     setAcksFilters((p) => ({ ...p, docId: d.id }));
                                     setPanel("acks");
@@ -1138,25 +1246,25 @@ export default function EInvoicingPage() {
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-6 gap-2">
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm md:col-span-2"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
                       placeholder={t("einv.acks.searchPlaceholder")}
                       value={acksFilters.q}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, q: e.target.value }))}
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.acks.dateFrom")}
                       value={acksFilters.dateFrom}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, dateFrom: e.target.value }))}
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.acks.dateTo")}
                       value={acksFilters.dateTo}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, dateTo: e.target.value }))}
                     />
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       value={acksFilters.docType}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, docType: e.target.value }))}
                     >
@@ -1165,7 +1273,7 @@ export default function EInvoicingPage() {
                       <option value="TE">TE</option>
                     </select>
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       value={acksFilters.type}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, type: e.target.value }))}
                     >
@@ -1179,7 +1287,7 @@ export default function EInvoicingPage() {
 
                   <div className="grid md:grid-cols-6 gap-2">
                     <select
-                      className="h-10 rounded-lg border px-3 text-sm md:col-span-2"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
                       value={acksFilters.status}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, status: e.target.value }))}
                     >
@@ -1190,7 +1298,7 @@ export default function EInvoicingPage() {
                       <option value="ERROR">ERROR</option>
                     </select>
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm md:col-span-2"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
                       placeholder={t("einv.acks.docIdPlaceholder")}
                       value={acksFilters.docId}
                       onChange={(e) => setAcksFilters((p) => ({ ...p, docId: e.target.value }))}
@@ -1212,9 +1320,9 @@ export default function EInvoicingPage() {
                     </Button>
                   </div>
 
-                  <div className="overflow-auto border rounded-lg">
+                  <div className="overflow-auto border border-white/10 rounded-lg">
                     <table className="min-w-full text-sm">
-                      <thead className="bg-slate-50 text-slate-600">
+                      <thead className="bg-white/5 text-slate-400">
                         <tr>
                           <th className="px-3 py-2 text-left">{t("common.date")}</th>
                           <th className="px-3 py-2 text-left">{t("einv.acks.type")}</th>
@@ -1233,18 +1341,15 @@ export default function EInvoicingPage() {
                           </tr>
                         ) : acks.length ? (
                           acks.map((a) => (
-                            <tr key={a.id} className="border-t hover:bg-slate-50">
+                            <tr key={a.id} className="border-t hover:bg-white/5">
                               <td className="px-3 py-2">
-                                {a.createdAt ? new Date(a.createdAt).toLocaleString() : ""}
+                                {formatOnlyDate(a.createdAt)}
                               </td>
                               <td className="px-3 py-2">{a.type}</td>
                               <td className="px-3 py-2">{a.status}</td>
                               <td className="px-3 py-2">{a.doc?.source || "-"}</td>
                               <td className="px-3 py-2">
-                                {a.doc?.invoice?.number ||
-                                  (a.doc?.restaurantOrder?.id
-                                    ? `${t("einv.order")} ${String(a.doc.restaurantOrder.id).slice(0, 8)}`
-                                    : "-")}
+                                {getInvoiceDisplayNumber(a.doc)}
                               </td>
                               <td className="px-3 py-2 max-w-[420px]">
                                 <button
@@ -1274,13 +1379,13 @@ export default function EInvoicingPage() {
               {panel === "general" && (
                 <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="hidden sm:flex items-center gap-1 rounded-lg border bg-white p-1">
+                    <div className="hidden sm:flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 p-1">
                       {GENERAL_TABS.map((t) => (
                         <button
                           key={t.id}
                           type="button"
                           className={`px-3 py-1.5 rounded-md text-sm ${
-                            generalTab === t.id ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"
+                            generalTab === t.id ? "bg-slate-900 text-white" : "text-slate-300 hover:bg-white/5"
                           }`}
                           onClick={() => setGeneralTab(t.id)}
                         >
@@ -1289,7 +1394,7 @@ export default function EInvoicingPage() {
                       ))}
                     </div>
                     <select
-                      className="sm:hidden h-10 rounded-lg border px-3 text-sm bg-white w-full"
+                      className="sm:hidden h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm w-full"
                       value={generalTab}
                       onChange={(e) => setGeneralTab(e.target.value)}
                     >
@@ -1304,7 +1409,7 @@ export default function EInvoicingPage() {
                   {(generalTab === "core" || generalTab === "connections") && (
                     <div className="grid lg:grid-cols-2 gap-3">
                       {generalTab === "core" && (
-                        <Card className="p-4 space-y-3">
+                        <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                       <div className="font-semibold">{t("einv.general.title")}</div>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -1316,19 +1421,19 @@ export default function EInvoicingPage() {
                       </label>
                       <div className="grid grid-cols-2 gap-2">
                         <input
-                          className="h-10 rounded-lg border px-3 text-sm"
+                          className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                           value={cfg.version || "CR-4.4"}
                           onChange={(e) => setCfg((s) => ({ ...s, version: e.target.value }))}
                           placeholder={t("einv.general.version")}
                         />
                         <input
-                          className="h-10 rounded-lg border px-3 text-sm"
+                          className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                           value={cfg.environment || "sandbox"}
                           onChange={(e) => setCfg((s) => ({ ...s, environment: e.target.value }))}
                           placeholder={t("einv.general.environment")}
                         />
                         <input
-                          className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                          className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
                           value="microfacturacr"
                           disabled
                         />
@@ -1337,9 +1442,9 @@ export default function EInvoicingPage() {
                       )}
 
                       {generalTab === "connections" && (
-                        <Card className="p-4 space-y-3">
+                        <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                           <div className="font-semibold">{t("einv.connections.title")}</div>
-                          <div className="text-sm text-slate-600">{t("einv.connections.desc")}</div>
+                          <div className="text-sm text-slate-400">{t("einv.connections.desc")}</div>
                           <div className="grid gap-2 text-sm">
                             <label className="flex items-center gap-2">
                               <input
@@ -1372,16 +1477,16 @@ export default function EInvoicingPage() {
                   )}
 
                   {generalTab === "forms" && (
-                    <Card className="p-4 space-y-3">
+                    <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                     <div className="font-semibold">{t("einv.forms.title")}</div>
-                    <div className="text-sm text-slate-600">{t("einv.forms.subtitle")}</div>
+                    <div className="text-sm text-slate-400">{t("einv.forms.subtitle")}</div>
 
                     <div className="grid md:grid-cols-3 gap-3">
                       {["frontdesk", "restaurant"].map((m) => {
                         const branding = cfg.settings?.moduleBranding?.[m] || {};
                         const hasLogo = Boolean(branding.logoDataUrl || branding.logoUrl);
                         return (
-                          <Card key={m} className="p-3 bg-slate-50 space-y-2">
+                          <Card key={m} className="p-3 bg-white/5 space-y-2">
                             <div className="flex items-center justify-between">
                               <div className="text-sm font-semibold">
                                 {m === "frontdesk" ? t("einv.modules.frontdesk") : t("einv.modules.restaurant")}
@@ -1391,7 +1496,7 @@ export default function EInvoicingPage() {
                               </div>
                             </div>
                             <input
-                              className="h-10 rounded-lg border px-3 text-sm bg-white"
+                              className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                               placeholder={t("einv.forms.logoUrl")}
                               value={branding.logoUrl || ""}
                               onChange={(e) =>
@@ -1416,8 +1521,8 @@ export default function EInvoicingPage() {
                               {hasLogo && (
                                 <img
                                   alt=""
-                                  src={branding.logoDataUrl || branding.logoUrl}
-                                  className="h-10 w-20 object-contain bg-white rounded border"
+                                  src={sanitizeImageUrl(branding.logoDataUrl || branding.logoUrl)}
+                                  className="h-10 w-20 object-contain bg-white/5 rounded border border-white/10"
                                 />
                               )}
                             </div>
@@ -1433,7 +1538,7 @@ export default function EInvoicingPage() {
                           {(cfg.settings?.printForms || []).map((f) => (
                             <div
                               key={f.id}
-                              className="border rounded-lg px-3 py-2 bg-white flex items-start justify-between gap-2"
+                              className="border border-white/10 rounded-lg px-3 py-2 bg-white/5 text-white flex items-start justify-between gap-2"
                             >
                               <button className="text-left min-w-0" onClick={() => editPrintForm(f)}>
                                 <div className="text-sm font-semibold truncate">{f.name}</div>
@@ -1456,11 +1561,11 @@ export default function EInvoicingPage() {
                         </div>
                       </div>
 
-                      <Card className="p-3 space-y-3 bg-slate-50">
+                      <Card className="p-3 space-y-3 bg-white/5">
                         <div className="flex items-center justify-between">
                           <div>
                             <div className="text-xs uppercase text-slate-500">{t("einv.forms.editorTitle")}</div>
-                            <div className="font-semibold text-slate-900">{t("einv.forms.editorSubtitle")}</div>
+                            <div className="font-semibold text-white">{t("einv.forms.editorSubtitle")}</div>
                           </div>
                           <Button onClick={upsertPrintForm} variant="outline">
                             {t("einv.forms.saveForm")}
@@ -1469,19 +1574,19 @@ export default function EInvoicingPage() {
 
                         <div className="grid md:grid-cols-2 gap-2">
                           <input
-                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                             placeholder={t("einv.forms.formId")}
                             value={formEditor.id}
                             onChange={(e) => setFormEditor((p) => ({ ...p, id: e.target.value }))}
                           />
                           <input
-                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                             placeholder={t("einv.forms.formName")}
                             value={formEditor.name}
                             onChange={(e) => setFormEditor((p) => ({ ...p, name: e.target.value }))}
                           />
                           <select
-                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                             value={formEditor.module}
                             onChange={(e) => setFormEditor((p) => ({ ...p, module: e.target.value }))}
                           >
@@ -1489,7 +1594,7 @@ export default function EInvoicingPage() {
                             <option value="frontdesk">{t("einv.modules.frontdesk")}</option>
                           </select>
                           <select
-                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                             value={formEditor.docType}
                             onChange={(e) => setFormEditor((p) => ({ ...p, docType: e.target.value }))}
                           >
@@ -1500,7 +1605,7 @@ export default function EInvoicingPage() {
                             <option value="DOCUMENT">{t("einv.forms.docTypes.document")}</option>
                           </select>
                           <select
-                            className="h-10 rounded-lg border px-3 text-sm bg-white"
+                            className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                             value={formEditor.paperType}
                             onChange={(e) => setFormEditor((p) => ({ ...p, paperType: e.target.value }))}
                           >
@@ -1536,7 +1641,7 @@ export default function EInvoicingPage() {
                   )}
  
                   {generalTab === "smtp" && (
-                    <Card className="p-4 space-y-3">
+                    <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                     <div className="font-semibold">{t("einv.smtp.title")}</div>
                     <div className="grid md:grid-cols-3 gap-3">
                       {["frontdesk", "restaurant", "accounting"].map((m) => {
@@ -1552,14 +1657,14 @@ export default function EInvoicingPage() {
                               </div>
                             </div>
                             <input
-                              className="h-10 rounded-lg border px-3 text-sm"
+                              className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                               placeholder={t("einv.smtp.fromEmail")}
                               value={emailCfg.fromEmail || ""}
                               onChange={(e) => updateEmailSetting(m, { fromEmail: e.target.value })}
                               disabled={!connected}
                             />
                             <select
-                              className="h-10 rounded-lg border px-3 text-sm"
+                              className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                               value={emailCfg.provider || "gmail"}
                               onChange={(e) => setEmailProvider(m, e.target.value)}
                               disabled={!connected}
@@ -1570,14 +1675,14 @@ export default function EInvoicingPage() {
                             </select>
                             <div className="grid grid-cols-2 gap-2">
                               <input
-                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
                                 placeholder={t("einv.smtp.host")}
                                 value={emailCfg.smtpHost || ""}
                                 onChange={(e) => updateEmailSetting(m, { smtpHost: e.target.value })}
                                 disabled={!connected}
                               />
                               <input
-                                className="h-10 rounded-lg border px-3 text-sm"
+                                className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                                 placeholder={t("einv.smtp.port")}
                                 type="number"
                                 value={emailCfg.smtpPort ?? 587}
@@ -1594,14 +1699,14 @@ export default function EInvoicingPage() {
                                 {t("einv.smtp.secure")}
                               </label>
                               <input
-                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
                                 placeholder={t("einv.smtp.username")}
                                 value={emailCfg.smtpUsername || ""}
                                 onChange={(e) => updateEmailSetting(m, { smtpUsername: e.target.value })}
                                 disabled={!connected}
                               />
                               <input
-                                className="h-10 rounded-lg border px-3 text-sm col-span-2"
+                                className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
                                 placeholder={
                                   hasPass ? t("einv.smtp.passwordKeep") : t("einv.smtp.password")
                                 }
@@ -1620,11 +1725,11 @@ export default function EInvoicingPage() {
                   {(generalTab === "atv" || generalTab === "certificate") && (
                     <div className="grid lg:grid-cols-2 gap-3">
                       {generalTab === "atv" && (
-                        <Card className="p-4 space-y-3">
+                        <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                       <div className="font-semibold">{t("einv.atv.title")}</div>
-                      <div className="text-sm text-slate-600">{t("einv.atv.subtitle")}</div>
+                      <div className="text-sm text-slate-400">{t("einv.atv.subtitle")}</div>
                       <select
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         value={cfg.settings?.atv?.mode || "manual"}
                         onChange={(e) =>
                           setCfg((prev) => ({
@@ -1638,7 +1743,7 @@ export default function EInvoicingPage() {
                       </select>
                       <div className="grid md:grid-cols-2 gap-2">
                         <input
-                          className="h-10 rounded-lg border px-3 text-sm"
+                          className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                           placeholder={t("einv.atv.username")}
                           value={cfg.settings?.atv?.username || ""}
                           onChange={(e) =>
@@ -1649,7 +1754,7 @@ export default function EInvoicingPage() {
                           }
                         />
                         <input
-                          className="h-10 rounded-lg border px-3 text-sm"
+                          className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                           placeholder={
                             secretMeta?.atv?.hasPassword ? t("einv.atv.passwordKeep") : t("einv.atv.password")
                           }
@@ -1661,7 +1766,7 @@ export default function EInvoicingPage() {
                         {String(cfg.settings?.atv?.mode || "manual") === "api" && (
                           <>
                             <input
-                              className="h-10 rounded-lg border px-3 text-sm"
+                              className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                               placeholder={t("einv.atv.clientId")}
                               value={cfg.settings?.atv?.clientId || ""}
                               onChange={(e) =>
@@ -1675,7 +1780,7 @@ export default function EInvoicingPage() {
                               }
                             />
                             <input
-                              className="h-10 rounded-lg border px-3 text-sm"
+                              className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                               placeholder={
                                 secretMeta?.atv?.hasClientSecret
                                   ? t("einv.atv.clientSecretKeep")
@@ -1694,14 +1799,14 @@ export default function EInvoicingPage() {
                       </div>
                       {String(cfg.settings?.atv?.mode || "manual") === "api" && (
                         <>
-                          <div className="text-xs text-slate-600">{t("einv.atv.endpointsNote")}</div>
-                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.tokenUrl} disabled />
-                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.sendUrl} disabled />
-                          <input className="h-10 rounded-lg border px-3 text-sm" value={haciendaEndpoints.statusUrl} disabled />
+                          <div className="text-xs text-slate-400">{t("einv.atv.endpointsNote")}</div>
+                          <input className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm" value={haciendaEndpoints.tokenUrl} disabled />
+                          <input className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm" value={haciendaEndpoints.sendUrl} disabled />
+                          <input className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm" value={haciendaEndpoints.statusUrl} disabled />
                         </>
                       )}
                       <textarea
-                        className="min-h-[80px] rounded-lg border px-3 py-2 text-sm"
+                        className="min-h-[80px] rounded-lg border border-white/10 bg-white/5 text-white px-3 py-2 text-sm"
                         placeholder={t("einv.atv.notes")}
                         value={cfg.settings?.atv?.notes || ""}
                         onChange={(e) =>
@@ -1715,9 +1820,9 @@ export default function EInvoicingPage() {
                       )}
 
                       {generalTab === "certificate" && (
-                        <Card className="p-4 space-y-3">
+                        <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                       <div className="font-semibold">{t("einv.certificate.title")}</div>
-                      <div className="text-sm text-slate-600">{t("einv.certificate.subtitle")}</div>
+                      <div className="text-sm text-slate-400">{t("einv.certificate.subtitle")}</div>
                       <div className="text-xs text-slate-500">
                         {t("einv.certificate.current")}{" "}
                         {cfg.settings?.crypto?.certificateName ||
@@ -1725,7 +1830,7 @@ export default function EInvoicingPage() {
                       </div>
                       <input type="file" accept=".p12,.pfx" onChange={(e) => onCertificateFile(e.target.files?.[0])} />
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={
                           secretMeta?.crypto?.hasCertificatePassword
                             ? t("einv.certificate.passwordKeep")
@@ -1750,11 +1855,11 @@ export default function EInvoicingPage() {
               )}
 
               {panel === "issuer" && (
-                <Card className="p-4 space-y-3">
+                <Card className="p-4 space-y-3 bg-white/5 border border-white/10 text-white">
                   <div className="font-semibold">{t("einv.issuer.title")}</div>
                   <div className="grid md:grid-cols-2 gap-2">
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.countryCode")}
                       value={cfg.settings?.issuer?.countryCode || "506"}
                       onChange={(e) =>
@@ -1768,7 +1873,7 @@ export default function EInvoicingPage() {
                       }
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.idNumber")}
                       value={cfg.settings?.issuer?.idNumber || ""}
                       onChange={(e) =>
@@ -1782,7 +1887,7 @@ export default function EInvoicingPage() {
                       }
                     />
                     <input
-                      className="h-10 rounded-lg border px-3 text-sm"
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.name")}
                       value={cfg.settings?.issuer?.name || ""}
                       onChange={(e) =>
@@ -1801,7 +1906,7 @@ export default function EInvoicingPage() {
                     <div className="font-semibold text-sm mb-2">{t("einv.issuer.frontdeskNumbering")}</div>
                     <div className="grid md:grid-cols-3 gap-2">
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.branch")}
                         value={cfg.settings?.frontdesk?.branch || "001"}
                         onChange={(e) =>
@@ -1815,7 +1920,7 @@ export default function EInvoicingPage() {
                         }
                       />
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.terminal")}
                         value={cfg.settings?.frontdesk?.terminal || "00001"}
                         onChange={(e) =>
@@ -1829,7 +1934,7 @@ export default function EInvoicingPage() {
                         }
                       />
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.situation")}
                         value={cfg.settings?.frontdesk?.situation || "1"}
                         onChange={(e) =>
@@ -1852,7 +1957,7 @@ export default function EInvoicingPage() {
                     <div className="font-semibold text-sm mb-2">{t("einv.issuer.restaurantNumbering")}</div>
                     <div className="grid md:grid-cols-3 gap-2">
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.branch")}
                         value={cfg.settings?.restaurant?.branch || "001"}
                         onChange={(e) =>
@@ -1866,7 +1971,7 @@ export default function EInvoicingPage() {
                         }
                       />
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.terminal")}
                         value={cfg.settings?.restaurant?.terminal || "00001"}
                         onChange={(e) =>
@@ -1880,7 +1985,7 @@ export default function EInvoicingPage() {
                         }
                       />
                       <input
-                        className="h-10 rounded-lg border px-3 text-sm"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                         placeholder={t("einv.issuer.situation")}
                         value={cfg.settings?.restaurant?.situation || "1"}
                         onChange={(e) =>
@@ -1902,241 +2007,449 @@ export default function EInvoicingPage() {
               )}
 
               {panel === "catalogs" && (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
-                        catalogTab === "cabys" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white"
-                      }`}
-                      onClick={() => setCatalogTab("cabys")}
-                    >
-                      CABYS
-                    </button>
-                    <button
-                      className={`h-9 px-3 rounded-lg border text-sm font-semibold ${
-                        catalogTab === "catalogs" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white"
-                      }`}
-                      onClick={() => setCatalogTab("catalogs")}
-                    >
-                      {t("einv.catalogs.feCatalogs")}
-                    </button>
+                <div className="space-y-5">
+                  {/* Header del panel */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-base font-bold text-white">Catálogos de Facturación Electrónica</h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Administre los códigos CABYS y los catálogos oficiales requeridos por Hacienda CR
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        className={`flex items-center gap-2 h-9 px-4 rounded-lg border text-sm font-semibold transition-colors ${
+                          catalogTab === "cabys"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                        onClick={() => setCatalogTab("cabys")}
+                      >
+                        <Tag className="w-4 h-4" />
+                        CABYS
+                      </button>
+                      <button
+                        className={`flex items-center gap-2 h-9 px-4 rounded-lg border text-sm font-semibold transition-colors ${
+                          catalogTab === "catalogs"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white/5 text-slate-300 hover:bg-white/10"
+                        }`}
+                        onClick={() => setCatalogTab("catalogs")}
+                      >
+                        <BookOpen className="w-4 h-4" />
+                        Catálogos FE
+                      </button>
+                    </div>
                   </div>
 
+                  {/* ── TAB CABYS ── */}
                   {catalogTab === "cabys" && (
-                    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-                      <Card className="p-4 space-y-3">
-                        <div className="text-sm font-semibold text-slate-900">{t("common.search")}</div>
-                        <input
-                          className="h-10 rounded-lg border px-3 text-sm w-full"
-                          placeholder={t("einv.catalogs.cabysSearchPlaceholder")}
-                          value={cabysQuery}
-                          onChange={(e) => setCabysQuery(e.target.value)}
-                        />
-                        <Button variant="outline" onClick={() => loadCabys({ remote: true })} disabled={cabysLoading}>
-                          {cabysLoading ? t("common.loading") : t("common.search")}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={importCabysResults}
-                          disabled={cabysLoading || cabysRows.length === 0}
-                        >
-                          {t("einv.catalogs.importResults")}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={importCabysSelected}
-                          disabled={cabysLoading || Object.keys(cabysSelected).filter((k) => cabysSelected[k]).length === 0}
-                        >
-                          {t("einv.catalogs.importSelected")}
-                        </Button>
-                        <div className="text-xs text-slate-500">
-                          {t("einv.catalogs.searchNote")}
-                        </div>
-                      </Card>
+                    <div className="space-y-5">
 
-                      <Card className="p-4 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-semibold text-slate-900">{t("einv.catalogs.cabysCodes")}</div>
-                          <div className="text-xs text-slate-500">
-                            {t("einv.catalogs.results", { count: cabysRows.length })}
-                          </div>
+                      {/* Sección 1: Buscar en Hacienda en tiempo real */}
+                      <Card className="p-5 bg-white/5 border border-white/10 text-white">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Search className="w-4 h-4 text-emerald-600" />
+                          <span className="text-sm font-bold text-white">Buscar en Hacienda CR (tiempo real)</span>
                         </div>
-                        <div className="rounded-lg border bg-slate-50 p-3 max-h-[52vh] overflow-y-auto">
-                          {cabysRows.length === 0 && (
-                            <div className="text-sm text-slate-600">
-                              {t("einv.catalogs.cabysEmpty")}
-                            </div>
-                          )}
-                          {cabysRows.map((r) => {
-                            const id = String(r.id || r.code || "");
-                            return (
-                              <label key={id} className="rounded-lg border bg-white p-3 mb-2 last:mb-0 flex gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={Boolean(cabysSelected[id])}
-                                  onChange={(e) =>
-                                    setCabysSelected((prev) => ({ ...prev, [id]: e.target.checked }))
-                                  }
-                                />
-                                <div>
-                                  <div className="text-sm font-semibold text-slate-900">{r.id}</div>
-                                  <div className="text-xs text-slate-600 mt-1">{r.description}</div>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </Card>
-
-                      <Card className="p-4 space-y-3 lg:col-span-2">
-                        <div className="text-sm font-semibold text-slate-900">{t("einv.catalogs.cabysImportTitle")}</div>
-                        <div className="text-xs text-slate-600">
-                          {t("einv.catalogs.cabysImportHelp")}{" "}
-                          <span className="font-mono">CODE;DESCRIPTION</span>
-                          {" "}{t("einv.catalogs.importHelpTail")}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-slate-500 mb-4">
+                          Consulta directamente la API oficial de Hacienda. Los resultados se pueden guardar en el catálogo del hotel.
+                        </p>
+                        <div className="flex gap-2 mb-4">
                           <input
-                            type="file"
-                            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                            onChange={(e) => onPickCsv(e.target.files?.[0], setCabysImportItems, setCabysImportText)}
+                            className="flex-1 h-10 rounded-lg border border-white/20 bg-white/5 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                            placeholder="Ej: alojamiento, servicio de restaurante, bebidas..."
+                            value={cabysHaciendaQuery}
+                            onChange={(e) => setCabysHaciendaQuery(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && searchCabysHacienda()}
                           />
-                          <div className="text-xs text-slate-500">
-                            {cabysImportItems.length
-                              ? t("einv.catalogs.rowsLoaded", { count: cabysImportItems.length })
-                              : ""}
+                          <button
+                            onClick={searchCabysHacienda}
+                            disabled={cabysHaciendaLoading || cabysHaciendaQuery.trim().length < 3}
+                            className="flex items-center gap-2 h-10 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {cabysHaciendaLoading ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Search className="w-4 h-4" />
+                            )}
+                            Buscar
+                          </button>
+                        </div>
+
+                        {cabysHaciendaRows.length > 0 && (
+                          <>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-slate-500">
+                                {cabysHaciendaRows.length} resultado(s) — seleccione los que desea guardar
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    const sel = {};
+                                    cabysHaciendaRows.forEach((r) => { sel[r.id] = true; });
+                                    setCabysHaciendaSelected(sel);
+                                  }}
+                                  className="text-xs text-emerald-400 hover:underline"
+                                >
+                                  Seleccionar todo
+                                </button>
+                                <span className="text-xs text-slate-300">|</span>
+                                <button
+                                  onClick={() => setCabysHaciendaSelected({})}
+                                  className="text-xs text-slate-500 hover:underline"
+                                >
+                                  Limpiar selección
+                                </button>
+                              </div>
+                            </div>
+                            <div className="rounded-lg border bg-white/5 max-h-64 overflow-y-auto mb-3">
+                              {cabysHaciendaRows.map((r) => (
+                                <label
+                                  key={r.id}
+                                  className="flex items-start gap-3 px-4 py-3 border-b last:border-b-0 hover:bg-white/10 cursor-pointer"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="mt-0.5"
+                                    checked={Boolean(cabysHaciendaSelected[r.id])}
+                                    onChange={(e) =>
+                                      setCabysHaciendaSelected((prev) => ({ ...prev, [r.id]: e.target.checked }))
+                                    }
+                                  />
+                                  <div className="flex-1 min-w-0">
+                                    <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-900/30 px-1.5 py-0.5 rounded">
+                                      {r.id}
+                                    </span>
+                                    <p className="text-xs text-slate-300 mt-1 leading-tight">{r.description}</p>
+                                  </div>
+                                  {r.taxRate !== undefined && (
+                                    <span className="shrink-0 text-xs font-semibold text-slate-500 bg-white/10 px-2 py-0.5 rounded-full">
+                                      IVA {r.taxRate}%
+                                    </span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={importSelectedFromHacienda}
+                                disabled={Object.values(cabysHaciendaSelected).filter(Boolean).length === 0}
+                                className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              >
+                                <Download className="w-4 h-4" />
+                                Guardar seleccionados ({Object.values(cabysHaciendaSelected).filter(Boolean).length})
+                              </button>
+                              <button
+                                onClick={importAllFromHacienda}
+                                className="flex items-center gap-2 h-9 px-4 rounded-lg border border-emerald-300 text-emerald-400 text-sm font-semibold hover:bg-emerald-900/30 transition-colors"
+                              >
+                                <Download className="w-4 h-4" />
+                                Guardar todos ({cabysHaciendaRows.length})
+                              </button>
+                            </div>
+                          </>
+                        )}
+
+                        {cabysHaciendaRows.length === 0 && !cabysHaciendaLoading && cabysHaciendaQuery.trim().length >= 3 && (
+                          <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+                            <AlertCircle className="w-4 h-4" />
+                            Sin resultados. Intente con otro término.
+                          </div>
+                        )}
+                      </Card>
+
+                      {/* Sección 2: Sincronización masiva */}
+                      <Card className="p-5 bg-white/5 border border-white/10 text-white">
+                        <div className="flex items-center gap-2 mb-1">
+                          <RefreshCw className="w-4 h-4 text-blue-600" />
+                          <span className="text-sm font-bold text-white">Sincronización masiva desde Hacienda</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-4">
+                          Descarga hasta 200 códigos CABYS y los guarda automáticamente en el catálogo del hotel. Útil para poblar
+                          el catálogo con los códigos relevantes para su actividad.
+                        </p>
+                        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                          <div>
+                            <label className="text-xs font-semibold text-slate-400 mb-1 block">Término de búsqueda</label>
+                            <input
+                              className="h-10 w-full rounded-lg border border-white/20 bg-white/5 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                              placeholder="Ej: hotel, restaurante, alojamiento..."
+                              value={cabysSyncQuery}
+                              onChange={(e) => { setCabysSyncQuery(e.target.value); setCabysSavedCount(null); }}
+                              onKeyDown={(e) => e.key === "Enter" && syncCabysFromHacienda()}
+                            />
+                          </div>
+                          <div className="flex items-end">
+                            <button
+                              onClick={syncCabysFromHacienda}
+                              disabled={cabysSyncLoading || !cabysSyncQuery.trim()}
+                              className="flex items-center gap-2 h-10 px-5 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                            >
+                              {cabysSyncLoading ? (
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-4 h-4" />
+                              )}
+                              {cabysSyncLoading ? "Sincronizando..." : "Sincronizar ahora"}
+                            </button>
                           </div>
                         </div>
-                        <textarea
-                          className="w-full min-h-[140px] rounded-lg border px-3 py-2 text-sm font-mono"
-                          value={cabysImportText}
-                          onChange={(e) => setCabysImportText(e.target.value)}
-                          placeholder={t("einv.catalogs.cabysImportPlaceholder")}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" onClick={() => setCabysImportText("")}>
-                            {t("common.clear")}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setCabysImportItems([]);
-                              setCabysImportText("");
-                            }}
-                          >
-                            {t("einv.clearAll")}
-                          </Button>
-                          <Button
-                            onClick={() => doImportCabys("replace")}
-                            disabled={!cabysImportText.trim() && cabysImportItems.length === 0}
-                          >
-                            {t("einv.import")}
-                          </Button>
+                        {cabysSavedCount !== null && (
+                          <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-900/30 border border-emerald-500/30 rounded-lg px-3 py-2">
+                            <CheckCircle2 className="w-4 h-4" />
+                            {cabysSavedCount} código(s) sincronizados y guardados en el catálogo del hotel.
+                          </div>
+                        )}
+                        <div className="mt-3 p-3 bg-blue-900/30 rounded-lg text-xs text-blue-300 space-y-1">
+                          <p className="font-semibold">Sugerencias de búsqueda para hoteles:</p>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {["alojamiento", "restaurante", "bebidas", "lavandería", "estacionamiento", "spa", "tours"].map((s) => (
+                              <button
+                                key={s}
+                                onClick={() => { setCabysSyncQuery(s); setCabysSavedCount(null); }}
+                                className="px-2 py-1 bg-white/5 border border-white/10 rounded-md hover:bg-white/10 text-slate-300 capitalize transition-colors"
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
                         </div>
+                      </Card>
+
+                      {/* Sección 3: Catálogo local del hotel */}
+                      <Card className="p-5 bg-white/5 border border-white/10 text-white">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <BookOpen className="w-4 h-4 text-slate-400" />
+                              <span className="text-sm font-bold text-white">Catálogo CABYS del hotel</span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              Códigos guardados localmente. Estos aparecen en el autocompletar al crear facturas.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              className="h-9 rounded-lg border border-white/20 bg-white/5 text-white px-3 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              placeholder="Buscar en catálogo..."
+                              value={cabysQuery}
+                              onChange={(e) => setCabysQuery(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && loadCabys()}
+                            />
+                            <button
+                              onClick={() => loadCabys()}
+                              disabled={cabysLoading}
+                              className="h-9 px-3 rounded-lg border border-white/10 text-sm font-semibold bg-white/5 text-slate-300 hover:bg-white/10 disabled:opacity-50 flex items-center gap-1"
+                            >
+                              {cabysLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {cabysRows.length === 0 ? (
+                          <div className="text-center py-10 text-slate-400">
+                            <Tag className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-sm">No hay códigos CABYS en el catálogo del hotel.</p>
+                            <p className="text-xs mt-1">Use la búsqueda o sincronización arriba para agregar códigos.</p>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border bg-white/5 max-h-72 overflow-y-auto">
+                            {cabysRows.map((r) => (
+                              <div key={r.id} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-b-0 bg-transparent hover:bg-white/5">
+                                <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded shrink-0">
+                                  {r.id}
+                                </span>
+                                <span className="text-xs text-slate-300 flex-1 min-w-0 truncate">{r.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Importar desde CSV/texto */}
+                        <details className="mt-4">
+                          <summary className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-400 hover:text-white select-none">
+                            <Upload className="w-4 h-4" />
+                            Importar desde archivo CSV / texto manual
+                          </summary>
+                          <div className="mt-3 space-y-3 pt-3 border-t">
+                            <p className="text-xs text-slate-500">
+                              Pegue los códigos en formato <span className="font-mono bg-white/10 px-1 rounded">CODIGO;DESCRIPCION</span>,
+                              uno por línea. También puede subir un archivo <span className="font-mono">.csv</span> o <span className="font-mono">.xlsx</span>.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <input
+                                type="file"
+                                accept=".csv,.xlsx,.xls"
+                                className="text-xs"
+                                onChange={(e) => onPickCsv(e.target.files?.[0], setCabysImportItems, setCabysImportText)}
+                              />
+                              {cabysImportItems.length > 0 && (
+                                <span className="text-xs text-emerald-400 font-semibold">{cabysImportItems.length} filas cargadas</span>
+                              )}
+                            </div>
+                            <textarea
+                              className="w-full min-h-[100px] rounded-lg border border-white/20 bg-white/5 text-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              value={cabysImportText}
+                              onChange={(e) => setCabysImportText(e.target.value)}
+                              placeholder={"1011100100100;Cultivo de café\n1011100200000;Cultivo de cacao"}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => { setCabysImportText(""); setCabysImportItems([]); }}
+                                className="h-9 px-4 rounded-lg border text-sm text-slate-400 hover:bg-white/5"
+                              >
+                                Limpiar
+                              </button>
+                              <button
+                                onClick={() => doImportCabys("merge")}
+                                disabled={!cabysImportText.trim() && cabysImportItems.length === 0}
+                                className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Upload className="w-4 h-4" />
+                                Importar
+                              </button>
+                            </div>
+                          </div>
+                        </details>
                       </Card>
                     </div>
                   )}
 
+                  {/* ── TAB CATÁLOGOS FE ── */}
                   {catalogTab === "catalogs" && (
-                    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-                      <Card className="p-4 space-y-3">
-                        <div className="text-sm font-semibold text-slate-900">{t("einv.catalogs.catalog")}</div>
-                        <select
-                          className="h-10 rounded-lg border px-3 text-sm"
-                          value={catalogName}
-                          onChange={(e) => setCatalogName(e.target.value)}
-                        >
-                          <option value="paymentMethods">{t("einv.catalogs.paymentMethods")}</option>
-                          <option value="saleConditions">{t("einv.catalogs.saleConditions")}</option>
-                          <option value="idTypes">{t("einv.catalogs.idTypes")}</option>
-                          <option value="unitMeasures">{t("einv.catalogs.unitMeasures")}</option>
-                          <option value="taxTypes">{t("einv.catalogs.taxTypes")}</option>
-                          <option value="exemptionTypes">{t("einv.catalogs.exemptionTypes")}</option>
-                          <option value="currencies">{t("einv.catalogs.currencies")}</option>
-                          <option value="activities">{t("einv.catalogs.activities")}</option>
-                        </select>
-                        <div className="text-sm font-semibold text-slate-900 pt-2">{t("common.search")}</div>
-                        <input
-                          className="h-10 rounded-lg border px-3 text-sm w-full"
-                          placeholder={t("einv.catalogs.catalogSearchPlaceholder")}
-                          value={catalogQuery}
-                          onChange={(e) => setCatalogQuery(e.target.value)}
-                        />
-                        <Button variant="outline" onClick={loadCatalog} disabled={catalogLoading}>
-                          {catalogLoading ? t("common.loading") : t("common.search")}
-                        </Button>
-                      </Card>
+                    <div className="space-y-5">
+                      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {[
+                          { value: "paymentMethods", label: "Métodos de pago", icon: "💳" },
+                          { value: "saleConditions", label: "Condiciones de venta", icon: "📋" },
+                          { value: "idTypes", label: "Tipos de identificación", icon: "🪪" },
+                          { value: "unitMeasures", label: "Unidades de medida", icon: "📐" },
+                          { value: "taxTypes", label: "Tipos de impuestos", icon: "🏛️" },
+                          { value: "exemptionTypes", label: "Tipos de exención", icon: "✅" },
+                          { value: "currencies", label: "Monedas", icon: "💰" },
+                          { value: "activities", label: "Actividades económicas", icon: "🏢" },
+                        ].map((cat) => (
+                          <button
+                            key={cat.value}
+                            onClick={() => { setCatalogName(cat.value); setCatalogRows([]); setCatalogQuery(""); }}
+                            className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
+                              catalogName === cat.value
+                                ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                                : "bg-white/5 text-slate-300 hover:bg-white/10 hover:border-emerald-300"
+                            }`}
+                          >
+                            <span className="text-xl">{cat.icon}</span>
+                            <span className="text-xs font-semibold leading-tight">{cat.label}</span>
+                          </button>
+                        ))}
+                      </div>
 
-                      <Card className="p-4 space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-semibold text-slate-900">{t("einv.catalogs.entries")}</div>
-                          <div className="text-xs text-slate-500">
-                            {t("einv.catalogs.results", { count: catalogRows.length })}
+                      <Card className="p-5 bg-white/5 border border-white/10 text-white">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <span className="text-sm font-bold text-white">
+                              {[
+                                { value: "paymentMethods", label: "Métodos de pago" },
+                                { value: "saleConditions", label: "Condiciones de venta" },
+                                { value: "idTypes", label: "Tipos de identificación" },
+                                { value: "unitMeasures", label: "Unidades de medida" },
+                                { value: "taxTypes", label: "Tipos de impuestos" },
+                                { value: "exemptionTypes", label: "Tipos de exención" },
+                                { value: "currencies", label: "Monedas" },
+                                { value: "activities", label: "Actividades económicas" },
+                              ].find((c) => c.value === catalogName)?.label || catalogName}
+                            </span>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {catalogRows.length > 0 ? `${catalogRows.length} entrada(s) cargadas` : "Busque para ver las entradas del catálogo"}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <input
+                              className="h-9 rounded-lg border border-white/20 bg-white/5 text-white px-3 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              placeholder="Filtrar..."
+                              value={catalogQuery}
+                              onChange={(e) => setCatalogQuery(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && loadCatalog()}
+                            />
+                            <button
+                              onClick={loadCatalog}
+                              disabled={catalogLoading}
+                              className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              {catalogLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                              Buscar
+                            </button>
                           </div>
                         </div>
-                        <div className="rounded-lg border bg-slate-50 p-3 max-h-[52vh] overflow-y-auto">
-                          {catalogRows.length === 0 && (
-                            <div className="text-sm text-slate-600">
-                              {t("einv.catalogs.entriesEmpty")}
-                            </div>
-                          )}
-                          {catalogRows.map((r) => (
-                            <div key={r.id} className="rounded-lg border bg-white p-3 mb-2 last:mb-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="text-sm font-semibold text-slate-900">{r.code}</div>
-                                <div className="text-xs text-slate-500">{r.version || ""}</div>
+
+                        {catalogRows.length === 0 ? (
+                          <div className="text-center py-10 text-slate-400">
+                            <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-sm">Catálogo vacío. Pulse "Buscar" para cargar o importe entradas abajo.</p>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border bg-white/5 max-h-72 overflow-y-auto">
+                            {catalogRows.map((r) => (
+                              <div key={r.id} className="flex items-center gap-3 px-4 py-3 border-b border-white/5 last:border-b-0 bg-transparent hover:bg-white/5">
+                                <span className="font-mono text-xs font-bold text-slate-300 bg-white/10 px-2 py-0.5 rounded shrink-0 min-w-[3rem] text-center">
+                                  {r.code}
+                                </span>
+                                <span className="text-xs text-slate-300 flex-1">{r.label}</span>
+                                {r.version && (
+                                  <span className="text-xs text-slate-400 shrink-0">{r.version}</span>
+                                )}
                               </div>
-                              <div className="text-xs text-slate-600 mt-1">{r.label}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </Card>
-
-                      <Card className="p-4 space-y-3 lg:col-span-2">
-                        <div className="text-sm font-semibold text-slate-900">{t("einv.catalogs.importTitle")}</div>
-                        <div className="text-xs text-slate-600">
-                          {t("einv.catalogs.importHelp")}{" "}
-                          <span className="font-mono">CODE;LABEL</span>
-                          {" "}{t("einv.catalogs.importHelpTail")}
-                        </div>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <input
-                            type="file"
-                            accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                            onChange={(e) => onPickCsv(e.target.files?.[0], setCatalogImportItems, setCatalogImportText)}
-                          />
-                          <div className="text-xs text-slate-500">
-                            {catalogImportItems.length
-                              ? t("einv.catalogs.rowsLoaded", { count: catalogImportItems.length })
-                              : ""}
+                            ))}
                           </div>
-                        </div>
-                        <textarea
-                          className="w-full min-h-[140px] rounded-lg border px-3 py-2 text-sm font-mono"
-                          value={catalogImportText}
-                          onChange={(e) => setCatalogImportText(e.target.value)}
-                          placeholder={t("einv.catalogs.catalogImportPlaceholder")}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button variant="outline" onClick={() => setCatalogImportText("")}>
-                            {t("common.clear")}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setCatalogImportItems([]);
-                              setCatalogImportText("");
-                            }}
-                          >
-                            {t("einv.clearAll")}
-                          </Button>
-                          <Button
-                            onClick={() => doImportCatalog("replace")}
-                            disabled={!catalogImportText.trim() && catalogImportItems.length === 0}
-                          >
-                            {t("einv.import")}
-                          </Button>
-                        </div>
+                        )}
+
+                        {/* Importar */}
+                        <details className="mt-4">
+                          <summary className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-slate-400 hover:text-white select-none">
+                            <Upload className="w-4 h-4" />
+                            Importar entradas al catálogo
+                          </summary>
+                          <div className="mt-3 space-y-3 pt-3 border-t">
+                            <p className="text-xs text-slate-500">
+                              Formato: <span className="font-mono bg-white/10 px-1 rounded">CODIGO;ETIQUETA</span>, uno por línea.
+                              Puede subir un archivo <span className="font-mono">.csv</span> o <span className="font-mono">.xlsx</span>.
+                            </p>
+                            <div className="flex flex-wrap items-center gap-3">
+                              <input
+                                type="file"
+                                accept=".csv,.xlsx,.xls"
+                                className="text-xs"
+                                onChange={(e) => onPickCsv(e.target.files?.[0], setCatalogImportItems, setCatalogImportText)}
+                              />
+                              {catalogImportItems.length > 0 && (
+                                <span className="text-xs text-emerald-400 font-semibold">{catalogImportItems.length} filas cargadas</span>
+                              )}
+                            </div>
+                            <textarea
+                              className="w-full min-h-[100px] rounded-lg border border-white/20 bg-white/5 text-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                              value={catalogImportText}
+                              onChange={(e) => setCatalogImportText(e.target.value)}
+                              placeholder={"01;Efectivo\n02;Tarjeta de crédito\n03;Tarjeta de débito"}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => { setCatalogImportText(""); setCatalogImportItems([]); }}
+                                className="h-9 px-4 rounded-lg border text-sm text-slate-400 hover:bg-white/5"
+                              >
+                                Limpiar
+                              </button>
+                              <button
+                                onClick={() => doImportCatalog("merge")}
+                                disabled={!catalogImportText.trim() && catalogImportItems.length === 0}
+                                className="flex items-center gap-2 h-9 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Upload className="w-4 h-4" />
+                                Importar
+                              </button>
+                            </div>
+                          </div>
+                        </details>
                       </Card>
                     </div>
                   )}
@@ -2148,11 +2461,11 @@ export default function EInvoicingPage() {
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40" onClick={closeAckDetail} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <Card className="w-full max-w-4xl p-5 space-y-4 bg-white">
+            <Card className="w-full max-w-4xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase text-slate-500">{t("einv.ack.title")}</div>
-                  <div className="text-lg font-semibold text-slate-900">{t("einv.modal.details")}</div>
+                  <div className="text-lg font-semibold text-white">{t("einv.modal.details")}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" onClick={closeAckDetail}>
@@ -2162,13 +2475,13 @@ export default function EInvoicingPage() {
               </div>
 
               {ackDetailLoading ? (
-                <div className="text-sm text-slate-600">{t("common.loading")}</div>
+                <div className="text-sm text-slate-400">{t("common.loading")}</div>
               ) : !ackDetail ? (
-                <div className="text-sm text-slate-600">{t("common.notFound")}</div>
+                <div className="text-sm text-slate-400">{t("common.notFound")}</div>
               ) : (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
-                    <Card className="p-3">
+                    <Card className="p-3 bg-white/5 border border-white/10 text-white">
                       <div className="text-xs text-slate-500">{t("common.type")}</div>
                       <div className="font-medium">{ackDetail.type}</div>
                       <div className="text-xs text-slate-500 mt-2">{t("common.status")}</div>
@@ -2176,17 +2489,14 @@ export default function EInvoicingPage() {
                       <div className="text-xs text-slate-500 mt-2">{t("common.created")}</div>
                       <div className="text-sm">{ackDetail.createdAt ? new Date(ackDetail.createdAt).toLocaleString() : ""}</div>
                     </Card>
-                    <Card className="p-3">
+                    <Card className="p-3 bg-white/5 border border-white/10 text-white">
                       <div className="text-xs text-slate-500">{t("einv.ack.document")}</div>
                       <div className="text-sm">
                         {ackDetail.doc?.docType}  -  {ackDetail.doc?.status}  -  {ackDetail.doc?.source || "-"}
                       </div>
                       <div className="text-xs text-slate-500 mt-2">{t("einv.documents.invoiceNumber")}</div>
                       <div className="text-sm">
-                        {ackDetail.doc?.invoice?.number ||
-                          (ackDetail.doc?.restaurantOrder?.id
-                            ? `${t("einv.order")} ${String(ackDetail.doc.restaurantOrder.id).slice(0, 8)}`
-                            : "-")}
+                        {getInvoiceDisplayNumber(ackDetail.doc)}
                       </div>
                       <div className="text-xs text-slate-500 mt-2">{t("einv.documents.consecutive")}</div>
                       <div className="text-xs font-mono break-all">{ackDetail.doc?.consecutive || "-"}</div>
@@ -2195,14 +2505,14 @@ export default function EInvoicingPage() {
                     </Card>
                   </div>
 
-                  <Card className="p-3 space-y-2">
+                  <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                     <div className="text-xs text-slate-500">{t("einv.acks.message")}</div>
                     <div className="text-sm whitespace-pre-wrap">{ackDetail.message || "-"}</div>
                   </Card>
 
-                  <Card className="p-3 space-y-2">
+                  <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                     <div className="text-xs text-slate-500">{t("einv.payload")}</div>
-                    <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto max-h-[45vh] whitespace-pre-wrap">
+                    <pre className="text-xs bg-white/5 border rounded-lg p-3 overflow-auto max-h-[45vh] whitespace-pre-wrap">
                       {typeof ackDetail.payload === "string"
                         ? ackDetail.payload
                         : JSON.stringify(ackDetail.payload, null, 2)}
@@ -2219,11 +2529,11 @@ export default function EInvoicingPage() {
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40" onClick={closeAckCreate} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <Card className="w-full max-w-4xl p-5 space-y-4 bg-white">
+            <Card className="w-full max-w-4xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase text-slate-500">{t("einv.ack.title")}</div>
-                  <div className="text-lg font-semibold text-slate-900">{t("einv.modal.addImport")}</div>
+                  <div className="text-lg font-semibold text-white">{t("einv.modal.addImport")}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Button variant="outline" onClick={closeAckCreate}>
@@ -2234,36 +2544,35 @@ export default function EInvoicingPage() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-3">
-                <Card className="p-3 space-y-2">
+                <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                   <div className="text-xs text-slate-500">{t("einv.ack.documentId")}</div>
                   <input
-                    className="h-10 rounded-lg border px-3 text-sm w-full"
+                    className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm w-full"
                     value={ackCreateForm.documentId}
                     onChange={(e) => setAckCreateForm((p) => ({ ...p, documentId: e.target.value }))}
                     placeholder={t("einv.ack.documentIdPlaceholder")}
                   />
                   <div className="text-xs text-slate-500">{t("einv.ack.quickPick")}</div>
                   <select
-                    className="h-10 rounded-lg border px-3 text-sm w-full"
+                    className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm w-full"
                     value={ackCreateForm.documentId}
                     onChange={(e) => setAckCreateForm((p) => ({ ...p, documentId: e.target.value }))}
                   >
                     <option value="">{t("common.select")}</option>
                     {docs.map((d) => (
                       <option key={d.id} value={d.id}>
-                        {d.docType} - {(d.invoice?.number ||
-                          (d.restaurantOrder?.id ? `${t("einv.order")} ${String(d.restaurantOrder.id).slice(0, 8)}` : "-"))} - {d.consecutive || d.key || d.id}
+                        {d.docType} - {getInvoiceDisplayNumber(d)} - {d.consecutive || d.key || d.id}
                       </option>
                     ))}
                   </select>
                 </Card>
 
-                <Card className="p-3 space-y-2">
+                <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <div className="text-xs text-slate-500">{t("einv.acks.type")}</div>
                       <select
-                        className="h-10 rounded-lg border px-3 text-sm w-full"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm w-full"
                         value={ackCreateForm.type}
                         onChange={(e) => setAckCreateForm((p) => ({ ...p, type: e.target.value }))}
                       >
@@ -2276,7 +2585,7 @@ export default function EInvoicingPage() {
                     <div>
                       <div className="text-xs text-slate-500">{t("einv.acks.status")}</div>
                       <select
-                        className="h-10 rounded-lg border px-3 text-sm w-full"
+                        className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm w-full"
                         value={ackCreateForm.status}
                         onChange={(e) => setAckCreateForm((p) => ({ ...p, status: e.target.value }))}
                       >
@@ -2289,7 +2598,7 @@ export default function EInvoicingPage() {
                   </div>
                   <div className="text-xs text-slate-500">{t("einv.acks.message")}</div>
                   <textarea
-                    className="min-h-[80px] rounded-lg border px-3 py-2 text-sm w-full"
+                    className="min-h-[80px] rounded-lg border border-white/10 bg-white/5 text-white px-3 py-2 text-sm w-full"
                     value={ackCreateForm.message}
                     onChange={(e) => setAckCreateForm((p) => ({ ...p, message: e.target.value }))}
                     placeholder={t("einv.ack.messagePlaceholder")}
@@ -2297,10 +2606,10 @@ export default function EInvoicingPage() {
                 </Card>
               </div>
 
-              <Card className="p-3 space-y-2">
+              <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                 <div className="text-xs text-slate-500">{t("einv.payloadPaste")}</div>
                 <textarea
-                  className="min-h-[220px] rounded-lg border px-3 py-2 text-sm w-full font-mono"
+                  className="min-h-[220px] rounded-lg border border-white/10 bg-white/5 text-white px-3 py-2 text-sm w-full font-mono"
                   value={ackCreateForm.payloadText}
                   onChange={(e) => setAckCreateForm((p) => ({ ...p, payloadText: e.target.value }))}
                   placeholder={t("einv.payloadPlaceholder")}
@@ -2318,11 +2627,11 @@ export default function EInvoicingPage() {
         <div className="fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/40" onClick={closeDocDetail} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <Card className="w-full max-w-5xl p-5 space-y-4 bg-white">
+            <Card className="w-full max-w-5xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase text-slate-500">{t("einv.doc.title")}</div>
-                  <div className="text-lg font-semibold text-slate-900">{t("einv.modal.details")}</div>
+                  <div className="text-lg font-semibold text-white">{t("einv.modal.details")}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {docDetail?.id && (
@@ -2371,13 +2680,13 @@ export default function EInvoicingPage() {
               </div>
 
               {docDetailLoading ? (
-                <div className="text-sm text-slate-600">{t("common.loading")}</div>
+                <div className="text-sm text-slate-400">{t("common.loading")}</div>
               ) : !docDetail ? (
-                <div className="text-sm text-slate-600">{t("common.notFound")}</div>
+                <div className="text-sm text-slate-400">{t("common.notFound")}</div>
               ) : (
                 <div className="space-y-3">
                   <div className="grid md:grid-cols-2 gap-3">
-                    <Card className="p-3 space-y-2">
+                    <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                       <div className="text-xs text-slate-500">{t("einv.doc.typeStatus")}</div>
                       <div className="text-sm">
                         {docDetail.docType} {" - "} {docDetail.status} {" - "} {docDetail.source || "-"}
@@ -2388,10 +2697,7 @@ export default function EInvoicingPage() {
                       </div>
                       <div className="text-xs text-slate-500">{t("einv.documents.invoiceNumber")}</div>
                       <div className="text-sm">
-                        {docDetail.invoice?.number ||
-                          (docDetail.restaurantOrder?.id
-                            ? `${t("einv.order")} ${String(docDetail.restaurantOrder.id).slice(0, 8)}`
-                            : "-")}
+                        {getInvoiceDisplayNumber(docDetail)}
                       </div>
                       <div className="text-xs text-slate-500">{t("common.total")}</div>
                       <div className="text-sm">
@@ -2402,7 +2708,7 @@ export default function EInvoicingPage() {
                             : "-"}
                       </div>
                     </Card>
-                    <Card className="p-3 space-y-2">
+                    <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                       <div className="text-xs text-slate-500">{t("einv.doc.branchTerminal")}</div>
                       <div className="text-sm">
                         {docDetail.branch || "-"} / {docDetail.terminal || "-"}
@@ -2414,16 +2720,16 @@ export default function EInvoicingPage() {
                     </Card>
                   </div>
 
-                  <Card className="p-3 space-y-2">
+                  <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                     <div className="text-xs text-slate-500">{t("einv.doc.receiver")}</div>
-                    <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[22vh]">
+                    <pre className="text-xs bg-white/5 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[22vh]">
                       {JSON.stringify(docDetail.receiver || {}, null, 2)}
                     </pre>
                   </Card>
 
-                  <Card className="p-3 space-y-2">
+                  <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                     <div className="text-xs text-slate-500">{t("einv.payload")}</div>
-                    <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
+                    <pre className="text-xs bg-white/5 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
                       {typeof docDetail.payload === "string"
                         ? docDetail.payload
                         : JSON.stringify(docDetail.payload || {}, null, 2)}
@@ -2431,15 +2737,15 @@ export default function EInvoicingPage() {
                   </Card>
 
                   <div className="grid md:grid-cols-2 gap-3">
-                    <Card className="p-3 space-y-2">
+                    <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                       <div className="text-xs text-slate-500">{t("einv.doc.signedXml")}</div>
-                      <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
+                      <pre className="text-xs bg-white/5 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
                         {docDetail.xmlSigned || t("einv.doc.notGenerated")}
                       </pre>
                     </Card>
-                    <Card className="p-3 space-y-2">
+                    <Card className="p-3 space-y-2 bg-white/5 border border-white/10">
                       <div className="text-xs text-slate-500">{t("einv.doc.response")}</div>
-                      <pre className="text-xs bg-slate-50 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
+                      <pre className="text-xs bg-white/5 border rounded-lg p-3 overflow-auto whitespace-pre-wrap max-h-[30vh]">
                         {typeof docDetail.response === "string"
                           ? docDetail.response
                           : JSON.stringify(docDetail.response || {}, null, 2)}

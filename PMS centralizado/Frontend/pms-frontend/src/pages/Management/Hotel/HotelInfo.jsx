@@ -139,11 +139,11 @@ export default function HotelInfo() {
       </div>
 
       <div className="grid gap-2 md:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-xs text-slate-500">{t("mgmt.hotelInfo.company")}</div>
           <div className="font-semibold text-slate-900">{meta.saasClientName || "-"}</div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-xs text-slate-500">{t("mgmt.hotelInfo.membershipLabel")}</div>
           <div className="font-semibold text-slate-900">{membershipLabel}</div>
         </div>

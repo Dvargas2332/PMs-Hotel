@@ -15,7 +15,7 @@ export default function Invoicing() {
   return (
     <Card className="space-y-3 p-5">
       <h3 className="font-medium">{t("mgmt.invoicing.title")}</h3>
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-slate-400">
         {t("mgmt.invoicing.moved")}
       </div>
       <div className="flex justify-end">

@@ -45,7 +45,7 @@ export default function RestaurantBilling() {
       <Card className="p-5 space-y-3">
         <div>
           <h3 className="font-semibold text-lg">{t("mgmt.restaurantBilling.title")}</h3>
-          <p className="text-sm text-gray-600">{t("mgmt.restaurantBilling.subtitle")}</p>
+          <p className="text-sm text-slate-400">{t("mgmt.restaurantBilling.subtitle")}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {RECEIPT_TYPES.map((type) => (

@@ -36,12 +36,12 @@ export default function SomeModule() {
 
       <Card className="p-0 overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
+          <thead className="bg-white/5 text-slate-400">
             <tr><th className="py-2 pl-4 text-left">{t("mgmt.someModule.name")}</th><th>{t("mgmt.someModule.code")}</th><th className="pr-4 text-right">{t("mgmt.someModule.actions")}</th></tr>
           </thead>
           <tbody>
             {items.length === 0 && (
-              <tr><td colSpan={3} className="py-6 text-center text-gray-500">{t("mgmt.someModule.noData")}</td></tr>
+              <tr><td colSpan={3} className="py-6 text-center text-slate-400">{t("mgmt.someModule.noData")}</td></tr>
             )}
             {items.map((it) => (
               <tr key={it.id} className="border-t">

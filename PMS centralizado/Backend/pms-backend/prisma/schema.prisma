@@ -46,6 +46,7 @@ enum RestaurantOrderItemStatus {
   IN_KITCHEN
   READY
   SERVED
+  VOIDED
 }
 
 enum RestaurantStaffRole {
@@ -64,8 +65,10 @@ enum InvoiceStatus {
 }
 
 enum EInvoicingDocType {
-  FE // Factura Electrónica
-  TE // Tiquete Electrónico
+  FE // Factura Electrónica (01)
+  TE // Tiquete Electrónico (04)
+  NC // Nota de Crédito (03)
+  ND // Nota de Débito (02)
 }
 
 enum EInvoicingDocStatus {
@@ -178,12 +181,18 @@ model RestaurantOrder {
   covers           Int?
   serviceType      String                @default("DINE_IN")
   roomId           String?
+  guestId          String?
   discountId       String?
   discountPercent  Decimal               @default(0) @db.Decimal(6, 2)
   discountAmount   Decimal               @default(0) @db.Decimal(12, 2)
   total            Decimal               @default(0) @db.Decimal(12, 2)
   tip10            Decimal               @default(0) @db.Decimal(12, 2)
   paymentBreakdown Json?
+  canceledAt       DateTime?
+  canceledBy       String?
+  cancelAdminUser  String?
+  cancelReason     String?
+  sentItemsMap     Json?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -191,11 +200,13 @@ model RestaurantOrder {
   eInvoicingDocuments EInvoicingDocument[]
   events              RestaurantOrderEvent[]
   discount            Discount?              @relation(fields: [hotelId, discountId], references: [hotelId, id])
+  guest               Guest?                 @relation(fields: [guestId], references: [id], onDelete: SetNull)
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@index([hotelId])
   @@index([hotelId, tableId, status])
+  @@index([guestId])
   @@unique([hotelId, saleNumber])
 }
 
@@ -804,6 +815,12 @@ model Hotel {
   RestaurantSectionObject         RestaurantSectionObject[]
   saasClient                      SaasClient?                      @relation(fields: [clientId], references: [id], onDelete: SetNull)
   saasBillingPayments             SaasBillingPayment[]
+  accountingSettings              AccountingSettings?
+  accountingAccounts              AccountingAccount[]
+  accountingPeriods               AccountingPeriod[]
+  accountingEntries               AccountingEntry[]
+  accountingEntryLines            AccountingEntryLine[]
+  rateOverrides                   RateOverride[]
 }
 
 model EInvoicingConfig {
@@ -862,6 +879,10 @@ model EInvoicingDocument {
   hotelId           String
   invoiceId         String?
   restaurantOrderId String?
+  // Para NC/ND: referencia al documento electrónico original que se anula/ajusta
+  referenceDocId    String?
+  referenceKey      String?      // clave numérica del doc referenciado
+  referenceReason   String?      // motivo de la nota (obligatorio para NC/ND)
   docType           EInvoicingDocType
   status            EInvoicingDocStatus         @default(DRAFT)
   branch            String                      @default("001")
@@ -876,15 +897,18 @@ model EInvoicingDocument {
   createdAt         DateTime                    @default(now())
   updatedAt         DateTime                    @updatedAt
 
-  invoice         Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  restaurantOrder RestaurantOrder? @relation(fields: [restaurantOrderId], references: [id], onDelete: Cascade)
-  hotel           Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  invoice         Invoice?            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  restaurantOrder RestaurantOrder?    @relation(fields: [restaurantOrderId], references: [id], onDelete: Cascade)
+  referenceDoc    EInvoicingDocument? @relation("NoteReference", fields: [referenceDocId], references: [id], onDelete: SetNull)
+  notes           EInvoicingDocument[] @relation("NoteReference")
+  hotel           Hotel               @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@unique([hotelId, invoiceId, docType])
   @@unique([hotelId, restaurantOrderId, docType])
   @@index([hotelId])
   @@index([invoiceId])
   @@index([restaurantOrderId])
+  @@index([referenceDocId])
 }
 
 model EInvoicingAcknowledgement {
@@ -969,15 +993,17 @@ model Guest {
   notes            String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
-  reservations     Reservation[]
-  invoices         Invoice[]
-  advanceDeposits  AdvanceDeposit[]
-  creditNotes      CreditNote[]
-  hotelId          String
-  hotel            Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservations      Reservation[]
+  invoices          Invoice[]
+  advanceDeposits   AdvanceDeposit[]
+  creditNotes       CreditNote[]
+  restaurantOrders  RestaurantOrder[]
+  hotelId           String
+  hotel             Hotel            @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
   @@unique([hotelId, email])
   @@index([hotelId])
+  @@index([hotelId, idNumber])
 }
 
 model Room {
@@ -1017,7 +1043,7 @@ model RoomType {
 
 model Reservation {
   id         String            @id @default(cuid())
-  code       String            @unique
+  code       String
   rooming    String?
   otaCode    String?
   roomId     String
@@ -1052,6 +1078,9 @@ model Reservation {
   hotelId String
   hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
 
+  @@unique([hotelId, code])
+  @@index([hotelId, roomId])
+  @@index([hotelId, status, checkIn])
   @@index([roomId])
   @@index([guestId])
   @@index([hotelId])
@@ -1071,11 +1100,32 @@ model RatePlan {
   updatedAt    DateTime  @updatedAt
 
   hotelId      String
-  hotel        Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
-  reservations Reservation[] @relation("RatePlanReservations")
+  hotel        Hotel           @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  reservations Reservation[]   @relation("RatePlanReservations")
+  overrides    RateOverride[]
 
   @@id([hotelId, id])
   @@index([hotelId])
+}
+
+model RateOverride {
+  id         String   @id @default(cuid())
+  hotelId    String
+  ratePlanId String
+  roomTypeId String
+  date       DateTime @db.Date
+  price      Decimal  @db.Decimal(12, 2)
+  closed     Boolean  @default(false)
+  minStay    Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  hotel    Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  ratePlan RatePlan @relation(fields: [hotelId, ratePlanId], references: [hotelId, id], onDelete: Cascade)
+
+  @@unique([hotelId, ratePlanId, roomTypeId, date])
+  @@index([hotelId, ratePlanId])
+  @@index([hotelId, ratePlanId, date])
 }
 
 model MealPlan {
@@ -1344,6 +1394,140 @@ model Permission {
   id          String           @id
   description String?
   permissions RolePermission[]
+}
+
+// ===== CONTABILIDAD =====
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+  COST
+}
+
+enum AccountingEntryStatus {
+  DRAFT
+  PENDING
+  POSTED
+  VOIDED
+}
+
+enum AccountingEntrySource {
+  MANUAL
+  EINVOICING
+  RESTAURANT
+  FRONTDESK
+}
+
+enum AccountingPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+// Configuración del módulo de contabilidad por hotel
+model AccountingSettings {
+  hotelId         String   @id
+  country         String   @default("CR")
+  autoPost        Boolean  @default(false)   // true = asientos automáticos, false = requieren aprobación
+  fiscalPeriods   Boolean  @default(false)   // activar cierre por períodos
+  integrations    Json     @default("{}")    // { einvoicing: "auto"|"manual"|"off", restaurant: ..., frontdesk: ... }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+}
+
+// Plan de cuentas
+model AccountingAccount {
+  id          String      @id @default(cuid())
+  hotelId     String
+  code        String                          // ej. "1.1.01.001"
+  name        String
+  type        AccountType
+  parentId    String?
+  isSystem    Boolean     @default(false)    // cuentas base no eliminables
+  isActive    Boolean     @default(true)
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  hotel    Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  parent   AccountingAccount? @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children AccountingAccount[] @relation("AccountHierarchy")
+  lines    AccountingEntryLine[]
+
+  @@unique([hotelId, code])
+  @@index([hotelId])
+}
+
+// Períodos contables (solo si fiscalPeriods = true)
+model AccountingPeriod {
+  id        String                 @id @default(cuid())
+  hotelId   String
+  name      String                 // "Enero 2026"
+  startDate DateTime
+  endDate   DateTime
+  status    AccountingPeriodStatus @default(OPEN)
+  closedAt  DateTime?
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+
+  hotel   Hotel              @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  entries AccountingEntry[]
+
+  @@index([hotelId])
+}
+
+// Asiento contable (cabecera)
+model AccountingEntry {
+  id          String                @id @default(cuid())
+  hotelId     String
+  number      String                // correlativo auto-generado "AC-2026-00001"
+  date        DateTime
+  description String
+  status      AccountingEntryStatus @default(DRAFT)
+  source      AccountingEntrySource @default(MANUAL)
+  sourceRefId String?               // ID del documento origen (factura, orden, etc.)
+  periodId    String?
+  currency    String                @default("CRC")
+  createdBy   String?               // userId
+  approvedBy  String?               // userId
+  approvedAt  DateTime?
+  voidedBy    String?
+  voidedAt    DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  hotel  Hotel                @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  period AccountingPeriod?    @relation(fields: [periodId], references: [id])
+  lines  AccountingEntryLine[]
+
+  @@unique([hotelId, number])
+  @@index([hotelId])
+  @@index([hotelId, status])
+  @@index([hotelId, source, sourceRefId])
+}
+
+// Líneas del asiento (partida doble)
+model AccountingEntryLine {
+  id          String   @id @default(cuid())
+  hotelId     String
+  entryId     String
+  accountId   String
+  debit       Decimal  @default(0) @db.Decimal(15, 2)
+  credit      Decimal  @default(0) @db.Decimal(15, 2)
+  description String?
+  createdAt   DateTime @default(now())
+
+  hotel   Hotel             @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  entry   AccountingEntry   @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account AccountingAccount @relation(fields: [accountId], references: [id])
+
+  @@index([hotelId])
+  @@index([entryId])
+  @@index([accountId])
 }
 
 model RolePermission {

@@ -177,7 +177,7 @@ export default function Currency() {
         />
       </div>
 
-      <div className="mt-3 border rounded-lg px-3 py-2 bg-slate-50 space-y-2 text-xs text-slate-700">
+      <div className="mt-3 border border-white/10 rounded-lg px-3 py-2 bg-white/5 space-y-2 text-xs text-slate-300">
         <label className="inline-flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"

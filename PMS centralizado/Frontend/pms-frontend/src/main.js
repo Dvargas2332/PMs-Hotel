@@ -7,6 +7,7 @@ import "./index.css";
 import { HotelDataProvider } from "./context/HotelDataContext";
 import { AuthProvider } from "./context/AuthContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import { ThemeProvider } from "./context/ThemeContext";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
@@ -17,12 +18,16 @@ root.render(
       BrowserRouter,
       null,
       React.createElement(
-        LanguageProvider,
+        ThemeProvider,
         null,
         React.createElement(
-          AuthProvider,
+          LanguageProvider,
           null,
-          React.createElement(HotelDataProvider, null, React.createElement(App, null))
+          React.createElement(
+            AuthProvider,
+            null,
+            React.createElement(HotelDataProvider, null, React.createElement(App, null))
+          )
         )
       )
     )

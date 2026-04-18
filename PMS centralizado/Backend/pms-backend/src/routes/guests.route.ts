@@ -8,8 +8,10 @@ import { createGuestSchema, updateGuestSchema } from "../schemas/guests.schema.j
 const router = Router();
 
 // Rutas relativas; el prefijo /api/guests lo agrega app.ts
-router.get("/", auth, requirePermission("frontdesk.read"), listGuests); // GET    /api/guests
-router.post("/", auth, requirePermission("frontdesk.create_reservation"), validate(createGuestSchema), createGuest); // POST   /api/guests
-router.put("/:id", auth, requirePermission("frontdesk.create_reservation"), validate(updateGuestSchema), updateGuest); // PUT /api/guests/:id
+// Lectura: frontdesk O cualquier acceso a restaurante
+router.get("/", auth, requirePermission("frontdesk.read", "restaurant.pos.open", "restaurant.access.pos"), listGuests);
+// Escritura: frontdesk O personal de restaurante con permiso de órdenes
+router.post("/", auth, requirePermission("frontdesk.create_reservation", "frontdesk.guests.write", "restaurant.orders.write"), validate(createGuestSchema), createGuest);
+router.put("/:id", auth, requirePermission("frontdesk.create_reservation", "frontdesk.guests.write", "restaurant.orders.write"), validate(updateGuestSchema), updateGuest);
 
 export default router;

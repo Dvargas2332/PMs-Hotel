@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Card, CardContent } from "../../../components/ui/card";
+import { CustomSelect } from "../../../components/ui/CustomSelect";
+import { Card } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import { Button } from "../../../components/ui/button";
 import { SimpleTable } from "../../../components/ui/table";
@@ -72,18 +73,18 @@ export default function Rooms() {
   return (
     <div className="grid md:grid-cols-2 gap-6">
       <Card>
-        <CardContent className="space-y-3 p-5">
+        <div className="space-y-3 p-5">
           <h3 className="font-medium">{t("mgmt.rooms.new")}</h3>
           <Input placeholder={t("mgmt.rooms.numberRequired")} value={form.number} onChange={handleChange("number")} />
           <div className="grid grid-cols-2 gap-2">
             <Input placeholder={t("mgmt.rooms.typeExample")} value={form.type} onChange={handleChange("type")} />
-            <select className="border rounded px-3 py-2 text-sm h-10" value={form.status} onChange={handleChange("status")}>
+            <CustomSelect className="h-10" value={form.status} onChange={handleChange("status")}>
               {STATUS_VALUES.map((value) => (
                 <option key={value} value={value}>
                   {t(`mgmt.rooms.status.${value.toLowerCase()}`)}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Input
@@ -100,7 +101,7 @@ export default function Rooms() {
           <Button onClick={onCreate} disabled={saving || !form.number.trim()}>
             {saving ? t("mgmt.rooms.saving") : t("mgmt.rooms.create")}
           </Button>
-        </CardContent>
+        </div>
       </Card>
       <div>
         <SimpleTable

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { X, Pencil } from "lucide-react";
 import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
@@ -104,6 +104,7 @@ export default function ReservationsPage() {
   const [rowConfirmed, setRowConfirmed] = useState(false);
   const [draftRows, setDraftRows] = useState([]);
   const [showGuestPicker, setShowGuestPicker] = useState(false);
+  const [modifyModal, setModifyModal] = useState(null); // reservation object to modify
   const [guestQuery, setGuestQuery] = useState("");
   const [guestType, setGuestType] = useState("PERSON"); // PERSON | COMPANY
 
@@ -281,13 +282,13 @@ export default function ReservationsPage() {
     refreshGuests();
     refreshReservations();
     api
-      .get("/api/ratePlans")
+      .get("/ratePlans")
       .then(({ data }) => {
         if (Array.isArray(data)) setRatePlans(data);
       })
       .catch(() => {});
     api
-      .get("/api/mealPlans")
+      .get("/mealPlans")
       .then(({ data }) => {
         if (Array.isArray(data)) setMealPlans(data);
       })
@@ -1187,6 +1188,7 @@ export default function ReservationsPage() {
               { key: "print", title: t("common.print"), color: "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-800", icon: IconPrinter, onClick: handlePrint },
               { key: "confirm", title: t("common.confirm"), color: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-800", icon: IconCheck, onClick: handleConfirmAction },
               { key: "cancel", title: t("common.cancel"), color: "bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-800", icon: IconClose, onClick: handleCancelAction },
+              ...(selectedRow ? [{ key: "edit", title: "Modificar reserva", color: "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200 text-amber-800", icon: Pencil, onClick: () => { const r = reservations.find(x => x.id === selectedRow); if (r) setModifyModal(r); } }] : []),
             ].map(({ key, title, color, icon: Icon, onClick }) => (
               <button
                 key={key}
@@ -1311,6 +1313,118 @@ export default function ReservationsPage() {
           </div>
         </div>
       )}
+
+      {modifyModal && (
+        <ModifyReservationModal
+          reservation={modifyModal}
+          rooms={rooms}
+          ratePlans={ratePlans}
+          mealPlans={mealPlans}
+          onClose={() => setModifyModal(null)}
+          onSaved={async () => { setModifyModal(null); await refreshReservations(); await refreshRooms(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModifyReservationModal({ reservation, rooms, ratePlans, mealPlans, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    checkIn:   reservation.checkIn   ? new Date(reservation.checkIn).toISOString().slice(0,10)  : "",
+    checkOut:  reservation.checkOut  ? new Date(reservation.checkOut).toISOString().slice(0,10) : "",
+    roomId:    reservation.roomId    || "",
+    ratePlanId: reservation.ratePlanId || "",
+    mealPlanId: reservation.mealPlanId || "",
+    adults:    reservation.adults    ?? 2,
+    children:  reservation.children  ?? 0,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState("");
+
+  async function handleSave() {
+    if (!form.checkIn || !form.checkOut) { setError("Fechas requeridas"); return; }
+    if (form.checkIn >= form.checkOut) { setError("Check-in debe ser antes del check-out"); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await api.patch(`/reservations/${reservation.id}`, {
+        checkIn:   new Date(form.checkIn  + "T00:00:00Z").toISOString(),
+        checkOut:  new Date(form.checkOut + "T00:00:00Z").toISOString(),
+        roomId:    form.roomId    || undefined,
+        ratePlanId: form.ratePlanId || undefined,
+        mealPlanId: form.mealPlanId || null,
+        adults:    Number(form.adults),
+        children:  Number(form.children),
+      });
+      await onSaved();
+    } catch (e) {
+      setError(e?.response?.data?.message || "Error al modificar la reserva");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <h2 className="font-bold text-slate-800">Modificar Reserva — {reservation.code}</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 p-1 rounded"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {error && <p className="text-sm text-red-500 bg-red-50 rounded px-3 py-2">{error}</p>}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Check-in</label>
+              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.checkIn} onChange={e => setForm(f => ({ ...f, checkIn: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Check-out</label>
+              <input type="date" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.checkOut} onChange={e => setForm(f => ({ ...f, checkOut: e.target.value }))} />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Habitación</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.roomId} onChange={e => setForm(f => ({ ...f, roomId: e.target.value }))}>
+              {rooms.map(r => <option key={r.id} value={r.id}>#{r.number} — {r.type}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Tarifario</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.ratePlanId} onChange={e => setForm(f => ({ ...f, ratePlanId: e.target.value }))}>
+              <option value="">Sin cambio</option>
+              {ratePlans.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Plan de comida</label>
+            <select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.mealPlanId} onChange={e => setForm(f => ({ ...f, mealPlanId: e.target.value }))}>
+              <option value="">Ninguno</option>
+              {mealPlans.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Adultos</label>
+              <input type="number" min="1" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.adults} onChange={e => setForm(f => ({ ...f, adults: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Niños</label>
+              <input type="number" min="0" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.children} onChange={e => setForm(f => ({ ...f, children: e.target.value }))} />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 px-5 py-4 border-t">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border text-sm text-slate-600 hover:bg-slate-50">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-400 font-medium disabled:opacity-50">
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

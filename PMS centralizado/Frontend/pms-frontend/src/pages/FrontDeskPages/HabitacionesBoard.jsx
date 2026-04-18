@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useHotelData } from "../../context/useHotelData";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
+import { api } from "../../lib/api";
 
 /**
  * HabitacionesBoard
@@ -103,13 +104,33 @@ function SummaryCard({ title, value, className = "" }) {
   );
 }
 
+const HK_ACTIONS = [
+  { status: "AVAILABLE",   label: "Disponible",   cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
+  { status: "CLEANING",    label: "Limpieza",      cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+  { status: "MAINTENANCE", label: "Mant.",         cls: "bg-yellow-50 text-yellow-700 border-yellow-200 hover:bg-yellow-100" },
+  { status: "BLOCKED",     label: "Bloquear",      cls: "bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200" },
+];
+
 export default function HabitacionesBoard() {
   const { t } = useLanguage();
   const { roomsEnriched, arrivalsToday, departuresToday, counts } = useHabitacionesMetrics();
+  const { refreshRooms } = useHotelData();
 
   // Búsqueda y filtros UI
   const [term, setTerm] = useState("");
   const [filter, setFilter] = useState("all");
+  const [updatingRoom, setUpdatingRoom] = useState(null);
+
+  async function changeRoomStatus(roomId, status) {
+    setUpdatingRoom(roomId);
+    try {
+      await api.patch(`/rooms/${roomId}/status`, { status });
+      await refreshRooms();
+    } catch (e) {
+      alert(e?.response?.data?.message || "Error al actualizar estado");
+    }
+    setUpdatingRoom(null);
+  }
 
   const filteredRooms = useMemo(() => {
     let list = roomsEnriched;
@@ -202,8 +223,8 @@ export default function HabitacionesBoard() {
           {filteredRooms.map((r) => {
             const meta = STATUS_META[r.status] || STATUS_META.available;
             return (
-              <div key={r.id} className={`p-4 rounded-2xl border shadow-sm ${meta.tile}`}>
-                <div className="flex items-center justify-between mb-1">
+              <div key={r.id} className={`p-4 rounded-2xl border shadow-sm ${meta.tile} flex flex-col gap-2`}>
+                <div className="flex items-center justify-between">
                   <div className="text-2xl font-bold">#{r.number}</div>
                   <span className={`px-2 py-1 rounded-full border text-xs ${meta.badge}`}>
                     {t(meta.labelKey)}
@@ -211,8 +232,22 @@ export default function HabitacionesBoard() {
                 </div>
                 <div className="text-sm text-gray-600">{r.type || t("common.empty")}</div>
                 {r.guestName && (
-                  <div className="mt-2 text-xs text-gray-700">
+                  <div className="text-xs text-gray-700">
                     {t("frontdesk.rooms.guestLabel")} <span className="font-medium">{r.guestName}</span>
+                  </div>
+                )}
+                {r.status !== "occupied" && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {HK_ACTIONS.filter(a => a.status.toLowerCase() !== r.status).map(a => (
+                      <button
+                        key={a.status}
+                        disabled={updatingRoom === r.id}
+                        onClick={() => changeRoomStatus(r.id, a.status)}
+                        className={`text-[10px] px-2 py-0.5 rounded border font-medium transition ${a.cls} ${updatingRoom === r.id ? "opacity-50 cursor-wait" : ""}`}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

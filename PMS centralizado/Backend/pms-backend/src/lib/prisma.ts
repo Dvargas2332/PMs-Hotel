@@ -11,7 +11,7 @@ function ensureDbSsl(url: string | undefined) {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname;
-    const needsSsl = host.endsWith("supabase.co") || host.endsWith("rds.amazonaws.com");
+    const needsSsl = host.endsWith("supabase.co") || host.endsWith("supabase.com") || host.endsWith("rds.amazonaws.com");
     if (needsSsl) {
       if (!parsed.searchParams.has("sslmode")) {
         parsed.searchParams.set("sslmode", "require");
@@ -146,7 +146,7 @@ function mustUseScopedUnique(action: string, model: string, where: any) {
 
 const parsedDbUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
 const sslMode = parsedDbUrl?.searchParams.get("sslmode");
-const hostNeedsSsl = parsedDbUrl ? parsedDbUrl.hostname.endsWith("rds.amazonaws.com") || parsedDbUrl.hostname.endsWith("supabase.co") : false;
+const hostNeedsSsl = parsedDbUrl ? parsedDbUrl.hostname.endsWith("rds.amazonaws.com") || parsedDbUrl.hostname.endsWith("supabase.co") || parsedDbUrl.hostname.endsWith("supabase.com") : false;
 const needsSsl = Boolean(hostNeedsSsl || (sslMode && sslMode.toLowerCase() !== "disable"));
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,

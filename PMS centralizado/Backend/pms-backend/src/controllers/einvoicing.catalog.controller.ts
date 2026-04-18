@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
+import { searchCabysHacienda, getCabysHacienda, fetchCabysPage } from "../services/cabys.hacienda.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -94,6 +95,108 @@ export async function importCabys(req: Request, res: Response) {
   }
 
   res.json({ ok: true, imported: normalized.length, created });
+}
+
+/**
+ * GET /einvoicing/cabys/hacienda?q=<texto>&top=<n>
+ * Consulta la API pública de CABYS de Hacienda en tiempo real.
+ * No requiere que el hotel haya importado nada — busca directo en Hacienda.
+ */
+export async function searchCabysFromHacienda(req: Request, res: Response) {
+  const q = String((req.query as any)?.q || "").trim();
+  if (!q) return res.status(400).json({ message: "Parámetro q requerido" });
+
+  const top = Math.min(500, Math.max(1, Number((req.query as any)?.top || 20) || 20));
+
+  try {
+    const items = await searchCabysHacienda(q, top);
+    return res.json(
+      items.map((it) => ({
+        id: String(it.codigo),
+        description: String(it.descripcion),
+        taxRate: typeof it.impuesto === "number" ? it.impuesto : 13,
+      }))
+    );
+  } catch (err: any) {
+    return res.status(502).json({
+      message: "Error al consultar la API de Hacienda",
+      detail: err?.message || String(err),
+    });
+  }
+}
+
+/**
+ * GET /einvoicing/cabys/hacienda/:codigo
+ * Obtiene un código CABYS exacto desde Hacienda.
+ */
+export async function getCabysFromHacienda(req: Request, res: Response) {
+  const codigo = String((req.params as any)?.codigo || "").trim();
+  if (!codigo) return res.status(400).json({ message: "codigo requerido" });
+
+  try {
+    const item = await getCabysHacienda(codigo);
+    if (!item) return res.status(404).json({ message: "Código CABYS no encontrado en Hacienda" });
+    return res.json({
+      id: String(item.codigo),
+      description: String(item.descripcion),
+      taxRate: typeof item.impuesto === "number" ? item.impuesto : 13,
+    });
+  } catch (err: any) {
+    return res.status(502).json({
+      message: "Error al consultar la API de Hacienda",
+      detail: err?.message || String(err),
+    });
+  }
+}
+
+/**
+ * POST /einvoicing/cabys/sync
+ * Descarga códigos CABYS de Hacienda y los guarda en la BD del hotel.
+ * Body: { q: string, top?: number, mode?: "merge"|"replace" }
+ *
+ * q puede ser un término genérico como "hotel", "restaurant", "alojamiento"
+ * para traer los CABYS relevantes para el hotel y guardarlos localmente.
+ */
+export async function syncCabysFromHacienda(req: Request, res: Response) {
+  const hotelId = resolveHotelId(req);
+  if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
+
+  const q = String((req.body as any)?.q || "").trim();
+  if (!q) return res.status(400).json({ message: "Parámetro q requerido" });
+
+  const top = Math.min(500, Math.max(1, Number((req.body as any)?.top || 100) || 100));
+  const mode = String((req.body as any)?.mode || "merge");
+
+  try {
+    const items = await fetchCabysPage(q, top);
+    if (!items.length) return res.json({ ok: true, synced: 0, message: "Sin resultados de Hacienda" });
+
+    if (mode === "replace") {
+      await prisma.cabysCode.deleteMany({ where: { hotelId } });
+    }
+
+    const data = items.map((it) => ({
+      id: it.id,
+      description: it.description,
+      hotelId,
+    }));
+
+    const chunks: typeof data[] = [];
+    for (let i = 0; i < data.length; i += 5000) chunks.push(data.slice(i, i + 5000));
+
+    let created = 0;
+    for (const chunk of chunks) {
+      const r = await prisma.cabysCode.createMany({ data: chunk, skipDuplicates: true });
+      created += r.count || 0;
+    }
+
+    return res.json({ ok: true, synced: items.length, created, query: q });
+  } catch (err: any) {
+    return res.status(502).json({
+      message: "Error al sincronizar CABYS desde Hacienda",
+      detail: err?.message || String(err),
+    });
+  }
 }
 
 export async function listCatalogEntries(req: Request, res: Response) {

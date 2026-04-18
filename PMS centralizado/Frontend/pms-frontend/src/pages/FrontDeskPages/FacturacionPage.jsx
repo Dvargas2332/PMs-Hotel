@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
+import FolioModal from "../../components/FolioModal";
 
 function Badge({ color = "gray", children }) {
   const cls = {
@@ -38,6 +39,7 @@ export default function BillingPage() {
   const [issuing, setIssuing] = useState({});
   const [currency, setCurrency] = useState({ code: "CRC", symbol: "", decimals: 0 });
   const [activeStays, setActiveStays] = useState([]);
+  const [folioInvoiceId, setFolioInvoiceId] = useState(null);
 
   const [filters, setFilters] = useState({
     dateFrom: "",
@@ -72,7 +74,7 @@ export default function BillingPage() {
       Object.entries(filters).forEach(([key, value]) => {
         if (value) params.append(key, String(value));
       });
-      const { data } = await api.get(`/api/invoices?${params.toString()}`);
+      const { data } = await api.get(`/invoices?${params.toString()}`);
       setHistoryItems(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
@@ -134,6 +136,7 @@ export default function BillingPage() {
   const tableRows = useMemo(() => historyItems || [], [historyItems]);
 
   return (
+    <>
     <div className="p-4 min-h-screen text-sm" style={{ background: frontdeskTheme.background.app }}>
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold">{t("frontdesk.billing.title")}</h1>
@@ -193,7 +196,15 @@ export default function BillingPage() {
                         <td className="px-2 py-2 text-right">
                           {fmtCurrency(inv?.total || 0, currency)}
                         </td>
-                        <td className="px-2 py-2 text-right">
+                        <td className="px-2 py-2 text-right flex gap-1 justify-end">
+                          {inv?.id && (
+                            <button
+                              className="px-2 py-1 rounded border text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200"
+                              onClick={() => setFolioInvoiceId(inv.id)}
+                            >
+                              Ver Folio
+                            </button>
+                          )}
                           <button
                             className="px-2 py-1 rounded border text-xs"
                             onClick={() => navigate("/frontdesk/reservas")}
@@ -299,6 +310,7 @@ export default function BillingPage() {
                 <th className="px-2 py-2 text-left">{t("common.status")}</th>
                 <th className="px-2 py-2 text-left">{t("frontdesk.billing.table.edoc")}</th>
                 <th className="px-2 py-2 text-right">{t("common.total")}</th>
+                <th className="px-2 py-2 text-center">Folio</th>
               </tr>
             </thead>
             <tbody>
@@ -363,13 +375,21 @@ export default function BillingPage() {
                       </div>
                     </td>
                     <td className="px-2 py-1 text-right">{fmtCurrency(inv.total, currency)}</td>
+                    <td className="px-2 py-1 text-center">
+                      <button
+                        className="px-2 py-1 rounded border text-[11px] bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200"
+                        onClick={() => setFolioInvoiceId(inv.id)}
+                      >
+                        Folio
+                      </button>
+                    </td>
                   </tr>
                 );
               })}
 
               {!tableRows.length && !loading && (
                 <tr>
-                  <td className="px-2 py-4 text-center text-slate-500" colSpan={7}>
+                  <td className="px-2 py-4 text-center text-slate-500" colSpan={8}>
                     {t("frontdesk.billing.noInvoices")}
                   </td>
                 </tr>
@@ -379,5 +399,13 @@ export default function BillingPage() {
         </div>
       </div>
     </div>
+    {folioInvoiceId && (
+      <FolioModal
+        invoiceId={folioInvoiceId}
+        onClose={() => setFolioInvoiceId(null)}
+        onUpdated={() => { loadHistory(); loadActiveStays(); }}
+      />
+    )}
+    </>
   );
 }

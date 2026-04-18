@@ -1,6 +1,15 @@
+import { randomInt } from "node:crypto";
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
+import {
+  buildCrXml,
+  buildLinesFromPmsItems,
+  buildSummaryFromLines,
+  type CrIssuer,
+  type CrReceiver,
+  type CrPayment,
+} from "../services/einvoicing.xml.builder.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -27,12 +36,12 @@ function todayYYMMDD() {
   return `${yy}${mm}${dd}`;
 }
 
-function todayDDMMYY() {
-  const d = new Date();
-  const yy = String(d.getFullYear()).slice(-2);
+// Formato DDMMAAAA (8 dígitos) requerido por Hacienda CR para la clave de 50 dígitos
+function dateDDMMAAAA(d: Date = new Date()) {
+  const yyyy = String(d.getFullYear());
   const mm = padLeft(String(d.getMonth() + 1), 2);
   const dd = padLeft(String(d.getDate()), 2);
-  return `${dd}${mm}${yy}`;
+  return `${dd}${mm}${yyyy}`;
 }
 
 async function nextConsecutive(hotelId: string, docType: "FE" | "TE", branch: string, terminal: string) {
@@ -68,34 +77,39 @@ function pseudoKey(consecutive: string) {
   return `CR-PENDING-${todayYYMMDD()}-${consecutive}-${rnd}`;
 }
 
+// Clave numérica según DGT-R-48-2016 v4.4:
+// País(3) + DDMMAAAA(8) + Cédula(12) + Consecutivo(20) + Situación(1) + Seguridad(8) = 52 dígitos
+// El XSD de Hacienda acepta este formato extendido desde la versión 4.3+
 function crOfficialKey(opts: {
-  countryCode: string; // 3 digits, e.g. 506
-  issuerId: string; // numeric, 12 digits padded
-  consecutive: string; // 20 digits
-  situation: string; // 1 digit
-  securityCode: string; // 8 digits
+  countryCode: string;
+  issuerId: string;
+  consecutive: string;
+  situation: string;
+  securityCode: string;
+  date?: Date;
 }) {
-  const country = padLeft(String(opts.countryCode || "506").replace(/\D/g, ""), 3);
-  const issuer = padLeft(String(opts.issuerId || "").replace(/\D/g, ""), 12);
+  const country     = padLeft(String(opts.countryCode || "506").replace(/\D/g, ""), 3);
+  const dateStr     = dateDDMMAAAA(opts.date);
+  const issuer      = padLeft(String(opts.issuerId || "").replace(/\D/g, ""), 12);
   const consecutive = String(opts.consecutive || "").replace(/\D/g, "");
-  const situation = padLeft(String(opts.situation || "1").replace(/\D/g, ""), 1);
-  const security = padLeft(String(opts.securityCode || "").replace(/\D/g, ""), 8);
-
-  return `${country}${todayDDMMYY()}${issuer}${consecutive}${situation}${security}`;
+  const situation   = padLeft(String(opts.situation || "1").replace(/\D/g, ""), 1);
+  const security    = padLeft(String(opts.securityCode || "").replace(/\D/g, ""), 8);
+  return `${country}${dateStr}${issuer}${consecutive}${situation}${security}`;
 }
 
 function randomSecurityCode() {
-  return padLeft(String(Math.floor(Math.random() * 100_000_000)), 8);
+  return padLeft(String(randomInt(0, 100_000_000)), 8);
 }
 
 export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
   const hotelId = resolveHotelId(req);
   if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
 
-  const { invoiceId, docType, receiver } = (req.body || {}) as {
+  const { invoiceId, docType, receiver, situation: bodySituation } = (req.body || {}) as {
     invoiceId?: string;
     docType?: "FE" | "TE";
     receiver?: any;
+    situation?: string; // override para contingencia: "1" normal, "3/4/5" contingencia
   };
   if (!invoiceId) return res.status(400).json({ message: "invoiceId requerido" });
   if (docType !== "FE" && docType !== "TE") return res.status(400).json({ message: "docType invalido (FE/TE)" });
@@ -117,7 +131,9 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
   const terminal = String(fd.terminal || "00001");
   const countryCode = String(issuer.countryCode || "506");
   const issuerIdNumber = String(issuer.idNumber || "");
-  const situation = String(fd.situation || "1");
+  // Situación: 1=normal, 3=corte eléctrico, 4=corte internet, 5=otros (contingencia)
+  const situation = String(bodySituation || fd.situation || "1");
+  const isContingency = ["3", "4", "5"].includes(situation);
 
   if (!issuerIdNumber.trim()) {
     return res.status(400).json({
@@ -141,6 +157,7 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
   });
   if (existing) return res.json(existing);
 
+  const now = new Date();
   const consecutive = await nextConsecutive(hotelId, docType, branch, terminal);
   const key = crOfficialKey({
     countryCode,
@@ -148,6 +165,74 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
     consecutive,
     situation,
     securityCode: randomSecurityCode(),
+    date: now,
+  });
+
+  // Construir XML CR V4.4
+  const crIssuer: CrIssuer = {
+    name: String(issuer.name || issuer.legalName || ""),
+    idType: String(issuer.idType || issuer.idTypeCode || "02"),
+    idNumber: issuerIdNumber,
+    commercialName: issuer.commercialName || undefined,
+    province: issuer.province || undefined,
+    canton: issuer.canton || undefined,
+    district: issuer.district || undefined,
+    address: issuer.address || undefined,
+    phone: issuer.phone || undefined,
+    email: issuer.email || undefined,
+    economicActivity: issuer.economicActivity || "551001",
+  };
+
+  const crReceiver: CrReceiver | undefined = receiver && receiver.idNumber ? {
+    name: String(receiver.name || receiver.legalName || ""),
+    idType: String(receiver.idType || receiver.idTypeCode || "01"),
+    idNumber: String(receiver.idNumber || receiver.identification || ""),
+    commercialName: receiver.commercialName || undefined,
+    province: receiver.province || undefined,
+    canton: receiver.canton || undefined,
+    district: receiver.district || undefined,
+    address: receiver.address || undefined,
+    phone: receiver.phone || undefined,
+    email: receiver.email || undefined,
+  } : undefined;
+
+  const currency = String((invoice as any).currency || "CRC");
+
+  const crLines = buildLinesFromPmsItems(
+    (invoice.items || []).map((item: any) => ({
+      name: item.description || item.name || "Servicio",
+      price: parseFloat(String(item.unitPrice ?? item.price ?? 0)),
+      qty: item.quantity ?? item.qty ?? 1,
+      cabysCode: item.cabysCode || undefined,
+      commercialCode: item.itemId || item.id || undefined,
+      taxRate: item.taxRate ?? 13,
+      taxExempt: item.taxExempt ?? false,
+    }))
+  );
+
+  const crPayments: CrPayment[] = (invoice.payments || []).map((p: any) => ({
+    method: String(p.method || p.paymentMethod || "01"),
+    amount: parseFloat(String(p.amount ?? 0)),
+    currency: p.currency || currency || undefined,
+    reference: p.reference || p.transactionId || undefined,
+  }));
+  if (!crPayments.length) {
+    crPayments.push({ method: "01", amount: parseFloat(String(invoice.total ?? 0)) });
+  }
+
+  const summary = buildSummaryFromLines(crLines);
+  const xmlUnsigned = buildCrXml({
+    docType,
+    key,
+    consecutive,
+    issueDate: now,
+    issuer: crIssuer,
+    receiver: crReceiver,
+    currency,
+    items: crLines,
+    payments: crPayments,
+    summary,
+    condition: "01",
   });
 
   const payload = {
@@ -171,6 +256,8 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
     reservation: invoice.reservation,
     items: invoice.items,
     payments: invoice.payments,
+    // XML sin firmar listo para enviar a Microfactura
+    xml: xmlUnsigned,
   };
 
   const doc = await prisma.eInvoicingDocument.create({
@@ -178,7 +265,8 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
       hotelId,
       invoiceId,
       docType,
-      status: "DRAFT",
+      // En contingencia el documento queda en estado CONTINGENCY hasta que se transmita
+      status: isContingency ? "CONTINGENCY" : "DRAFT",
       branch: padLeft(branch, 3),
       terminal: padLeft(terminal, 5),
       consecutive,
