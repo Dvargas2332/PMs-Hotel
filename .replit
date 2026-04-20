@@ -1,0 +1,5 @@
+run = "docker-compose -f docker-compose.replit.yml up"
+language = "nodejs"
+
+[nix]
+channel = "unstable"
