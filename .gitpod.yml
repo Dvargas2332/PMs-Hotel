@@ -1,0 +1,16 @@
+tasks:
+  - name: Start Docker Compose
+    init: docker-compose up -d
+    command: docker-compose logs -f
+ 
+ports:
+  - port: 80
+    onOpen: open-browser
+  - port: 4000
+    onOpen: ignore
+ 
+vscode:
+  extensions:
+    - ms-vscode.makefile-tools
+    - ms-vscode-remote.remote-containers
+ 
