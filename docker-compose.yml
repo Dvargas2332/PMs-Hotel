@@ -1,15 +1,8 @@
 services:
-  frontend:
-    build:
-      context: ./PMS centralizado/Frontend/pms-frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-
   backend:
     build:
       context: ./PMS centralizado/Backend/pms-backend
+    restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -22,6 +15,21 @@ services:
       GESTOR_EMAIL: ${GESTOR_EMAIL}
       GESTOR_PASSWORD: ${GESTOR_PASSWORD}
       GESTOR_NAME: ${GESTOR_NAME:-Gestor SaaS}
-      GESTOR_SYSTEM_HOTEL_NAME: ${GESTOR_SYSTEM_HOTEL_NAME:-Gestor SaaS}
+      GESTOR_SYSTEM_HOTEL_NAME: ${GESTOR_SYSTEM_HOTEL_NAME:-Hotel PMS}
+      MICROFACTURA_URL: ${MICROFACTURA_URL:-}
+      MICROFACTURA_API_KEY: ${MICROFACTURA_API_KEY:-}
+      FORMINFO_API_KEY: ${FORMINFO_API_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
     ports:
       - "4000:4000"
+
+  frontend:
+    build:
+      context: ./PMS centralizado/Frontend/pms-frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"

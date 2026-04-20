@@ -1,16 +1,62 @@
+image:
+  file: .gitpod.Dockerfile
+
 tasks:
-  - name: Start Docker Compose
-    init: docker-compose up -d
-    command: docker-compose logs -f
- 
+  - name: Setup env & start services
+    init: |
+      # Generar .env si no existe — completar con tus credenciales de Supabase
+      if [ ! -f .env ]; then
+        GITPOD_BACKEND_URL="$(gp url 4000)"
+        GITPOD_FRONTEND_URL="$(gp url 80)"
+        cat > .env <<EOF
+      # === Base de datos (Supabase) ===
+      DATABASE_URL=postgresql://postgres:<PASSWORD>@<HOST>:5432/postgres
+      DIRECT_URL=postgresql://postgres:<PASSWORD>@<HOST>:5432/postgres
+
+      # === JWT ===
+      JWT_SECRET=changeme_jwt_secret
+      JWT_EXPIRES=7d
+      BCRYPT_ROUNDS=10
+
+      # === URLs (auto-generadas por Gitpod) ===
+      FRONTEND_URL=${GITPOD_FRONTEND_URL}
+      VITE_API_URL=${GITPOD_BACKEND_URL}
+
+      # === Gestor SaaS ===
+      GESTOR_EMAIL=admin@pms.local
+      GESTOR_PASSWORD=Admin1234!
+      GESTOR_NAME=Gestor SaaS
+      GESTOR_SYSTEM_HOTEL_NAME=Hotel PMS
+
+      # === Integraciones opcionales ===
+      MICROFACTURA_URL=
+      MICROFACTURA_API_KEY=
+      FORMINFO_API_KEY=
+      TURNSTILE_SECRET_KEY=
+      EOF
+        echo "⚠️  .env generado — edita DATABASE_URL y DIRECT_URL con tus credenciales de Supabase antes de continuar"
+      fi
+    command: |
+      # Verificar que DATABASE_URL fue configurado
+      if grep -q "<PASSWORD>" .env; then
+        echo "❌ Configura DATABASE_URL y DIRECT_URL en el archivo .env con tus credenciales de Supabase"
+        exit 1
+      fi
+      docker compose up --build -d
+      echo ""
+      echo "========================================="
+      echo "  PMS Hotel levantado en Gitpod"
+      echo "  Frontend: $(gp url 80)"
+      echo "  Backend:  $(gp url 4000)"
+      echo "========================================="
+      docker compose logs -f
+
 ports:
   - port: 80
     onOpen: open-browser
+    visibility: public
+    name: Frontend
   - port: 4000
-    onOpen: ignore
- 
-vscode:
-  extensions:
-    - ms-vscode.makefile-tools
-    - ms-vscode-remote.remote-containers
- 
+    onOpen: notify
+    visibility: public
+    name: Backend API
