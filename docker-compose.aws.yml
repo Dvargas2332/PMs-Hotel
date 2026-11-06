@@ -1,0 +1,42 @@
+# Despliegue en EC2: solo la API. El estático (SPA) vive en S3 detrás de CloudFront.
+#
+#   docker compose -f docker-compose.aws.yml up -d --build
+#
+# Antes de levantar, crear `.env.aws` en esta misma carpeta a partir de
+# `PMS centralizado/Backend/pms-backend/.env.example` y completar los valores.
+# `.env.aws` está ignorado por git (regla `.env.*`).
+#
+# ---------------------------------------------------------------------------
+# IMPORTANTE sobre el puerto 4000
+# ---------------------------------------------------------------------------
+# El puerto se publica porque CloudFront necesita alcanzar la instancia, pero
+# NO debe quedar abierto a internet: en el Security Group de la instancia,
+# inbound TCP 4000 solo desde el prefix list gestionado
+# `com.amazonaws.global.cloudfront.origin-facing`.
+# Con eso, escanear la IP de la instancia no llega a nada.
+
+services:
+  api:
+    build:
+      context: ./PMS centralizado/Backend/pms-backend
+    image: pms-api:latest
+    restart: unless-stopped
+    env_file:
+      - ./.env.aws
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # 1 = un solo salto (CloudFront -> EC2). Con ALB delante debe ser 2,
+      # porque si no todos los clientes comparten la IP del proxy y el
+      # rate limit bloquea a todos a la vez.
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+    ports:
+      # Publicado solo para CloudFront; el Security Group es el que filtra.
+      - "4000:4000"
+    stop_grace_period: 30s
+    logging:
+      # Sin tope, los logs de Docker llenan el disco de la instancia.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
