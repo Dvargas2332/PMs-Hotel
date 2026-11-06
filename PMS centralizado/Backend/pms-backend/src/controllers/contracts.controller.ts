@@ -3,6 +3,8 @@ import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { Prisma } from "@prisma/client";
 
+function sanitize(r: any) { if (!r) return r; const { hotelId: _h, ...s } = r; return s; }
+
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -53,7 +55,7 @@ export async function createContract(req: Request, res: Response) {
 
   try {
     const created = await prisma.contract.create({ data });
-    res.status(201).json(created);
+    res.json(sanitize(created));
   } catch (err) {
     console.error("createContract error", err);
     res.status(500).json({ message: "No se pudo crear el contrato." });
@@ -82,7 +84,7 @@ export async function updateContract(req: Request, res: Response) {
       where: { hotelId_id: { hotelId, id } },
       data,
     });
-    res.json(updated);
+    res.json(sanitize(updated));
   } catch (err) {
     console.error("updateContract error", err);
     res.status(500).json({ message: "No se pudo actualizar el contrato." });

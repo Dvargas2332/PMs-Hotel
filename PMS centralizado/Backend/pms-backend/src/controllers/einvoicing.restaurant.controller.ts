@@ -1,16 +1,7 @@
-import { randomInt } from "node:crypto";
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
-import { Prisma } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth.js";
-import {
-  buildCrXml,
-  buildLinesFromPmsItems,
-  buildSummaryFromLines,
-  type CrIssuer,
-  type CrReceiver,
-  type CrPayment,
-} from "../services/einvoicing.xml.builder.js";
+import { issueRestaurantDoc } from "../services/restaurant.einvoice.js";
 
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
@@ -18,89 +9,19 @@ function resolveHotelId(req: Request): string | undefined {
   return user?.hotelId;
 }
 
-function padLeft(input: string, len: number, char = "0") {
-  const s = String(input ?? "");
-  if (s.length >= len) return s.slice(-len);
-  return char.repeat(len - s.length) + s;
-}
-
-function typeCode(docType: "FE" | "TE") {
-  return docType === "FE" ? "01" : "04";
-}
-
-// Formato DDMMAAAA (8 dígitos) requerido por Hacienda CR para la clave
-function dateDDMMAAAA(d: Date = new Date()) {
-  const yyyy = String(d.getFullYear());
-  const mm = padLeft(String(d.getMonth() + 1), 2);
-  const dd = padLeft(String(d.getDate()), 2);
-  return `${dd}${mm}${yyyy}`;
-}
-
-async function nextConsecutive(hotelId: string, docType: "FE" | "TE", branch: string, terminal: string) {
-  const b = padLeft(branch || "001", 3);
-  const t = padLeft(terminal || "00001", 5);
-
-  const seq = await prisma.$transaction(async (tx) => {
-    const existing = await tx.eInvoicingSequence.findUnique({
-      where: { hotelId_docType_branch_terminal: { hotelId, docType, branch: b, terminal: t } },
-      select: { id: true, nextNumber: true },
-    });
-    if (!existing) {
-      await tx.eInvoicingSequence.create({
-        data: { hotelId, docType, branch: b, terminal: t, nextNumber: 2 },
-      });
-      return 1;
-    }
-    await tx.eInvoicingSequence.update({
-      where: { id: existing.id },
-      data: { nextNumber: { increment: 1 } },
-    });
-    return existing.nextNumber;
-  });
-
-  const n = padLeft(String(seq), 10);
-  return `${typeCode(docType)}${b}${t}${n}`;
-}
-
-function randomSecurityCode() {
-  return padLeft(String(randomInt(0, 100_000_000)), 8);
-}
-
-function normalizeReceiver(input: unknown) {
-  if (!input || typeof input !== "object") return undefined;
-  const data = input as Record<string, unknown>;
-  const hasData = ["id", "idNumber", "identification", "name", "legalName", "email", "phone"].some(
-    (k) => String(data[k] ?? "").trim().length > 0
-  );
-  return hasData ? (data as Prisma.InputJsonValue) : undefined;
-}
-
-// Clave: País(3) + DDMMAAAA(8) + Cédula(12) + Consecutivo(20) + Situación(1) + Seguridad(8)
-function crOfficialKey(opts: {
-  countryCode: string;
-  issuerId: string;
-  consecutive: string;
-  situation: string;
-  securityCode: string;
-  date?: Date;
-}) {
-  const country     = padLeft(String(opts.countryCode || "506").replace(/\D/g, ""), 3);
-  const dateStr     = dateDDMMAAAA(opts.date);
-  const issuer      = padLeft(String(opts.issuerId || "").replace(/\D/g, ""), 12);
-  const consecutive = String(opts.consecutive || "").replace(/\D/g, "");
-  const situation   = padLeft(String(opts.situation || "1").replace(/\D/g, ""), 1);
-  const security    = padLeft(String(opts.securityCode || "").replace(/\D/g, ""), 8);
-  return `${country}${dateStr}${issuer}${consecutive}${situation}${security}`;
-}
-
+/**
+ * Emisión manual/reemisión del comprobante de una venta de restaurante.
+ * El XML, los medios de pago, el cliente y el consecutivo los resuelve el
+ * servicio compartido (el mismo que usa el cierre de la orden).
+ */
 export async function issueRestaurantElectronicDoc(req: Request, res: Response) {
   const hotelId = resolveHotelId(req);
   if (!hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
 
-  const { restaurantOrderId, docType, receiver, situation: bodySituation } = (req.body || {}) as {
+  const { restaurantOrderId, docType, receiver, situation } = (req.body || {}) as {
     restaurantOrderId?: string;
     docType?: "FE" | "TE";
-    receiver?: any;
+    receiver?: unknown;
     situation?: string;
   };
   if (!restaurantOrderId) return res.status(400).json({ message: "restaurantOrderId requerido" });
@@ -110,23 +31,12 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     where: { hotelId },
     select: { enabled: true, settings: true },
   });
+  const settings = (cfg?.settings || {}) as any;
   if (!cfg?.enabled) return res.status(400).json({ message: "Facturación electrónica no está habilitada" });
-
-  const settings = (cfg.settings || {}) as any;
-  const connections = (settings.moduleConnections || {}) as any;
-  if (connections.restaurant === false) {
+  if (settings?.moduleConnections?.restaurant === false) {
     return res.status(400).json({ message: "Restaurante no está habilitado para facturación electrónica" });
   }
-
-  const issuer = (settings.issuer || {}) as any;
-  const rs = (settings.restaurant || {}) as any;
-  const countryCode = String(issuer.countryCode || "506");
-  const issuerIdNumber = String(issuer.idNumber || "");
-  const branch = String(rs.branch || "001");
-  const terminal = String(rs.terminal || "00001");
-  const situation = String(bodySituation || rs.situation || "1");
-  const isContingency = ["3", "4", "5"].includes(situation);
-  if (!issuerIdNumber.trim()) {
+  if (!String(settings?.issuer?.idNumber || "").trim()) {
     return res.status(400).json({
       message: "Configure el emisor en Facturación Electrónica (número de identificación del emisor) antes de emitir FE/TE.",
     });
@@ -141,150 +51,27 @@ export async function issueRestaurantElectronicDoc(req: Request, res: Response) 
     return res.status(400).json({ message: "La orden debe estar pagada antes de emitir FE/TE" });
   }
 
-  const normalizedReceiver = normalizeReceiver(receiver);
-  const effectiveDocType: "FE" | "TE" = normalizedReceiver ? docType : "TE";
-
-  const existing = await prisma.eInvoicingDocument.findFirst({
-    where: { hotelId, restaurantOrderId: String(restaurantOrderId), docType: effectiveDocType },
-  });
-  if (existing) return res.json(existing);
-
-  const now = new Date();
-  const consecutive = await nextConsecutive(hotelId, effectiveDocType, branch, terminal);
-  const key = crOfficialKey({
-    countryCode,
-    issuerId: issuerIdNumber,
-    consecutive,
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  const result = await issueRestaurantDoc({
+    hotelId,
+    order,
+    docType,
+    receiver,
     situation,
-    securityCode: randomSecurityCode(),
-    date: now,
+    actorId: user?.sub ?? null,
   });
 
-  // Construir XML CR V4.4
-  const crIssuer: CrIssuer = {
-    name: String(issuer.name || issuer.legalName || ""),
-    idType: String(issuer.idType || issuer.idTypeCode || "02"),
-    idNumber: issuerIdNumber,
-    commercialName: issuer.commercialName || undefined,
-    province: issuer.province || undefined,
-    canton: issuer.canton || undefined,
-    district: issuer.district || undefined,
-    address: issuer.address || undefined,
-    phone: issuer.phone || undefined,
-    email: issuer.email || undefined,
-    economicActivity: issuer.economicActivity || "563001",  // 563001 = Restaurantes
-  };
-
-  const receiverData = normalizedReceiver as any;
-  const crReceiver: CrReceiver | undefined = receiverData?.idNumber ? {
-    name: String(receiverData.name || receiverData.legalName || ""),
-    idType: String(receiverData.idType || receiverData.idTypeCode || "01"),
-    idNumber: String(receiverData.idNumber || receiverData.identification || ""),
-    commercialName: receiverData.commercialName || undefined,
-    phone: receiverData.phone || undefined,
-    email: receiverData.email || undefined,
-  } : undefined;
-
-  const tip = parseFloat(String(order.tip10 ?? 0));
-  const payBreakdown = (order.paymentBreakdown || {}) as any;
-
-  const crLines = buildLinesFromPmsItems(
-    (order.items || []).map((item: any) => ({
-      name: item.name || "Producto",
-      price: parseFloat(String(item.price ?? 0)),
-      qty: item.qty ?? 1,
-      cabysCode: item.cabysCode || undefined,
-      commercialCode: item.itemId || item.id || undefined,
-      taxRate: item.taxRate ?? 13,
-      taxExempt: item.taxExempt ?? false,
-    }))
-  );
-
-  // El 10% de servicio va como línea adicional si existe
-  if (tip > 0) {
-    crLines.push({
-      lineNumber: crLines.length + 1,
-      description: "10% Servicio",
-      unitCode: "Sp",
-      qty: 1,
-      unitPrice: tip,
-      subtotal: tip,
-      total: tip,
-      discount: 0,
-      taxCode: undefined,
-      taxRate: undefined,
-      taxAmount: undefined,
+  if (!result.doc) {
+    return res.status(400).json({
+      code: result.skipped || "NOT_ISSUED",
+      message:
+        result.skipped === "NO_ISSUER"
+          ? "Falta el número de identificación del emisor en Facturación Electrónica."
+          : "La facturación electrónica no está habilitada para este hotel.",
     });
   }
 
-  const crPayments: CrPayment[] = [];
-  if (payBreakdown && typeof payBreakdown === "object") {
-    for (const [method, amount] of Object.entries(payBreakdown)) {
-      if (parseFloat(String(amount)) > 0) {
-        crPayments.push({ method: String(method), amount: parseFloat(String(amount)) });
-      }
-    }
-  }
-  if (!crPayments.length) {
-    crPayments.push({ method: "01", amount: parseFloat(String(order.total ?? 0)) });
-  }
-
-  const summary = buildSummaryFromLines(crLines);
-  const xmlUnsigned = buildCrXml({
-    docType: effectiveDocType,
-    key,
-    consecutive,
-    issueDate: now,
-    issuer: crIssuer,
-    receiver: crReceiver,
-    currency: "CRC",
-    items: crLines,
-    payments: crPayments,
-    summary,
-    condition: "01",
-    tip: tip > 0 ? tip : undefined,
-  });
-
-  const payload = {
-    source: "restaurant",
-    issuer: {
-      countryCode,
-      idNumber: issuerIdNumber,
-      branch: padLeft(branch, 3),
-      terminal: padLeft(terminal, 5),
-      situation,
-    },
-    order: {
-      id: order.id,
-      sectionId: order.sectionId,
-      tableId: order.tableId,
-      status: order.status,
-      serviceType: order.serviceType,
-      roomId: order.roomId,
-      total: order.total,
-      tip10: order.tip10,
-      paymentBreakdown: order.paymentBreakdown,
-      createdAt: order.createdAt,
-      updatedAt: order.updatedAt,
-      items: order.items,
-    },
-    xml: xmlUnsigned,
-  };
-
-  const doc = await prisma.eInvoicingDocument.create({
-    data: {
-      hotelId,
-      restaurantOrderId: String(restaurantOrderId),
-      docType: effectiveDocType,
-      status: isContingency ? "CONTINGENCY" : "DRAFT",
-      branch: padLeft(branch, 3),
-      terminal: padLeft(terminal, 5),
-      consecutive,
-      key,
-      receiver: normalizedReceiver,
-      payload,
-    },
-  });
-
-  return res.json(doc);
+  const { hotelId: _h, ...safe } = result.doc as any;
+  return res.json({ ...safe, created: result.created });
 }

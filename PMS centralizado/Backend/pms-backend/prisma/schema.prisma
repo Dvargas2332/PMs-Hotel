@@ -20,6 +20,7 @@ enum RoomStatus {
   OCCUPIED
   CLEANING
   BLOCKED
+  MAINTENANCE
 }
 
 enum ReservationStatus {
@@ -34,6 +35,7 @@ enum RestaurantOrderStatus {
   OPEN
   CLOSED
   PAID
+  CANCELED
 }
 
 enum RestaurantKdsArea {
@@ -176,6 +178,12 @@ model RestaurantOrder {
   tableId          String
   waiterId         String?
   cashierId        String?
+  // Turno de caja al que pertenece la venta (CashAudit.id).
+  shiftId          String?
+  // Personal que creó la orden y que la cobró (RestaurantStaff.id, sin FK para
+  // conservar el histórico si se elimina el empleado).
+  createdByStaffId String?
+  closedByStaffId  String?
   status           RestaurantOrderStatus @default(OPEN)
   note             String?
   covers           Int?
@@ -185,9 +193,16 @@ model RestaurantOrder {
   discountId       String?
   discountPercent  Decimal               @default(0) @db.Decimal(6, 2)
   discountAmount   Decimal               @default(0) @db.Decimal(12, 2)
+  subtotal         Decimal               @default(0) @db.Decimal(12, 2)
+  tax              Decimal               @default(0) @db.Decimal(12, 2)
   total            Decimal               @default(0) @db.Decimal(12, 2)
   tip10            Decimal               @default(0) @db.Decimal(12, 2)
   paymentBreakdown Json?
+  // Moneda de la venta (moneda base del hotel al momento del cobro).
+  currency         String                @default("CRC")
+  // Detalle por medio de cobro: [{ key, name, code, amountBase, currency, exchangeRate, reference }]
+  // Permite conservar cobros en moneda extranjera con su tipo de cambio.
+  paymentDetails   Json?
   canceledAt       DateTime?
   canceledBy       String?
   cancelAdminUser  String?
@@ -207,6 +222,8 @@ model RestaurantOrder {
   @@index([hotelId])
   @@index([hotelId, tableId, status])
   @@index([guestId])
+  @@index([hotelId, shiftId])
+  @@index([hotelId, createdByStaffId])
   @@unique([hotelId, saleNumber])
 }
 
@@ -343,6 +360,9 @@ model RestaurantMenuAssignment {
   timezone  String   @default("America/Costa_Rica")
   priority  Int      @default(0)
   active    Boolean  @default(true)
+  // Tipo de servicio al que aplica el menú: DINE_IN, TAKEAWAY, DELIVERY, ROOM.
+  // null = aplica a todos.
+  serviceType String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -354,6 +374,7 @@ model RestaurantMenuAssignment {
   @@index([sectionId])
   @@index([menuId])
   @@index([hotelId, sectionId, active])
+  @@index([hotelId, sectionId, serviceType])
 }
 
 model RestaurantSectionObject {
@@ -548,6 +569,7 @@ model Tax {
   code      String
   name      String
   percent   Decimal  @default(0) @db.Decimal(8, 4)
+  kind      String   @default("OTHER")
   scope     String   @default("room")
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -735,9 +757,24 @@ model SaasBillingPayment {
 model SaasConfig {
   key              String   @id
   smtp             Json?
+  resendConfig     Json?
   printFormsGlobal Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// Bitácora de acciones del gestor SaaS (no depende de un hotel).
+model SaasAuditLog {
+  id        String   @id @default(cuid())
+  actor     String?
+  action    String
+  entity    String
+  entityId  String?
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
 }
 
 model Hotel {
@@ -746,6 +783,9 @@ model Hotel {
   name                 String
   membership           String   @default("PLATINUM")
   membershipMonthlyFee Decimal  @default(0) @db.Decimal(12, 2)
+  // Suspensión desde el gestor: un hotel inactivo no puede operar ni iniciar sesión.
+  active               Boolean  @default(true)
+  suspendedAt          DateTime?
   currency             String   @default("CRC")
   phone1               String?
   phone2               String?
@@ -940,6 +980,7 @@ model LauncherAccount {
   id        String   @id @default(cuid())
   username  String // identificador de usuario (login) ─ unico por hotel
   name      String   @default("") // nombre visible
+  email     String? // contacto del administrador del launcher (recuperación/avisos)
   password  String
   hotelId   String
   roleId    String   @default("ADMIN")
@@ -963,6 +1004,10 @@ model User {
   password     String
   role         Role          @default(RECEPTION)
   hotelId      String
+  // Invitación al usuario principal: se guarda el hash del token, no el token.
+  inviteTokenHash String?
+  inviteExpiresAt DateTime?
+  inviteSentAt    DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   reservations Reservation[]
@@ -1047,7 +1092,8 @@ model Reservation {
   rooming    String?
   otaCode    String?
   roomId     String
-  guestId    String
+  guestId    String?
+  guestName  String?
   userId     String?
   contractId String?
   ratePlanId String?
@@ -1063,7 +1109,7 @@ model Reservation {
   auditTrail Json?
 
   room     Room      @relation(fields: [roomId], references: [id])
-  guest    Guest     @relation(fields: [guestId], references: [id])
+  guest    Guest?     @relation(fields: [guestId], references: [id])
   user     User?     @relation(fields: [userId], references: [id])
   contract Contract? @relation("ContractReservations", fields: [hotelId, contractId], references: [hotelId, id], onDelete: SetNull)
   ratePlan RatePlan? @relation("RatePlanReservations", fields: [hotelId, ratePlanId], references: [hotelId, id], onDelete: SetNull)
@@ -1232,7 +1278,7 @@ model Invoice {
   id            String        @id @default(cuid())
   number        String        @unique
   reservationId String        @unique
-  guestId       String
+  guestId       String?
   total         Decimal       @default(0) @db.Decimal(12, 2)
   currency      String        @default("CRC")
   status        InvoiceStatus @default(DRAFT)
@@ -1244,7 +1290,7 @@ model Invoice {
 
   /// Lado CON FK (1–1). Todo en una línea para evitar parseos raros:
   reservation         Reservation          @relation("ReservationInvoice", fields: [reservationId], references: [id], onDelete: Cascade)
-  guest               Guest                @relation(fields: [guestId], references: [id])
+  guest               Guest?                @relation(fields: [guestId], references: [id])
   items               InvoiceItem[]
   payments            Payment[]
   creditNotes         CreditNote[]
@@ -1291,8 +1337,11 @@ model AdvanceDeposit {
   id             String   @id @default(cuid())
   reservationId  String?
   guestId        String?
+  voucher        String?
+  description    String?
   amount         Decimal  @default(0) @db.Decimal(12, 2)
   currency       String   @default("CRC")
+  paymentMethod  String?
   note           String?
   appliedInvoice String?
   createdAt      DateTime @default(now())
@@ -1332,10 +1381,17 @@ model CashAudit {
   module      CashAuditModule
   openedAt    DateTime?
   closedAt    DateTime?       @default(now())
+  openKey     String?         @unique
   totals      Json?
   details     Json?
   note        String?
   createdById String?
+  // Personal de restaurante que abrió y cerró el turno (RestaurantStaff.id),
+  // con snapshot del nombre para que la reportería no dependa del empleado.
+  openedByStaffId String?
+  openedByName    String?
+  closedByStaffId String?
+  closedByName    String?
   createdAt   DateTime        @default(now())
 
   hotel Hotel @relation(fields: [hotelId], references: [id], onDelete: Cascade)

@@ -10,9 +10,7 @@ import {
   updateRestaurantGeneral,
   getRestaurantBilling,
   updateRestaurantBilling,
-  listRestaurantPrinters,
   listRestaurantPrintForms,
-  printRestaurantOrder,
   updateRestaurantConfig,
   getRestaurantStats,
   closeShift,
@@ -22,16 +20,14 @@ import {
   listRestaurantHistorySales,
   listRestaurantHistoryInvoices,
   openRestaurantShift,
-  listCloses,
   listOrders,
-  getOrderHistory,
   listKds,
   updateKdsItem,
   createOrUpdateOrder,
   closeOrder,
   cancelRestaurantOrder,
+  voidPaidRestaurantOrder,
   moveOrderTable,
-  reprintOrder,
   voidRestaurantInvoice,
   listSections,
   createSection,
@@ -81,6 +77,8 @@ import {
   listInventory,
   createInventoryItem,
   updateInventoryItem,
+  registerInventoryWaste,
+  listInventoryMovements,
   deleteInventoryItem,
   listInventoryInvoices,
   createInventoryInvoice,
@@ -111,9 +109,7 @@ router.get("/general", requirePermission("restaurant.access.pos", "restaurant.po
 router.put("/general", requirePermission("restaurant.config.write"), updateRestaurantGeneral);
 router.get("/billing", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantBilling);
 router.put("/billing", requirePermission("restaurant.config.write"), updateRestaurantBilling);
-router.get("/printers", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), listRestaurantPrinters);
 router.get("/print-forms", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), listRestaurantPrintForms);
-router.post("/print", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.print"), printRestaurantOrder);
 router.get("/shift", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantShift);
 router.get("/shift/invoices", requirePermission("restaurant.access.pos", "restaurant.pos.open"), listShiftInvoices);
 router.post("/shift/open", requirePermission("restaurant.access.pos", "restaurant.pos.open"), openRestaurantShift);
@@ -123,24 +119,17 @@ router.get("/history/invoices", requirePermission("restaurant.access.history", "
 router.post(
   "/close",
   requirePermission("restaurant.access.closes", "restaurant.pos.open"),
-  requirePermission("restaurant.shift.closeX", "restaurant.shift.closeZ", "restaurant.shift.close"),
+  requirePermission("restaurant.shift.closeX", "restaurant.shift.closeZ", "restaurant.shift.closeZ.force", "restaurant.shift.close"),
   closeShift
 );
-router.get("/close", requirePermission("restaurant.access.closes", "restaurant.pos.open"), listCloses);
 router.get("/stats", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantStats);
 router.get("/orders", requirePermission("restaurant.access.pos", "restaurant.access.history", "restaurant.pos.open"), listOrders);
-router.get(
-  "/orders/:orderId/history",
-  requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"),
-  getOrderHistory
-);
 router.post("/order", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.write"), createOrUpdateOrder);
 router.post("/order/close", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.close"), closeOrder);
-router.post("/order/charge", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.close"), closeOrder);
 router.post("/order/cancel", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.cancel", "restaurant.orders.close"), cancelRestaurantOrder);
+router.post("/order/void-paid", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.access.history"), requirePermission("restaurant.orders.cancel", "restaurant.orders.close"), voidPaidRestaurantOrder);
 router.post("/order/move", requirePermission("restaurant.access.pos", "restaurant.pos.open"), requirePermission("restaurant.orders.move"), moveOrderTable);
-router.post("/order/reprint", requirePermission("restaurant.access.reprints", "restaurant.pos.open", "restaurant.print"), requirePermission("restaurant.print"), reprintOrder);
-router.post("/order/void-invoice", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), voidRestaurantInvoice);
+router.post("/order/void-invoice", requirePermission("restaurant.access.history", "restaurant.access.pos", "restaurant.pos.open"), requirePermission("einvoicing.cancel"), voidRestaurantInvoice);
 router.get("/kds", requirePermission("restaurant.access.kds", "restaurant.pos.open"), listKds);
 router.patch("/kds/:orderItemId", requirePermission("restaurant.access.kds", "restaurant.pos.open"), requirePermission("restaurant.orders.write"), updateKdsItem);
 router.get("/staff", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.access.history"), listRestaurantStaff);
@@ -208,6 +197,8 @@ router.delete("/items/:id", requirePermission("restaurant.items.write"), deleteI
 router.get("/inventory", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), listInventory);
 router.post("/inventory", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), createInventoryItem);
 router.patch("/inventory/:id", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), updateInventoryItem);
+router.post("/inventory/waste", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), registerInventoryWaste);
+router.get("/inventory/movements", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), listInventoryMovements);
 router.delete("/inventory/:id", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), deleteInventoryItem);
 router.get("/inventory/invoices", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), listInventoryInvoices);
 router.post("/inventory/invoices", requirePermission("restaurant.access.inventory", "restaurant.inventory.write"), requirePermission("restaurant.inventory.write"), createInventoryInvoice);

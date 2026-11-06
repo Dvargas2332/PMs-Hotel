@@ -6,6 +6,16 @@ import { Prisma, ReservationStatus } from "@prisma/client";
 import type { AuthUser } from "../middleware/auth.js";
 import { onFrontdeskCheckout } from "../services/accounting.integration.js";
 
+async function nextInvoiceNumber(hotelId: string): Promise<string> {
+  const seq = await prisma.hotelSequence.upsert({
+    where: { hotelId_key: { hotelId, key: "invoice" } },
+    update: { nextNumber: { increment: 1 } },
+    create: { hotelId, key: "invoice", nextNumber: 2 },
+    select: { nextNumber: true },
+  });
+  return `INV-${String(seq.nextNumber - 1).padStart(6, "0")}`;
+}
+
 async function nextReservationCode(hotelId: string): Promise<string> {
   const seq = await prisma.reservationSequence.upsert({
     where: { hotelId },
@@ -20,7 +30,7 @@ export async function createReservation(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
-  const { roomId, guestId, checkIn, checkOut, adults, children, code, rooming, otaCode, contractId, ratePlanId, mealPlanId } = req.body;
+  const { roomId, guestId, guestName, checkIn, checkOut, adults, children, code, rooming, otaCode, contractId, ratePlanId, mealPlanId } = req.body;
 
   const checkInDate = new Date(checkIn);
   const checkOutDate = new Date(checkOut);
@@ -36,9 +46,11 @@ export async function createReservation(req: Request, res: Response) {
   const room = await prisma.room.findFirst({ where: { id: roomId, hotelId: user.hotelId } });
   if (!room) return res.status(404).json({ message: "Habitacion no encontrada en este hotel" });
 
-  // Validar que el huésped pertenece al mismo hotel
-  const guest = await prisma.guest.findFirst({ where: { id: guestId, hotelId: user.hotelId } });
-  if (!guest) return res.status(404).json({ message: "Huesped no encontrado en este hotel" });
+  // Validar que el huésped existe (si se proporcionó guestId)
+  if (guestId) {
+    const guest = await prisma.guest.findFirst({ where: { id: guestId, hotelId: user.hotelId } });
+    if (!guest) return res.status(404).json({ message: "Huesped no encontrado en este hotel" });
+  }
 
   if (!contractId) {
     return res.status(400).json({ message: "Contrato requerido" });
@@ -82,7 +94,8 @@ export async function createReservation(req: Request, res: Response) {
     ratePlanId: includeExtras ? ratePlanId || null : undefined,
     mealPlanId: includeExtras ? mealPlanId || null : undefined,
     roomId,
-    guestId,
+    guestId: guestId || null,
+    guestName: guestId ? null : (guestName || null),
     checkIn: checkInDate,
     checkOut: checkOutDate,
     adults: adults ?? 2,
@@ -157,12 +170,14 @@ export async function listActiveCheckins(req: Request, res: Response) {
 
 export async function checkIn(req: Request, res: Response) {
   const { id } = req.params;
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
+  const user = (req as any).user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const hotelId = user.hotelId;
   const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
   if (!existing) return res.status(404).json({ message: "Reserva no encontrada" });
+  if (existing.status === "CHECKED_IN") return res.status(400).json({ message: "La reserva ya tiene check-in" });
+  if (existing.status === "CANCELED") return res.status(400).json({ message: "No se puede hacer check-in de una reserva cancelada" });
+  if (existing.status === "CHECKED_OUT") return res.status(400).json({ message: "La reserva ya tiene check-out" });
 
   try {
     const r = await prisma.$transaction(async (tx) => {
@@ -180,23 +195,68 @@ export async function checkIn(req: Request, res: Response) {
         await tx.room.updateMany({ where: { id: r.roomId, hotelId }, data: { status: "OCCUPIED" } });
       }
       if (r) {
-        const invoiceNumber = `INV-${r.id}`;
-        await tx.invoice.upsert({
-          where: { reservationId: r.id },
-          update: {},
-          create: {
-            reservationId: r.id,
-            guestId: r.guestId,
-            number: invoiceNumber,
-            status: "DRAFT",
-            currency: r.room?.currency || "CRC",
-            hotelId,
-          },
+        const invoiceNumber = await nextInvoiceNumber(hotelId);
+        let invoice = await tx.invoice.findFirst({
+          where: { reservationId: r.id, hotelId },
+          select: { id: true },
         });
+        if (!invoice) {
+          invoice = await tx.invoice.create({
+            data: {
+              reservationId: r.id,
+              guestId: r.guestId || undefined,
+              number: invoiceNumber,
+              status: "DRAFT",
+              currency: r.room?.currency || "CRC",
+              hotelId,
+            },
+            select: { id: true },
+          });
+        }
+        // Auto-generar cargos de habitación basados en el rate plan y duración
+        const nights = Math.max(1, Math.ceil(
+          (new Date(r.checkOut).getTime() - new Date(r.checkIn).getTime()) / (1000 * 60 * 60 * 24)
+        ));
+        const ratePlan = r.ratePlanId
+          ? await tx.ratePlan.findUnique({ where: { hotelId_id: { hotelId, id: r.ratePlanId } }, select: { price: true, name: true } })
+          : null;
+        const nightlyRate = Number(ratePlan?.price ?? r.room?.baseRate ?? 0);
+        if (nightlyRate > 0) {
+          let invoiceTotal = 0;
+          // Crear un cargo por cada noche individual
+          for (let night = 1; night <= nights; night++) {
+            const nightDate = new Date(r.checkIn);
+            nightDate.setDate(nightDate.getDate() + night - 1);
+            const dateLabel = nightDate.toISOString().slice(0, 10);
+            const itemDescription = `Hospedaje noche ${night}/${nights} - ${dateLabel} - ${ratePlan?.name || "Tarifa base"}`;
+            const existingItem = await tx.invoiceItem.findFirst({
+              where: { invoiceId: invoice.id, description: itemDescription },
+              select: { id: true },
+            });
+            if (!existingItem) {
+              await tx.invoiceItem.create({
+                data: {
+                  invoiceId: invoice.id,
+                  hotelId,
+                  description: itemDescription,
+                  quantity: 1,
+                  unitPrice: nightlyRate,
+                  total: nightlyRate,
+                },
+              });
+            }
+            invoiceTotal += nightlyRate;
+          }
+          await tx.invoice.updateMany({
+            where: { id: invoice.id, hotelId },
+            data: { total: invoiceTotal },
+          });
+        }
       }
       return r;
     });
-    res.json(r);
+    const { hotelId: _h, ...safeR } = r || {};
+    res.json(safeR);
   } catch (err: any) {
     if (err?.statusCode === 404) return res.status(404).json({ message: "Reserva no encontrada" });
     console.error("checkIn error", err);
@@ -206,8 +266,7 @@ export async function checkIn(req: Request, res: Response) {
 
 export async function checkOut(req: Request, res: Response) {
   const { id } = req.params;
-  // @ts-ignore
-  const user = req.user as AuthUser | undefined;
+  const user = (req as any).user as AuthUser | undefined;
   if (!user?.hotelId) return res.status(400).json({ message: "Hotel no definido en token" });
   const hotelId = user.hotelId;
   const existing = await prisma.reservation.findFirst({ where: { id, hotelId } });
@@ -227,15 +286,27 @@ export async function checkOut(req: Request, res: Response) {
       }
       return r;
     });
-    res.json(r);
-    onFrontdeskCheckout({
-      hotelId,
-      reservationId: id,
-      reservationCode: (existing as any).code ?? null,
-      total: Number((existing as any).total ?? 0),
-      currency: "CRC",
-      actorId: user?.sub ?? null,
+
+    // Calcular total desde la factura para contabilidad
+    const invoice = await prisma.invoice.findFirst({
+      where: { reservationId: id, hotelId },
+      select: { total: true, currency: true },
     });
+    const invoiceTotal = Number(invoice?.total ?? 0);
+
+    const { hotelId: _h, ...safeReservation } = r || {};
+    res.json(safeReservation);
+
+    if (invoiceTotal > 0) {
+      onFrontdeskCheckout({
+        hotelId,
+        reservationId: id,
+        reservationCode: (existing as any).code ?? null,
+        total: invoiceTotal,
+        currency: invoice?.currency || "CRC",
+        actorId: user?.sub ?? null,
+      });
+    }
   } catch (err: any) {
     if (err?.statusCode === 404) return res.status(404).json({ message: "Reserva no encontrada" });
     console.error("checkOut error", err);
@@ -348,11 +419,14 @@ export async function cancelReservation(req: Request, res: Response) {
     console.error("No se pudo registrar auditoria de anulacion de reserva", err);
   }
 
-  // Liberar habitación (si aplica) y eliminar la reserva
+  // Liberar habitación (si aplica) y marcar como cancelada (soft delete)
   if (existing.roomId) {
     await prisma.room.updateMany({ where: { id: existing.roomId, hotelId }, data: { status: "AVAILABLE" } });
   }
 
-  await prisma.reservation.deleteMany({ where: { id, hotelId } });
+  await prisma.reservation.updateMany({
+    where: { id, hotelId },
+    data: { status: ReservationStatus.CANCELED },
+  });
   res.json({ ok: true });
 }

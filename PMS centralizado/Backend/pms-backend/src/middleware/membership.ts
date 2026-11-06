@@ -7,24 +7,31 @@ import type { AuthUser } from "./auth.js";
 
 type CacheEntry = {
   allowed: string[];
+  active: boolean;
   expiresAt: number;
 };
 
 const membershipCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60_000; // 1 minute
 
-function getCachedAllowed(hotelId: string): string[] | null {
+function getCached(hotelId: string): CacheEntry | null {
   const entry = membershipCache.get(hotelId);
   if (!entry) return null;
   if (entry.expiresAt <= Date.now()) {
     membershipCache.delete(hotelId);
     return null;
   }
-  return entry.allowed;
+  return entry;
 }
 
-function setCachedAllowed(hotelId: string, allowed: string[]) {
-  membershipCache.set(hotelId, { allowed, expiresAt: Date.now() + CACHE_TTL_MS });
+function setCached(hotelId: string, entry: { allowed: string[]; active: boolean }) {
+  membershipCache.set(hotelId, { ...entry, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
+/** Fuerza a releer la membresía en la próxima petición (p. ej. al cambiarla desde el gestor). */
+export function invalidateMembershipCache(hotelId: string) {
+  if (!hotelId) return;
+  membershipCache.delete(hotelId);
 }
 
 export function requireMembership(...modules: string[]) {
@@ -36,16 +43,23 @@ export function requireMembership(...modules: string[]) {
     if (!hotelId) return res.status(401).json({ message: "No autenticado" });
 
     try {
-      let allowed = getCachedAllowed(hotelId);
-      if (!allowed) {
+      let entry: { allowed: string[]; active: boolean } | null = getCached(hotelId);
+      if (!entry) {
         const hotel = await prisma.hotel.findUnique({
           where: { id: hotelId },
-          select: { membership: true },
+          select: { membership: true, active: true },
         });
-        allowed = allowedModulesForMembership(hotel?.membership);
-        setCachedAllowed(hotelId, allowed);
+        entry = { allowed: allowedModulesForMembership(hotel?.membership), active: hotel?.active !== false };
+        setCached(hotelId, entry);
       }
-      const ok = required.length === 0 || required.some((m) => allowed.includes(m));
+      // Un hotel suspendido desde el gestor no puede operar.
+      if (!entry.active) {
+        return res.status(403).json({
+          code: "HOTEL_SUSPENDED",
+          message: "El hotel está suspendido. Contacte al proveedor del sistema.",
+        });
+      }
+      const ok = required.length === 0 || required.some((m) => entry!.allowed.includes(m));
       if (!ok) return res.status(403).json({ message: "Membresia insuficiente" });
       return next();
     } catch (err) {

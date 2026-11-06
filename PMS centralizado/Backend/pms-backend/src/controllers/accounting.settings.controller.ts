@@ -2,13 +2,18 @@ import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import { seedChartOfAccounts } from "./accounting.seed.js";
 
+function sanitizeSettings(s: any): any {
+  if (!s) return s;
+  const { hotelId: _h, ...safe } = s;
+  return safe;
+}
+
 // GET /accounting/settings
 export async function getAccountingSettings(req: Request, res: Response) {
   const hotelId = (req as any).hotelId as string;
   try {
     let settings = await prisma.accountingSettings.findUnique({ where: { hotelId } });
     if (!settings) {
-      const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { currency: true } });
       settings = await prisma.accountingSettings.create({
         data: {
           hotelId,
@@ -20,7 +25,7 @@ export async function getAccountingSettings(req: Request, res: Response) {
         },
       });
     }
-    res.json(settings);
+    res.json(sanitizeSettings(settings));
   } catch (e) {
     res.status(500).json({ message: "Error al obtener configuración contable" });
   }
@@ -49,22 +54,23 @@ export async function updateAccountingSettings(req: Request, res: Response) {
         updatedAt: new Date(),
       },
     });
-    res.json(settings);
+    res.json(sanitizeSettings(settings));
   } catch (e) {
     res.status(500).json({ message: "Error al guardar configuración contable" });
   }
 }
 
-// POST /accounting/initialize — aplica plan de cuentas CR si no existe
+// POST /accounting/initialize — aplica/completa el plan de cuentas CR
 export async function initializeAccounting(req: Request, res: Response) {
   const hotelId = (req as any).hotelId as string;
   try {
     const count = await seedChartOfAccounts(prisma, hotelId);
     if (count === 0) {
-      return res.json({ message: "El plan de cuentas ya estaba inicializado", seeded: 0 });
+      return res.json({ message: "El plan de cuentas ya está completo", seeded: 0 });
     }
-    res.json({ message: `Plan de cuentas CR aplicado: ${count} cuentas creadas`, seeded: count });
+    res.json({ message: `Plan de cuentas aplicado: ${count} cuentas creadas`, seeded: count });
   } catch (e) {
+    console.error("[accounting.initialize] error:", e);
     res.status(500).json({ message: "Error al inicializar plan de cuentas" });
   }
 }

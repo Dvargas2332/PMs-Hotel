@@ -2,6 +2,15 @@ import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 
+function sanitizeInvoice(inv: any): any {
+  if (!inv) return inv;
+  const { hotelId: _h, ...safe } = inv;
+  if (Array.isArray(safe.items)) safe.items = safe.items.map((i: any) => { const { hotelId: _h2, ...s } = i; return s; });
+  if (Array.isArray(safe.payments)) safe.payments = safe.payments.map((p: any) => { const { hotelId: _h2, ...s } = p; return s; });
+  if (Array.isArray(safe.eInvoicingDocuments)) safe.eInvoicingDocuments = safe.eInvoicingDocuments.map((d: any) => { const { hotelId: _h2, ...s } = d; return s; });
+  return safe;
+}
+
 function resolveHotelId(req: Request): string | undefined {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -70,7 +79,7 @@ export async function listInvoices(req: Request, res: Response) {
     orderBy: { createdAt: "desc" },
     take: 500,
   });
-  res.json(list);
+  res.json(list.map(sanitizeInvoice));
 }
 
 // ─── GET /invoices/:id ───────────────────────────────────────────────────────
@@ -80,7 +89,7 @@ export async function getInvoice(req: Request, res: Response) {
   const { id } = req.params;
   const inv = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
-  res.json(inv);
+  res.json(sanitizeInvoice(inv));
 }
 
 // ─── POST /invoices/:id/items ────────────────────────────────────────────────
@@ -100,18 +109,17 @@ export async function addInvoiceItem(req: Request, res: Response) {
   const price = Number(unitPrice);
   const total = qty * price;
 
-  const [item] = await prisma.$transaction([
+  await prisma.$transaction([
     prisma.invoiceItem.create({
       data: { invoiceId: id, hotelId, description, quantity: qty, unitPrice: price, total },
     }),
-    prisma.invoice.update({
-      where: { id },
+    prisma.invoice.updateMany({ where: { id, hotelId },
       data: { total: { increment: total } },
     }),
   ]);
 
   const updated = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
-  res.status(201).json(updated);
+  res.status(201).json(sanitizeInvoice(updated));
 }
 
 // ─── DELETE /invoices/:id/items/:itemId ──────────────────────────────────────
@@ -128,12 +136,12 @@ export async function removeInvoiceItem(req: Request, res: Response) {
   if (!item) return res.status(404).json({ message: "Cargo no encontrado" });
 
   await prisma.$transaction([
-    prisma.invoiceItem.delete({ where: { id: itemId } }),
-    prisma.invoice.update({ where: { id }, data: { total: { decrement: Number(item.total) } } }),
+    prisma.invoiceItem.deleteMany({ where: { id: itemId, hotelId } }),
+    prisma.invoice.updateMany({ where: { id, hotelId }, data: { total: { decrement: Number(item.total) } } }),
   ]);
 
   const updated = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
-  res.json(updated);
+  res.json(sanitizeInvoice(updated));
 }
 
 // ─── POST /invoices/:id/payments ─────────────────────────────────────────────
@@ -150,18 +158,17 @@ export async function recordPayment(req: Request, res: Response) {
   if (inv.status === "CANCELED") return res.status(400).json({ message: "No se puede pagar una factura cancelada" });
 
   const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
-  const remaining = Number(inv.total) - paid;
 
   await prisma.payment.create({ data: { invoiceId: id, hotelId, method, amount: Number(amount) } });
 
   // Mark ISSUED when fully paid
   const newPaid = paid + Number(amount);
   if (newPaid >= Number(inv.total)) {
-    await prisma.invoice.update({ where: { id }, data: { status: "ISSUED" } });
+    await prisma.invoice.updateMany({ where: { id, hotelId }, data: { status: "ISSUED" } });
   }
 
   const updated = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
-  res.status(201).json(updated);
+  res.status(201).json(sanitizeInvoice(updated));
 }
 
 // ─── DELETE /invoices/:id/payments/:paymentId ────────────────────────────────
@@ -173,19 +180,19 @@ export async function removePayment(req: Request, res: Response) {
   const pmt = await prisma.payment.findFirst({ where: { id: paymentId, invoiceId: id, hotelId } });
   if (!pmt) return res.status(404).json({ message: "Pago no encontrado" });
 
-  await prisma.payment.delete({ where: { id: paymentId } });
+  await prisma.payment.deleteMany({ where: { id: paymentId, hotelId } });
 
   // If status was ISSUED, revert to DRAFT
   const inv = await prisma.invoice.findFirst({ where: { id, hotelId }, include: { payments: true } });
   if (inv && inv.status === "ISSUED") {
     const newPaid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
     if (newPaid < Number(inv.total)) {
-      await prisma.invoice.update({ where: { id }, data: { status: "DRAFT" } });
+      await prisma.invoice.updateMany({ where: { id, hotelId }, data: { status: "DRAFT" } });
     }
   }
 
   const updated = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
-  res.json(updated);
+  res.json(sanitizeInvoice(updated));
 }
 
 // ─── PATCH /invoices/:id/status ──────────────────────────────────────────────
@@ -200,6 +207,7 @@ export async function updateInvoiceStatus(req: Request, res: Response) {
   const inv = await prisma.invoice.findFirst({ where: { id, hotelId } });
   if (!inv) return res.status(404).json({ message: "Factura no encontrada" });
 
-  const updated = await prisma.invoice.update({ where: { id }, data: { status }, include: INVOICE_INCLUDE });
-  res.json(updated);
+  await prisma.invoice.updateMany({ where: { id, hotelId }, data: { status } });
+  const updated = await prisma.invoice.findFirst({ where: { id, hotelId }, include: INVOICE_INCLUDE });
+  res.json(sanitizeInvoice(updated));
 }

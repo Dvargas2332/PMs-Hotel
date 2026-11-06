@@ -21,7 +21,7 @@ export function startDailyChargesJob() {
           (await prisma.invoice.create({
             data: {
               reservationId: r.id,
-              guestId: r.guestId,
+              guestId: r.guestId || undefined,
               number: `INV-${today.toISOString().slice(0, 10)}-${r.id.slice(0, 6)}`,
               status: "DRAFT",
               hotelId: r.hotelId,

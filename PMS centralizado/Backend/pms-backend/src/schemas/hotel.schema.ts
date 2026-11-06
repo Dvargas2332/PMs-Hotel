@@ -11,6 +11,12 @@ export const updateHotelSchema = z.object({
       name: z.string().min(1).optional(),
       currency: z.string().min(1).optional(),
       membership: z.enum(MEMBERSHIP_TIERS).optional(),
+      phone1: z.string().nullable().optional(),
+      phone2: z.string().nullable().optional(),
+      ownerName: z.string().nullable().optional(),
+      managerName: z.string().nullable().optional(),
+      companyId: z.string().nullable().optional(),
+      managerId: z.string().nullable().optional(),
     })
     .refine((body) => Object.keys(body).length > 0, { message: "Debe enviar al menos un campo a actualizar" }),
 });

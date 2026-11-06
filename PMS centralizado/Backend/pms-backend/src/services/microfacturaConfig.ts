@@ -10,6 +10,28 @@ export type MicrofacturaApiConfig = {
   };
 };
 
+export function resolveMicrofacturaConfig(
+  cfg: { environment?: string; provider?: string; settings?: any },
+  settings?: any,
+  credentials?: any
+): MicrofacturaApiConfig {
+  const env = String(cfg?.environment || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";
+  const atvSettings = (settings?.atv || cfg?.settings?.atv || {}) as any;
+  const atvCreds = (credentials?.atv || {}) as any;
+
+  const clientId = String(atvSettings?.clientId || "").trim() || (env === "production" ? "api-prod" : "api-stag");
+
+  return {
+    env,
+    atv: {
+      username: String(atvSettings?.username || ""),
+      password: String(atvCreds?.password || ""),
+      clientId,
+      clientSecret: String(atvCreds?.clientSecret || ""),
+    },
+  };
+}
+
 export function validateHaciendaConfig(cfg: MicrofacturaApiConfig) {
   const issues: string[] = [];
   if (!cfg.atv.username?.trim()) issues.push("ATV_USERNAME_MISSING");

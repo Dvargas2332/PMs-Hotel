@@ -113,6 +113,8 @@ const TENANT_MODELS = new Set([
   "RestaurantInventoryMovement",
   "RestaurantPrintJob",
   "RestaurantRecipeLine",
+  "RestaurantExtra",
+  "RestaurantItemExtra",
   "RestaurantSection",
   "RestaurantSectionObject",
   "RestaurantSubFamily",
@@ -151,6 +153,12 @@ const needsSsl = Boolean(hostNeedsSsl || (sslMode && sslMode.toLowerCase() !== "
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  // Keep a few connections alive so the first query after idle doesn't pay
+  // the full TCP+TLS+auth handshake cost against Supabase pooler.
+  min: 1,
+  max: 5,
+    idleTimeoutMillis: 25000,
+  connectionTimeoutMillis: 30000,
 });
 const adapter = new PrismaPg(pool);
 const basePrisma = new PrismaClient({ adapter });

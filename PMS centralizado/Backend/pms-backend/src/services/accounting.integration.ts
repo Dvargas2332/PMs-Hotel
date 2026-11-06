@@ -4,7 +4,6 @@
  * after a billable event occurs. Never throws — errors are logged only so the
  * originating transaction always succeeds.
  */
-import type { PrismaClient } from "@prisma/client";
 import prisma from "../lib/prisma.js";
 
 // ─── types ─────────────────────────────────────────────────────────────────────
@@ -180,8 +179,55 @@ export async function onRestaurantSale(event: RestaurantSaleEvent): Promise<void
   }
 }
 
-// ─── E-Invoicing integration ───────────────────────────────────────────────────
+/**
+ * Reversa de una venta de restaurante anulada (devolución).
+ * Es el espejo de `onRestaurantSale`: DR Ingresos + DR IVA / CR Caja.
+ */
+export async function onRestaurantSaleVoid(event: RestaurantSaleEvent): Promise<void> {
+  try {
+    const settings = await getSettings(event.hotelId);
+    if (!settings) return;
+    if (!settings.integrations || !(settings.integrations as any).restaurant) return;
 
+    const hotelId = event.hotelId;
+    const gross = Number(event.total ?? 0);
+    if (gross <= 0) return;
+
+    const cashAccount = await resolveAccount(hotelId, "1.1.01.01", "1.1.01");
+    const incomeAccount = await resolveAccount(hotelId, "4.1.01.01", "4.1");
+    const taxLiabilityAccount = await resolveAccount(hotelId, "2.1.04.01", "2.1.04");
+    if (!cashAccount || !incomeAccount) {
+      console.warn(`[accounting] restaurant void: missing accounts for hotel ${hotelId}`);
+      return;
+    }
+
+    const taxAmount = Number(event.tax ?? 0);
+    const netIncome = gross - taxAmount;
+
+    const lines: { accountId: string; debit: number; credit: number; description?: string }[] = [
+      { accountId: incomeAccount.id, debit: netIncome > 0 ? netIncome : gross, credit: 0, description: "Anulación venta restaurante" },
+    ];
+    if (taxAmount > 0 && taxLiabilityAccount) {
+      lines.push({ accountId: taxLiabilityAccount.id, debit: taxAmount, credit: 0, description: "Reversión IVA" });
+    }
+    lines.push({ accountId: cashAccount.id, debit: 0, credit: gross, description: "Devolución al cliente" });
+
+    await createEntry({
+      hotelId,
+      description: `Anulación venta restaurante${event.saleNumber ? ` ${event.saleNumber}` : ""}`,
+      source: "RESTAURANT",
+      sourceRefId: event.orderId,
+      currency: event.currency ?? "CRC",
+      autoPost: settings.autoPost,
+      actorId: event.actorId,
+      lines,
+    });
+  } catch (err) {
+    console.error("[accounting] onRestaurantSaleVoid error:", err);
+  }
+}
+
+// ─── E-Invoicing integration ───────────────────────────────────────────────────
 /**
  * Called after an e-invoicing document is accepted by Hacienda (status = ACEPTADO)
  * or voided (isVoid = true).

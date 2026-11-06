@@ -7,14 +7,15 @@ export const createReservationSchema = z.object({
   body: z
     .object({
       roomId: z.string().cuid(),
-      guestId: z.string().cuid(),
+      guestId: z.string().cuid().optional(),
+      guestName: z.string().optional(),
       checkIn: z.string(),
       checkOut: z.string(),
       adults: z.number().int().min(1).max(6).default(2),
       children: z.number().int().min(0).max(6).default(0),
       contractId: z.string().optional(),
       ratePlanId: z.string().optional(),
-      mealPlanId: z.string().optional(),
+      mealPlanId: z.union([z.string(), z.number()]).optional(),
       code: z.string().optional(),
       rooming: z.string().optional(),
       otaCode: z.string().optional(),

@@ -244,15 +244,15 @@ export function summarizeAuditPayload(payload: unknown): string {
   const obj = asRecord(payload);
   if (!obj) return "";
 
-  const method = toStringId(obj.method)?.toUpperCase() || "";
+  const entityId = toStringId(obj.entityId);
   const path = toStringId(obj.path) || "";
   const statusRaw = obj.statusCode;
   const statusCode = typeof statusRaw === "number" ? statusRaw : null;
 
   const parts = [
-    method,
+    entityId ? `ID: ${entityId}` : "",
     path,
-    statusCode !== null ? `status ${statusCode}` : "",
+    statusCode !== null && statusCode >= 400 ? `(error ${statusCode})` : "",
   ].filter(Boolean);
 
   return parts.join(" ");

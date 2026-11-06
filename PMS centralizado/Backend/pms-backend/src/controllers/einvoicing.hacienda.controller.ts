@@ -2,16 +2,21 @@ import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import {
+  resolveMicrofacturaConfig,
   validateHaciendaConfig,
-  type MicrofacturaApiConfig,
 } from "../services/microfacturaConfig.js";
 import {
-  microfacturaSend,
-  microfacturaSignXml,
   microfacturaStatus,
   microfacturaToken,
 } from "../services/microfacturaCr.js";
-import { issueNote } from "./einvoicing.creditdebit.controller.js";
+import {
+  createCreditDebitNote,
+  NoteCreationError,
+} from "../services/einvoicing.notes.js";
+import {
+  submitDocumentToHacienda,
+  SubmitDocumentError,
+} from "../services/einvoicing.submit.js";
 import { onEInvoicingDocument } from "../services/accounting.integration.js";
 
 function resolveHotelId(req: Request): string | undefined {
@@ -20,54 +25,8 @@ function resolveHotelId(req: Request): string | undefined {
   return user?.hotelId;
 }
 
-function escapeXml(value: any) {
-  const s = String(value ?? "");
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
 function nowIso() {
   return new Date().toISOString();
-}
-
-function normalizeIdType(value: string | undefined | null, idNumber?: string | null) {
-  const direct = String(value || "").trim();
-  if (direct) return direct;
-  const digits = String(idNumber || "").replace(/\D/g, "");
-  if (digits.length >= 12) return "03";
-  if (digits.length === 10) return "02";
-  if (digits.length === 9) return "01";
-  return "01";
-}
-
-function normalizeReceiverIdentity(receiver: any) {
-  if (!receiver || typeof receiver !== "object") return null;
-  const idType = normalizeIdType(receiver.idType || receiver.idTypeCode, receiver.idNumber || receiver.identification);
-  const idNumber = String(receiver.idNumber || receiver.identification || receiver.id || "").trim();
-  if (!idNumber) return null;
-  return { idType, idNumber };
-}
-
-function resolveMicrofacturaConfig(cfg: any, settings: any, credentials: any): MicrofacturaApiConfig {
-  const env = String(cfg.environment || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";
-  const atvSettings = (settings?.atv || {}) as any;
-  const atvCreds = (credentials?.atv || {}) as any;
-
-  const clientId = String(atvSettings?.clientId || "").trim() || (env === "production" ? "api-prod" : "api-stag");
-
-  return {
-    env,
-    atv: {
-      username: String(atvSettings?.username || ""),
-      password: String(atvCreds?.password || ""),
-      clientId,
-      clientSecret: String(atvCreds?.clientSecret || ""),
-    },
-  };
 }
 
 function deriveStatusFromResponse(resp: any) {
@@ -83,25 +42,6 @@ function deriveStatusFromResponse(resp: any) {
   if (text.includes("acept")) return "ACCEPTED";
   if (text.includes("rech")) return "REJECTED";
   return null;
-}
-
-function buildSandboxXml(doc: any) {
-  const payloadJson = JSON.stringify(doc.payload || {}, null, 2);
-  const receiverJson = JSON.stringify(doc.receiver || {}, null, 2);
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<ElectronicDocument sandbox="true">
-  <DocType>${escapeXml(doc.docType)}</DocType>
-  <Status>${escapeXml(doc.status)}</Status>
-  <Key>${escapeXml(doc.key || "")}</Key>
-  <Consecutive>${escapeXml(doc.consecutive || "")}</Consecutive>
-  <Branch>${escapeXml(doc.branch || "")}</Branch>
-  <Terminal>${escapeXml(doc.terminal || "")}</Terminal>
-  <CreatedAt>${escapeXml(doc.createdAt || nowIso())}</CreatedAt>
-  <Receiver><![CDATA[${receiverJson}]]></Receiver>
-  <Payload><![CDATA[${payloadJson}]]></Payload>
-  <Signature>SIMULATED-SANDBOX</Signature>
-</ElectronicDocument>
-`;
 }
 
 async function updateInvoiceEinvoiceStatus(opts: {
@@ -160,264 +100,32 @@ export async function submitEInvoicingDocument(req: Request, res: Response) {
   const id = String((req.params as any)?.id || "").trim();
   if (!id) return res.status(400).json({ message: "id requerido" });
 
-  const cfg = await ensureEinvoicingEnabled(hotelId);
-  const env = String(cfg.environment || "sandbox").toLowerCase();
-  const settings = (cfg.settings || {}) as any;
-  const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
-  const provider = "microfacturacr";
-
-  // Microfactura (ATV API)
-  if (atvMode === "api" && provider === "microfacturacr") {
-    const creds =
-      ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
-    const crypto = (creds.crypto || {}) as any;
-    const apiCfg = resolveMicrofacturaConfig(cfg, settings, creds);
-    const issues = validateHaciendaConfig(apiCfg);
-    if (issues.length) {
-      return res.status(400).json({
-        message:
-          "Microfactura no está configurado. Completa ATV username/password/clientId/clientSecret en /e-invoicing.",
-        issues,
-      });
-    }
-    if (!crypto?.certificateBase64 || !crypto?.certificatePassword) {
-      return res.status(400).json({
-        message:
-          "Certificado de firma requerido. Cada hotel debe configurar su certificado y contraseña para firmar XML antes de enviar.",
-      });
-    }
-
-    const doc = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
-    if (!doc) return res.status(404).json({ message: "Documento no encontrado" });
-    if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
-    // xmlSigned will be generated via microfactura signer if missing.
-
-    const issuer = (settings?.issuer || {}) as any;
-    const issuerIdNumber = String(issuer?.idNumber || "").trim();
-    const issuerIdType = normalizeIdType(issuer?.idType || issuer?.idTypeCode, issuerIdNumber);
-    if (!issuerIdNumber) {
-      return res.status(400).json({ message: "Emisor sin identificacion (issuer.idNumber)" });
-    }
-
-    const receiverIdentity = normalizeReceiverIdentity(doc.receiver);
-
-    await prisma.eInvoicingDocument.updateMany({
-      where: { id: doc.id, hotelId },
-      data: { status: "SIGNED", response: { step: "SIGNED", at: nowIso() } },
+  try {
+    const fresh = await submitDocumentToHacienda({
+      hotelId,
+      documentId: id,
+      // @ts-ignore
+      actorId: req.user?.sub,
     });
+    res.json(fresh);
 
-    try {
-      const tokenResp = await microfacturaToken({
-        clientId: apiCfg.atv.clientId || "api-stag",
-        clientSecret: apiCfg.atv.clientSecret,
-        username: apiCfg.atv.username,
-        password: apiCfg.atv.password,
-        grantType: "password",
+    if (fresh) {
+      onEInvoicingDocument({
+        hotelId,
+        documentId: fresh.id,
+        docType: String(fresh.docType),
+        // @ts-ignore
+        actorId: (req as any)?.user?.sub ?? null,
       });
-      const tokenPayload = (tokenResp as any)?.body || tokenResp;
-      const accessToken = String(tokenPayload?.access_token || tokenPayload?.accessToken || "");
-      if (!accessToken) {
-        throw new Error("Microfactura token response missing access_token");
-      }
-
-      let xmlSigned = doc.xmlSigned || "";
-      if (!xmlSigned) {
-        const payloadAny = (doc.payload || {}) as any;
-        const xmlBase64 = String(payloadAny?.xmlUnsignedBase64 || payloadAny?.xmlBase64 || "");
-        const xmlRaw = String(payloadAny?.xml || payloadAny?.xmlUnsigned || "");
-        if (!xmlBase64 && !xmlRaw) {
-          return res.status(400).json({
-            message: "No se encontro XML para firmar. Provee xml o xmlBase64 en el payload del documento.",
-          });
-        }
-        xmlSigned = await microfacturaSignXml({
-          xmlBase64: xmlBase64 || undefined,
-          xml: xmlRaw || undefined,
-          certBase64: String(crypto?.certificateBase64 || ""),
-          certPassword: String(crypto?.certificatePassword || ""),
-        });
-        await prisma.eInvoicingDocument.updateMany({
-          where: { id: doc.id, hotelId },
-          data: { xmlSigned },
-        });
-      }
-
-      const sendResp = await microfacturaSend({
-        token: accessToken,
-        clientId: apiCfg.atv.clientId || "api-stag",
-        clave: doc.key,
-        fecha: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso(),
-        emisor: { tipoIdentificacion: issuerIdType, numeroIdentificacion: issuerIdNumber },
-        receptor: receiverIdentity
-          ? { tipoIdentificacion: receiverIdentity.idType, numeroIdentificacion: receiverIdentity.idNumber }
-          : undefined,
-        comprobanteXmlBase64: xmlSigned,
-        callbackUrl: settings?.atv?.callbackUrl || undefined,
-        consecutivoReceptor: (doc.payload as any)?.consecutivoReceptor || (doc.payload as any)?.receiverConsecutive || undefined,
-      });
-
-      await prisma.eInvoicingDocument.updateMany({
-        where: { id: doc.id, hotelId },
-        data: { status: "SENT", response: { step: "SENT", sendResp, at: nowIso() } },
-      });
-
-      await prisma.eInvoicingAcknowledgement.create({
-        data: {
-          hotelId,
-          documentId: doc.id,
-          type: "HACIENDA_RECEIPT",
-          status: "RECEIVED",
-          message: "Sent via Microfactura.",
-          payload: { sendResp, at: nowIso() },
-        },
-      });
-
-      const statusResp = await microfacturaStatus({
-        token: accessToken,
-        clientId: apiCfg.atv.clientId || "api-stag",
-        clave: doc.key,
-      });
-      const derived = deriveStatusFromResponse(statusResp);
-
-      await prisma.eInvoicingAcknowledgement.create({
-        data: {
-          hotelId,
-          documentId: doc.id,
-          type: "HACIENDA_STATUS",
-          status: "RECEIVED",
-          message: "Status retrieved.",
-          payload: { statusResp, at: nowIso() },
-        },
-      });
-
-      if (derived) {
-        await prisma.eInvoicingDocument.updateMany({
-          where: { id: doc.id, hotelId },
-          data: { status: derived, response: { step: "STATUS", statusResp, at: nowIso() } },
-        });
-
-        if (doc.invoiceId) {
-          await updateInvoiceEinvoiceStatus({
-            hotelId,
-            invoiceId: doc.invoiceId,
-            docType: String(doc.docType),
-            status: derived,
-            consecutive: doc.consecutive,
-            key: doc.key,
-          });
-        }
-      } else {
-        await prisma.eInvoicingDocument.updateMany({
-          where: { id: doc.id, hotelId },
-          data: { response: { step: "STATUS", statusResp, at: nowIso() } },
-        });
-      }
-    } catch (err: any) {
-      return res.status(502).json({ message: err?.message || "Microfactura API call failed" });
     }
-
-    const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id, hotelId } });
-    return res.json(fresh);
+    return;
+  } catch (err) {
+    if (err instanceof SubmitDocumentError) {
+      return res.status(err.statusCode).json({ message: err.message, detail: err.detail });
+    }
+    console.error("[submitEInvoicingDocument] error inesperado:", err);
+    return res.status(502).json({ message: err instanceof Error ? err.message : "Error al enviar documento" });
   }
-
-  const doc = await prisma.eInvoicingDocument.findFirst({
-    where: { id, hotelId },
-  });
-  if (!doc) return res.status(404).json({ message: "Documento no encontrado" });
-
-  if (doc.status === "ACCEPTED") return res.json(doc);
-  if (doc.status === "CANCELED") return res.status(400).json({ message: "Documento cancelado" });
-  // Documentos en CONTINGENCY se transmiten igual que DRAFT pero con situación 3/4/5 ya grabada en el payload
-
-  const xmlSigned = doc.xmlSigned || buildSandboxXml(doc);
-
-  // Simulated flow: SIGNED -> SENT -> ACCEPTED (with acks)
-  const signed = await prisma.eInvoicingDocument.updateMany({
-    where: { id: doc.id, hotelId },
-    data: {
-      status: "SIGNED",
-      xmlSigned,
-      response: {
-        sandboxSimulated: true,
-        step: "SIGNED",
-        at: nowIso(),
-      },
-    },
-  });
-  if (signed.count === 0) return res.status(404).json({ message: "Documento no encontrado" });
-
-  await prisma.eInvoicingAcknowledgement.create({
-    data: {
-      hotelId,
-      documentId: doc.id,
-      type: "HACIENDA_RECEIPT",
-      status: "RECEIVED",
-      message: "Sandbox simulated receipt",
-      payload: { sandboxSimulated: true, at: nowIso() },
-    },
-  });
-
-  await prisma.eInvoicingDocument.updateMany({
-    where: { id: doc.id, hotelId },
-    data: {
-      status: "SENT",
-      response: {
-        sandboxSimulated: true,
-        step: "SENT",
-        provider: cfg.provider,
-        environment: cfg.environment,
-        at: nowIso(),
-      },
-    },
-  });
-
-  await prisma.eInvoicingAcknowledgement.create({
-    data: {
-      hotelId,
-      documentId: doc.id,
-      type: "HACIENDA_STATUS",
-      status: "ACCEPTED",
-      message: "Sandbox simulated ACCEPTED",
-      payload: { sandboxSimulated: true, status: "ACCEPTED", at: nowIso() },
-    },
-  });
-
-  await prisma.eInvoicingDocument.updateMany({
-    where: { id: doc.id, hotelId },
-    data: {
-      status: "ACCEPTED",
-      response: {
-        sandboxSimulated: true,
-        step: "ACCEPTED",
-        provider: cfg.provider,
-        environment: cfg.environment,
-        at: nowIso(),
-      },
-    },
-  });
-
-  if (doc.invoiceId) {
-    await updateInvoiceEinvoiceStatus({
-      hotelId,
-      invoiceId: doc.invoiceId,
-      docType: String(doc.docType),
-      status: "ACCEPTED",
-      consecutive: doc.consecutive,
-      key: doc.key,
-    });
-  }
-
-  const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
-  res.json(fresh);
-
-  onEInvoicingDocument({
-    hotelId,
-    documentId: doc.id,
-    docType: String(doc.docType),
-    // @ts-ignore
-    actorId: (req as any)?.user?.sub ?? null,
-  });
-  return;
 }
 
 export async function refreshEInvoicingDocumentStatus(req: Request, res: Response) {
@@ -428,7 +136,6 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
   if (!id) return res.status(400).json({ message: "id requerido" });
 
   const cfg = await ensureEinvoicingEnabled(hotelId);
-  const env = String(cfg.environment || "sandbox").toLowerCase();
   const settings = (cfg.settings || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
   const provider = "microfacturacr";
@@ -591,29 +298,42 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
     const reason = String((req.body as any)?.reason || "Anulación del comprobante");
     const reasonCode = String((req.body as any)?.reasonCode || "01");
 
-    // Emitir NC automáticamente reutilizando el controlador de notas
-    const fakeReq: any = {
-      user: (req as any).user,
-      body: {
+    // Emitir NC automáticamente mediante el servicio puro de notas
+    let ncDoc: any = null;
+    try {
+      ncDoc = await createCreditDebitNote({
+        hotelId,
+        // @ts-ignore
+        actorId: req.user?.sub,
         referenceDocId: doc.id,
         docType: "NC",
         reason,
         reasonCode,
-      },
-      params: {},
-    };
-    let ncDoc: any = null;
-    const fakeRes: any = {
-      status: (code: number) => ({ json: (body: any) => { ncDoc = { code, body }; } }),
-      json: (body: any) => { ncDoc = { code: 200, body }; },
-    };
-    await issueNote(fakeReq, fakeRes);
-
-    if (!ncDoc || ncDoc.code !== 200) {
+      });
+    } catch (err) {
+      if (err instanceof NoteCreationError) {
+        return res.status(err.statusCode).json({
+          message: "No se pudo emitir la Nota de Crédito de anulación",
+          detail: err.message,
+        });
+      }
       return res.status(502).json({
         message: "No se pudo emitir la Nota de Crédito de anulación",
-        detail: ncDoc?.body,
+        detail: err instanceof Error ? err.message : String(err),
       });
+    }
+
+    // Enviar la NC a Hacienda automáticamente
+    try {
+      await submitDocumentToHacienda({
+        hotelId,
+        // @ts-ignore
+        actorId: req.user?.sub,
+        documentId: ncDoc.id,
+      });
+    } catch (submitErr) {
+      console.warn("[cancelEInvoicingDocument] NC creada pero no se pudo enviar a Hacienda:", submitErr);
+      // Continuamos para marcar el original como cancelado; la NC queda en DRAFT/SIGNED para reenvío manual.
     }
 
     // Registrar ack de cancelación y marcar el original como CANCELED
@@ -623,8 +343,8 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
         documentId: doc.id,
         type: "OTHER",
         status: "RECEIVED",
-        message: `Cancelado mediante NC ${ncDoc.body?.consecutive || ""}`,
-        payload: { ncDocId: ncDoc.body?.id, ncKey: ncDoc.body?.key, reason, at: nowIso() },
+        message: `Cancelado mediante NC ${ncDoc.consecutive || ""}`,
+        payload: { ncDocId: ncDoc.id, ncKey: ncDoc.key, reason, at: nowIso() },
       },
     });
 
@@ -632,7 +352,7 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
       where: { id: doc.id, hotelId },
       data: {
         status: "CANCELED",
-        response: { step: "CANCELED_VIA_NC", ncDocId: ncDoc.body?.id, at: nowIso() },
+        response: { step: "CANCELED_VIA_NC", ncDocId: ncDoc.id, at: nowIso() },
       },
     });
 
@@ -648,7 +368,7 @@ export async function cancelEInvoicingDocument(req: Request, res: Response) {
     }
 
     const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
-    return res.json({ canceled: fresh, creditNote: ncDoc.body });
+    return res.json({ canceled: fresh, creditNote: ncDoc });
   }
 
   // Modo sandbox o documentos DRAFT/SIGNED/SENT: cancelar localmente

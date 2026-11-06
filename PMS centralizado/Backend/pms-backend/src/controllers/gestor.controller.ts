@@ -10,12 +10,44 @@ import { allowedModulesForMembership, isMembershipTier, normalizeMembershipTier 
 import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { DEFAULT_PRINT_FORMS, normalizeGlobalPrintForms } from "../lib/printForms.js";
 import { processFormInfo, type FormPayload } from "./forminfo.controller.js";
+import { sendGestorMail, buildTestEmail, buildBillingEmail, buildPasswordChangedEmail } from "../lib/mailer.js";
+import { sendUserInvite } from "../lib/userInvites.js";
+import { seedChartOfAccounts } from "./accounting.seed.js";
+import { invalidateMembershipCache } from "../middleware/membership.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
-const DEFAULT_USER_PASSWORD_LEN = 10;
 
 function normalizeText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+/** Quién ejecuta la acción en el gestor (el token del gestor siempre es `sub: "gestor"`). */
+function actorOf(req: Request) {
+  const user = (req as any)?.user;
+  return String(user?.email || user?.sub || "gestor");
+}
+
+/** Bitácora de acciones del gestor. Nunca rompe la operación si falla el registro. */
+async function logSaasAction(opts: {
+  actor: string;
+  action: string;
+  entity: string;
+  entityId?: string | null;
+  detail?: Record<string, unknown>;
+}) {
+  try {
+    await prisma.saasAuditLog.create({
+      data: {
+        actor: opts.actor,
+        action: opts.action,
+        entity: opts.entity,
+        entityId: opts.entityId ?? null,
+        detail: (opts.detail ?? undefined) as any,
+      },
+    });
+  } catch (err: any) {
+    console.warn("[gestor.audit] no se pudo registrar la acción:", err?.message || err);
+  }
 }
 
 function normalizeHeader(value: unknown) {
@@ -44,26 +76,6 @@ function buildMembershipPermissions(membership: string) {
         .flatMap((m) => [m.access.id, ...m.permissions.map((p) => p.id)])
     )
   );
-}
-
-function generatePassword() {
-  const raw = crypto.randomBytes(8).toString("base64url");
-  if (raw.length >= DEFAULT_USER_PASSWORD_LEN) return raw.slice(0, DEFAULT_USER_PASSWORD_LEN);
-  return `${raw}${crypto.randomBytes(4).toString("hex")}`.slice(0, DEFAULT_USER_PASSWORD_LEN);
-}
-
-async function buildUniqueHotelUserEmail(base: string) {
-  let email = base.toLowerCase();
-  let suffix = 0;
-  while (await prisma.user.findUnique({ where: { email } })) {
-    suffix += 1;
-    email = base.replace("@", `+${suffix}@`).toLowerCase();
-    if (suffix > 20) {
-      email = `hotel-${crypto.randomBytes(3).toString("hex")}@pms.local`;
-      break;
-    }
-  }
-  return email;
 }
 
 function parseCsv(content: string) {
@@ -312,10 +324,28 @@ export async function createClient(req: Request, res: Response) {
   const name = String(body.name || "").trim();
   if (!name) return res.status(400).json({ message: "Nombre del cliente requerido" });
 
+  const companyId = body.companyId ? String(body.companyId).trim() : null;
+  // Un cliente es la empresa dueña de uno o más hoteles: no debe duplicarse.
+  const duplicate = await prisma.saasClient.findFirst({
+    where: {
+      OR: [{ name: { equals: name, mode: "insensitive" } }, ...(companyId ? [{ companyId }] : [])],
+    },
+    select: { id: true, name: true, companyId: true },
+  });
+  if (duplicate) {
+    return res.status(409).json({
+      message:
+        duplicate.companyId && duplicate.companyId === companyId
+          ? `Ya existe un cliente con esa identificación (${duplicate.name}).`
+          : `Ya existe un cliente con ese nombre (${duplicate.name}).`,
+      clientId: duplicate.id,
+    });
+  }
+
   const created = await prisma.saasClient.create({
     data: {
       name,
-      companyId: body.companyId ? String(body.companyId).trim() : null,
+      companyId,
       email: body.email ? String(body.email).trim() : null,
       phone1: body.phone1 ? String(body.phone1).trim() : null,
       phone2: body.phone2 ? String(body.phone2).trim() : null,
@@ -323,6 +353,13 @@ export async function createClient(req: Request, res: Response) {
       managerName: body.managerName ? String(body.managerName).trim() : null,
       managerId: body.managerId ? String(body.managerId).trim() : null,
     },
+  });
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "CLIENT_CREATE",
+    entity: "client",
+    entityId: created.id,
+    detail: { name: created.name, companyId: created.companyId },
   });
   res.status(201).json(created);
 }
@@ -342,7 +379,30 @@ export async function updateClient(req: Request, res: Response) {
   if ("managerName" in body) data.managerName = body.managerName ? normalizeText(body.managerName) : null;
   if ("managerId" in body) data.managerId = body.managerId ? normalizeText(body.managerId) : null;
 
+  if (Object.keys(data).length === 0) return res.status(400).json({ message: "Sin cambios" });
+
+  const duplicate = await prisma.saasClient.findFirst({
+    where: {
+      id: { not: id },
+      OR: [
+        ...(data.name ? [{ name: { equals: data.name, mode: "insensitive" as const } }] : []),
+        ...(data.companyId ? [{ companyId: data.companyId }] : []),
+      ],
+    },
+    select: { id: true, name: true },
+  });
+  if (duplicate) {
+    return res.status(409).json({ message: `Ya existe otro cliente con esos datos (${duplicate.name}).` });
+  }
+
   const updated = await prisma.saasClient.update({ where: { id }, data });
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "CLIENT_UPDATE",
+    entity: "client",
+    entityId: id,
+    detail: { fields: Object.keys(data) },
+  });
   res.json(updated);
 }
 
@@ -358,7 +418,15 @@ export async function deleteClient(req: Request, res: Response) {
     });
   }
 
+  const client = await prisma.saasClient.findUnique({ where: { id }, select: { name: true } });
   await prisma.saasClient.delete({ where: { id } });
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "CLIENT_DELETE",
+    entity: "client",
+    entityId: id,
+    detail: { name: client?.name ?? null },
+  });
   res.json({ ok: true });
 }
 
@@ -372,6 +440,8 @@ export async function listHotels(_req: Request, res: Response) {
       membership: true,
       currency: true,
       membershipMonthlyFee: true,
+      active: true,
+      suspendedAt: true,
       createdAt: true,
       clientId: true,
       saasClient: { select: { name: true } },
@@ -381,26 +451,47 @@ export async function listHotels(_req: Request, res: Response) {
       managerName: true,
       companyId: true,
       managerId: true,
+      // Usuario principal (login por correo) y estado de su invitación, para no
+      // tener que abrir la ficha de cada hotel.
+      users: {
+        where: { role: "ADMIN" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { email: true, inviteSentAt: true, inviteExpiresAt: true, inviteTokenHash: true },
+      },
     },
   });
+  const now = Date.now();
   res.json(
-    list.map((h) => ({
-      id: h.id,
-      number: h.number,
-      name: h.name,
-      membership: h.membership,
-      currency: h.currency,
-      membershipMonthlyFee: Number(h.membershipMonthlyFee || 0),
-      createdAt: h.createdAt,
-      saasClientId: h.clientId,
-      saasClientName: h.saasClient?.name,
-      phone1: h.phone1,
-      phone2: h.phone2,
-      ownerName: h.ownerName,
-      managerName: h.managerName,
-      companyId: h.companyId,
-      managerId: h.managerId,
-    }))
+    list.map((h) => {
+      const principal = h.users?.[0] ?? null;
+      const invitePending = Boolean(
+        principal?.inviteTokenHash && principal?.inviteExpiresAt && principal.inviteExpiresAt.getTime() > now
+      );
+      return {
+        id: h.id,
+        number: h.number,
+        name: h.name,
+        membership: h.membership,
+        currency: h.currency,
+        membershipMonthlyFee: Number(h.membershipMonthlyFee || 0),
+        active: h.active,
+        suspendedAt: h.suspendedAt,
+        createdAt: h.createdAt,
+        saasClientId: h.clientId,
+        saasClientName: h.saasClient?.name,
+        phone1: h.phone1,
+        phone2: h.phone2,
+        ownerName: h.ownerName,
+        managerName: h.managerName,
+        companyId: h.companyId,
+        managerId: h.managerId,
+        principalEmail: principal?.email ?? null,
+        invitePending,
+        inviteSentAt: principal?.inviteSentAt ?? null,
+        inviteExpiresAt: principal?.inviteExpiresAt ?? null,
+      };
+    })
   );
 }
 
@@ -455,6 +546,13 @@ export async function deleteHotel(req: Request, res: Response) {
 
   try {
     await prisma.hotel.delete({ where: { id } });
+    await logSaasAction({
+      actor: actorOf(req),
+      action: "HOTEL_DELETE",
+      entity: "hotel",
+      entityId: id,
+      detail: { name: hotel.name },
+    });
     res.json({ ok: true });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
@@ -477,7 +575,7 @@ async function findPrimaryLauncherAdmin(hotelId: string) {
   return prisma.launcherAccount.findFirst({
     where: { hotelId, roleId: "ADMIN" },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true, username: true, createdAt: true },
+    select: { id: true, name: true, username: true, email: true, createdAt: true },
   });
 }
 
@@ -497,7 +595,7 @@ export async function updateHotelAdmin(req: Request, res: Response) {
   const hotelId = String(req.params.id || "").trim();
   if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
 
-  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true } });
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true, name: true } });
   if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
 
   const admin = await findPrimaryAdminUser(hotelId);
@@ -505,6 +603,8 @@ export async function updateHotelAdmin(req: Request, res: Response) {
 
   const body = req.body && typeof req.body === "object" ? (req.body as any) : {};
   const data: any = {};
+  let emailChanged = false;
+  let passwordChanged = false;
 
   if ("name" in body) {
     const name = normalizeText(body.name);
@@ -515,10 +615,14 @@ export async function updateHotelAdmin(req: Request, res: Response) {
   if ("email" in body) {
     const email = normalizeText(body.email).toLowerCase();
     if (!email) return res.status(400).json({ message: "Email requerido" });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ message: "Email inválido" });
+    }
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing && existing.id !== admin.id) {
       return res.status(409).json({ message: "Email ya registrado" });
     }
+    emailChanged = email !== admin.email.toLowerCase();
     data.email = email;
   }
 
@@ -529,6 +633,7 @@ export async function updateHotelAdmin(req: Request, res: Response) {
     }
     if (password) {
       data.password = await bcrypt.hash(password, ROUNDS);
+      passwordChanged = true;
     }
   }
 
@@ -536,11 +641,43 @@ export async function updateHotelAdmin(req: Request, res: Response) {
     return res.status(400).json({ message: "Sin cambios" });
   }
 
+  // Si cambia el correo o se fija una contraseña, la invitación pendiente deja
+  // de ser válida: el enlace viejo ya no debe servir para tomar la cuenta.
+  if (emailChanged || passwordChanged) {
+    data.inviteTokenHash = null;
+    data.inviteExpiresAt = null;
+  }
+
   const updated = await prisma.user.update({
     where: { id: admin.id },
     data,
     select: { id: true, name: true, email: true, createdAt: true },
   });
+
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "HOTEL_ADMIN_UPDATE",
+    entity: "hotel",
+    entityId: hotelId,
+    detail: { emailChanged, passwordChanged, email: updated.email },
+  });
+
+  // Aviso al hotel cuando el gestor cambia la contraseña del usuario principal.
+  if (passwordChanged) {
+    try {
+      const mail = buildPasswordChangedEmail({
+        hotelName: hotel.name,
+        userName: updated.name || updated.email,
+        changedAt: new Date().toLocaleString("es-CR"),
+      });
+      await sendGestorMail({ to: updated.email, subject: mail.subject, html: mail.html, text: mail.text });
+    } catch (err: any) {
+      console.warn("[gestor.updateHotelAdmin] no se pudo enviar el aviso de contraseña:", err?.message || err);
+      return res.json({ ...updated, emailSent: false, emailError: err?.message || "No se pudo enviar el aviso" });
+    }
+    return res.json({ ...updated, emailSent: true });
+  }
+
   res.json(updated);
 }
 
@@ -588,6 +725,14 @@ export async function updateHotelLauncherAdmin(req: Request, res: Response) {
     data.username = username;
   }
 
+  if ("email" in body) {
+    const raw = normalizeText(body.email).toLowerCase();
+    if (raw && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+      return res.status(400).json({ message: "Email inválido" });
+    }
+    data.email = raw || null;
+  }
+
   if ("password" in body) {
     const password = String(body.password || "");
     if (password && password.length < 4) {
@@ -605,8 +750,17 @@ export async function updateHotelLauncherAdmin(req: Request, res: Response) {
   const updated = await prisma.launcherAccount.update({
     where: { id: admin.id },
     data,
-    select: { id: true, name: true, username: true, createdAt: true },
+    select: { id: true, name: true, username: true, email: true, createdAt: true },
   });
+
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "HOTEL_LAUNCHER_ADMIN_UPDATE",
+    entity: "hotel",
+    entityId: hotelId,
+    detail: { fields: Object.keys(data), username: updated.username },
+  });
+
   res.json(updated);
 }
 
@@ -630,6 +784,8 @@ export async function createHotel(req: Request, res: Response) {
   const adminUsername = String(body.adminUsername || body.adminEmail || "").trim().toLowerCase();
   const adminPassword = String(body.adminPassword || "");
   const adminName = String(body.adminName || "Administrador").trim();
+  const adminEmailRaw = String(body.adminContactEmail || "").trim().toLowerCase();
+  const adminEmail = adminEmailRaw && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmailRaw) ? adminEmailRaw : null;
   if (!adminUsername) return res.status(400).json({ message: "Usuario del administrador requerido" });
   if (!adminPassword || adminPassword.length < 4) {
     return res.status(400).json({ message: "Contrase??a del administrador inv??lida" });
@@ -638,8 +794,14 @@ export async function createHotel(req: Request, res: Response) {
   const membershipMonthlyFee = Number(body.membershipMonthlyFee || 0);
   const currency = String(body.currency || "CRC").trim().toUpperCase() || "CRC";
 
-  let createdCredentials: any = null;
-  const hotel = await prisma.$transaction(async (tx) => {
+  const hotelUserName = String(body.hotelUserName || "Usuario principal").trim();
+  const hotelUserEmail = String(body.hotelUserEmail || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hotelUserEmail)) {
+    return res.status(400).json({ message: "Correo real del usuario principal requerido (ahí llega la invitación)" });
+  }
+
+  const created = await prisma.$transaction(
+    async (tx) => {
     const createdHotel = await tx.hotel.create({
       data: {
         name,
@@ -677,27 +839,53 @@ export async function createHotel(req: Request, res: Response) {
       data: {
         username: adminUsername,
         name: adminName || "Administrador",
+        email: adminEmail,
         password: launcherHash,
         roleId: "ADMIN",
         hotelId: createdHotel.id,
       },
     });
 
-    const hotelUserName = String(body.hotelUserName || "Usuario principal").trim();
-    const hotelUserEmailRaw = String(body.hotelUserEmail || "").trim().toLowerCase();
-    const hotelUserPasswordRaw = String(body.hotelUserPassword || "");
-    const hotelUserEmail = hotelUserEmailRaw
-      ? hotelUserEmailRaw
-      : await buildUniqueHotelUserEmail(`hotel-${createdHotel.number}@pms.local`);
+    // Catálogos base para que el hotel quede operable desde el primer día:
+    // impuestos del restaurante/habitación, configuración del POS y contabilidad
+    // con su plan de cuentas.
+    await tx.tax.createMany({
+      data: [
+        { hotelId: createdHotel.id, code: "IVA13", name: "IVA 13%", percent: 13, kind: "IVA", scope: "restaurant", active: true },
+        { hotelId: createdHotel.id, code: "SERV10", name: "Servicio 10%", percent: 10, kind: "SERVICE", scope: "restaurant", active: true },
+        { hotelId: createdHotel.id, code: "IVA13-H", name: "IVA 13% (habitación)", percent: 13, kind: "IVA", scope: "room", active: true },
+      ],
+      skipDuplicates: true,
+    });
+
+    await tx.restaurantConfig.create({
+      data: {
+        hotelId: createdHotel.id,
+        kitchenPrinter: "",
+        barPrinter: "",
+        taxes: { iva: 13, servicio: 10, descuentoMax: 15, permitirDescuentos: true, impuestoIncluido: true } as any,
+        payments: {
+          monedaBase: currency,
+          monedaSec: "USD",
+          cargoHabitacion: true,
+          cobros: ["Efectivo", "Tarjeta"],
+          paymentMethods: [],
+        } as any,
+        general: { inventoryEnabled: true } as any,
+      },
+    });
+
+    await tx.accountingSettings.create({
+      data: { hotelId: createdHotel.id, country: "CR", autoPost: false, fiscalPeriods: false, integrations: {} },
+    });
+    await seedChartOfAccounts(tx, createdHotel.id);
+
     if (await tx.user.findUnique({ where: { email: hotelUserEmail } })) {
       throw new Error("Email ya registrado para usuario del hotel");
     }
-    const hotelUserPassword = hotelUserPasswordRaw || generatePassword();
-    if (hotelUserPassword.length < 4) {
-      throw new Error("Contrase??a del usuario del hotel inv??lida (min 4)");
-    }
-    const hotelUserHash = await bcrypt.hash(hotelUserPassword, ROUNDS);
-    await tx.user.create({
+    // Contraseña aleatoria: el usuario real la define desde la invitación.
+    const hotelUserHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), ROUNDS);
+    const principalUser = await tx.user.create({
       data: {
         name: hotelUserName,
         email: hotelUserEmail,
@@ -705,19 +893,50 @@ export async function createHotel(req: Request, res: Response) {
         role: "ADMIN",
         hotelId: createdHotel.id,
       },
+      select: { id: true },
     });
 
-    createdCredentials = {
-      hotelUser: { email: hotelUserEmail, password: hotelUserPassword },
-      launcherAdmin: { username: adminUsername, password: adminPassword },
-    };
+    return { hotel: createdHotel, principalUserId: principalUser.id };
+    },
+    // El alta siembra catálogos (impuestos, config del POS y 161 cuentas
+    // contables), así que necesita más margen que el timeout por defecto.
+    { maxWait: 10_000, timeout: 30_000 }
+  );
 
-    return createdHotel;
+  const invite = await sendUserInvite({
+    userId: created.principalUserId,
+    email: hotelUserEmail,
+    name: hotelUserName,
+    hotelName: created.hotel.name,
+  });
+
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "HOTEL_CREATE",
+    entity: "hotel",
+    entityId: created.hotel.id,
+    detail: {
+      name: created.hotel.name,
+      number: created.hotel.number,
+      membership: created.hotel.membership,
+      clientId,
+      principalEmail: hotelUserEmail,
+      launcherUsername: adminUsername,
+    },
   });
 
   res.status(201).json({
-    hotel,
-    credentials: createdCredentials,
+    hotel: created.hotel,
+    credentials: {
+      hotelUser: {
+        email: hotelUserEmail,
+        inviteUrl: invite.inviteUrl,
+        inviteExpiresAt: invite.expiresAt,
+        emailSent: invite.emailSent,
+        emailError: invite.emailError || null,
+      },
+      launcherAdmin: { username: adminUsername, password: adminPassword },
+    },
   });
 }
 export async function updateHotel(req: Request, res: Response) {
@@ -734,16 +953,120 @@ export async function updateHotel(req: Request, res: Response) {
     data.membership = normalizeMembershipTier(body.membership);
   }
   if ("membershipMonthlyFee" in body) data.membershipMonthlyFee = Number(body.membershipMonthlyFee || 0);
-  if ("clientId" in body) data.clientId = body.clientId ? normalizeText(body.clientId) : null;
+  if ("clientId" in body) {
+    const clientId = body.clientId ? normalizeText(body.clientId) : null;
+    if (clientId) {
+      const client = await prisma.saasClient.findUnique({ where: { id: clientId }, select: { id: true } });
+      if (!client) return res.status(400).json({ message: "El cliente indicado no existe" });
+    }
+    data.clientId = clientId;
+  }
   if ("phone1" in body) data.phone1 = body.phone1 ? normalizeText(body.phone1) : null;
   if ("phone2" in body) data.phone2 = body.phone2 ? normalizeText(body.phone2) : null;
   if ("ownerName" in body) data.ownerName = body.ownerName ? normalizeText(body.ownerName) : null;
   if ("managerName" in body) data.managerName = body.managerName ? normalizeText(body.managerName) : null;
   if ("companyId" in body) data.companyId = body.companyId ? normalizeText(body.companyId) : null;
   if ("managerId" in body) data.managerId = body.managerId ? normalizeText(body.managerId) : null;
+  if ("active" in body) {
+    data.active = Boolean(body.active);
+    data.suspendedAt = data.active ? null : new Date();
+  }
 
-  const updated = await prisma.hotel.update({ where: { id }, data });
+  if (Object.keys(data).length === 0) return res.status(400).json({ message: "Sin cambios" });
+
+  const current = await prisma.hotel.findUnique({
+    where: { id },
+    select: { membership: true, active: true, name: true },
+  });
+  if (!current) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  const membershipChanged = Boolean(data.membership && data.membership !== current.membership);
+  const suspensionChanged = "active" in data && data.active !== current.active;
+
+  const updated = await prisma.$transaction(
+    async (tx) => {
+      const hotel = await tx.hotel.update({ where: { id }, data });
+
+      // Cambiar de membresía reescribe los permisos del rol ADMIN: si no, el
+      // hotel queda con el catálogo del plan anterior.
+      if (membershipChanged) {
+        await tx.permission.createMany({
+          data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })),
+          skipDuplicates: true,
+        });
+        await tx.rolePermission.deleteMany({ where: { hotelId: id, roleId: "ADMIN" } });
+        await tx.rolePermission.createMany({
+          data: buildMembershipPermissions(hotel.membership).map((p) => ({
+            roleId: "ADMIN",
+            permissionId: p,
+            hotelId: id,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return hotel;
+    },
+    { maxWait: 10_000, timeout: 20_000 }
+  );
+
+  if (membershipChanged || suspensionChanged) invalidateMembershipCache(id);
+
+  await logSaasAction({
+    actor: actorOf(req),
+    action: suspensionChanged ? (data.active ? "HOTEL_ACTIVATE" : "HOTEL_SUSPEND") : "HOTEL_UPDATE",
+    entity: "hotel",
+    entityId: id,
+    detail: {
+      name: updated.name,
+      fields: Object.keys(data).filter((k) => k !== "suspendedAt"),
+      previousMembership: membershipChanged ? current.membership : undefined,
+      membership: membershipChanged ? updated.membership : undefined,
+    },
+  });
+
   res.json(updated);
+}
+
+/** (Re)genera y envía la invitación al usuario principal (login por correo). */
+export async function resendHotelInvite(req: Request, res: Response) {
+  const hotelId = String(req.params.id || "").trim();
+  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { id: true, name: true } });
+  if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  const user = await prisma.user.findFirst({
+    where: { hotelId, role: "ADMIN", NOT: { email: { endsWith: "@pms.local" } } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, name: true, email: true },
+  });
+  if (!user) {
+    return res.status(404).json({ message: "Este hotel no tiene usuario principal con correo real" });
+  }
+
+  const invite = await sendUserInvite({
+    userId: user.id,
+    email: user.email,
+    name: user.name,
+    hotelName: hotel.name,
+  });
+
+  await logSaasAction({
+    actor: actorOf(req),
+    action: "HOTEL_INVITE_RESEND",
+    entity: "hotel",
+    entityId: hotelId,
+    detail: { email: user.email, emailSent: invite.emailSent },
+  });
+
+  res.json({
+    email: user.email,
+    inviteUrl: invite.inviteUrl,
+    inviteExpiresAt: invite.expiresAt,
+    emailSent: invite.emailSent,
+    emailError: invite.emailError || null,
+  });
 }
 
 export async function listHotelBilling(req: Request, res: Response) {
@@ -1288,6 +1611,21 @@ export async function getPrintForms(_req: Request, res: Response) {
   res.json({ forms: DEFAULT_PRINT_FORMS, global });
 }
 
+/** Bitácora de acciones del gestor (últimas N, filtrable por entidad). */
+export async function listSaasAudit(req: Request, res: Response) {
+  const rawLimit = Number((req.query as any)?.limit ?? 100);
+  const limit = Math.min(500, Math.max(1, Number.isFinite(rawLimit) ? Math.trunc(rawLimit) : 100));
+  const entity = String((req.query as any)?.entity || "").trim();
+  const entityId = String((req.query as any)?.entityId || "").trim();
+
+  const list = await prisma.saasAuditLog.findMany({
+    where: { ...(entity ? { entity } : {}), ...(entityId ? { entityId } : {}) },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+  });
+  res.json(list);
+}
+
 export async function updateGlobalPrintForms(req: Request, res: Response) {
   const formIds = Array.isArray(req.body?.formIds) ? req.body.formIds : [];
   const modules = req.body?.modules;
@@ -1301,3 +1639,53 @@ export async function updateGlobalPrintForms(req: Request, res: Response) {
   const savedGlobal = normalizeGlobalPrintForms((saved as any)?.printFormsGlobal);
   res.json({ ok: true, global: savedGlobal });
 }
+
+// ── Resend (gestor mailer) ────────────────────────────────────────────────────
+
+export async function getResendConfig(_req: Request, res: Response) {
+  const config = await prisma.saasConfig.findUnique({ where: { key: SAAS_CONFIG_KEY } });
+  const rc = ((config as any)?.resendConfig || {}) as any;
+  const safe = {
+    from: rc.from || "",
+    replyTo: rc.replyTo || "",
+    apiKeySet: Boolean(rc.apiKey),
+  };
+  res.json(safe);
+}
+
+export async function updateResendConfig(req: Request, res: Response) {
+  const existing = await prisma.saasConfig.findUnique({ where: { key: SAAS_CONFIG_KEY } });
+  const prev = ((existing as any)?.resendConfig || {}) as any;
+
+  const next: any = { ...prev };
+  const body = req.body || {};
+
+  if (typeof body.from === "string") next.from = body.from.trim();
+  if (typeof body.replyTo === "string") next.replyTo = body.replyTo.trim();
+  if (typeof body.apiKey === "string" && body.apiKey.trim()) next.apiKey = body.apiKey.trim();
+  if (body.clearApiKey) delete next.apiKey;
+
+  await prisma.saasConfig.upsert({
+    where: { key: SAAS_CONFIG_KEY },
+    update: { resendConfig: next } as any,
+    create: { key: SAAS_CONFIG_KEY, resendConfig: next } as any,
+  });
+
+  res.json({ ok: true, apiKeySet: Boolean(next.apiKey), from: next.from || "", replyTo: next.replyTo || "" });
+}
+
+export async function sendTestEmail(req: Request, res: Response) {
+  const to = String(req.body?.to || "").trim();
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    return res.status(400).json({ message: "Email de destino inválido." });
+  }
+  try {
+    const mail = buildTestEmail(to);
+    await sendGestorMail(mail);
+    res.json({ ok: true, message: `Correo de prueba enviado a ${to}` });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err?.message || "Error al enviar correo." });
+  }
+}
+
+export { sendGestorMail, buildBillingEmail, buildPasswordChangedEmail };

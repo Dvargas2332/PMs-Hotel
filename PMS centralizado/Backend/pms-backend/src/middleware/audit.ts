@@ -10,9 +10,12 @@ import {
 } from "../lib/audit.js";
 
 const EXCLUDED_PREFIXES = ["/health", "/version", "/audit"];
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function shouldSkip(path: string, method: string): boolean {
-  if (String(method).toUpperCase() === "OPTIONS") return true;
+  const upper = String(method).toUpperCase();
+  if (upper === "OPTIONS" || upper === "GET" || upper === "HEAD") return true;
+  if (!MUTATION_METHODS.has(upper)) return true;
   const lowerPath = path.toLowerCase();
   return EXCLUDED_PREFIXES.some((prefix) => lowerPath === prefix || lowerPath.startsWith(`${prefix}/`));
 }

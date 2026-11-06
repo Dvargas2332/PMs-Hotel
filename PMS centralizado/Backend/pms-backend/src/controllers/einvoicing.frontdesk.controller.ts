@@ -28,14 +28,6 @@ function typeCode(docType: "FE" | "TE") {
   return docType === "FE" ? "01" : "04";
 }
 
-function todayYYMMDD() {
-  const d = new Date();
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = padLeft(String(d.getMonth() + 1), 2);
-  const dd = padLeft(String(d.getDate()), 2);
-  return `${yy}${mm}${dd}`;
-}
-
 // Formato DDMMAAAA (8 dígitos) requerido por Hacienda CR para la clave de 50 dígitos
 function dateDDMMAAAA(d: Date = new Date()) {
   const yyyy = String(d.getFullYear());
@@ -69,12 +61,6 @@ async function nextConsecutive(hotelId: string, docType: "FE" | "TE", branch: st
 
   const n = padLeft(String(seq), 10);
   return `${typeCode(docType)}${b}${t}${n}`;
-}
-
-function pseudoKey(consecutive: string) {
-  // Placeholder key until we implement official CR key generation (requires issuer ID).
-  const rnd = padLeft(String(Math.floor(Math.random() * 1_000_000)), 6);
-  return `CR-PENDING-${todayYYMMDD()}-${consecutive}-${rnd}`;
 }
 
 // Clave numérica según DGT-R-48-2016 v4.4:

@@ -1,3 +1,4 @@
+function sanitize(r:any){if(!r)return r;const{hotelId:_h,...s}=r;return s;}
 // src/controllers/roomTypes.controller.ts
 import type { Request, Response } from "express";
 import { prisma } from "../lib/prisma.js";
@@ -12,7 +13,7 @@ export async function listRoomTypes(req: Request, res: Response) {
     where: { hotelId: user.hotelId },
     orderBy: { id: "asc" },
   });
-  res.json(types);
+  res.json(sanitize(types));
 }
 
 export async function createRoomType(req: Request, res: Response) {
@@ -31,7 +32,7 @@ export async function createRoomType(req: Request, res: Response) {
       hotelId: user.hotelId,
     },
   });
-  res.status(201).json(type);
+  res.status(201).json(sanitize(type));
 }
 
 export async function updateRoomType(req: Request, res: Response) {
@@ -55,7 +56,7 @@ export async function updateRoomType(req: Request, res: Response) {
       beds: payload.beds !== undefined ? (payload.beds ? String(payload.beds).trim() : null) : existing.beds,
     },
   });
-  res.json(updated);
+  res.json(sanitize(updated));
 }
 
 export async function deleteRoomType(req: Request, res: Response) {

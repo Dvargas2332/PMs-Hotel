@@ -16,16 +16,12 @@ export const DEFAULT_PRINT_FORMS = [
   { id: "restaurant_document_58mm_standard", module: "restaurant", docType: "DOCUMENT", paperType: "58mm", name: "Restaurant Subfactura - 58mm" },
   { id: "restaurant_document_a4_standard", module: "restaurant", docType: "DOCUMENT", paperType: "A4", name: "Restaurant Subfactura - A4" },
 
-  // Frontdesk
+  // Frontdesk — tickets en 80mm/58mm/A4, facturas y documentos solo A4 (carta)
   { id: "frontdesk_te_80mm_standard", module: "frontdesk", docType: "TE", paperType: "80mm", name: "Front Desk Ticket (TE) - 80mm" },
   { id: "frontdesk_te_58mm_standard", module: "frontdesk", docType: "TE", paperType: "58mm", name: "Front Desk Ticket (TE) - 58mm" },
   { id: "frontdesk_te_a4_standard", module: "frontdesk", docType: "TE", paperType: "A4", name: "Front Desk Ticket (TE) - A4" },
-  { id: "frontdesk_fe_80mm_standard", module: "frontdesk", docType: "FE", paperType: "80mm", name: "Front Desk Invoice (FE) - 80mm" },
-  { id: "frontdesk_fe_58mm_standard", module: "frontdesk", docType: "FE", paperType: "58mm", name: "Front Desk Invoice (FE) - 58mm" },
-  { id: "frontdesk_fe_a4_standard", module: "frontdesk", docType: "FE", paperType: "A4", name: "Front Desk Invoice (FE) - A4" },
-  { id: "frontdesk_document_80mm_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "80mm", name: "Front Desk Document - 80mm" },
-  { id: "frontdesk_document_58mm_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "58mm", name: "Front Desk Document - 58mm" },
-  { id: "frontdesk_document_a4_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "A4", name: "Front Desk Document - A4" },
+  { id: "frontdesk_fe_a4_standard", module: "frontdesk", docType: "FE", paperType: "A4", name: "Front Desk Factura (FE) - A4" },
+  { id: "frontdesk_document_a4_standard", module: "frontdesk", docType: "DOCUMENT", paperType: "A4", name: "Front Desk Documento - A4" },
 ];
 
 export const DEFAULT_PRINT_MODULES: Record<string, boolean> = {

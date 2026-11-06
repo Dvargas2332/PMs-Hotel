@@ -37,18 +37,44 @@ function toArray(v: any): any[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/** Tope del XML de un comprobante: uno real con cientos de líneas no pasa de ~100 KB. */
+export const MAX_CR_XML_BYTES = 1_000_000;
+
+/**
+ * Un comprobante de Hacienda v4.4 nunca trae declaración de tipo de documento
+ * ni entidades propias. Rechazarlas antes de parsear corta el DoS por
+ * expansión de entidades (billion laughs) sin depender de la versión del parser.
+ */
+export function assertSafeCrXml(xml: string): void {
+  if (typeof xml !== "string" || !xml.trim()) {
+    throw new Error("XML vacío");
+  }
+  if (Buffer.byteLength(xml, "utf8") > MAX_CR_XML_BYTES) {
+    throw new Error("El XML supera el límite de 1 MB");
+  }
+  if (/<!\s*(DOCTYPE|ENTITY)/i.test(xml)) {
+    throw new Error("El XML no puede incluir DOCTYPE ni ENTITY");
+  }
+}
+
 export function parseCrEInvoiceXml(xml: string): ParsedCrEInvoice {
+  assertSafeCrXml(xml);
+
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
     trimValues: true,
-    parseTagValue: true,
-    parseAttributeValue: true,
+    // Sin conversión numérica: la Clave son 50 dígitos y como número se volvía
+    // 5.060611250031012e+49, perdiendo el identificador fiscal del comprobante.
+    parseTagValue: false,
+    parseAttributeValue: false,
     removeNSPrefix: true,
   });
 
   const raw = parser.parse(xml);
-  const root = Object.keys(raw || {})[0] || "";
+  // La declaración <?xml ...?> entra como primera clave ("?xml"): si se toma a
+  // ciegas, el documento queda sin clave, sin consecutivo y como FE aunque sea TE.
+  const root = Object.keys(raw || {}).find((k) => !k.startsWith("?")) || "";
   const rootObj = root ? raw[root] : raw;
 
   const rootUpper = String(root || "").toLowerCase();

@@ -1,3 +1,4 @@
+function sanitize(r:any){if(!r)return r;const{hotelId:_h,...s}=r;return s;}
 // src/controllers/discounts.controller.ts
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
@@ -16,7 +17,13 @@ export async function listDiscounts(req: Request, res: Response) {
   const hotelId = user.hotelId;
 
   const list = await prisma.discount.findMany({
-    where: { hotelId },
+    where: {
+      hotelId,
+      // El POS pide solo los aplicables: activos y no vencidos.
+      ...(String((req.query as any)?.usable || "") === "1"
+        ? { active: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }
+        : {}),
+    },
     orderBy: { createdAt: "desc" },
   });
 
@@ -51,7 +58,7 @@ export async function createDiscount(req: Request, res: Response) {
     },
   });
 
-  res.status(201).json(created);
+  res.status(201).json(sanitize(created));
 }
 
 export async function updateDiscount(req: Request, res: Response) {
@@ -69,10 +76,17 @@ export async function updateDiscount(req: Request, res: Response) {
   const requiresPin = Boolean(req.body?.requiresPin);
   const active = req.body?.active !== false;
 
+  // Verificar que el descuento existe
+  const existing = await prisma.discount.findUnique({
+    where: { hotelId_id: { hotelId, id: rawId } },
+    select: { id: true },
+  });
+  if (!existing) return res.status(404).json({ message: "Descuento no encontrado" });
+
   const updated = await prisma.discount.update({
     where: { hotelId_id: { hotelId, id: rawId } },
     data: {
-      name: name || rawId,
+      name: name || undefined,
       type: "percent",
       value,
       requiresPin,
@@ -81,7 +95,7 @@ export async function updateDiscount(req: Request, res: Response) {
     },
   });
 
-  res.json(updated);
+  res.json(sanitize(updated));
 }
 
 export async function deleteDiscount(req: Request, res: Response) {

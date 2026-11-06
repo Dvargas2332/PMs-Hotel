@@ -3,11 +3,12 @@
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import prisma from "../lib/prisma.js";
-import { sign, verify } from "../lib/jwt.js";
+import { sign, signRefresh, verify, getAccessCookieOpts, getRefreshCookieOpts } from "../lib/jwt.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 
 const ROUNDS = Number(process.env.BCRYPT_ROUNDS || 10);
+const isProduction = process.env.NODE_ENV === "production";
 
 const mapLauncherAccount = (acc: any) => ({
   id: acc.id,
@@ -29,7 +30,7 @@ export async function launcherLogin(req: Request, res: Response) {
     return res.status(400).json({ message: "Usuario y contrasena son requeridos" });
   }
 
-  const normalizedUsername = username.trim().toLowerCase();
+  const normalizedInput = username.trim().toLowerCase();
   const rawHotelId = typeof hotelId === "string" ? hotelId.trim() : "";
 
   // Optional: if a hotel token is provided, scope the launcher login to that hotel.
@@ -56,13 +57,27 @@ export async function launcherLogin(req: Request, res: Response) {
     return res.status(401).json({ message: "Credenciales invalidas" });
   }
 
+  // Allow login by display name (case-insensitive) or by username (userId)
   const account = await prisma.launcherAccount.findFirst({
-    where: { username: normalizedUsername, hotelId: scopedHotelId },
-    include: { hotel: { select: { id: true, name: true } } },
+    where: {
+      hotelId: scopedHotelId,
+      OR: [
+        { name: { equals: username.trim(), mode: "insensitive" } },
+        { username: normalizedInput },
+      ],
+    },
+    include: { hotel: { select: { id: true, name: true, active: true } } },
   });
 
   if (!account) {
     return res.status(401).json({ message: "Credenciales invalidas" });
+  }
+
+  if (account.hotel?.active === false) {
+    return res.status(403).json({
+      code: "HOTEL_SUSPENDED",
+      message: "El hotel está suspendido. Contacte al proveedor del sistema.",
+    });
   }
 
   const ok = await bcrypt.compare(password, account.password);
@@ -100,12 +115,19 @@ export async function launcherLogin(req: Request, res: Response) {
   ).map((m) => m.id);
 
   // Emitimos un JWT compatible con AuthUser para que pueda acceder a modulos.
-  const token = sign({
+  const tokenPayload = {
     sub: account.id,
     role: roleId,
     hotelId: account.hotelId,
     isLauncher: true,
-  });
+  };
+  const token = sign(tokenPayload);
+  const refreshToken = signRefresh(tokenPayload);
+
+  const accessOpts = getAccessCookieOpts(isProduction);
+  const refreshOpts = getRefreshCookieOpts(isProduction);
+  res.cookie("access_token", token, accessOpts);
+  res.cookie("refresh_token", refreshToken, refreshOpts);
 
   return res.json({
     token,

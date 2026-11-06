@@ -41,14 +41,12 @@ function actorLabel(
 
   const user = usersById.get(actorId);
   if (user) {
-    const identity = user.name?.trim() || user.email;
-    return identity === actorId ? identity : `${identity} (${actorId})`;
+    return user.name?.trim() || user.email;
   }
 
   const launcher = launchersById.get(actorId);
   if (launcher) {
-    const identity = launcher.name?.trim() || launcher.username;
-    return identity === actorId ? identity : `${identity} (${actorId})`;
+    return launcher.name?.trim() || launcher.username;
   }
 
   return actorId;

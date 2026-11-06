@@ -578,8 +578,6 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   const readinessIssues: string[] = [];
   const issuer = (settings.issuer || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual");
-  const atvSettings = (settings?.atv || {}) as any;
-  const atvEndpoints = (atvSettings.endpoints || {}) as any;
 
   if (!config.enabled) readinessIssues.push("EINVOICING_DISABLED");
   if (!issuer?.idNumber) readinessIssues.push("ISSUER_ID_NUMBER_MISSING");

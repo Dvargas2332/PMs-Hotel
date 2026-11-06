@@ -18,10 +18,10 @@ type RateEntry = {
 const store = new Map<string, RateEntry>();
 
 function getClientIp(req: Request) {
-  const fwd = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(fwd) ? fwd[0] : fwd;
-  const ip = String(raw || req.ip || req.socket.remoteAddress || "unknown");
-  return ip.split(",")[0].trim() || "unknown";
+  // req.ip respeta la configuración "trust proxy" de Express: sólo cree en
+  // X-Forwarded-For cuando hay un proxy declarado delante. Leer el header a
+  // mano permitía inventarse una IP por petición y saltarse el límite.
+  return req.ip || req.socket.remoteAddress || "unknown";
 }
 
 export function rateLimit(opts: RateLimitOptions) {

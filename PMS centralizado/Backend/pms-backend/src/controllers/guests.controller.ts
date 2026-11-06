@@ -5,6 +5,34 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 
+/**
+ * Identificación sin formato: la misma cédula puede venir "1-1111-1111",
+ * "111111111" o "1 1111 1111" y debe tratarse como el mismo cliente.
+ */
+function normalizeIdNumber(value: unknown) {
+  return String(value ?? "")
+    .replace(/[^\dA-Za-z]/g, "")
+    .toUpperCase();
+}
+
+/** Busca un huésped con la misma identificación comparando valores normalizados. */
+async function findGuestByIdNumber(hotelId: string, idNumber: unknown, excludeId?: string) {
+  const normalized = normalizeIdNumber(idNumber);
+  if (!normalized) return null;
+
+  const candidates = await prisma.guest.findMany({
+    where: { hotelId, idNumber: { not: null } },
+    select: { id: true, idNumber: true },
+    orderBy: { createdAt: "desc" },
+    take: 20000,
+  });
+  const match = candidates.find(
+    (g) => g.id !== excludeId && normalizeIdNumber(g.idNumber) === normalized
+  );
+  if (!match) return null;
+  return prisma.guest.findFirst({ where: { id: match.id, hotelId } });
+}
+
 export async function listGuests(req: Request, res: Response) {
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
@@ -55,32 +83,26 @@ export async function createGuest(req: Request, res: Response) {
       notes,
     } = req.body;
 
-    // Evitar perfiles de huésped duplicados dentro del mismo hotel
     const or: Prisma.GuestWhereInput[] = [];
-    if (email) {
-      or.push({ email });
-    }
-    if (phone) {
-      or.push({ phone });
-    }
-    if (firstName && lastName) {
-      or.push({ firstName, lastName });
-    }
+    if (email) or.push({ email });
+    if (phone) or.push({ phone });
+    if (firstName && lastName) or.push({ firstName, lastName });
 
+    // Si ya existe un huésped, devolverlo en vez de crear duplicado
     if (or.length > 0) {
       const duplicate = await prisma.guest.findFirst({
-        where: {
-          hotelId: user.hotelId,
-          OR: or,
-        },
+        where: { hotelId: user.hotelId, OR: or },
       });
-
       if (duplicate) {
-        return res.status(409).json({
-          message:
-            "Ya existe un perfil de huésped con el mismo correo, nombre completo o teléfono. Para reservas sin perfil guardado, no cree un huésped.",
-        });
+        return res.json(duplicate);
       }
+    }
+
+    // La identificación identifica al cliente: misma cédula con otro formato
+    // tampoco debe crear un perfil nuevo.
+    if (idNumber) {
+      const sameId = await findGuestByIdNumber(user.hotelId, idNumber);
+      if (sameId) return res.json(sameId);
     }
 
     const guest = await prisma.guest.create({
@@ -168,7 +190,17 @@ export async function updateGuest(req: Request, res: Response) {
       if (duplicate) {
         return res.status(409).json({
           message:
-            "Ya existe otro perfil de huésped con el mismo correo, nombre completo o teléfono. Para reservas sin perfil guardado, no use un huésped guardado.",
+            "Ya existe otro perfil de huésped con el mismo correo, identificación, nombre completo o teléfono.",
+        });
+      }
+    }
+
+    // Misma identificación con otro formato también es el mismo cliente.
+    if (idNumber) {
+      const sameId = await findGuestByIdNumber(user.hotelId, idNumber, id);
+      if (sameId) {
+        return res.status(409).json({
+          message: `Ya existe un cliente con esa identificación (${sameId.firstName || ""} ${sameId.lastName || ""}`.trim() + ").",
         });
       }
     }

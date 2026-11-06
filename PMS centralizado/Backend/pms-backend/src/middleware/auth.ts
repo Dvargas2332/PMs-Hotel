@@ -6,6 +6,7 @@ import { verify } from "../lib/jwt.js";
 
 export interface AuthUser {
   sub: string;
+  email?: string;
   role: "ADMIN" | "MANAGER" | "RECEPTION" | "ACCOUNTING" | "RESTAURANT";
   hotelId?: string;
   // Marcador para diferenciar logins del launcher de usuarios normales
@@ -15,8 +16,15 @@ export interface AuthUser {
 }
 
 export function auth(req: Request, res: Response, next: NextFunction) {
-  const hdr = req.headers.authorization || "";
-  const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  // Leer de cookie httpOnly primero, luego de Authorization header (backward compat)
+  let token: string | null = (req as any).cookies?.access_token || null;
+
+  // Fallback a Authorization header
+  if (!token) {
+    const hdr = req.headers.authorization || "";
+    token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+  }
+
   if (!token) return res.status(401).json({ message: "No token" });
   try {
     const payload = verify<AuthUser>(token);
@@ -43,6 +51,8 @@ export function requireManagementUser(req: Request, res: Response, next: NextFun
   // @ts-ignore
   const user = req.user as AuthUser | undefined;
   if (!user) return res.status(401).json({ message: "No autenticado" });
+  // Permitir ADMIN y MANAGER aunque vengan del launcher
+  if (user.role === "ADMIN" || user.role === "MANAGER") return next();
   if (user.isLauncher) return res.status(403).json({ message: "No autorizado para management" });
   next();
 }

@@ -8,6 +8,7 @@ import {
   listHotels,
   createHotel,
   updateHotel,
+  resendHotelInvite,
   deleteHotel,
   getHotelAdmin,
   updateHotelAdmin,
@@ -27,6 +28,10 @@ import {
   updateSaasConfig,
   getPrintForms,
   updateGlobalPrintForms,
+  getResendConfig,
+  updateResendConfig,
+  sendTestEmail,
+  listSaasAudit,
 } from "../controllers/gestor.controller.js";
 import upload from "../middleware/upload.js";
 
@@ -45,6 +50,7 @@ router.get("/hotels/:id/admin", getHotelAdmin);
 router.put("/hotels/:id/admin", updateHotelAdmin);
 router.get("/hotels/:id/launcher-admin", getHotelLauncherAdmin);
 router.put("/hotels/:id/launcher-admin", updateHotelLauncherAdmin);
+router.post("/hotels/:id/invite", resendHotelInvite);
 
 router.get("/hotels/:id/billing", listHotelBilling);
 router.post("/hotels/:id/billing", createHotelBilling);
@@ -63,5 +69,12 @@ router.get("/saas-config", getSaasConfig);
 router.put("/saas-config", updateSaasConfig);
 router.get("/print-forms", getPrintForms);
 router.put("/print-forms/global", updateGlobalPrintForms);
+
+router.get("/resend-config", getResendConfig);
+router.put("/resend-config", updateResendConfig);
+router.post("/resend-config/test", sendTestEmail);
+
+// Bitácora de acciones del gestor
+router.get("/audit", listSaasAudit);
 
 export default router;

@@ -41,14 +41,6 @@ function isoDateTime(d?: Date | string | null): string {
 
 export type CrDocType = "FE" | "ND" | "NC" | "TE";
 
-// Códigos numéricos Hacienda según tipo
-const DOC_CODE: Record<CrDocType, string> = {
-  FE: "01",
-  ND: "02",
-  NC: "03",
-  TE: "04",
-};
-
 export interface CrIssuer {
   name: string;           // Nombre o Razón Social
   idType: string;         // 01=física, 02=jurídica, 03=DIMEX, 04=NITE
@@ -256,7 +248,6 @@ function buildReferenceXml(ref: CrReference): string {
 
 export function buildCrXml(input: CrInvoiceInput): string {
   const rootTag = input.docType === "TE" ? "TiqueteElectronico" : "FacturaElectronicaVenta";
-  const docCode = DOC_CODE[input.docType];
   const s = input.summary;
 
   const linesXml = input.items.map(buildLineXml).join("\n");
@@ -291,7 +282,7 @@ export function buildCrXml(input: CrInvoiceInput): string {
     <TotalGravado>${formatMoney(s.totalTaxableGoods)}</TotalGravado>
     <TotalExento>${formatMoney(s.totalExemptGoods)}</TotalExento>
     <TotalExonerado>0.00</TotalExonerado>
-    <TotalVenta>${formatMoney(s.totalNetSale + s.totalDiscount)}</TotalVenta>
+    <TotalVenta>${formatMoney(s.totalNetSale + s.totalTax)}</TotalVenta>
     <TotalDescuentos>${formatMoney(s.totalDiscount)}</TotalDescuentos>
     <TotalVentaNeta>${formatMoney(s.totalNetSale)}</TotalVentaNeta>
     <TotalImpuesto>${formatMoney(s.totalTax)}</TotalImpuesto>
