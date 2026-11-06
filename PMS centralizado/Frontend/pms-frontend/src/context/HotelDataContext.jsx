@@ -208,6 +208,11 @@ export function HotelDataProvider({ children }) {
       city,
       address,
       company,
+      legalName,
+      managerName,
+      economicActivity,
+      emailAlt1,
+      emailAlt2,
       notes,
     } = payload || {};
     setLoadingKey("action", true);
@@ -224,6 +229,11 @@ export function HotelDataProvider({ children }) {
         city,
         address,
         company,
+        legalName,
+        managerName,
+        economicActivity,
+        emailAlt1,
+        emailAlt2,
         notes,
       });
       const mapped = mapGuest(data);
@@ -250,6 +260,7 @@ export function HotelDataProvider({ children }) {
     async ({
       roomId,
       guestId,
+      guestName,
       checkInDate,
       checkOutDate,
       adults = 2,
@@ -279,7 +290,8 @@ export function HotelDataProvider({ children }) {
       try {
         const payloadRaw = {
           roomId: Number(roomId) || roomId,
-          guestId: Number(guestId) || guestId,
+          guestId: guestId || undefined,
+          guestName: guestName || undefined,
           checkIn: checkInDate,
           checkOut: checkOutDate,
           adults: Number(adults) || 0,
@@ -303,7 +315,7 @@ export function HotelDataProvider({ children }) {
           currency,
           paymentMethod,
           depositAmount: depositAmount === 0 || depositAmount ? Number(depositAmount) : undefined,
-          mealPlanId: mealPlanId ? Number(mealPlanId) || mealPlanId : undefined,
+          mealPlanId: mealPlanId ? String(mealPlanId) : undefined,
           hotelId,
         };
         const payload = Object.fromEntries(Object.entries(payloadRaw).filter(([, v]) => v !== undefined && v !== ""));

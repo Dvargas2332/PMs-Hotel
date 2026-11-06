@@ -1,18 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
-import { escapeHtml } from "../../lib/security";
+import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
 import {
   BarChart3,
   Receipt,
   FileText,
   Briefcase,
-  ShieldCheck,
-  MinusSquare,
-  UtensilsCrossed,
-  CreditCard,
   Ticket,
-  History,
 } from "lucide-react";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import { Tile } from "./RestaurantLobby";
@@ -44,7 +39,6 @@ export default function RestaurantHistory() {
   const [useFamilia, setUseFamilia] = useState(false);
   const [useSubfamilia, setUseSubfamilia] = useState(false);
   const [useFecha, setUseFecha] = useState(false);
-  const [useFechaHora, setUseFechaHora] = useState(false);
   const [useTurno, setUseTurno] = useState(false);
   const [useMoneda, setUseMoneda] = useState(false);
   const [families, setFamilies] = useState([]);
@@ -66,8 +60,6 @@ export default function RestaurantHistory() {
   const [familyId, setFamilyId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [dateTimeFrom, setDateTimeFrom] = useState("");
-  const [dateTimeTo, setDateTimeTo] = useState("");
   const [topCount, setTopCount] = useState("");
   const [topMode, setTopMode] = useState("");
   const [includeItemsMode, setIncludeItemsMode] = useState("");
@@ -77,6 +69,13 @@ export default function RestaurantHistory() {
   const [reportError, setReportError] = useState("");
   const [salesPreviewOpen, setSalesPreviewOpen] = useState(false);
   const [salesPreviewRows, setSalesPreviewRows] = useState([]);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesSummary, setSalesSummary] = useState({ total: 0, subtotal: 0, tax: 0, tip10: 0 });
+  const [previewLoadingMore, setPreviewLoadingMore] = useState(false);
+  const [invoiceTotal, setInvoiceTotal] = useState(0);
+  const [invoiceLoadingMore, setInvoiceLoadingMore] = useState(false);
+  const salesParamsRef = useRef(null);
+  const invoiceParamsRef = useRef(null);
   const [shiftRows, setShiftRows] = useState([]);
   const [shiftBusy, setShiftBusy] = useState(false);
   const [shiftError, setShiftError] = useState("");
@@ -95,6 +94,15 @@ export default function RestaurantHistory() {
   const [invoiceError, setInvoiceError] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [selectedInvoiceDocId, setSelectedInvoiceDocId] = useState("");
+  const [voidTarget, setVoidTarget] = useState(null);
+  const [voidForm, setVoidForm] = useState({ adminUser: "", adminCode: "", reason: "" });
+  // Anulación de una venta ya cobrada (devolución): revierte caja, stock y contabilidad.
+  const [voidSaleTarget, setVoidSaleTarget] = useState(null);
+  const [voidSaleForm, setVoidSaleForm] = useState({ adminUser: "", adminCode: "", reason: "" });
+  const [voidSaleBusy, setVoidSaleBusy] = useState(false);
+  const [voidSaleError, setVoidSaleError] = useState("");
+  const [voidError, setVoidError] = useState("");
+  const [voidBusy, setVoidBusy] = useState(false);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
   const [invoicePreviewText, setInvoicePreviewText] = useState("");
   const [billingCfg, setBillingCfg] = useState({
@@ -103,6 +111,8 @@ export default function RestaurantHistory() {
     invoiceHeader: "",
     invoiceFooter: "",
   });
+  // Datos del restaurante para encabezar reimpresiones (nombre, cédula, teléfono, dirección).
+  const [restaurantInfo, setRestaurantInfo] = useState({});
   const [invUseTurno, setInvUseTurno] = useState(false);
   const [invShiftId, setInvShiftId] = useState("");
   const [invUseFechaCierre, setInvUseFechaCierre] = useState(false);
@@ -138,9 +148,9 @@ export default function RestaurantHistory() {
   };
   const shift = useMemo(() => {
     const h = now.getHours();
-    if (h < 15) return "Morning shift";
-    if (h < 22) return "Afternoon shift";
-    return "Night shift";
+    if (h < 15) return "Turno mañana";
+    if (h < 22) return "Turno tarde";
+    return "Turno noche";
   }, [now]);
 
   useEffect(() => {
@@ -153,21 +163,35 @@ export default function RestaurantHistory() {
     const loadOptions = async () => {
       setFamiliesLoading(true);
       setOptionsLoading(true);
-      try {
-        const [familiesRes, subFamiliesRes, itemsRes, staffRes, paymentsRes, shiftsRes, billingRes] = await Promise.all([
-          api.get("/restaurant/families"),
-          api.get("/restaurant/subfamilies"),
-          api.get("/restaurant/items"),
-          api.get("/restaurant/staff"),
-          api.get("/restaurant/payments"),
-          api.get("/restaurant/shifts/closed"),
-          api.get("/restaurant/billing"),
-        ]);
-        setFamilies(Array.isArray(familiesRes.data) ? familiesRes.data : []);
-        setSubFamilies(Array.isArray(subFamiliesRes.data) ? subFamiliesRes.data : []);
-        setItemsList(Array.isArray(itemsRes.data) ? itemsRes.data : []);
-        setStaff(Array.isArray(staffRes.data) ? staffRes.data : []);
-        const paymentsCfg = paymentsRes.data || {};
+      const requests = await Promise.allSettled([
+        api.get("/restaurant/families"),
+        api.get("/restaurant/subfamilies"),
+        api.get("/restaurant/items"),
+        api.get("/restaurant/staff"),
+        api.get("/restaurant/payments"),
+        api.get("/restaurant/shifts/closed"),
+        api.get("/restaurant/billing"),
+        api.get("/restaurant/general"),
+      ]);
+      const [familiesRes, subFamiliesRes, itemsRes, staffRes, paymentsRes, shiftsRes, billingRes, generalRes] = requests;
+      const blocked = [];
+      const dataOf = (res) => (res.status === "fulfilled" ? res.value?.data : null);
+
+      if (familiesRes.status === "fulfilled") {
+        setFamilies(Array.isArray(dataOf(familiesRes)) ? dataOf(familiesRes) : []);
+      } else blocked.push("familias");
+      if (subFamiliesRes.status === "fulfilled") {
+        setSubFamilies(Array.isArray(dataOf(subFamiliesRes)) ? dataOf(subFamiliesRes) : []);
+      } else blocked.push("subfamilias");
+      if (itemsRes.status === "fulfilled") {
+        setItemsList(Array.isArray(dataOf(itemsRes)) ? dataOf(itemsRes) : []);
+      } else blocked.push("artículos");
+      if (staffRes.status === "fulfilled") {
+        setStaff(Array.isArray(dataOf(staffRes)) ? dataOf(staffRes) : []);
+      } else blocked.push("personal");
+
+      if (paymentsRes.status === "fulfilled") {
+        const paymentsCfg = dataOf(paymentsRes) || {};
         const methods = Array.isArray(paymentsCfg?.paymentMethods) ? paymentsCfg.paymentMethods : [];
         const cobros = Array.isArray(paymentsCfg?.cobros) ? paymentsCfg.cobros : [];
         const normalizedCobros = cobros.map((c) => String(c || "").trim()).filter(Boolean);
@@ -181,29 +205,40 @@ export default function RestaurantHistory() {
         const currencies = [paymentsCfg?.monedaBase, paymentsCfg?.monedaSec]
           .map((c) => String(c || "").trim())
           .filter(Boolean);
-        const uniqueCurrencies = Array.from(new Set(currencies));
-        setInvoiceCurrencies(uniqueCurrencies);
+        setInvoiceCurrencies(Array.from(new Set(currencies)));
         setInvoicePaymentMethods(fromMethods.length ? fromMethods : fromCobros);
-        setClosedShifts(Array.isArray(shiftsRes.data) ? shiftsRes.data : []);
-        const billing = billingRes?.data || {};
+      } else blocked.push("formas de pago");
+
+      if (shiftsRes.status === "fulfilled") {
+        setClosedShifts(Array.isArray(dataOf(shiftsRes)) ? dataOf(shiftsRes) : []);
+      } else blocked.push("turnos cerrados");
+
+      if (billingRes.status === "fulfilled") {
+        const billing = dataOf(billingRes) || {};
         setBillingCfg({
           ticketHeader: billing.ticketHeader || "",
           ticketFooter: billing.ticketFooter || "",
           invoiceHeader: billing.invoiceHeader || "",
           invoiceFooter: billing.invoiceFooter || "",
         });
-      } catch {
-        setFamilies([]);
-        setSubFamilies([]);
-        setItemsList([]);
-        setStaff([]);
-        setPaymentOptions([]);
-        setClosedShifts([]);
-        setBillingCfg({ ticketHeader: "", ticketFooter: "", invoiceHeader: "", invoiceFooter: "" });
-      } finally {
-        setFamiliesLoading(false);
-        setOptionsLoading(false);
+      } else blocked.push("datos de facturación");
+
+      if (generalRes.status === "fulfilled") {
+        setRestaurantInfo(dataOf(generalRes) || {});
       }
+
+      if (blocked.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", {
+            detail: {
+              title: "Histórico",
+              desc: `Sin permiso para cargar: ${blocked.join(", ")}. El resto del reporte sigue disponible.`,
+            },
+          })
+        );
+      }
+      setFamiliesLoading(false);
+      setOptionsLoading(false);
     };
     loadOptions();
   }, [salesDialogOpen, invoicesDialogOpen, shiftsDialogOpen]);
@@ -275,9 +310,31 @@ export default function RestaurantHistory() {
     );
   };
 
-  const openPreview = (rows) => {
+  const openPreview = (rows, total, summary) => {
     setSalesPreviewRows(Array.isArray(rows) ? rows : []);
+    setSalesTotal(Number(total ?? (Array.isArray(rows) ? rows.length : 0)));
+    setSalesSummary(summary || { total: 0, subtotal: 0, tax: 0, tip10: 0 });
     setSalesPreviewOpen(true);
+  };
+
+  const visiblePreviewRows = salesPreviewRows;
+
+  const loadMoreSales = async () => {
+    if (previewLoadingMore || !salesParamsRef.current) return;
+    setPreviewLoadingMore(true);
+    try {
+      const params = { ...salesParamsRef.current, offset: salesPreviewRows.length };
+      const { data } = await api.get("/restaurant/history/sales", { params });
+      const rows = Array.isArray(data?.items) ? data.items : [];
+      setSalesPreviewRows((prev) => [...prev, ...rows]);
+      setSalesTotal(Number(data?.total ?? 0));
+      if (data?.summary) setSalesSummary(data.summary);
+      if (rows.length === 0) setSalesTotal(salesPreviewRows.length);
+    } catch {
+      setReportError("No se pudieron cargar más registros.");
+    } finally {
+      setPreviewLoadingMore(false);
+    }
   };
 
   const handlePrint = async () => {
@@ -285,47 +342,50 @@ export default function RestaurantHistory() {
     setReportError("");
     setReportMissing([]);
     try {
-      const { data } = await api.get("/restaurant/history/sales", {
-        params: {
-          type: movementType,
-          groupBy,
-          orderBy,
-          detailedByFamily,
-          includeHouseAccount,
-          includeVoidedInvoices,
-          useArticulo,
-          itemId: useArticulo ? itemId : "",
-          useTipoCobro,
-          useCajero,
-          useMesero,
-          useFamilia,
-          useSubfamilia,
-          useFecha,
-          useFechaHora: false,
-          useTurno,
-          useMoneda,
-          familyId: useFamilia ? familyId : "",
-          subFamilyId: useSubfamilia ? subFamilyId : "",
-          cashierId: useCajero ? cashierId : "",
-          waiterId: useMesero ? waiterId : "",
-          serviceType: serviceType || "",
-          paymentKey: useTipoCobro ? paymentKey : "",
-          shiftId: useTurno ? shiftId : "",
-          currency: useMoneda ? currency : "",
-          dateFrom: useFecha ? dateFrom : "",
-          dateTo: useFecha ? dateTo : "",
-          dateTimeFrom: "",
-          dateTimeTo: "",
-          topCount,
-          topMode,
-          includeItemsMode,
-          focus: focusKey,
-        },
-      });
+      const params = {
+        type: movementType,
+        groupBy,
+        orderBy,
+        detailedByFamily,
+        includeHouseAccount,
+        includeVoidedInvoices,
+        useArticulo,
+        itemId: useArticulo ? itemId : "",
+        useTipoCobro,
+        useCajero,
+        useMesero,
+        useFamilia,
+        useSubfamilia,
+        useFecha,
+        useFechaHora: false,
+        useTurno,
+        useMoneda,
+        familyId: useFamilia ? familyId : "",
+        subFamilyId: useSubfamilia ? subFamilyId : "",
+        cashierId: useCajero ? cashierId : "",
+        waiterId: useMesero ? waiterId : "",
+        serviceType: serviceType || "",
+        paymentKey: useTipoCobro ? paymentKey : "",
+        shiftId: useTurno ? shiftId : "",
+        currency: useMoneda ? currency : "",
+        dateFrom: useFecha ? dateFrom : "",
+        dateTo: useFecha ? dateTo : "",
+        dateTimeFrom: "",
+        dateTimeTo: "",
+        topCount,
+        topMode,
+        includeItemsMode,
+        focus: focusKey,
+        limit: 100,
+        offset: 0,
+      };
+      salesParamsRef.current = params;
+      const { data } = await api.get("/restaurant/history/sales", { params });
       const missing = Array.isArray(data?.missing) ? data.missing : [];
       setReportMissing(missing);
       const rows = Array.isArray(data?.items) ? data.items : [];
-      if (rows.length > 0) openPreview(rows);
+      const total = Number(data?.total ?? rows.length);
+      if (rows.length > 0 || total > 0) openPreview(rows, total, data?.summary);
     } catch (err) {
       setReportError("No se pudo generar el reporte.");
     } finally {
@@ -333,169 +393,68 @@ export default function RestaurantHistory() {
     }
   };
 
-  const openInvoicePreview = (rows) => {
-    const html = `
-      <html>
-        <head>
-          <title>Facturas</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 16px; }
-            h2 { margin: 0 0 8px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #ccc; padding: 6px 8px; font-size: 12px; }
-            th { background: #f5f5f5; text-align: left; }
-          </style>
-        </head>
-        <body>
-          <h2>Facturas</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha Cierre</th>
-                <th>Turno</th>
-                <th>N. Factura</th>
-                <th>Doc</th>
-                <th>Sección - Mesa</th>
-                <th>Cajero / Mesero</th>
-                <th>Moneda</th>
-                <th>Amount</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows
-                .map(
-                  (r) => `
-                <tr>
-                  <td>${escapeHtml(r.closedAt ? new Date(r.closedAt).toLocaleString() : "")}</td>
-                  <td>${escapeHtml(r.shiftNumber ? `#${r.shiftNumber}` : r.shiftId ? String(r.shiftId).slice(-6) : "")}</td>
-                  <td>${escapeHtml(r.consecutive || "")}</td>
-                  <td>${escapeHtml(r.docType || "")}</td>
-                  <td>${escapeHtml(`${r.order?.sectionId ? `${r.order.sectionId} - ` : ""}${r.order?.tableId || ""}`)}</td>
-                  <td>${escapeHtml(`${getStaffName(r.order?.cashierId)} / ${getStaffName(r.order?.waiterId)}`)}</td>
-                  <td>${escapeHtml(r.order?.currency || "")}</td>
-                  <td>${formatMoneyWithCurrency(r.order?.total, r.order?.currency || r.currency || "")}</td>
-                  <td>${escapeHtml(r.status || "")}</td>
-                </tr>
-              `
-                )
-                .join("")}
-            </tbody>
-          </table>
-          <script>window.print()</script>
-        </body>
-      </html>
-    `;
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-  };
-
   const buildInvoicePreviewText = ({ row, header, footer }) => {
     const order = row?.order || {};
-    const items = Array.isArray(order.items) ? order.items : [];
-    const W = 40;
-    const sep  = "=".repeat(W);
-    const sep2 = "-".repeat(W);
-    const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
-    const lines = [];
-    const isFE = String(row?.docType || "").toUpperCase() === "FE";
-    const title = isFE ? "FACTURA ELECTRONICA" : "TICKET";
-
-    const h = String(header || "").trim();
-    if (h) { lines.push(h); lines.push(""); }
-
-    lines.push(sep);
-    lines.push(title);
-    if (row?.consecutive) lines.push(`N° Documento: ${row.consecutive}`);
-    lines.push(`Fecha:    ${row?.closedAt ? new Date(row.closedAt).toLocaleString() : new Date().toLocaleString()}`);
-    if (row?.shiftNumber) lines.push(`Turno:    #${row.shiftNumber}`);
+    const money = (v) => formatMoneyWithCurrency(v, order.currency || "");
     const cashierName = getStaffName(order?.cashierId);
-    const waiterName  = getStaffName(order?.waiterId);
-    if (cashierName && cashierName !== "-") lines.push(`Cajero:   ${cashierName}`);
-    if (waiterName  && waiterName  !== "-") lines.push(`Mesero:   ${waiterName}`);
-    if (order?.sectionId) lines.push(`Sección:  ${order.sectionId}`);
-    if (order?.tableId)   lines.push(`Mesa:     ${order.tableId}`);
-    if (order?.covers != null) lines.push(`Personas: ${order.covers}`);
-    if (order?.serviceType) lines.push(`Servicio: ${order.serviceType}`);
-    if (order?.roomId) lines.push(`Habitac.: ${order.roomId}`);
-    lines.push(sep2);
-
-    if (items.length > 0) {
-      for (const it of items) {
-        const qty   = Number(it?.qty || 1);
-        const name  = String(it?.name || "Item");
-        const price = Number(it?.price || 0);
-        lines.push(rjust(`  ${qty} x ${name}`, formatMoneyWithCurrency(qty * price, order.currency)));
-        if (it?.detailNote) lines.push(`    * ${String(it.detailNote)}`);
-      }
-      lines.push(sep2);
-    }
-
-    if (order?.note) { lines.push(`Nota: ${String(order.note)}`); lines.push(""); }
-
-    const subtotal = Number(order?.subtotal || 0);
-    const discount = Number(order?.discountAmount || 0);
-    const tip10    = Number(order?.tip10 || 0);
-    const iva      = Number(order?.tax || order?.iva || 0);
-    const total    = Number(order?.total || 0);
-    if (subtotal > 0) lines.push(rjust("Subtotal:", formatMoneyWithCurrency(subtotal, order.currency)));
-    if (discount > 0) lines.push(rjust("Descuento:", `- ${formatMoneyWithCurrency(discount, order.currency)}`));
-    if (tip10 > 0)    lines.push(rjust("Servicio (10%):", formatMoneyWithCurrency(tip10, order.currency)));
-    if (iva > 0)      lines.push(rjust("IVA:", formatMoneyWithCurrency(iva, order.currency)));
-    lines.push(rjust("TOTAL:", formatMoneyWithCurrency(total, order.currency)));
-
-    const payBreakdown = order?.paymentBreakdown && typeof order.paymentBreakdown === "object"
-      ? Object.entries(order.paymentBreakdown).filter(([, v]) => Number(v) > 0) : [];
-    if (payBreakdown.length > 0) {
-      lines.push(sep2);
-      for (const [method, amount] of payBreakdown) {
-        lines.push(rjust(`  ${method}:`, formatMoneyWithCurrency(Number(amount), order.currency)));
-      }
-    }
-
-    if (row?.status === "CANCELED") {
-      lines.push(sep2);
-      lines.push("*** DOCUMENTO ANULADO ***");
-      if (row?.cancelReason) lines.push(`Motivo: ${row.cancelReason}`);
-    }
-
-    const f = String(footer || "").trim();
-    if (f) { lines.push(""); lines.push(f); }
-    lines.push(sep);
-    return lines.join("\n");
+    const waiterName = getStaffName(order?.waiterId);
+    return buildTicketText({
+      title: String(row?.docType || "").toUpperCase() === "FE" ? "FACTURA ELECTRONICA" : "TICKET",
+      payload: {
+        __printHeader: header,
+        __printFooter: footer,
+        documentNumber: row?.consecutive,
+        shiftNumber: row?.shiftNumber,
+        date: row?.closedAt,
+        cashierName: cashierName !== "-" ? cashierName : "",
+        waiterName: waiterName !== "-" ? waiterName : "",
+        sectionId: order?.sectionId,
+        tableId: order?.tableId,
+        covers: order?.covers,
+        serviceType: order?.serviceType,
+        roomId: order?.roomId,
+        items: (Array.isArray(order?.items) ? order.items : []).map((it) => ({
+          ...it,
+          note: it?.detailNote || it?.note,
+        })),
+        note: order?.note,
+        paymentMethods:
+          order?.paymentBreakdown && typeof order.paymentBreakdown === "object"
+            ? Object.entries(order.paymentBreakdown)
+                .filter(([, v]) => Number(v) > 0)
+                .map(([name, amount]) => ({ name, amount }))
+            : [],
+        canceled: row?.status === "CANCELED",
+        cancelReason: row?.cancelReason,
+      },
+      totals: {
+        subtotal: order?.subtotal,
+        tax: order?.tax ?? order?.iva,
+        service: order?.tip10,
+        discountTotal: order?.discountAmount,
+        total: order?.total,
+      },
+      money,
+      restaurant: restaurantInfo,
+    });
   };
 
   const buildCloseReportTextHistory = (row) => {
-    const W = 40;
-    const center = (s) => { const str = String(s || ""); const pad = Math.max(0, Math.floor((W - str.length) / 2)); return " ".repeat(pad) + str; };
-    const sep  = "=".repeat(W);
-    const sep2 = "-".repeat(W);
-    const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
-    const totals   = row?.closeTotals   && typeof row.closeTotals   === "object" ? row.closeTotals   : {};
+    const totals = row?.closeTotals && typeof row.closeTotals === "object" ? row.closeTotals : {};
     const payments = row?.closePayments && typeof row.closePayments === "object" ? row.closePayments : {};
     const systemTotal = Number(totals.system ?? totals.systemTotal ?? totals.totalSales ?? totals.total ?? 0);
-    const lines = [];
-    lines.push(sep);
-    lines.push(center("REIMPRESION CIERRE Z DE CAJA"));
-    lines.push(sep);
-    if (row?.shiftNumber) lines.push(`Turno:    #${row.shiftNumber}`);
-    lines.push(`Apertura: ${row?.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}`);
-    lines.push(`Cierre:   ${row?.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}`);
-    lines.push(sep2);
-    lines.push(center("VENTAS POR METODO"));
-    lines.push(sep2);
-    const payEntries = Object.entries(payments).filter(([, v]) => Number(v) > 0);
-    for (const [key, amt] of payEntries) lines.push(rjust(`  ${key}:`, Number(amt).toFixed(2)));
-    lines.push(sep2);
-    lines.push(rjust("TOTAL:", systemTotal.toFixed(2)));
-    if (row?.closeNote) { lines.push(sep2); lines.push(`Notas: ${row.closeNote}`); }
-    lines.push(sep);
-    lines.push("");
-    lines.push("Firma: ________________________");
-    lines.push(sep);
-    return lines.join("\n");
+    return buildCloseReportText({
+      stage: "Z",
+      reprint: true,
+      restaurant: restaurantInfo,
+      shiftNumber: row?.shiftNumber,
+      openedAt: row?.openedAt,
+      closedAt: row?.closedAt,
+      systemTotal,
+      byMethod: payments,
+      salesCount: 0,
+      note: row?.closeNote,
+    });
   };
 
   const openPreviewWindowWithText = ({ text }) => {
@@ -520,34 +479,151 @@ export default function RestaurantHistory() {
     openPreviewWindowWithText({ text });
   };
 
+  const openVoidInvoiceModal = () => {
+    const row = invoiceRows.find((r) => r.id === selectedInvoiceDocId);
+    if (!row) {
+      alert("Selecciona una factura primero.");
+      return;
+    }
+    if (String(row.status || "").toUpperCase() === "CANCELED") {
+      alert("La factura ya está anulada.");
+      return;
+    }
+    setVoidTarget(row);
+    setVoidForm({ adminUser: "", adminCode: "", reason: "" });
+    setVoidError("");
+  };
+
+  const closeVoidInvoiceModal = () => {
+    if (voidBusy) return;
+    setVoidTarget(null);
+    setVoidError("");
+  };
+
+  const openVoidSaleModal = (row) => {
+    if (!row?.id) return;
+    if (String(row.status || "").toUpperCase() !== "PAID") {
+      window.alert("Solo se pueden anular ventas cobradas.");
+      return;
+    }
+    setVoidSaleTarget(row);
+    setVoidSaleForm({ adminUser: "", adminCode: "", reason: "" });
+    setVoidSaleError("");
+  };
+
+  const closeVoidSaleModal = () => {
+    if (voidSaleBusy) return;
+    setVoidSaleTarget(null);
+    setVoidSaleError("");
+  };
+
+  const confirmVoidSale = async () => {
+    if (voidSaleBusy || !voidSaleTarget) return;
+    const reason = String(voidSaleForm.reason || "").trim();
+    const adminCode = String(voidSaleForm.adminCode || "").trim();
+    const adminUser = String(voidSaleForm.adminUser || "").trim();
+    if (!reason) {
+      setVoidSaleError("El motivo es obligatorio.");
+      return;
+    }
+    if (!adminCode) {
+      setVoidSaleError("Ingresa el PIN de administrador.");
+      return;
+    }
+    setVoidSaleBusy(true);
+    setVoidSaleError("");
+    try {
+      const { data } = await api.post("/restaurant/order/void-paid", {
+        orderId: voidSaleTarget.id,
+        reason,
+        adminCode,
+        adminUser: adminUser || undefined,
+      });
+      const restored = Array.isArray(data?.inventoryRestored) ? data.inventoryRestored.length : 0;
+      const parts = ["Venta anulada."];
+      if (restored > 0) parts.push(`Inventario devuelto en ${restored} insumo(s).`);
+      if (data?.eInvoicePending?.message) parts.push(data.eInvoicePending.message);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", { detail: { title: "Restaurante", desc: parts.join(" ") } })
+      );
+      setVoidSaleTarget(null);
+      setVoidSaleForm({ adminUser: "", adminCode: "", reason: "" });
+      await handleInvoicesApply();
+    } catch (err) {
+      setVoidSaleError(err?.response?.data?.message || err?.message || "No se pudo anular la venta.");
+    } finally {
+      setVoidSaleBusy(false);
+    }
+  };
+
+  const confirmVoidInvoice = async () => {
+    if (voidBusy || !voidTarget) return;
+    const reason = String(voidForm.reason || "").trim();
+    const adminCode = String(voidForm.adminCode || "").trim();
+    const adminUser = String(voidForm.adminUser || "").trim();
+    if (!reason) {
+      setVoidError("El motivo es obligatorio.");
+      return;
+    }
+    if (!adminCode) {
+      setVoidError("Ingresa el PIN de administrador.");
+      return;
+    }
+    setVoidBusy(true);
+    setVoidError("");
+    try {
+      await api.post("/restaurant/order/void-invoice", {
+        restaurantOrderId: voidTarget.restaurantOrderId || selectedInvoiceId,
+        docType: voidTarget.docType,
+        reason,
+        adminCode,
+        adminUser: adminUser || undefined,
+      });
+      setVoidTarget(null);
+      setVoidForm({ adminUser: "", adminCode: "", reason: "" });
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", { detail: { title: "Restaurante", desc: "Factura anulada." } })
+      );
+      await handleInvoicesApply();
+    } catch (err) {
+      setVoidError(err?.response?.data?.message || err?.message || "No se pudo anular la factura.");
+    } finally {
+      setVoidBusy(false);
+    }
+  };
+
 const handleInvoicesApply = async () => {
     setInvoiceBusy(true);
     setInvoiceError("");
     setInvoiceMissing([]);
     try {
-      const { data } = await api.get("/restaurant/history/invoices", {
-        params: {
-          useTurno: invUseTurno,
-          shiftId: invUseTurno ? invShiftId : "",
-          useFechaCierre: invUseFechaCierre,
-          dateFrom: invUseFechaCierre ? invDateFrom : "",
-          dateTo: invUseFechaCierre ? invDateTo : "",
-          useInvoiceNumber: invUseInvoiceNumber,
-          invoiceNumberFrom: invUseInvoiceNumber ? invInvoiceFrom : "",
-          invoiceNumberTo: invUseInvoiceNumber ? invInvoiceTo : "",
-          includePaid: invIncludePaid,
-          includeVoided: invIncludeVoided,
-          useMonedaPago: invUseMonedaPago,
-          paymentCurrency: invUseMonedaPago ? invPaymentCurrency : "",
-          useTipoCobro: invUseTipoCobro,
-          paymentKey: invUseTipoCobro ? invPaymentKey : "",
-          useMotivo: invUseMotivo,
-          motivo: invUseMotivo ? invMotivo : "",
-          usePerfil: invUsePerfil,
-          perfilId: invUsePerfil ? invPerfil : "",
-        },
-      });
-      setInvoiceRows(Array.isArray(data?.items) ? data.items : []);
+      const params = {
+        useTurno: invUseTurno,
+        shiftId: invUseTurno ? invShiftId : "",
+        useFechaCierre: invUseFechaCierre,
+        dateFrom: invUseFechaCierre ? invDateFrom : "",
+        dateTo: invUseFechaCierre ? invDateTo : "",
+        useInvoiceNumber: invUseInvoiceNumber,
+        invoiceNumberFrom: invUseInvoiceNumber ? invInvoiceFrom : "",
+        invoiceNumberTo: invUseInvoiceNumber ? invInvoiceTo : "",
+        includePaid: invIncludePaid,
+        includeVoided: invIncludeVoided,
+        useMonedaPago: invUseMonedaPago,
+        paymentCurrency: invUseMonedaPago ? invPaymentCurrency : "",
+        useTipoCobro: invUseTipoCobro,
+        paymentKey: invUseTipoCobro ? invPaymentKey : "",
+        useMotivo: invUseMotivo,
+        motivo: invUseMotivo ? invMotivo : "",
+        usePerfil: invUsePerfil,
+        perfilId: invUsePerfil ? invPerfil : "",
+        limit: 100,
+        offset: 0,
+      };
+      invoiceParamsRef.current = params;
+      const { data } = await api.get("/restaurant/history/invoices", { params });
+      const rows = Array.isArray(data?.items) ? data.items : [];
+      setInvoiceRows(rows);
+      setInvoiceTotal(Number(data?.total ?? rows.length));
       setInvoiceMissing(Array.isArray(data?.missing) ? data.missing : []);
       if (data?.filters) {
         const reasons = Array.isArray(data.filters.reasons) ? data.filters.reasons : [];
@@ -562,16 +638,49 @@ const handleInvoicesApply = async () => {
     }
   };
 
+  const loadMoreInvoices = async () => {
+    if (invoiceLoadingMore || !invoiceParamsRef.current) return;
+    setInvoiceLoadingMore(true);
+    try {
+      const params = { ...invoiceParamsRef.current, offset: invoiceRows.length };
+      const { data } = await api.get("/restaurant/history/invoices", { params });
+      const rows = Array.isArray(data?.items) ? data.items : [];
+      setInvoiceRows((prev) => [...prev, ...rows]);
+      setInvoiceTotal(Number(data?.total ?? 0));
+    } catch {
+      setInvoiceError("No se pudieron cargar más facturas.");
+    } finally {
+      setInvoiceLoadingMore(false);
+    }
+  };
+
   const items = [
-    { title: "Ventas / Devoluciones", icon: BarChart3, onClick: () => setSalesDialogOpen(true) },
-    { title: "Facturas", icon: FileText, onClick: () => setInvoicesDialogOpen(true), tone: "amber" },
-    { title: "Turnos de Trabajo", icon: Briefcase, onClick: () => setShiftsDialogOpen(true) },
-    { title: "Estadísticas", icon: BarChart3, onClick: openStatsDialog, tone: "green" },
-    { title: "Exenciones de Impuestos", icon: ShieldCheck },
-    { title: "Rebajas de Inventario", icon: MinusSquare },
-    { title: "Comandas", icon: UtensilsCrossed },
-    { title: "Tarjetas", icon: CreditCard },
-    { title: "Historico de Reservas", icon: History },
+    {
+      title: "Ventas",
+      desc: "Órdenes pagadas del turno con filtros y totales.",
+      icon: BarChart3,
+      onClick: () => setSalesDialogOpen(true),
+    },
+    {
+      title: "Facturas",
+      desc: "Comprobantes emitidos, reimpresión y anulación.",
+      icon: FileText,
+      onClick: () => setInvoicesDialogOpen(true),
+      tone: "amber",
+    },
+    {
+      title: "Turnos de Trabajo",
+      desc: "Cierres X/Z y arqueos de caja.",
+      icon: Briefcase,
+      onClick: () => setShiftsDialogOpen(true),
+    },
+    {
+      title: "Estadísticas",
+      desc: "Resumen operativo del restaurante.",
+      icon: BarChart3,
+      onClick: openStatsDialog,
+      tone: "green",
+    },
   ];
 
   const gridCols =
@@ -617,7 +726,7 @@ const handleInvoicesApply = async () => {
             <Tile
               key={item.title}
               title={item.title}
-              desc="Pendiente"
+              desc={item.desc}
               icon={item.icon}
               size={LOBBY_TILE_SIZE}
               tone={item.tone || "lime"}
@@ -633,7 +742,7 @@ const handleInvoicesApply = async () => {
             <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-lime-200 bg-white shadow-2xl overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
                 <div className="flex items-center gap-3">
-                  <div className="text-lg font-semibold text-lime-800">Ventas / Devoluciones</div>
+                  <div className="text-lg font-semibold text-lime-800">Ventas</div>
                 </div>
                 <button
                   type="button"
@@ -656,16 +765,6 @@ const handleInvoicesApply = async () => {
                       className="accent-lime-600"
                     />
                     Ventas
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="movType"
-                      checked={movementType === "RETURNS"}
-                      onChange={() => setMovementType("RETURNS")}
-                      className="accent-lime-600"
-                    />
-                    Devoluciones
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -912,10 +1011,20 @@ const handleInvoicesApply = async () => {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-3 gap-3">
+                <div className="grid md:grid-cols-2 gap-3">
                   <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
                     <div className="text-xs uppercase text-lime-600">Agrupar por</div>
-                    {["Familia", "Subfamilia", "Mesero", "Cajero", "Turno", "Artículo", "Fecha"].map((label) => (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="groupBy"
+                        className="accent-lime-600"
+                        checked={!groupBy}
+                        onChange={() => setGroupBy("")}
+                      />
+                      Ninguno
+                    </label>
+                    {["Familia", "Subfamilia", "Mesero", "Cajero", "Creador", "Turno", "Artículo", "Fecha"].map((label) => (
                       <label key={label} className="flex items-center gap-2 text-sm">
                         <input
                           type="radio"
@@ -930,6 +1039,16 @@ const handleInvoicesApply = async () => {
                   </div>
                   <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
                     <div className="text-xs uppercase text-lime-600">Ordenar por</div>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="orderBy"
+                        className="accent-lime-600"
+                        checked={!orderBy}
+                        onChange={() => setOrderBy("")}
+                      />
+                      Predeterminado
+                    </label>
                     {["Código", "Total (mayor a menor)", "Total (menor a mayor)", "Cantidad", "Fecha"].map((label) => (
                       <label key={label} className="flex items-center gap-2 text-sm">
                         <input
@@ -943,88 +1062,9 @@ const handleInvoicesApply = async () => {
                       </label>
                     ))}
                   </div>
-                  <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="accent-lime-600"
-                        checked={detailedByFamily}
-                        onChange={(e) => setDetailedByFamily(e.target.checked)}
-                      />
-                      Detallado por Familia
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="accent-lime-600"
-                        checked={includeHouseAccount}
-                        onChange={(e) => setIncludeHouseAccount(e.target.checked)}
-                      />
-                      Incluir Artículos Cuentas Casa
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="accent-lime-600"
-                        checked={includeVoidedInvoices}
-                        onChange={(e) => setIncludeVoidedInvoices(e.target.checked)}
-                      />
-                      Incluir Facturas Anuladas
-                    </label>
-                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" className="accent-lime-600" checked={!!topCount} readOnly />
-                    Seleccionar los
-                  </label>
-                  <input
-                    className="h-9 w-16 rounded-lg border px-2 text-sm text-center"
-                    value={topCount}
-                    onChange={(e) => setTopCount(e.target.value)}
-                    placeholder="15"
-                  />
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="topSales"
-                      className="accent-lime-600"
-                      checked={topMode === "MOST"}
-                      onChange={() => setTopMode("MOST")}
-                    />
-                    más vendidos
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="topSales"
-                      className="accent-lime-600"
-                      checked={topMode === "LEAST"}
-                      onChange={() => setTopMode("LEAST")}
-                    />
-                    menos vendidos
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="includeItems"
-                      className="accent-lime-600"
-                      checked={includeItemsMode === "ALL"}
-                      onChange={() => setIncludeItemsMode("ALL")}
-                    />
-                    incluir todos los artículos
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="includeItems"
-                      className="accent-lime-600"
-                      checked={includeItemsMode === "SOLD"}
-                      onChange={() => setIncludeItemsMode("SOLD")}
-                    />
-                    incluir sólo los vendidos
-                  </label>
                   <div className="ml-auto">
                     <button
                       className="h-10 px-5 rounded-xl bg-lime-100 text-lime-900 font-semibold border border-lime-200 disabled:opacity-60"
@@ -1056,12 +1096,10 @@ const handleInvoicesApply = async () => {
                       "Familia",
                       "Subfamilia",
                       "Artículo",
-                      "Artículo / Observación",
                       "Fecha",
-                      "Fecha / Artículo",
-                      "Cuenta Casa",
                       "Mesero",
                       "Cajero",
+                      "Creador",
                       "Servicio",
                       "Cliente",
                     ].map((label) => (
@@ -1389,6 +1427,15 @@ const handleInvoicesApply = async () => {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                {invoiceTotal > invoiceRows.length && (
+                  <button
+                    className="mr-auto h-10 px-3 rounded-lg border border-lime-200 bg-white text-sm disabled:opacity-60"
+                    onClick={loadMoreInvoices}
+                    disabled={invoiceLoadingMore}
+                  >
+                    {invoiceLoadingMore ? "Cargando..." : `Mostrar más (${invoiceTotal - invoiceRows.length} restantes)`}
+                  </button>
+                )}
                 <button
                   className="h-10 px-3 rounded-lg bg-lime-100 border border-lime-200"
                   onClick={openSelectedInvoicePdf}
@@ -1396,19 +1443,9 @@ const handleInvoicesApply = async () => {
                   Exportar PDF
                 </button>
                 <button
-                  className="h-10 px-3 rounded-lg bg-red-100 border border-red-200 text-red-700"
-                  onClick={async () => {
-                    if (!selectedInvoiceId) return;
-                    const reason = window.prompt("Motivo de anulación:") || "";
-                    const adminCode = window.prompt("Admin PIN:") || "";
-                    if (!adminCode) return;
-                    await api.post("/restaurant/order/void-invoice", {
-                      restaurantOrderId: selectedInvoiceId,
-                      reason,
-                      adminCode,
-                    });
-                    handleInvoicesApply();
-                  }}
+                  className="h-10 px-3 rounded-lg bg-red-100 border border-red-200 text-red-700 disabled:opacity-60"
+                  onClick={openVoidInvoiceModal}
+                  disabled={!selectedInvoiceDocId}
                 >
                   Anular Factura
                 </button>
@@ -1537,8 +1574,14 @@ const handleInvoicesApply = async () => {
                           className="grid grid-cols-[80px_160px_160px_110px_110px_1fr_90px] text-xs px-3 py-2 border-t border-lime-200 items-center"
                         >
                           <div className="font-semibold">{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</div>
-                          <div>{row.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}</div>
-                          <div>{row.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}</div>
+                          <div>
+                            <div>{row.openedAt ? new Date(row.openedAt).toLocaleString() : "-"}</div>
+                            <div className="text-[10px] text-slate-500">{row.openedByName || "-"}</div>
+                          </div>
+                          <div>
+                            <div>{row.closedAt ? new Date(row.closedAt).toLocaleString() : "-"}</div>
+                            <div className="text-[10px] text-slate-500">{row.closedByName || "-"}</div>
+                          </div>
                           <div>{Number(row.openingAmount || 0).toFixed(2)}</div>
                           <div className="font-semibold text-lime-800">
                             {saleTotal > 0 ? saleTotal.toFixed(2) : "-"}
@@ -1689,7 +1732,7 @@ const handleInvoicesApply = async () => {
               }
             `}</style>
             <div className="sales-preview-header flex items-center justify-between gap-3 px-4 py-3 bg-lime-100 border-b border-lime-200">
-              <div className="text-sm font-semibold text-lime-900">Vista previa de ventas / devoluciones</div>
+              <div className="text-sm font-semibold text-lime-900">Vista previa de ventas</div>
               <div className="flex items-center gap-2">
                 <button
                   className="h-9 px-3 rounded-lg bg-lime-700 text-white text-sm font-semibold"
@@ -1726,7 +1769,7 @@ const handleInvoicesApply = async () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {salesPreviewRows.map((row) => (
+                    {visiblePreviewRows.map((row) => (
                       <tr key={row.id} className="hover:bg-red-50">
                         <td className="border border-red-100 px-2 py-1">{row.saleNumber || row.id?.slice(-6) || "-"}</td>
                         <td className="border border-red-100 px-2 py-1">{row.sectionId || "-"}</td>
@@ -1768,10 +1811,11 @@ const handleInvoicesApply = async () => {
                       <th className="border border-lime-200 px-2 py-1">Serv.10%</th>
                       <th className="border border-lime-200 px-2 py-1 font-bold">Total</th>
                       <th className="border border-lime-200 px-2 py-1">Fecha</th>
+                      <th className="border border-lime-200 px-2 py-1">Acción</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {salesPreviewRows.map((row) => (
+                    {visiblePreviewRows.map((row) => (
                       <tr key={row.id || `${row.sectionId}-${row.tableId}-${row.createdAt}`} className="hover:bg-lime-50">
                         {groupBy ? (
                           <td className="border border-lime-100 px-2 py-1">{row.groupKey || "-"}</td>
@@ -1780,8 +1824,8 @@ const handleInvoicesApply = async () => {
                         <td className="border border-lime-100 px-2 py-1">{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</td>
                         <td className="border border-lime-100 px-2 py-1">{row.sectionId || "-"}</td>
                         <td className="border border-lime-100 px-2 py-1">{row.tableId || "-"}</td>
-                        <td className="border border-lime-100 px-2 py-1">{getStaffName(row.cashierId) || "-"}</td>
-                        <td className="border border-lime-100 px-2 py-1">{getStaffName(row.waiterId) || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.cashierName || getStaffName(row.cashierId) || "-"}</td>
+                        <td className="border border-lime-100 px-2 py-1">{row.waiterName || getStaffName(row.waiterId) || "-"}</td>
                         <td className="border border-lime-100 px-2 py-1 text-center">{row.itemCount ?? "-"}</td>
                         <td className="border border-lime-100 px-2 py-1 text-xs text-slate-500">
                           {Array.isArray(row.paymentMethods) && row.paymentMethods.length > 0
@@ -1795,11 +1839,24 @@ const handleInvoicesApply = async () => {
                         <td className="border border-lime-100 px-2 py-1">
                           {row.closedAt ? new Date(row.closedAt).toLocaleString() : row.createdAt ? new Date(row.createdAt).toLocaleString() : "-"}
                         </td>
+                        <td className="border border-lime-100 px-2 py-1 text-center">
+                          {String(row.status || "").toUpperCase() === "PAID" ? (
+                            <button
+                              type="button"
+                              className="text-[11px] px-2 py-0.5 rounded border border-red-200 text-red-700 hover:bg-red-50"
+                              onClick={() => openVoidSaleModal(row)}
+                            >
+                              Anular venta
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">Anulada</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {salesPreviewRows.length === 0 && (
                       <tr>
-                        <td className="border border-lime-100 px-2 py-2 text-center text-slate-500" colSpan={groupBy ? 14 : 13}>
+                        <td className="border border-lime-100 px-2 py-2 text-center text-slate-500" colSpan={groupBy ? 15 : 14}>
                           Sin resultados.
                         </td>
                       </tr>
@@ -1807,13 +1864,24 @@ const handleInvoicesApply = async () => {
                   </tbody>
                 </table>
                 {salesPreviewRows.length > 0 && (() => {
-                  const grandTotal = salesPreviewRows.reduce((s, r) => s + Number(r.total || 0), 0);
-                  const grandSubtotal = salesPreviewRows.reduce((s, r) => s + Number(r.subtotal || 0), 0);
-                  const grandTax = salesPreviewRows.reduce((s, r) => s + Number(r.tax || 0), 0);
-                  const grandTip = salesPreviewRows.reduce((s, r) => s + Number(r.tip10 || 0), 0);
+                  const grandTotal = Number(salesSummary.total || 0);
+                  const grandSubtotal = Number(salesSummary.subtotal || 0);
+                  const grandTax = Number(salesSummary.tax || 0);
+                  const grandTip = Number(salesSummary.tip10 || 0);
+                  const remaining = Math.max(0, salesTotal - salesPreviewRows.length);
                   return (
-                    <div className="mt-2 flex justify-end gap-6 text-xs font-semibold border-t border-lime-200 pt-2">
-                      <span>Registros: {salesPreviewRows.length}</span>
+                    <div className="mt-2 flex flex-wrap items-center justify-end gap-6 text-xs font-semibold border-t border-lime-200 pt-2">
+                      {remaining > 0 && (
+                        <button
+                          type="button"
+                          className="mr-auto h-8 px-3 rounded-lg border border-lime-200 bg-white text-xs text-lime-900 hover:bg-lime-50 disabled:opacity-60"
+                          onClick={loadMoreSales}
+                          disabled={previewLoadingMore}
+                        >
+                          {previewLoadingMore ? "Cargando..." : `Mostrar más (${remaining} restantes)`}
+                        </button>
+                      )}
+                      <span>Registros: {salesPreviewRows.length} de {salesTotal}</span>
                       <span>Subtotal: {grandSubtotal.toFixed(2)}</span>
                       <span>IVA: {grandTax.toFixed(2)}</span>
                       <span>Serv.10%: {grandTip.toFixed(2)}</span>
@@ -1823,6 +1891,164 @@ const handleInvoicesApply = async () => {
                 })()}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+      {voidSaleTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-red-200 overflow-hidden">
+            <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+              <div className="text-sm font-semibold text-red-800">Anular venta cobrada</div>
+              <div className="text-xs text-red-700/80">
+                Devuelve el inventario, quita el cargo a habitación y revierte la contabilidad. No se puede deshacer.
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-700 space-y-0.5">
+                <div>Venta: {voidSaleTarget.saleNumber || "-"}</div>
+                <div>Mesa: {voidSaleTarget.tableId || "-"}</div>
+                <div>Total: {formatMoneyWithCurrency(voidSaleTarget.total, voidSaleTarget.currency || "")}</div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-700" htmlFor="void-sale-reason">
+                  Motivo (obligatorio)
+                </label>
+                <textarea
+                  id="void-sale-reason"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  rows={3}
+                  value={voidSaleForm.reason}
+                  onChange={(e) => setVoidSaleForm((f) => ({ ...f, reason: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-700" htmlFor="void-sale-admin-user">
+                    Usuario autoriza
+                  </label>
+                  <input
+                    id="void-sale-admin-user"
+                    className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                    value={voidSaleForm.adminUser}
+                    onChange={(e) => setVoidSaleForm((f) => ({ ...f, adminUser: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-700" htmlFor="void-sale-admin-code">
+                    PIN admin
+                  </label>
+                  <input
+                    id="void-sale-admin-code"
+                    type="password"
+                    autoComplete="off"
+                    className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                    value={voidSaleForm.adminCode}
+                    onChange={(e) => setVoidSaleForm((f) => ({ ...f, adminCode: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {voidSaleError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {voidSaleError}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  className="h-10 px-3 rounded-lg border border-slate-200 text-sm"
+                  onClick={closeVoidSaleModal}
+                  disabled={voidSaleBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="h-10 px-3 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
+                  onClick={confirmVoidSale}
+                  disabled={voidSaleBusy}
+                >
+                  {voidSaleBusy ? "Anulando..." : "Anular venta"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {voidTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-red-200 overflow-hidden">
+            <div className="px-4 py-3 bg-red-50 border-b border-red-200">
+              <div className="text-sm font-semibold text-red-800">Anular factura</div>
+              <div className="text-xs text-red-700/80">
+                Esta acción anula el comprobante y no se puede deshacer.
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-700 space-y-0.5">
+                <div>Documento: {voidTarget.consecutive || "-"}</div>
+                <div>Mesa: {voidTarget.order?.tableId || "-"}</div>
+                <div>
+                  Total: {formatMoneyWithCurrency(voidTarget.order?.total, voidTarget.order?.currency || "")}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-slate-700" htmlFor="void-reason">
+                  Motivo (obligatorio)
+                </label>
+                <textarea
+                  id="void-reason"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  rows={3}
+                  value={voidForm.reason}
+                  onChange={(e) => setVoidForm((f) => ({ ...f, reason: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-700" htmlFor="void-admin-user">
+                    Usuario autoriza
+                  </label>
+                  <input
+                    id="void-admin-user"
+                    className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                    value={voidForm.adminUser}
+                    onChange={(e) => setVoidForm((f) => ({ ...f, adminUser: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-700" htmlFor="void-admin-code">
+                    PIN admin
+                  </label>
+                  <input
+                    id="void-admin-code"
+                    type="password"
+                    autoComplete="off"
+                    className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                    value={voidForm.adminCode}
+                    onChange={(e) => setVoidForm((f) => ({ ...f, adminCode: e.target.value }))}
+                  />
+                </div>
+              </div>
+              {voidError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {voidError}
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  className="h-10 px-3 rounded-lg border border-slate-200 text-sm"
+                  onClick={closeVoidInvoiceModal}
+                  disabled={voidBusy}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="h-10 px-3 rounded-lg bg-red-600 text-white text-sm font-semibold disabled:bg-red-300"
+                  onClick={confirmVoidInvoice}
+                  disabled={voidBusy}
+                >
+                  {voidBusy ? "Anulando..." : "Anular factura"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

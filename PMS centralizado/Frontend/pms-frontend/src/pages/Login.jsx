@@ -1,33 +1,12 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { LogIn, Info, Sun, Moon } from "lucide-react";
+import { LogIn, Info } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { useTheme } from "../context/ThemeContext";
-import { Card } from "../components/ui/card";
-import { Input } from "../components/ui/input";
-import { Button } from "../components/ui/button";
 
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-      {[{ value: "light", icon: Sun }, { value: "dark", icon: Moon }].map(({ value, icon: Icon }) => (
-        <button
-          key={value}
-          onClick={() => setTheme(value)}
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-            theme === value ? "bg-emerald-500/30 text-emerald-700 dark:text-emerald-300" : "hover:bg-black/5 dark:hover:bg-white/10"
-          }`}
-          style={{ color: theme === value ? undefined : "var(--color-text-muted)" }}
-          title={value}
-        >
-          <Icon className="w-3.5 h-3.5" />
-        </button>
-      ))}
-    </div>
-  );
-}
+import { Input } from "../components/ui/input";
+
+
 
 export default function Login({ onSuccess }) {
   const { login } = useAuth();
@@ -75,7 +54,7 @@ export default function Login({ onSuccess }) {
           <Info size={14} className="text-emerald-600 dark:text-emerald-400" />
           {t("common.info")}
         </button>
-        <ThemeToggle />
+
       </div>
 
       {/* Top-right: language selector */}
@@ -109,8 +88,7 @@ export default function Login({ onSuccess }) {
             <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("login.subtitle")}</p>
           </div>
 
-          <Card className="p-6 shadow-lg">
-            <form onSubmit={submit} className="space-y-4" autoComplete="off">
+          <form onSubmit={submit} className="space-y-4" autoComplete="off">
               <input type="text" name="fake_username" autoComplete="username" className="hidden" />
               <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
 
@@ -147,16 +125,16 @@ export default function Login({ onSuccess }) {
                 </div>
               )}
 
-              <Button
+              <button
                 type="submit"
-                className="mx-auto flex w-auto min-w-[170px] items-center justify-center gap-2 whitespace-nowrap px-5 py-2.5 font-medium shadow-sm"
                 disabled={loading}
+                className="w-full flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-md transition-all active:scale-95 disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg, #059669, #0891b2)" }}
               >
                 <LogIn className="h-4 w-4 shrink-0" />
                 <span>{loading ? t("login.signingIn") : t("common.enter")}</span>
-              </Button>
+              </button>
             </form>
-          </Card>
         </div>
       </div>
     </div>

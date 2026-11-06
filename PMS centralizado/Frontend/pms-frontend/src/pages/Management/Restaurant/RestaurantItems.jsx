@@ -77,7 +77,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
           api.get("/restaurant/subfamilies"),
           api.get("/restaurant/subsubfamilies"),
           api.get("/restaurant/items"),
-          api.get("/restaurant/taxes"),
+          api.get("/taxes"),
         ]);
         const [f, sf, ssf, it, tx] = results.map((r) => (r.status === "fulfilled" ? r.value : null));
         setFamilies(Array.isArray(f?.data) ? f.data : []);

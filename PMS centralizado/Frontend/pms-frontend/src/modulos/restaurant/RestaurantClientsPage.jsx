@@ -33,15 +33,17 @@ export default function RestaurantClientsPage() {
   const [now, setNow] = useState(new Date());
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
+  const [peopleLimit, setPeopleLimit] = useState(50);
+  const [companyLimit, setCompanyLimit] = useState(50);
   const [editId, setEditId] = useState(null);
   const [countries, setCountries] = useState([]);
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
   const shift = useMemo(() => {
     const h = now.getHours();
-    if (h < 15) return "Morning shift";
-    if (h < 22) return "Afternoon shift";
-    return "Night shift";
+    if (h < 15) return "Turno mañana";
+    if (h < 22) return "Turno tarde";
+    return "Turno noche";
   }, [now]);
 
   const normalizeIdNumber = (raw, type) => {
@@ -124,6 +126,12 @@ export default function RestaurantClientsPage() {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
   }, []);
+
+  // Al cambiar la búsqueda se vuelve a mostrar el primer bloque de cada lista.
+  useEffect(() => {
+    setPeopleLimit(50);
+    setCompanyLimit(50);
+  }, [search]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -497,6 +505,8 @@ export default function RestaurantClientsPage() {
         {(() => {
           const empresas = filtered.filter((g) => !!g.company);
           const personas = filtered.filter((g) => !g.company);
+          const visiblePersonas = personas.slice(0, peopleLimit);
+          const visibleEmpresas = empresas.slice(0, companyLimit);
           return (
             <>
               {/* Clientes normales */}
@@ -516,7 +526,7 @@ export default function RestaurantClientsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {personas.map((g) => (
+                      {visiblePersonas.map((g) => (
                         <tr key={g.id} className="border-t">
                           <td className="p-2">
                             <div className="font-medium">
@@ -557,6 +567,14 @@ export default function RestaurantClientsPage() {
                     </tbody>
                   </table>
                 </div>
+                {personas.length > visiblePersonas.length && (
+                  <button
+                    className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs"
+                    onClick={() => setPeopleLimit((n) => n + 50)}
+                  >
+                    Mostrar más ({personas.length - visiblePersonas.length} restantes)
+                  </button>
+                )}
               </div>
 
               {/* Clientes empresariales */}
@@ -577,7 +595,7 @@ export default function RestaurantClientsPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {empresas.map((g) => (
+                      {visibleEmpresas.map((g) => (
                         <tr key={g.id} className="border-t">
                           <td className="p-2 font-medium">{g.company || t("frontdesk.guests.companyFallback")}</td>
                           <td className="p-2 text-xs">
@@ -614,6 +632,14 @@ export default function RestaurantClientsPage() {
                     </tbody>
                   </table>
                 </div>
+                {empresas.length > visibleEmpresas.length && (
+                  <button
+                    className="h-8 px-3 rounded-lg border border-slate-200 bg-white text-xs"
+                    onClick={() => setCompanyLimit((n) => n + 50)}
+                  >
+                    Mostrar más ({empresas.length - visibleEmpresas.length} restantes)
+                  </button>
+                )}
               </div>
             </>
           );

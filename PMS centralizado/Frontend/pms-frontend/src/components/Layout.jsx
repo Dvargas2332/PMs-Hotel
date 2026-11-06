@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { CircleUser, LogOut, Bell, Sun, Moon } from "lucide-react";
+import { CircleUser, LogOut, Bell } from "lucide-react";
 import useConfigStore from "../store/configStore";
 import { api } from "../lib/api";
 import { frontdeskTheme } from "../theme/frontdeskTheme";
 import { useLanguage } from "../context/LanguageContext";
-import { useTheme } from "../context/ThemeContext";
+
 import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
 
 const TYPE_STYLES = {
@@ -17,26 +17,6 @@ const TYPE_STYLES = {
   system:       "bg-gray-100 text-gray-900",
 };
 
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
-      {[{ value: "light", icon: Sun }, { value: "dark", icon: Moon }].map(({ value, icon: Icon }) => (
-        <button
-          key={value}
-          onClick={() => setTheme(value)}
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-            theme === value ? "bg-emerald-500/30 text-emerald-700 dark:text-emerald-300" : "hover:bg-black/5 dark:hover:bg-white/10"
-          }`}
-          style={{ color: theme === value ? undefined : "var(--color-text-muted)" }}
-          title={value}
-        >
-          <Icon className="w-3.5 h-3.5" />
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -128,6 +108,7 @@ export default function Layout() {
       { to: "planning", label: t("frontdesk.menu.planning") },
       { to: "reservas", label: t("frontdesk.menu.reservations") },
       { to: "inhouse", label: t("frontdesk.menu.inhouse") },
+      { to: "prepagos", label: "Pre-pagos" },
       { to: "facturacion", label: t("frontdesk.menu.billing") },
       { to: "habitaciones", label: t("frontdesk.menu.rooms") },
       { to: "clientes", label: t("frontdesk.menu.guests") },
@@ -137,7 +118,7 @@ export default function Layout() {
   );
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--shell-bg)" }}>
+    <div className="flex h-screen" data-module="frontdesk" style={{ background: "var(--shell-bg)" }}>
       {/* Sidebar — mantiene gradiente de identidad de FrontDesk */}
       <aside className="w-48 flex-shrink-0 overflow-hidden bg-gradient-to-b from-emerald-600 via-emerald-700 to-sky-700 text-white flex flex-col shadow-lg">
         <div className="px-2 py-4 border-b border-emerald-500/50 flex items-center justify-center">
@@ -183,8 +164,6 @@ export default function Layout() {
                 <span className="ml-2">Sell {fmtFx(fx.sell || fx.rates?.USD)}</span>
               </div>
             </div>
-
-            <ThemeToggle />
 
             {/* Bell */}
             <button

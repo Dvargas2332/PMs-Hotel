@@ -57,24 +57,25 @@ export default function FrontdeskConfig() {
   return (
     <div className="grid lg:grid-cols-[220px_1fr] gap-4">
       {/* Sidebar */}
-      <Card className="p-3 space-y-1 h-max bg-indigo-900 text-indigo-50 border border-indigo-900 shadow-lg lg:sticky lg:self-start lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-        <div className="text-[13px] text-center uppercase tracking-wide text-indigo-200 px-2 pb-2 font-semibold">
+      <div className="flex flex-col gap-1 p-1.5 rounded-xl h-max lg:sticky lg:self-start lg:top-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+        <div className="text-[11px] text-center uppercase tracking-wider px-2 py-1 font-semibold" style={{ color: "var(--color-text-muted)" }}>
           {t("modules.frontdesk.name")}
         </div>
         {navTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActive(tab.id)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${
+            className="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all"
+            style={
               active === tab.id
-                ? "bg-indigo-700 text-white border border-indigo-500/60 shadow-sm"
-                : "text-indigo-100 hover:bg-indigo-800/70"
-            }`}
+                ? { background: "#4f46e5", color: "#ffffff", boxShadow: "0 1px 6px rgba(79,70,229,0.35)" }
+                : { background: "transparent", color: "var(--color-text-muted)" }
+            }
           >
             {tab.label}
           </button>
         ))}
-      </Card>
+      </div>
 
       {/* Content */}
       <div className="min-w-0">

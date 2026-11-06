@@ -6,7 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { api } from "../../../lib/api";
 import { useLanguage } from "../../../context/LanguageContext";
 
-const ROOM_STATUS_VALUES = ["AVAILABLE", "OCCUPIED", "OUT_OF_SERVICE", "BLOCKED"];
+const ROOM_STATUS_VALUES = ["AVAILABLE", "OCCUPIED", "CLEANING", "BLOCKED", "MAINTENANCE"];
 
 export default function RoomTypes() {
   const { t } = useLanguage();
@@ -22,9 +22,10 @@ export default function RoomTypes() {
   const [roomForm, setRoomForm] = useState({
     number: "",
     typeId: "",
-    floor: 1,
-    capacity: 2,
     status: "AVAILABLE",
+    baseRate: "",
+    currency: "CRC",
+    notes: "",
   });
 
   const didInit = useRef(false);
@@ -121,10 +122,13 @@ export default function RoomTypes() {
     number: String(f.number || "").trim(),
     type: String(f.typeId || "").trim(),
     status: f.status || "AVAILABLE",
+    baseRate: f.baseRate ? Number(f.baseRate) : undefined,
+    currency: f.currency || "CRC",
+    notes: f.notes || undefined,
   });
 
   const resetRoomForm = () => {
-    setRoomForm({ number: "", typeId: "", floor: 1, capacity: 2, status: "AVAILABLE" });
+    setRoomForm({ number: "", typeId: "", status: "AVAILABLE", baseRate: "", currency: "CRC", notes: "" });
   };
 
   const onRoomCreate = async () => {
@@ -151,9 +155,10 @@ export default function RoomTypes() {
     setRoomForm({
       number: row.number || "",
       typeId: row.type || "",
-      floor: row.floor ?? 1,
-      capacity: row.capacity ?? 2,
       status: row.status || "AVAILABLE",
+      baseRate: row.baseRate || "",
+      currency: row.currency || "CRC",
+      notes: row.notes || "",
     });
   };
 
@@ -163,7 +168,7 @@ export default function RoomTypes() {
     try {
       const before = rooms.find((x) => x.id === roomSelectedId);
       const payload = normalizeRoom(roomForm);
-      await api.put(`/rooms/${encodeURIComponent(roomSelectedId)}`, payload);
+      await api.post("/rooms", { ...payload, number: payload.number });
       await api.post("/audit", { entity: "Room", action: "update", before, after: payload });
       await loadAll();
       setRoomSelectedId(null);

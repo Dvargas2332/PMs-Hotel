@@ -26,19 +26,19 @@ const fmt = (n) =>
   Number(n ?? 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const BADGE = {
-  DRAFT: "bg-slate-500/20 text-slate-300",
-  PENDING: "bg-yellow-500/20 text-yellow-300",
-  POSTED: "bg-emerald-500/20 text-emerald-300",
-  VOIDED: "bg-red-500/20 text-red-400",
+  DRAFT: "bg-slate-200/80 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300",
+  PENDING: "bg-yellow-100 text-yellow-700 dark:bg-yellow-500/20 dark:text-yellow-300",
+  POSTED: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300",
+  VOIDED: "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400",
 };
 
 const ACCOUNT_TYPE_COLORS = {
-  ASSET: "text-sky-400",
-  LIABILITY: "text-orange-400",
-  EQUITY: "text-amber-400",
-  INCOME: "text-emerald-400",
-  EXPENSE: "text-red-400",
-  COST: "text-amber-400",
+  ASSET: "text-sky-600 dark:text-sky-400",
+  LIABILITY: "text-orange-600 dark:text-orange-400",
+  EQUITY: "text-amber-600 dark:text-amber-400",
+  INCOME: "text-emerald-600 dark:text-emerald-400",
+  EXPENSE: "text-red-600 dark:text-red-400",
+  COST: "text-amber-600 dark:text-amber-400",
 };
 
 // ─── Nav sidebar items ─────────────────────────────────────────────────────────
@@ -72,6 +72,7 @@ export default function AccountingPage() {
   return (
     <div
       className="min-h-screen w-full flex flex-col"
+      data-module="accounting"
       style={{
         background: "var(--shell-bg)",
         backgroundAttachment: "fixed",
@@ -82,8 +83,8 @@ export default function AccountingPage() {
         <div className="flex items-center gap-3">
           <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-8 w-8 object-contain" />
           <div className="space-y-0.5">
-            <div className="text-xs uppercase tracking-wide text-amber-400">Módulo Contable</div>
-            <div className="text-sm font-semibold text-white">Contabilidad</div>
+            <div className="text-xs uppercase tracking-wide text-amber-600 dark:text-amber-400">Módulo Contable</div>
+            <div className="text-sm font-semibold" style={{ color: "var(--acc-text)" }}>Contabilidad</div>
           </div>
         </div>
         <div className="relative" data-usermenu>
@@ -94,10 +95,10 @@ export default function AccountingPage() {
             aria-expanded={userMenuOpen}
             aria-haspopup="menu"
           >
-            <CircleUser className="w-5 h-5 text-slate-300" />
+            <CircleUser className="w-5 h-5" style={{ color: "var(--acc-text-muted)" }} />
             <div className="text-left text-sm leading-tight">
-              <div className="font-medium text-white">{user?.name || user?.email || "Usuario"}</div>
-              <div className="text-xs text-slate-400">{user?.role || "Contabilidad"}</div>
+              <div className="font-medium" style={{ color: "var(--acc-text)" }}>{user?.name || user?.email || "Usuario"}</div>
+              <div className="text-xs" style={{ color: "var(--acc-text-muted)" }}>{user?.role || "Contabilidad"}</div>
             </div>
           </button>
           {userMenuOpen && (
@@ -124,7 +125,7 @@ export default function AccountingPage() {
         {/* Sidebar */}
         <aside className="w-56 shrink-0 flex flex-col overflow-hidden" style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
           {/* Logo grande */}
-          <div className="flex items-center justify-center py-6" style={{ borderBottom: "1px solid var(--sidebar-border)" }}>
+          <div className="flex items-center justify-center py-6" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "var(--module-accent-bg, rgba(217,119,6,0.08))" }}>
             <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-24 w-24 object-contain" />
           </div>
           {/* Nav */}
@@ -135,10 +136,12 @@ export default function AccountingPage() {
                 onClick={() => setPanel(id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   panel === id
-                    ? "bg-amber-500/20 text-amber-300 shadow shadow-amber-900/40"
+                    ? "bg-amber-500/20 dark:shadow dark:shadow-amber-900/40"
                     : "hover:bg-black/5 dark:hover:bg-white/5"
                 }`}
-                style={panel !== id ? { color: "var(--color-text-muted)" } : {}}
+                style={panel === id
+                  ? { color: "var(--module-accent, #d97706)" }
+                  : { color: "var(--acc-text-muted)" }}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 {label}
@@ -146,11 +149,11 @@ export default function AccountingPage() {
             ))}
           </nav>
           {/* Footer logo */}
-          <div className="flex items-center gap-3 px-4 py-4 shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+          <div className="flex items-center gap-3 px-4 py-4 shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)", background: "#d97706" }}>
             <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-10 w-10 object-contain opacity-70" />
             <div>
-              <div className="text-sm font-semibold leading-tight" style={{ color: "var(--color-text-base)" }}>Kazehana PMS</div>
-              <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>Módulo Contable</div>
+              <div className="text-sm font-semibold leading-tight" style={{ color: "#ffffff" }}>Kazehana PMS</div>
+              <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>Módulo Contable</div>
             </div>
           </div>
         </aside>
@@ -213,7 +216,7 @@ function JournalPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+        <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
           <BookOpen className="w-5 h-5 text-amber-400" /> Libro Diario
         </h2>
         <button
@@ -388,25 +391,25 @@ function EntryDetailModal({ entry, onClose }) {
   const totalDebit = (entry.lines ?? []).reduce((s, l) => s + Number(l.debit ?? 0), 0);
   const totalCredit = (entry.lines ?? []).reduce((s, l) => s + Number(l.credit ?? 0), 0);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[#111827] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" data-module="accounting">
+      <div className="border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--card-border)" }}>
           <div>
-            <div className="text-xs text-amber-400 font-mono">{entry.number}</div>
-            <div className="text-white font-semibold">{entry.description}</div>
+            <div className="text-xs font-mono text-amber-300">{entry.number}</div>
+            <div className="font-semibold" style={{ color: "var(--color-text-base)" }}>{entry.description}</div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+          <button onClick={onClose} className="text-xl leading-none" style={{ color: "var(--color-text-muted)" }}>×</button>
         </div>
         <div className="px-6 py-4 space-y-4">
           <div className="flex flex-wrap gap-4 text-sm">
-            <div><span className="text-slate-500">Fecha: </span><span className="text-white">{new Date(entry.date).toLocaleDateString("es-CR")}</span></div>
-            <div><span className="text-slate-500">Fuente: </span><span className="text-slate-300">{entry.source}</span></div>
-            <div><span className="text-slate-500">Estado: </span><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${BADGE[entry.status] ?? ""}`}>{entry.status}</span></div>
-            {entry.currency && <div><span className="text-slate-500">Moneda: </span><span className="text-slate-300">{entry.currency}</span></div>}
+            <div><span style={{ color: "var(--color-text-muted)" }}>Fecha: </span><span style={{ color: "var(--color-text-base)" }}>{new Date(entry.date).toLocaleDateString("es-CR")}</span></div>
+            <div><span style={{ color: "var(--color-text-muted)" }}>Fuente: </span><span style={{ color: "var(--color-text-base)" }}>{entry.source}</span></div>
+            <div><span style={{ color: "var(--color-text-muted)" }}>Estado: </span><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${BADGE[entry.status] ?? ""}`}>{entry.status}</span></div>
+            {entry.currency && <div><span style={{ color: "var(--color-text-muted)" }}>Moneda: </span><span style={{ color: "var(--color-text-base)" }}>{entry.currency}</span></div>}
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-slate-400 text-xs uppercase">
+              <tr className="text-xs uppercase" style={{ borderBottom: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}>
                 <th className="text-left py-2">Cuenta</th>
                 <th className="text-right py-2">Débito</th>
                 <th className="text-right py-2">Crédito</th>
@@ -414,18 +417,18 @@ function EntryDetailModal({ entry, onClose }) {
             </thead>
             <tbody>
               {(entry.lines ?? []).map((l) => (
-                <tr key={l.id} className="border-b border-white/5">
-                  <td className="py-2 text-white">
-                    <span className="font-mono text-xs text-slate-400 mr-2">{l.account?.code}</span>
+                <tr key={l.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                  <td className="py-2" style={{ color: "var(--color-text-base)" }}>
+                    <span className="font-mono text-xs mr-2" style={{ color: "var(--color-text-muted)" }}>{l.account?.code}</span>
                     {l.account?.name}
-                    {l.description && <div className="text-xs text-slate-500 mt-0.5">{l.description}</div>}
+                    {l.description && <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{l.description}</div>}
                   </td>
-                  <td className="py-2 text-right font-mono text-slate-300">{Number(l.debit) > 0 ? `₡${fmt(l.debit)}` : ""}</td>
-                  <td className="py-2 text-right font-mono text-slate-300">{Number(l.credit) > 0 ? `₡${fmt(l.credit)}` : ""}</td>
+                  <td className="py-2 text-right font-mono" style={{ color: "var(--color-text-base)" }}>{Number(l.debit) > 0 ? `₡${fmt(l.debit)}` : ""}</td>
+                  <td className="py-2 text-right font-mono" style={{ color: "var(--color-text-base)" }}>{Number(l.credit) > 0 ? `₡${fmt(l.credit)}` : ""}</td>
                 </tr>
               ))}
-              <tr className="border-t border-white/20 font-semibold text-white">
-                <td className="py-2 text-slate-400 text-xs">TOTALES</td>
+              <tr className="font-semibold" style={{ borderTop: "1px solid var(--card-border)", color: "var(--color-text-base)" }}>
+                <td className="py-2 text-xs" style={{ color: "var(--color-text-muted)" }}>TOTALES</td>
                 <td className="py-2 text-right font-mono">₡{fmt(totalDebit)}</td>
                 <td className="py-2 text-right font-mono">₡{fmt(totalCredit)}</td>
               </tr>
@@ -488,10 +491,10 @@ function CreateEntryModal({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[#111827] border border-white/10 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="text-white font-semibold">Nuevo Asiento Manual</div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <div className="border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" data-module="accounting" style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--card-border)" }}>
+          <div className="font-semibold text-white">Nuevo Asiento Manual</div>
+          <button onClick={onClose} className="text-xl leading-none" style={{ color: "var(--color-text-muted)" }}>×</button>
         </div>
         <div className="px-6 py-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
@@ -595,7 +598,7 @@ function CreateEntryModal({ onClose }) {
           {error && <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
 
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm transition-colors" style={{ color: "var(--color-text-muted)" }}>Cancelar</button>
             <button
               onClick={handleSave}
               disabled={saving}
@@ -654,7 +657,7 @@ function ChartOfAccountsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+        <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
           <Layers className="w-5 h-5 text-amber-400" /> Plan de Cuentas
         </h2>
         <button
@@ -717,7 +720,7 @@ function ChartOfAccountsPanel() {
                 </td>
                 <td className={`px-4 py-2.5 text-xs font-medium ${ACCOUNT_TYPE_COLORS[a.type] ?? "text-slate-400"}`}>{a.type}</td>
                 <td className="px-4 py-2.5">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${a.isActive ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-500/20 text-slate-400"}`}>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${a.isActive ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-slate-200 text-slate-500 dark:bg-slate-500/20 dark:text-slate-400"}`}>
                     {a.isActive ? "Activa" : "Inactiva"}
                   </span>
                 </td>
@@ -805,10 +808,10 @@ function AccountFormModal({ account, accounts, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-[#111827] border border-white/10 rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="text-white font-semibold">{isEdit ? "Editar Cuenta" : "Nueva Cuenta"}</div>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl leading-none">×</button>
+      <div className="border rounded-2xl shadow-2xl w-full max-w-md" data-module="accounting" style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--card-border)" }}>
+          <div className="font-semibold text-white">{isEdit ? "Editar Cuenta" : "Nueva Cuenta"}</div>
+          <button onClick={onClose} className="text-xl leading-none" style={{ color: "var(--color-text-muted)" }}>×</button>
         </div>
         <div className="px-6 py-4 space-y-3">
           {!isEdit && (
@@ -870,7 +873,7 @@ function AccountFormModal({ account, accounts, onClose }) {
           </div>
           {error && <div className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</div>}
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition-colors">Cancelar</button>
+            <button onClick={onClose} className="px-4 py-2 text-sm transition-colors" style={{ color: "var(--color-text-muted)" }}>Cancelar</button>
             <button
               onClick={handleSave}
               disabled={saving}
@@ -918,7 +921,7 @@ function LedgerPanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+      <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
         <List className="w-5 h-5 text-amber-400" /> Mayor de Cuentas
       </h2>
       <div className="flex flex-wrap gap-2">
@@ -1045,7 +1048,7 @@ function ReportsPanel() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+      <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
         <BarChart2 className="w-5 h-5 text-amber-400" /> Reportes Contables
       </h2>
 
@@ -1283,7 +1286,7 @@ function SettingsPanel() {
 
   return (
     <div className="space-y-6 max-w-xl">
-      <h2 className="text-xl font-bold text-white flex items-center gap-2">
+      <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
         <Settings className="w-5 h-5 text-amber-400" /> Configuración Contable
       </h2>
 

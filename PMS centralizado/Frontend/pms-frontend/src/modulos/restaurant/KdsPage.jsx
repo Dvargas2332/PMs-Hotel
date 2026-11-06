@@ -1,9 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { RefreshCw, ChevronLeft } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
-import { io } from "socket.io-client";
 
 const AREAS = [
   { id: "KITCHEN", label: "Kitchen" },
@@ -31,7 +30,6 @@ export default function KdsPage() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
-  const socketRef = useRef(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -56,31 +54,9 @@ export default function KdsPage() {
   }, []);
 
   useEffect(() => {
+    // El backend no expone socket.io; el KDS se refresca por sondeo cada 5 s.
     const t = setInterval(() => refresh(), 1000 * 5);
     return () => clearInterval(t);
-  }, [refresh]);
-
-  useEffect(() => {
-    const apiBase =
-      import.meta.env.VITE_API_URL ||
-      (window?.location?.port === "3000" ? "http://localhost:4000/api" : `${window.location.origin}/api`);
-    const endpoint = String(apiBase).replace(/\/api\/?$/, "");
-    const s = io(endpoint, { transports: ["websocket"] });
-    socketRef.current = s;
-    const reload = () => refresh();
-    s.on("kds:item", reload);
-    s.on("order:updated", reload);
-    s.on("order:paid", reload);
-    s.on("order:voided", reload);
-    s.on("order:moved", reload);
-    return () => {
-      s.off("kds:item", reload);
-      s.off("order:updated", reload);
-      s.off("order:paid", reload);
-      s.off("order:voided", reload);
-      s.off("order:moved", reload);
-      s.disconnect();
-    };
   }, [refresh]);
 
   const grouped = useMemo(() => {

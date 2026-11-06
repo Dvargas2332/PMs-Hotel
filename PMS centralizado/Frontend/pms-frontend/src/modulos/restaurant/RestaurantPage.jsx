@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { CheckCircle, Columns2, DoorOpen, Droplets, Leaf, RectangleHorizontal, Tag, Toilet, UtensilsCrossed, Waves } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { sanitizeImageUrl } from "../../lib/security";
-import { api } from "../../lib/api";
+import { api, setStaffToken } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
 import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
+import { calculateOrderTotals } from "../../lib/restaurantTaxes";
+import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
@@ -93,119 +95,8 @@ function buildVoidTicketText({ tableId, sectionId, items, reason, authorizedBy }
   return lines.join("\n");
 }
 
-function buildCloseReportText({ stage, shiftNumber, hotelName, openedAt, closedAt, openingAmount, systemTotal, byMethod, declared, diff, salesCount, note, staffName }) {
-  const W = 40;
-  const center = (s) => { const str = String(s || ""); const pad = Math.max(0, Math.floor((W - str.length) / 2)); return " ".repeat(pad) + str; };
-  const sep  = "=".repeat(W);
-  const sep2 = "-".repeat(W);
-  const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
-  const lines = [];
-  lines.push(sep);
-  if (hotelName) lines.push(center(hotelName));
-  lines.push(center(`CIERRE ${String(stage || "Z").toUpperCase()} DE CAJA`));
-  lines.push(sep);
-  if (shiftNumber) lines.push(`Turno:    #${shiftNumber}`);
-  lines.push(`Apertura: ${openedAt ? new Date(openedAt).toLocaleString() : "-"}`);
-  lines.push(`Cierre:   ${closedAt ? new Date(closedAt).toLocaleString() : new Date().toLocaleString()}`);
-  if (staffName) lines.push(`Cajero:   ${staffName}`);
-  lines.push(sep2);
-  lines.push(center("VENTAS POR METODO (SISTEMA)"));
-  lines.push(sep2);
-  const methods = byMethod && typeof byMethod === "object" ? Object.entries(byMethod).filter(([, v]) => Number(v) > 0) : [];
-  for (const [key, amt] of methods) lines.push(rjust(`  ${key}:`, Number(amt || 0).toFixed(2)));
-  lines.push(sep2);
-  lines.push(rjust("TOTAL SISTEMA:", Number(systemTotal || 0).toFixed(2)));
-  lines.push(`Transacciones: ${salesCount || 0}`);
-  if (declared && typeof declared === "object") {
-    const entries = Object.entries(declared).filter(([k, v]) => k && k !== "notes" && Number(v) > 0);
-    if (entries.length > 0) {
-      lines.push(sep2);
-      lines.push(center("CONTEO FISICO DECLARADO"));
-      lines.push(sep2);
-      let declTotal = 0;
-      for (const [key, val] of entries) { const a = Number(val) || 0; declTotal += a; lines.push(rjust(`  ${key}:`, a.toFixed(2))); }
-      lines.push(sep2);
-      lines.push(rjust("TOTAL DECLARADO:", declTotal.toFixed(2)));
-      lines.push(rjust("DIFERENCIA:", Number(diff || 0).toFixed(2)));
-    }
-  }
-  if (Number(openingAmount) > 0) { lines.push(sep2); lines.push(rjust("Fondo apertura:", Number(openingAmount).toFixed(2))); }
-  if (note) { lines.push(sep2); lines.push("Notas:"); lines.push(String(note)); }
-  lines.push(sep);
-  lines.push("");
-  lines.push("Firma: ________________________");
-  lines.push(sep);
-  return lines.join("\n");
-}
-
-function buildPrintPreviewText({ title, payload, totals }) {
-  const W = 40;
-  const now = new Date();
-  const lines = [];
-  const header = String(payload?.__printHeader || "").trim();
-  const footer = String(payload?.__printFooter || "").trim();
-  const sep = "-".repeat(W);
-  const rjust = (label, value) => { const l = String(label); const v = String(value); return l + " ".repeat(Math.max(1, W - l.length - v.length)) + v; };
-
-  if (header) { lines.push(header); lines.push(""); }
-
-  lines.push(String(title || "IMPRIMIR").toUpperCase());
-  lines.push(`Fecha:    ${now.toLocaleString()}`);
-  if (payload?.saleNumber) lines.push(`Venta #:  ${String(payload.saleNumber)}`);
-  if (payload?.type) lines.push(`Tipo:     ${String(payload.type)}`);
-  if (payload?.cashierName) lines.push(`Cajero:   ${String(payload.cashierName)}`);
-  if (payload?.sectionId) lines.push(`Sección:  ${String(payload.sectionId)}`);
-  if (payload?.tableId) lines.push(`Mesa:     ${String(payload.tableId)}`);
-  if (payload?.covers != null) lines.push(`Personas: ${asInt(payload.covers, 0)}`);
-  if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
-  if (payload?.roomId) lines.push(`Habitac.: ${String(payload.roomId)}`);
-  lines.push(sep);
-
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-  if (items.length > 0) {
-    for (const it of items) {
-      const qty = asInt(it?.qty ?? it?.quantity ?? 1, 1);
-      const name = String(it?.name || it?.label || it?.title || it?.id || "Item");
-      const price = it?.price ?? it?.unitPrice ?? it?.amount;
-      const hasPrice = price != null && String(price).trim() !== "";
-      if (hasPrice) lines.push(rjust(`  ${qty} x ${name}`, formatMoney(qty * (Number(price) || 0))));
-      else lines.push(`  ${qty} x ${name}`);
-      const note = String(it?.note || "").trim();
-      if (note) lines.push(`    * ${note}`);
-    }
-    lines.push(sep);
-  }
-
-  const note = String(payload?.note || "").trim();
-  if (note) { lines.push(`Nota: ${note}`); lines.push(""); }
-
-  const t = totals && typeof totals === "object" ? totals : null;
-  if (t) {
-    const total = t.total ?? t.system ?? t.grandTotal ?? t.totalAmount;
-    const tax = t.tax ?? t.iva ?? t.impuesto;
-    const service = t.service ?? t.servicio ?? t.tip10;
-    const subtotal = t.subtotal ?? t.base;
-    if (subtotal != null) lines.push(rjust("Subtotal:", formatMoney(subtotal)));
-    if (t?.discountTotal) lines.push(rjust("Descuento:", `- ${formatMoney(t.discountTotal)}`));
-    if (service != null) lines.push(rjust("Servicio (10%):", formatMoney(service)));
-    if (tax != null) lines.push(rjust("Impuesto (IVA):", formatMoney(tax)));
-    if (total != null) lines.push(rjust("TOTAL:", formatMoney(total)));
-  }
-
-  const payMethods = Array.isArray(payload?.paymentMethods) ? payload.paymentMethods : [];
-  if (payMethods.length > 0) {
-    lines.push(sep);
-    for (const pm of payMethods) {
-      if (pm?.name && Number(pm?.amount) > 0) lines.push(rjust(`  ${pm.name}:`, formatMoney(pm.amount)));
-    }
-    if (payload?.paid != null) lines.push(rjust("  Recibido:", formatMoney(payload.paid)));
-    if (payload?.change != null && Number(payload.change) > 0) lines.push(rjust("  Cambio:", formatMoney(payload.change)));
-  }
-
-  if (footer) { lines.push(""); lines.push(footer); }
-
-  return lines.join("\n");
-}
+const buildPrintPreviewText = ({ title, payload, totals }) =>
+  buildTicketText({ title, payload, totals, money: formatMoney });
 
 function applyTableStylesToSections(sectionsList, tableStyles) {
   const styles = tableStyles && typeof tableStyles === "object" ? tableStyles : null;
@@ -392,6 +283,7 @@ export default function RestaurantPage() {
   const navigate = useNavigate();
 
   const orderSaveTimerRef = useRef(null);
+  const lastOrderActivityRef = useRef(0);
   const pendingOrderSaveRef = useRef(null);
   const creatingOrderRef = useRef({});
   const pendingCreateUpdateRef = useRef({});
@@ -488,6 +380,11 @@ const [subCategory, setSubCategory] = useState("");
   });
   const [discountsList, setDiscountsList] = useState([]);
   const [guestsList, setGuestsList] = useState([]);
+  // Datos generales del restaurante (Management → Configuraciones → General):
+  // nombre comercial, razón social, cédula, teléfono y dirección para los documentos.
+  const [restaurantInfo, setRestaurantInfo] = useState({});
+  // Estado de red: con la app abierta sin internet no se puede cobrar.
+  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine !== false));
   const [billingCfg, setBillingCfg] = useState({
     ticketHeader: "",
     ticketFooter: "",
@@ -507,9 +404,15 @@ const [subCategory, setSubCategory] = useState("");
 
   const [paymentsModalOpen, setPaymentsModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({});
+  // Moneda y tipo de cambio por medio de cobro (cuando el hotel cobra en divisa).
+  const [paymentCurrency, setPaymentCurrency] = useState({});
+  const [paymentRates, setPaymentRates] = useState({});
+  const [discountPin, setDiscountPin] = useState("");
+  const discountPinRef = useRef("");
   const [splitPayments, setSplitPayments] = useState(false);
   const [selectedPaymentKeys, setSelectedPaymentKeys] = useState([]);
   const [paymentResult, setPaymentResult] = useState(null);
+  const [chargeBusy, setChargeBusy] = useState(false);
   const [paymentPrintBusy, setPaymentPrintBusy] = useState(false);
   const [splitOrderModalOpen, setSplitOrderModalOpen] = useState(false);
   const [splitOrderMap, setSplitOrderMap] = useState({});
@@ -540,9 +443,16 @@ const [subCategory, setSubCategory] = useState("");
   const canViewTotals = useMemo(() => role === "ADMIN" || role === "MANAGER", [role]);
   const discountOptions = useMemo(
     () =>
-      (discountsList || []).filter(
-        (d) => d && d.active !== false && String(d.type || "percent").toLowerCase() === "percent"
-      ),
+      (discountsList || []).filter((d) => {
+        if (!d || d.active === false) return false;
+        if (String(d.type || "percent").toLowerCase() !== "percent") return false;
+        // Un descuento vencido no debe poder aplicarse.
+        if (d.expiresAt) {
+          const expires = new Date(d.expiresAt).getTime();
+          if (Number.isFinite(expires) && expires < Date.now()) return false;
+        }
+        return true;
+      }),
     [discountsList]
   );
   const discountById = useMemo(() => new Map(discountOptions.map((d) => [String(d.id), d])), [discountOptions]);
@@ -562,6 +472,20 @@ const [subCategory, setSubCategory] = useState("");
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
     return role === "ADMIN" || perms.includes("restaurant.orders.edit_price");
   }, [role, user?.permissions]);
+  const staffPermissions = useMemo(
+    () => (Array.isArray(activeStaff?.permissions) ? activeStaff.permissions : []),
+    [activeStaff]
+  );
+  // Sin sesión de staff manda el usuario del PMS; con perfil asignado, manda su perfil.
+  const staffHasPermission = useCallback(
+    (permission) => {
+      if (!activeStaff) return true;
+      if (!activeStaff.accessRoleId) return true;
+      return staffPermissions.includes(permission);
+    },
+    [activeStaff, staffPermissions]
+  );
+  const canStaffCloseOrder = staffHasPermission("restaurant.orders.close");
   const canMoveOrders = useMemo(() => {
     if (role === "ADMIN") return true;
     const perms = Array.isArray(user?.permissions) ? user.permissions : [];
@@ -596,8 +520,10 @@ const [subCategory, setSubCategory] = useState("");
       const { data } = await api.get("/restaurant/staff");
       const list = Array.isArray(data) ? data : [];
       setStaffOptions(list.filter((s) => s?.active !== false));
-    } catch {
+    } catch (err) {
       setStaffOptions([]);
+      const msg = err?.response?.data?.message || "No se pudo cargar el personal del restaurante.";
+      setStaffLoginError(msg);
     } finally {
       setStaffOptionsLoading(false);
     }
@@ -712,6 +638,7 @@ const [subCategory, setSubCategory] = useState("");
 
   const persistOrderNow = useCallback(async (payload) => {
     if (!payload?.tableId) return;
+    lastOrderActivityRef.current = Date.now();
     const localKey = payload?.localId ? String(payload.localId) : "";
     if (payload?.createNew && localKey) {
       if (creatingOrderRef.current[localKey]) {
@@ -723,14 +650,18 @@ const [subCategory, setSubCategory] = useState("");
 
     let data = null;
     try {
-      const response = await api.post("/restaurant/order", payload);
+      // Si el descuento aplicado exige PIN, se manda junto con el guardado.
+      const body = discountPinRef.current ? { ...payload, discountPin: discountPinRef.current } : payload;
+      const response = await api.post("/restaurant/order", body);
       data = response?.data;
     } catch (err) {
+      lastOrderActivityRef.current = Date.now();
       if (payload?.createNew && localKey) {
         creatingOrderRef.current[localKey] = false;
       }
       throw err;
     }
+    lastOrderActivityRef.current = Date.now();
 
     if (data && typeof data === "object") {
       const pendingCreateSnapshot = payload?.createNew && localKey ? pendingCreateUpdateRef.current[localKey] : null;
@@ -820,6 +751,7 @@ const [subCategory, setSubCategory] = useState("");
   const queueOrderSave = useCallback(
     (payload) => {
       const key = getOrderSaveKey(payload);
+      lastOrderActivityRef.current = Date.now();
       const pending = pendingOrderSaveRef.current && typeof pendingOrderSaveRef.current === "object" ? pendingOrderSaveRef.current : {};
       pendingOrderSaveRef.current = { ...pending, [key]: payload };
       if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
@@ -1025,14 +957,16 @@ const [subCategory, setSubCategory] = useState("");
 
   const shift = useMemo(() => {
     const h = now.getHours();
-    if (h < 15) return "Morning shift";
-    if (h < 22) return "Afternoon shift";
-    return "Night shift";
+    if (h < 15) return "Turno mañana";
+    if (h < 22) return "Turno tarde";
+    return "Turno noche";
   }, [now]);
 
   const selectedTableOrders = useMemo(() => {
     if (!selectedTable?.id) return [];
-    return normalizeOrderList(ordersByTable[selectedTable.id]);
+    return normalizeOrderList(ordersByTable[selectedTable.id]).filter(
+      (o) => String(o?.status).toUpperCase() !== "CANCELED"
+    );
   }, [ordersByTable, selectedTable?.id]);
 
   const activeOrderKey = useMemo(
@@ -1120,105 +1054,132 @@ const [subCategory, setSubCategory] = useState("");
   }, []);
 
   const totals = useMemo(() => {
-    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
-    const taxRate = Number(taxesCfg.iva || 0) / 100;
-    const sums = (currentOrder.items || []).reduce(
-      (acc, i) => {
-        const qty = Number(i.qty || 0);
-        const price = Number(i.price || 0);
-        const gross = price * qty;
-        const itemDiscountRate = Math.min(100, Math.max(0, Number(i.discountPercent || 0))) / 100;
-        const discountedGross = gross * (1 - itemDiscountRate);
-        acc.discountItems += gross - discountedGross;
-        const includes = i?.priceIncludesTaxesAndService !== false;
-        if (includes) {
-          const denom = 1 + serviceRate + taxRate;
-          const net = denom > 0 ? discountedGross / denom : discountedGross;
-          acc.subtotal += net;
-          acc.service += net * serviceRate;
-          acc.tax += net * taxRate;
-          acc.total += discountedGross;
-        } else {
-          const net = discountedGross;
-          acc.subtotal += net;
-          acc.service += net * serviceRate;
-          acc.tax += net * taxRate;
-          acc.total += net + net * serviceRate + net * taxRate;
-        }
-        return acc;
-      },
-      { subtotal: 0, service: 0, tax: 0, total: 0, discountItems: 0 }
-    );
-    const orderDiscountRate = Math.min(100, Math.max(0, Number(currentOrder.discountPercent || 0))) / 100;
-    const orderDiscount = sums.total * orderDiscountRate;
-    const factor = sums.total > 0 ? (sums.total - orderDiscount) / sums.total : 1;
+    const itemsInput = (currentOrder.items || []).map((i) => ({
+      price: Number(i.price || 0),
+      qty: Number(i.qty || 0),
+      discountPercent: i.discountPercent,
+      priceIncludesTaxesAndService: i?.priceIncludesTaxesAndService !== false,
+      taxes: Array.isArray(i.taxes) && i.taxes.length > 0 ? i.taxes : null,
+    }));
+    const result = calculateOrderTotals(itemsInput, taxesCfg, currentOrder.discountPercent);
     return {
-      subtotal: sums.subtotal * factor,
-      service: sums.service * factor,
-      tax: sums.tax * factor,
-      total: sums.total * factor,
-      discountItems: sums.discountItems,
-      discountOrder: orderDiscount,
-      discountTotal: sums.discountItems + orderDiscount,
+      subtotal: result.subtotal,
+      service: result.service,
+      tax: result.tax,
+      total: result.total,
+      discountItems: result.discountItems,
+      discountOrder: result.discountOrder,
+      discountTotal: result.discountAmount,
     };
-  }, [currentOrder.items, currentOrder.discountPercent, taxesCfg.iva, taxesCfg.servicio]);
+  }, [currentOrder.items, currentOrder.discountPercent, taxesCfg]);
 
   const systemTotal = useMemo(() => {
     if (typeof stats.systemTotal === "number") return stats.systemTotal || 0;
-    const serviceRate = Number(taxesCfg.servicio || 0) / 100;
-    const taxRate = Number(taxesCfg.iva || 0) / 100;
     const computeOrderTotal = (order) => {
-      const sums = (order?.items || []).reduce(
-        (acc, i) => {
-          const qty = Number(i.qty || 0);
-          const price = Number(i.price || 0);
-          const gross = price * qty;
-          const itemDiscountRate = Math.min(100, Math.max(0, Number(i.discountPercent || 0))) / 100;
-          const discountedGross = gross * (1 - itemDiscountRate);
-          const includes = i?.priceIncludesTaxesAndService !== false;
-          if (includes) {
-            const denom = 1 + serviceRate + taxRate;
-            const net = denom > 0 ? discountedGross / denom : discountedGross;
-            acc.total += discountedGross;
-            acc.subtotal += net;
-            acc.service += net * serviceRate;
-            acc.tax += net * taxRate;
-          } else {
-            const net = discountedGross;
-            acc.subtotal += net;
-            acc.service += net * serviceRate;
-            acc.tax += net * taxRate;
-            acc.total += net + net * serviceRate + net * taxRate;
-          }
-          return acc;
-        },
-        { subtotal: 0, service: 0, tax: 0, total: 0 }
-      );
-      const orderDiscountRate = Math.min(100, Math.max(0, Number(order?.discountPercent || 0))) / 100;
-      const orderDiscount = sums.total * orderDiscountRate;
-      return sums.total - orderDiscount;
+      const itemsInput = (order?.items || []).map((i) => ({
+        price: Number(i.price || 0),
+        qty: Number(i.qty || 0),
+        discountPercent: i.discountPercent,
+        priceIncludesTaxesAndService: i?.priceIncludesTaxesAndService !== false,
+        taxes: Array.isArray(i.taxes) && i.taxes.length > 0 ? i.taxes : null,
+      }));
+      const result = calculateOrderTotals(itemsInput, taxesCfg, order?.discountPercent);
+      return result.total;
     };
     return Object.values(ordersByTable).reduce((acc, entry) => {
-      const list = normalizeOrderList(entry);
+      const list = normalizeOrderList(entry).filter((o) => String(o?.status).toUpperCase() !== "CANCELED");
       const tableSum = list.reduce((sum, o) => sum + computeOrderTotal(o), 0);
       return acc + tableSum;
     }, 0);
-  }, [stats.systemTotal, ordersByTable, taxesCfg.iva, taxesCfg.servicio]);
+  }, [stats.systemTotal, ordersByTable, taxesCfg]);
 
   const reportedTotal = useMemo(
-    () => sumNumbers({ cash: closeForm.cash, card: closeForm.card, sinpe: closeForm.sinpe, transfer: closeForm.transfer, room: closeForm.room }),
+    // Solo medios que pasan por caja: el cargo a habitación no se cuenta en el arqueo.
+    () => sumNumbers({ cash: closeForm.cash, card: closeForm.card, sinpe: closeForm.sinpe, transfer: closeForm.transfer }),
     [closeForm]
   );
 
   const closeSummary = useMemo(() => {
-    const sys = systemTotal || 0;
-    const diff = reportedTotal - sys;
+    const byMethod = stats?.byMethod && typeof stats.byMethod === "object" ? stats.byMethod : {};
+    const nonCash = ["room", "house", "cuentaCasa", "cuenta_casa"].reduce(
+      (acc, key) => acc + (Number(byMethod[key]) || 0),
+      0
+    );
+    const sys = Math.round(((systemTotal || 0) - nonCash) * 100) / 100;
+    const diff = Math.round((reportedTotal - sys) * 100) / 100;
     return { system: sys, reported: reportedTotal, diff };
-  }, [systemTotal, reportedTotal]);
+  }, [systemTotal, reportedTotal, stats?.byMethod]);
   const auditTotals = closeSnapshot?.totals || closeSummary;
 
-  const paymentTotal = useMemo(() => sumNumbers(paymentForm), [paymentForm]);
+  // Cobro en divisa: cada medio puede cobrarse en la moneda base o en la
+  // secundaria con su tipo de cambio; el total siempre se compara en moneda base.
+  const baseCurrency = useMemo(
+    () => String(paymentsCfg?.monedaBase || "CRC").toUpperCase(),
+    [paymentsCfg?.monedaBase]
+  );
+  const secondaryCurrency = useMemo(
+    () => String(paymentsCfg?.monedaSec || "").toUpperCase(),
+    [paymentsCfg?.monedaSec]
+  );
+  const configuredRate = useMemo(() => Number(paymentsCfg?.tipoCambio || 0) || 0, [paymentsCfg?.tipoCambio]);
+  const canPayInForeign = Boolean(secondaryCurrency) && secondaryCurrency !== baseCurrency && configuredRate > 0;
+
+  const methodCurrency = useCallback(
+    (key) => String(paymentCurrency[key] || baseCurrency).toUpperCase(),
+    [paymentCurrency, baseCurrency]
+  );
+  const methodRate = useCallback(
+    (key) => {
+      if (methodCurrency(key) === baseCurrency) return 1;
+      const rate = Number(paymentRates[key] ?? configuredRate);
+      return Number.isFinite(rate) && rate > 0 ? rate : 0;
+    },
+    [methodCurrency, paymentRates, configuredRate, baseCurrency]
+  );
+  const baseAmountFor = useCallback(
+    (key, raw) => {
+      const amount = Number(raw) || 0;
+      if (methodCurrency(key) === baseCurrency) return amount;
+      const rate = methodRate(key);
+      return rate > 0 ? Math.round(amount * rate * 100) / 100 : 0;
+    },
+    [methodCurrency, methodRate, baseCurrency]
+  );
+  const paymentBaseForm = useMemo(() => {
+    const out = {};
+    for (const key of Object.keys(paymentForm || {})) out[key] = baseAmountFor(key, paymentForm[key]);
+    return out;
+  }, [paymentForm, baseAmountFor]);
+
+  const paymentTotal = useMemo(() => sumNumbers(paymentBaseForm), [paymentBaseForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
+
+  // Descuentos aplicados que exigen PIN de administrador.
+  const discountsRequiringPin = useMemo(() => {
+    const ids = new Set();
+    if (currentOrder?.discountId) ids.add(String(currentOrder.discountId));
+    for (const item of currentOrder?.items || []) {
+      if (item?.discountId) ids.add(String(item.discountId));
+    }
+    return Array.from(ids)
+      .map((id) => discountById.get(id))
+      .filter((d) => d && d.requiresPin);
+  }, [currentOrder?.discountId, currentOrder?.items, discountById]);
+
+  useEffect(() => {
+    discountPinRef.current = discountPin;
+  }, [discountPin]);
+
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
 
   const availablePaymentMethods = useMemo(() => {
     const usedKeys = new Set();
@@ -1411,6 +1372,7 @@ const [subCategory, setSubCategory] = useState("");
       const { data } = await api.post("/restaurant/shift/open", {
         openingAmount: amountValue,
         note,
+        staffId: staffId || undefined,
       });
       setShiftModalOpen(false);
       setShiftOpenForm({ amount: "", note: "", staffId: "" });
@@ -1440,6 +1402,7 @@ const [subCategory, setSubCategory] = useState("");
     try {
       const { data } = await api.post("/restaurant/staff/login", { username, password });
       setActiveStaff(data || null);
+      setStaffToken(data?.token);
       setStaffLoginForm({ username: "", password: "" });
       const staff = (staffOptions || []).find((s) => String(s?.username || "") === username);
       const staffId = staff?.id ? String(staff.id) : "";
@@ -1477,6 +1440,7 @@ const [subCategory, setSubCategory] = useState("");
         const { data: gen } = await api.get("/restaurant/general");
         const tableStyles = gen?.tableStyles;
         if (tableStyles) baseSections = applyTableStylesToSections(baseSections, tableStyles);
+        if (gen && typeof gen === "object") setRestaurantInfo(gen);
       } catch {
         // ignore
       }
@@ -1608,7 +1572,7 @@ const [subCategory, setSubCategory] = useState("");
     }
 
     try {
-      const { data } = await api.get("/discounts");
+      const { data } = await api.get("/discounts", { params: { usable: 1 } });
       setDiscountsList(Array.isArray(data) ? data : []);
     } catch {
       setDiscountsList([]);
@@ -1623,6 +1587,13 @@ const [subCategory, setSubCategory] = useState("");
   }, []);
 
   const refreshOrders = useCallback(async () => {
+    // No pisar cambios locales que todavía no se guardaron (debounce de 650 ms).
+    const pendingSaves = pendingOrderSaveRef.current;
+    const hasPendingSaves =
+      Boolean(orderSaveTimerRef.current) ||
+      Boolean(pendingSaves && typeof pendingSaves === "object" && Object.keys(pendingSaves).length > 0) ||
+      Date.now() - lastOrderActivityRef.current < 2000;
+    if (hasPendingSaves) return false;
     try {
       const { data } = await api.get("/restaurant/orders");
       if (Array.isArray(data)) {
@@ -1687,8 +1658,9 @@ const [subCategory, setSubCategory] = useState("");
           }
         }
       }
+      return true;
     } catch {
-      /* ignore */
+      return false;
     }
   }, []);
 
@@ -1719,6 +1691,23 @@ const [subCategory, setSubCategory] = useState("");
 
   useEffect(() => {
     refreshOrders();
+  }, [refreshOrders]);
+
+  // Otras terminales (mesero/caja/KDS) también mueven órdenes. El backend no
+  // expone socket.io: antes se abría un socket que nunca conectaba y
+  // reintentaba contra una ruta inexistente. Se refresca por sondeo mientras
+  // la pestaña está visible, para que cada terminal vea lo que hicieron las
+  // demás sin generar tráfico de fondo.
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") refreshOrders();
+    };
+    const id = setInterval(tick, 15000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [refreshOrders]);
 
   const loadMenu = useCallback(
@@ -2182,6 +2171,17 @@ const [subCategory, setSubCategory] = useState("");
       window.alert(splitOrderCount === 3 ? "Debes asignar articulos a las tres cuentas." : "Debes asignar articulos a las dos cuentas.");
       return;
     }
+    const lostQty = items.some((it, idx) => {
+      const key = getSplitItemKey(it, idx);
+      const split = splitOrderMap[key] || { A: getItemQty(it), B: 0, C: 0 };
+      const assigned =
+        (Number(split.A) || 0) + (Number(split.B) || 0) + (splitOrderCount === 3 ? Number(split.C) || 0 : 0);
+      return assigned !== getItemQty(it);
+    });
+    if (lostQty) {
+      window.alert("Las cantidades asignadas no coinciden con la orden original. Revisa el reparto antes de dividir.");
+      return;
+    }
 
     const newOrder = buildLocalOrder({
       covers: currentOrder.covers || covers || 2,
@@ -2339,7 +2339,7 @@ const [subCategory, setSubCategory] = useState("");
       const header = isFE ? billingCfg.invoiceHeader : billingCfg.ticketHeader;
       const footer = isFE ? billingCfg.invoiceFooter : billingCfg.ticketFooter;
       const run = async () => {
-        const baseText = buildPrintPreviewText({ title: "Factura", payload, totals: previewTotals });
+        const baseText = buildPrintPreviewText({ title: "Factura", payload, totals: previewTotals, restaurant: restaurantInfo });
         const text = composePrintText({ header, body: baseText, footer });
         await printToAgent({
           printerNames: [invoiceCfg.printerId],
@@ -2388,6 +2388,7 @@ const [subCategory, setSubCategory] = useState("");
 
   const clearStaffSession = () => {
     setActiveStaff(null);
+    setStaffToken(null);
     setStaffLoginForm({ username: "", password: "" });
     setStaffLoginError("");
     setStaffLoginOpen(true);
@@ -2409,6 +2410,7 @@ const [subCategory, setSubCategory] = useState("");
       }
       const { data } = await api.post("/restaurant/staff/login", payload);
       setActiveStaff(data || null);
+      setStaffToken(data?.token);
       setStaffLoginForm({ username: "", password: "" });
       setStaffLoginError("");
       setStaffLoginOpen(false);
@@ -2662,7 +2664,14 @@ const [subCategory, setSubCategory] = useState("");
 
   const updateQty = (itemKey, delta) => {
     if (!selectedTable?.id) return;
-    if (isComandada && delta < 0) return;
+    if (isComandada && delta < 0) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "La orden ya fue comandada: para quitar cantidad usa la anulación con autorización." },
+        })
+      );
+      return;
+    }
     updateOrderForTable(selectedTable.id, (cur) => {
       const items = cur.items
         .map((i) => (getOrderItemKey(i) === itemKey ? { ...i, qty: Math.max(1, i.qty + delta) } : i))
@@ -2673,7 +2682,14 @@ const [subCategory, setSubCategory] = useState("");
 
   const removeItem = (itemKey) => {
     if (!selectedTable?.id) return;
-    if (isComandada) return;
+    if (isComandada) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: "La orden ya fue comandada: no se puede quitar el artículo sin autorización." },
+        })
+      );
+      return;
+    }
     updateOrderForTable(selectedTable.id, (cur) => ({ ...cur, items: cur.items.filter((i) => getOrderItemKey(i) !== itemKey) }));
   };
 
@@ -2875,10 +2891,10 @@ const [subCategory, setSubCategory] = useState("");
     ({ title, payload, totals: previewTotals, onConfirm }) => {
       pendingPrintRef.current = onConfirm;
       setPrintConfirmTitle(title || "Confirmar impresi?n");
-      setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals }));
+      setPrintConfirmText(buildPrintPreviewText({ title, payload, totals: previewTotals, restaurant: restaurantInfo }));
       setPrintConfirmOpen(true);
     },
-    []
+    [restaurantInfo]
   );
 
   const runPrintWithPreview = useCallback(
@@ -2951,40 +2967,49 @@ const [subCategory, setSubCategory] = useState("");
       };
 
     const run = async () => {
-      try {
-        let serverOrder = null;
-        if (markAsSent) {
+      let serverOrder = null;
+      if (markAsSent) {
+        try {
           const resp = await api.post("/restaurant/order", payload);
           serverOrder = resp?.data || null;
+        } catch (err) {
+          if (!silent) {
+            const msg = err?.response?.data?.message || err?.message || "No se pudo guardar la comanda.";
+            window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+          }
+          return;
         }
+        // La comanda ya quedó registrada: se marca como enviada antes de imprimir
+        // para que un fallo de impresora no reenvíe toda la orden a cocina.
+        const nextSent = {};
+        (currentOrder.items || []).forEach((i) => {
+          nextSent[getOrderItemKey(i)] = Number(i.qty || 0);
+        });
+        updateOrderForTable(selectedTable.id, (cur) => ({
+          ...cur,
+          status: "ENVIADO",
+          id: serverOrder?.id || cur?.id || cur?.orderId || undefined,
+          orderId: serverOrder?.orderId || cur?.orderId || serverOrder?.id || undefined,
+          sentItems: nextSent,
+          sentAt: cur.sentAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }));
+        refreshStats();
+        if (returnToSection) {
+          setSelectedTable(null);
+          setSectionLauncher(false);
+        }
+      }
+
+      try {
         const title = markAsSent ? "Imprimir comanda" : "Reimprimir comanda";
-        const text = buildPrintPreviewText({ title, payload: { ...payload, items: itemsToPrint }, totals });
+        const text = buildPrintPreviewText({ title, payload: { ...payload, items: itemsToPrint }, totals, restaurant: restaurantInfo });
         const printers = [printerCfg.kitchenPrinter, printerCfg.barPrinter].filter(Boolean);
         await printToAgent({
           printerNames: printers.length ? printers : [printerCfg.cashierPrinter],
           text,
           copies: 1,
         });
-        if (markAsSent) {
-          const nextSent = {};
-          (currentOrder.items || []).forEach((i) => {
-            nextSent[getOrderItemKey(i)] = Number(i.qty || 0);
-          });
-          updateOrderForTable(selectedTable.id, (cur) => ({
-            ...cur,
-            status: "ENVIADO",
-            id: serverOrder?.id || cur?.id || cur?.orderId || undefined,
-            orderId: serverOrder?.orderId || cur?.orderId || serverOrder?.id || undefined,
-            sentItems: nextSent,
-            sentAt: cur.sentAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          }));
-          refreshStats();
-          if (returnToSection) {
-            setSelectedTable(null);
-            setSectionLauncher(false);
-          }
-        }
         if (!silent) {
           window.dispatchEvent(
             new CustomEvent("pms:push-alert", {
@@ -2994,8 +3019,15 @@ const [subCategory, setSubCategory] = useState("");
         }
       } catch (err) {
         if (!silent) {
-          const msg = err?.message || err?.response?.data?.message || "No se pudo enviar a impresoras.";
-          window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+          const msg = err?.message || err?.response?.data?.message || "No se pudo imprimir.";
+          window.dispatchEvent(
+            new CustomEvent("pms:push-alert", {
+              detail: {
+                title: "Restaurant",
+                desc: markAsSent ? `Comanda guardada, pero no se pudo imprimir: ${msg}` : `No se pudo imprimir: ${msg}`,
+              },
+            })
+          );
         }
       }
     };
@@ -3012,7 +3044,7 @@ const [subCategory, setSubCategory] = useState("");
       onConfirm: run,
       previewKey: "comanda",
     });
-  }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm, getOrderItemKey]);
+  }, [selectedTable, selectedSection, hasItems, buildComandaDelta, currentOrder, orderNote, covers, printerCfg, printSettings, totals, serviceType, roomCharge, printToAgent, updateOrderForTable, refreshStats, openPrintConfirm, getOrderItemKey, restaurantInfo]);
 
   const sendToKitchen = async () => sendComanda({ markAsSent: true, silent: true, returnToSection: true });
 
@@ -3046,7 +3078,7 @@ const [subCategory, setSubCategory] = useState("");
       };
       const invoiceCfg = getInvoicePrintConfig();
       const run = async () => {
-        const text = buildPrintPreviewText({ title: "Subtotal", payload: subtotalPayload, totals });
+        const text = buildPrintPreviewText({ title: "Subtotal", payload: subtotalPayload, totals, restaurant: restaurantInfo });
         await printToAgent({ printerNames: [invoiceCfg.printerId], text, copies: invoiceCfg.copies });
         window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Subtotal impreso." } }));
       };
@@ -3058,18 +3090,48 @@ const [subCategory, setSubCategory] = useState("");
   };
 
   const confirmChargeOrder = async () => {
-    if (!selectedTable?.id || !hasItems) return;
+    if (!selectedTable?.id || !hasItems || chargeBusy) return;
+    if (!online) {
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: {
+            title: "Restaurant",
+            desc: "Sin conexión: no se puede cobrar. Esperá a que vuelva la red; la orden queda abierta en la mesa.",
+          },
+        })
+      );
+      return;
+    }
+    setChargeBusy(true);
     try {
       await flushOrderSave();
       const snapshotItems = (currentOrder.items || []).map((i) => ({ ...i }));
       const snapshotTotals = { ...totals };
       const invoiceCfg = getInvoicePrintConfig();
-      const paymentMethodsSnapshot = Object.entries(paymentForm)
+      // Importes en moneda base + detalle por medio (moneda original y tipo de cambio).
+      const paymentMethodsSnapshot = Object.entries(paymentBaseForm)
         .filter(([, v]) => Number(v) > 0)
         .map(([key, amount]) => {
           const def = (availablePaymentMethods || []).find((m) => String(m.key) === String(key));
           return { name: def?.name || key, amount: Number(amount) };
         });
+      const paymentDetailsPayload = Object.entries(paymentForm)
+        .filter(([, v]) => Number(v) > 0)
+        .map(([key, amount]) => {
+          const def = (availablePaymentMethods || []).find((m) => String(m.key) === String(key));
+          const currency = methodCurrency(key);
+          const rate = methodRate(key);
+          return {
+            key,
+            name: def?.name || key,
+            amount: Number(amount) || 0,
+            currency,
+            exchangeRate: currency === baseCurrency ? 1 : rate,
+          };
+        })
+        .filter((p) => p.currency === baseCurrency || p.exchangeRate > 0);
+      const paidAmount = sumNumbers(paymentBaseForm);
+      const change = Math.max(0, paidAmount - (snapshotTotals.total || 0));
       const snapshotPayload = {
         sectionId: selectedSection?.id,
         tableId: selectedTable.id,
@@ -3085,15 +3147,14 @@ const [subCategory, setSubCategory] = useState("");
         paid: paidAmount,
         change,
       };
-      const paidAmount = sumNumbers(paymentForm);
-      const change = Math.max(0, paidAmount - (snapshotTotals.total || 0));
       const closeRes = await api.post("/restaurant/order/close", {
         tableId: selectedTable.id,
         sectionId: selectedSection?.id,
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
         orderId: currentOrder?.id || currentOrder?.orderId || undefined,
         docType: invoiceCfg.docType,
-        payments: paymentForm,
+        payments: paymentBaseForm,
+        paymentDetails: paymentDetailsPayload.length > 0 ? paymentDetailsPayload : undefined,
         totals,
         note: orderNote,
         covers: currentOrder.covers || covers,
@@ -3104,33 +3165,16 @@ const [subCategory, setSubCategory] = useState("");
       });
       const saleNumber = closeRes?.data?.order?.saleNumber || "";
       if (saleNumber) snapshotPayload.saleNumber = saleNumber;
-
-      // Si hay cargo a habitación: buscar la factura activa del huésped y agregar item
-      const roomTarget = currentOrder.roomId || roomCharge;
-      const isRoomCharge = paymentMethodsSnapshot.some((m) =>
-        String(m.name).toLowerCase().includes("habitac") || String(m.name).toLowerCase() === "room"
-      );
-      if (isRoomCharge && roomTarget) {
-        try {
-          const resActive = await api.get("/reservations/active");
-          const reservations = Array.isArray(resActive.data) ? resActive.data : [];
-          const match = reservations.find(
-            (r) => String(r.room?.number) === String(roomTarget) || String(r.roomId) === String(roomTarget)
-          );
-          if (match?.invoice?.id) {
-            const itemDesc = snapshotItems.length === 1
-              ? `Restaurante: ${snapshotItems[0].name || snapshotItems[0].description || "Consumo"}`
-              : `Restaurante: ${snapshotItems.length} productos`;
-            await api.post(`/invoices/${match.invoice.id}/items`, {
-              description: itemDesc,
-              quantity: 1,
-              unitPrice: snapshotTotals.total,
-            });
-          }
-        } catch {
-          // No bloquear el flujo si falla el cargo al folio
-        }
+      const closeWarnings = Array.isArray(closeRes?.data?.warnings) ? closeRes.data.warnings : [];
+      if (closeWarnings.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", {
+            detail: { title: "Restaurant", desc: closeWarnings.join(" ") },
+          })
+        );
       }
+
+      // El cargo a habitación es gestionado por el backend en /restaurant/order/close.
       let nextActiveKey = "";
       setOrdersByTable((prev) => {
         const list = normalizeOrderList(prev[selectedTable.id]);
@@ -3156,19 +3200,31 @@ const [subCategory, setSubCategory] = useState("");
       setPaymentResult({ change, totals: snapshotTotals, payload: snapshotPayload, paid: paidAmount });
       setOrderNote("");
       refreshStats();
-    } catch {
-      window.alert("Could not charge the order.");
+    } catch (err) {
+      const data = err?.response?.data;
+      const msg =
+        data?.message ||
+        (data?.code === "TOTALS_MISMATCH"
+          ? "El total de la pantalla no coincide con la orden guardada. Actualiza la mesa e intenta de nuevo."
+          : "") ||
+        "No se pudo cobrar la orden.";
+      if (data?.code === "SHIFT_NOT_OPEN") {
+        setShiftModalOpen(true);
+      }
+      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: msg } }));
+    } finally {
+      setChargeBusy(false);
     }
   };
 
   const canSwitchTable = () => {
     if (!hasItems) return true;
-    return ["ADMIN", "MANAGER"].includes(role);
+    return canMoveOrders;
   };
 
   const guardSwitch = () => {
     if (canSwitchTable()) return true;
-    window.alert("No puedes reasignar o ver productos de otra mesa sin permisos.");
+    window.alert("No puedes reasignar o ver productos de otra mesa sin el permiso de mover órdenes.");
     return false;
   };
 
@@ -3189,7 +3245,12 @@ const [subCategory, setSubCategory] = useState("");
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-white">
+    <div className="flex flex-col h-screen bg-gradient-to-br from-white" data-module="restaurant">
+      {!online && (
+        <div className="fixed top-0 left-0 right-0 z-[70] bg-red-600 text-white text-xs font-semibold px-4 py-2 text-center shadow">
+          Sin conexión a internet. No se puede cobrar ni guardar cambios hasta que vuelva la red.
+        </div>
+      )}
       {sectionsLoading && (
         <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px] flex items-center justify-center">
           <div className="bg-white rounded-2xl shadow-xl px-6 py-5 flex items-center gap-3">
@@ -3258,8 +3319,10 @@ const [subCategory, setSubCategory] = useState("");
                     className="w-full h-9 rounded-lg border px-3 text-sm bg-white"
                     type="password"
                     placeholder="Password"
-                    name="staff_password_shift"
-                    autoComplete="new-password"
+                    autoComplete="off"
+                    data-form-type="other"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
                     value={staffLoginForm.password}
                     onFocus={() => setShiftKeypadTarget("password")}
                     onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
@@ -3370,8 +3433,6 @@ const [subCategory, setSubCategory] = useState("");
               )}
               <div className="grid grid-cols-1 md:grid-cols-[1fr_260px] gap-4 items-stretch">
                 <div className="space-y-2 flex flex-col items-center">
-                  <input type="text" name="fake_username" autoComplete="username" className="hidden" />
-                  <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
                   <div className="w-full max-w-[210px] space-y-1">
                     <label className="text-xs text-slate-600">Usuario</label>
                     <select
@@ -3395,8 +3456,10 @@ const [subCategory, setSubCategory] = useState("");
                       className="w-full h-11 rounded-lg border px-3 text-xs"
                       type="password"
                       placeholder="Password"
-                      name="staff_password"
-                      autoComplete="new-password"
+                      autoComplete="off"
+                      data-form-type="other"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={staffLoginForm.password}
                       onChange={(e) => setStaffLoginForm((p) => ({ ...p, password: e.target.value }))}
                       onKeyDown={(e) => {
@@ -3601,13 +3664,13 @@ const [subCategory, setSubCategory] = useState("");
             </div>
 
             <div className="grid gap-2 place-items-center">
-              <input type="text" name="fake_username" autoComplete="username" className="hidden" />
-              <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
               <input
                 className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 placeholder="Usuario administrador"
-                name="void_username"
                 autoComplete="off"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 value={voidInvoiceForm.username}
                 onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, username: e.target.value }))}
               />
@@ -3615,8 +3678,10 @@ const [subCategory, setSubCategory] = useState("");
                 className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 type="password"
                 placeholder="Contrasena administrador"
-                name="void_password"
-                autoComplete="new-password"
+                autoComplete="off"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 value={voidInvoiceForm.password}
                 onChange={(e) => setVoidInvoiceForm((f) => ({ ...f, password: e.target.value }))}
               />
@@ -3671,13 +3736,13 @@ const [subCategory, setSubCategory] = useState("");
             </div>
 
             <div className="grid gap-2 place-items-center">
-              <input type="text" name="fake_username" autoComplete="username" className="hidden" />
-              <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
               <input
                 className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 placeholder="Usuario administrador"
-                name="cancel_username"
                 autoComplete="off"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 value={cancelOrderForm.username}
                 onChange={(e) => setCancelOrderForm((f) => ({ ...f, username: e.target.value }))}
               />
@@ -3685,8 +3750,10 @@ const [subCategory, setSubCategory] = useState("");
                 className="w-full max-w-[240px] h-9 rounded-lg border px-3 text-xs"
                 type="password"
                 placeholder="Contrasena administrador"
-                name="cancel_password"
-                autoComplete="new-password"
+                autoComplete="off"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 value={cancelOrderForm.password}
                 onChange={(e) => setCancelOrderForm((f) => ({ ...f, password: e.target.value }))}
               />
@@ -3746,8 +3813,8 @@ const [subCategory, setSubCategory] = useState("");
               <button
                 className="px-4 py-2 rounded-lg bg-lime-700 text-white text-sm font-semibold"
                 onClick={() => {
-                  if (!canViewTotals) {
-                    window.alert("You do not have permission to close cash. Ask an administrator.");
+                  if (!canCloseX && !canCloseZ) {
+                    window.alert("No tienes permiso para cerrar caja. Pídelo a un administrador.");
                     return;
                   }
                   setCloseStage("X");
@@ -3849,6 +3916,7 @@ const [subCategory, setSubCategory] = useState("");
                           note: closeForm.notes,
                           breakdown: stats.byMethod || {},
                           type: "X",
+                          staffId: activeStaffRef.current?.id || undefined,
                         });
                         setCloseSnapshot({ totals: closeSummary, byMethod: stats.byMethod || {} });
                         setCloseStage("Z");
@@ -3863,16 +3931,22 @@ const [subCategory, setSubCategory] = useState("");
                             if (val > 0) declaredLabeled[row.label] = val;
                           }
                           const xText = buildCloseReportText({
-                            stage: "X", hotelName: hotel?.name || "", openedAt: openInfo.openedAt,
+                            stage: "X", hotelName: hotel?.name || "", restaurant: restaurantInfo, openedAt: openInfo.openedAt,
                             closedAt: new Date().toISOString(), systemTotal: closeSummary.system,
                             byMethod: byMethodLabeled, declared: declaredLabeled, diff: closeSummary.diff,
                             salesCount: stats?.salesCount || 0, note: closeForm.notes,
                             staffName: activeStaff?.name || openInfo.user,
                           });
                           if (printerCfg.cashierPrinter) await printToAgent({ printerNames: [printerCfg.cashierPrinter], text: xText, copies: 1 });
-                        } catch {}
+                        } catch (printErr) {
+                          window.dispatchEvent(
+                            new CustomEvent("pms:push-alert", {
+                              detail: { title: "Restaurant", desc: "Cierre X guardado, pero no se pudo imprimir el reporte." },
+                            })
+                          );
+                        }
                       } catch (e) {
-                        const msg = e?.response?.data?.message || "Could not record the cash close.";
+                        const msg = e?.response?.data?.message || "No se pudo registrar el cierre de caja.";
                         window.alert(msg);
                       } finally {
                         setCloseLoading(false);
@@ -3941,6 +4015,7 @@ const [subCategory, setSubCategory] = useState("");
                           note: closeForm.notes,
                           breakdown: stats.byMethod || {},
                           type: "Z",
+                          staffId: activeStaffRef.current?.id || undefined,
                         });
                         // Print Z close report before resetting state
                         try {
@@ -3952,14 +4027,20 @@ const [subCategory, setSubCategory] = useState("");
                             if (val > 0) declaredLabeled[row.label] = val;
                           }
                           const zText = buildCloseReportText({
-                            stage: "Z", hotelName: hotel?.name || "", openedAt: openInfo.openedAt,
+                            stage: "Z", hotelName: hotel?.name || "", restaurant: restaurantInfo, openedAt: openInfo.openedAt,
                             closedAt: new Date().toISOString(), systemTotal: auditTotals.system,
                             byMethod: byMethodLabeled, declared: declaredLabeled, diff: auditTotals.diff,
                             salesCount: stats?.salesCount || 0, note: closeForm.notes,
                             staffName: activeStaff?.name || openInfo.user,
                           });
                           if (printerCfg.cashierPrinter) await printToAgent({ printerNames: [printerCfg.cashierPrinter], text: zText, copies: 1 });
-                        } catch {}
+                        } catch (printErr) {
+                          window.dispatchEvent(
+                            new CustomEvent("pms:push-alert", {
+                              detail: { title: "Restaurant", desc: "Cierre Z guardado, pero no se pudo imprimir el reporte." },
+                            })
+                          );
+                        }
                         setCloseModalOpen(false);
                         setCloseOpen(false);
                         setCloseForm({ cash: "", card: "", sinpe: "", transfer: "", room: "", notes: "" });
@@ -4214,16 +4295,41 @@ const [subCategory, setSubCategory] = useState("");
                         {selectedPaymentMethods.map((method) => (
                           <div key={method.key} className="space-y-1">
                             <div className="text-xs text-slate-600">{method.name}</div>
-                            <input
-                              className="h-11 w-full rounded-lg border px-3 text-sm"
-                              placeholder="0.00"
-                              type="text"
-                              inputMode="decimal"
-                              pattern="[0-9.,-]*"
-                              value={paymentForm[method.key] ?? ""}
-                              onChange={(e) => updatePaymentAmount(method.key, e.target.value)}
-                              onBlur={(e) => updatePaymentAmount(method.key, normalizeMoneyInput(e.target.value))}
-                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="h-11 w-full rounded-lg border px-3 text-sm"
+                                placeholder="0.00"
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9.,-]*"
+                                value={paymentForm[method.key] ?? ""}
+                                onChange={(e) => updatePaymentAmount(method.key, e.target.value)}
+                                onBlur={(e) => updatePaymentAmount(method.key, normalizeMoneyInput(e.target.value))}
+                              />
+                              {canPayInForeign && (
+                                <select
+                                  className="h-11 rounded-lg border px-2 text-xs"
+                                  value={methodCurrency(method.key)}
+                                  onChange={(e) => setPaymentCurrency((prev) => ({ ...prev, [method.key]: e.target.value }))}
+                                  title="Moneda del cobro"
+                                >
+                                  <option value={baseCurrency}>{baseCurrency}</option>
+                                  <option value={secondaryCurrency}>{secondaryCurrency}</option>
+                                </select>
+                              )}
+                            </div>
+                            {canPayInForeign && methodCurrency(method.key) !== baseCurrency && (
+                              <div className="flex items-center gap-2 text-xs text-slate-600">
+                                <span>TC</span>
+                                <input
+                                  className="h-8 w-24 rounded-md border px-2 text-right text-xs"
+                                  inputMode="decimal"
+                                  value={paymentRates[method.key] ?? configuredRate}
+                                  onChange={(e) => setPaymentRates((prev) => ({ ...prev, [method.key]: e.target.value }))}
+                                />
+                                <span>= {formatMoney(baseAmountFor(method.key, paymentForm[method.key]))}</span>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -4267,10 +4373,11 @@ const [subCategory, setSubCategory] = useState("");
                   </button>
               <button
                     className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
-                    disabled={!hasItems || selectedPaymentKeys.length === 0}
+                    disabled={!hasItems || selectedPaymentKeys.length === 0 || !canStaffCloseOrder || chargeBusy}
+                    title={canStaffCloseOrder ? undefined : "Tu perfil de personal no permite cobrar"}
                     onClick={confirmChargeOrder}
                   >
-                    Confirm Payment
+                    {chargeBusy ? "Cobrando..." : "Confirm Payment"}
                   </button>
               <button
                     className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-500"
@@ -4306,7 +4413,9 @@ const [subCategory, setSubCategory] = useState("");
                     setSplitOrderMap((prev) => {
                       const next = { ...prev };
                       Object.keys(next).forEach((k) => {
-                        if (next[k] === "C") next[k] = "B";
+                        const entry = next[k] || { A: 0, B: 0, C: 0 };
+                        // Al pasar de 3 a 2 cuentas, lo de C se suma a B para no perder artículos.
+                        if (entry.C) next[k] = { A: entry.A, B: entry.B + entry.C, C: 0 };
                       });
                       return next;
                     });
@@ -5077,6 +5186,23 @@ const [subCategory, setSubCategory] = useState("");
                           </option>
                         ))}
                       </select>
+                      {discountsRequiringPin.length > 0 && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-[11px] text-red-600">PIN de administrador</span>
+                          <input
+                            className="h-8 w-28 rounded-md border border-red-200 px-2 text-sm"
+                            type="password"
+                            inputMode="numeric"
+                            placeholder="PIN"
+                            value={discountPin}
+                            onChange={(e) => setDiscountPin(e.target.value)}
+                            onBlur={() => {
+                              // Al cargar el PIN se reintenta guardar el descuento aplicado.
+                              if (discountPin && currentOrder?.discountId) handleOrderDiscountChange(currentOrder.discountId);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -5198,9 +5324,10 @@ const [subCategory, setSubCategory] = useState("");
               <button
                       className="h-12 rounded-xl bg-emerald-600 text-white font-semibold transition-colors hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-emerald-300"
                       onClick={openPayments}
-                      disabled={!hasItems}
+                      disabled={!hasItems || !canStaffCloseOrder || chargeBusy}
+                      title={canStaffCloseOrder ? undefined : "Tu perfil de personal no permite cobrar"}
                     >
-                      Cobrar
+                      {chargeBusy ? "Cobrando..." : "Cobrar"}
                     </button>
               {!isQuickCashContext && (
                       <button
@@ -5304,7 +5431,6 @@ const [subCategory, setSubCategory] = useState("");
     </div>
   );
 }
-
 
 
 

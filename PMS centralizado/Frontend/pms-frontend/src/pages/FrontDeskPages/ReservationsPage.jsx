@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { X, Pencil } from "lucide-react";
+import { X, Pencil, User, Bed, Wallet, ArrowUpRight, Check, CreditCard } from "lucide-react";
 import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { pushAlert } from "../../lib/uiAlerts";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
 import { useLanguage } from "../../context/LanguageContext";
+import GuestPicker from "../../components/frontdesk/GuestPicker";
 
 const STATUS_META = {
   Confirmada: { bg: "bg-emerald-100 text-emerald-800 border-emerald-200" },
@@ -56,6 +57,15 @@ const StatusBadge = ({ status, label }) => {
   priceNet: "",
   priceRegimen: "",
   priceTax: "",
+  idNumber: "",
+  idType: "",
+  country: "",
+  city: "",
+  address: "",
+  cardName: "",
+  cardNumber: "",
+  cardExpiry: "",
+  cardCvv: "",
 };
 
 function ActionButton({ onClick, children, disabled, tone = "gray" }) {
@@ -103,6 +113,8 @@ export default function ReservationsPage() {
   const [rowSaved, setRowSaved] = useState(false);
   const [rowConfirmed, setRowConfirmed] = useState(false);
   const [draftRows, setDraftRows] = useState([]);
+  const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
   const [showGuestPicker, setShowGuestPicker] = useState(false);
   const [modifyModal, setModifyModal] = useState(null); // reservation object to modify
   const [guestQuery, setGuestQuery] = useState("");
@@ -201,36 +213,14 @@ export default function ReservationsPage() {
     }));
   }, [form.roomId, form.ratePlanId, rooms, ratePlans]);
 
-  // Codigo (todas las reservas) y rooming (solo agencias) consecutivos
+  // Rooming para agencias
   useEffect(() => {
-    setForm((f) => {
-      const next = { ...f };
-      if (!f.code) {
-        next.code = `RES-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(6, "0")}`;
-      }
-      if (isAgencyPlan && !f.rooming) {
-        next.rooming = `AG-RM-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(4, "0")}`;
-      }
-      return next;
-    });
+    if (isAgencyPlan && !form.rooming) {
+      setForm((f) => ({ ...f, rooming: `AG-RM-${String((reservations?.length || 0) + (draftRows?.length || 0) + 1).padStart(4, "0")}` }));
+    }
   }, [isAgencyPlan, reservations?.length, draftRows?.length]);
 
-  // Ajustar total con desglose (sin iva ni regimen en priceRoom, regimen en priceRegimen, impuesto en priceTax, descuento en discount)
-  useEffect(() => {
-    setForm((f) => {
-      const room = Number(f.priceRoom) || 0;
-      const reg = Number(f.priceRegimen) || 0;
-      const disc = Number(f.discount) || 0;
-      let tax = Number(f.priceTax) || 0;
-      if (!tax && f.price) {
-        const remainder = Number(f.price) - room - reg + disc;
-        if (!Number.isNaN(remainder) && remainder >= 0) tax = remainder;
-      }
-      const total = room + reg + tax - disc;
-      if (total === Number(f.price) && tax === Number(f.priceTax)) return f;
-      return { ...f, price: total, priceTax: tax };
-    });
-  }, [form.priceRoom, form.priceRegimen, form.priceTax, form.discount, form.price]);
+
 
   const handleDateTo = (v) => {
     const parseLocal = (s) => {
@@ -319,7 +309,7 @@ export default function ReservationsPage() {
 
   const buildGuest = async (row) => {
     let guestId = row.guestId;
-    if (!guestId) {
+    if (!guestId && conPerfil) {
       const hasFirst = !!row.firstName && row.firstName.trim().length > 0;
       const hasLast = !!row.lastName && row.lastName.trim().length > 0;
       if (!hasFirst && !hasLast) {
@@ -327,13 +317,37 @@ export default function ReservationsPage() {
       }
       const firstName = (row.firstName || row.lastName || t("frontdesk.reservations.guestFallbackFirst")).trim();
       const lastName = (row.lastName || row.firstName || t("frontdesk.reservations.guestFallbackLast")).trim();
-      const guest = await createGuest({
-        firstName,
-        lastName,
-        email: row.email || undefined,
-        phone: row.phone || undefined,
-      });
-      guestId = guest?.id;
+
+      // Buscar si ya existe un huésped con ese nombre
+      try {
+        const { data } = await api.get(`/guests?q=${encodeURIComponent(firstName + " " + lastName)}`);
+        const found = Array.isArray(data) ? data.find(g =>
+          g.firstName?.toLowerCase() === firstName.toLowerCase() &&
+          g.lastName?.toLowerCase() === lastName.toLowerCase()
+        ) : null;
+        if (found) return found.id; // usar huésped existente
+      } catch {} // silencioso
+
+      try {
+        const guest = await createGuest({
+          firstName,
+          lastName,
+          email: row.email || undefined,
+          phone: row.phone || undefined,
+        });
+        guestId = guest?.id;
+      } catch (err) {
+        // Si falla por duplicado (409), buscar el huésped existente
+        if (err?.response?.status === 409) {
+          const q = row.email || `${firstName} ${lastName}`;
+          const { data } = await api.get(`/guests?q=${encodeURIComponent(q)}`);
+          const found = Array.isArray(data) && data.length > 0 ? data[0] : null;
+          if (found) guestId = found.id;
+        }
+      }
+
+      // Si aún no hay guestId, no se puede crear la reserva
+      if (!guestId) throw new Error("No se pudo encontrar ni crear el cliente");
     }
     return guestId;
   };
@@ -345,10 +359,11 @@ export default function ReservationsPage() {
       return Number.isNaN(d.getTime()) ? dateStr : d.toISOString();
     };
 
-    const guestId = await buildGuest(row);
+    const guestId = conPerfil ? await buildGuest(row) : undefined;
     return createReservation({
       roomId: row.roomId,
       guestId,
+      guestName: !conPerfil ? `${row.firstName || ""} ${row.lastName || ""}`.trim() || undefined : undefined,
       checkInDate: toISODate(row.checkInDate),
       checkOutDate: toISODate(row.checkOutDate),
       adults: Number(row.adults) || 2,
@@ -371,7 +386,7 @@ export default function ReservationsPage() {
       depositAmount: row.depositAmount || undefined,
       otaCode: row.otaCode || undefined,
       rooming: row.rooming || undefined,
-      code: row.code || undefined,
+      code: row.code || undefined, // undefined = backend genera consecutivo
       hotelId: row.hotelId || undefined,
     });
   };
@@ -380,37 +395,16 @@ export default function ReservationsPage() {
     e?.preventDefault?.();
     const rowsToSave = draftRows.length ? draftRows : [form];
     for (const r of rowsToSave) {
-      if (!r.roomId || !r.checkInDate || !r.checkOutDate) {
-        pushAlert({
-          type: "system",
-          title: t("frontdesk.reservations.errors.missingInfoTitle"),
-          desc: t("frontdesk.reservations.errors.missingRoomDates"),
-        });
-        return;
-      }
-      if (!r.contractId) {
-        pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingContract") });
-        return;
-      }
-      if (!r.ratePlanId) {
-        pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingRatePlan") });
-        return;
-      }
-      if (r.checkOutDate <= r.checkInDate) {
-        pushAlert({
-          type: "system",
-          title: t("frontdesk.reservations.errors.invalidDatesTitle"),
-          desc: t("frontdesk.reservations.errors.invalidDatesDesc"),
-        });
-        return;
-      }
+      if (!r.roomId || !r.checkInDate || !r.checkOutDate) return alert("Faltan datos: habitación y fechas requeridos");
+      if (r.checkOutDate <= r.checkInDate) return alert("Check-out debe ser después del check-in");
     }
+    if (!form.contractId) return alert("Selecciona un contrato");
+    if (!form.ratePlanId) return alert("Selecciona un tarifario");
     try {
       setCreating(true);
       for (const row of rowsToSave) {
         await createReservationFromRow(row);
       }
-      // Al guardar una reserva nueva, limpiamos la seccion de habitaciones
       setSelectedRow(null);
       setDraftRows([]);
       await refreshReservations();
@@ -420,60 +414,36 @@ export default function ReservationsPage() {
       setForm((f) => ({ ...emptyForm, ratePlanId: f.ratePlanId, contractId: f.contractId }));
       setSearch("");
       setShowRowEditor(false);
+      setSuccessMsg("Reserva creada exitosamente");
+      setTimeout(() => setSuccessMsg(""), 3000);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || t("frontdesk.reservations.errors.createFailedFallback");
-      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.createFailedTitle"), desc: msg });
+      setErrorMsg(err?.response?.data?.message || err?.message || "Error al crear reserva");
+      setTimeout(() => setErrorMsg(""), 4000);
     } finally {
       setCreating(false);
     }
   };
 
     const handleSaveRow = () => {
-      if (!form.roomType || !form.roomId || !form.checkInDate || !form.checkOutDate) {
-        pushAlert({
-          type: "system",
-          title: t("frontdesk.reservations.errors.missingInfoTitle"),
-          desc: t("frontdesk.reservations.errors.missingRowRoomDates"),
-        });
-        return;
-      }
-    if (!form.contractId) {
-      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingContract") });
-      return;
-    }
-    if (!form.ratePlanId) {
-      pushAlert({ type: "system", title: t("frontdesk.reservations.errors.missingInfoTitle"), desc: t("frontdesk.reservations.errors.missingRatePlan") });
-      return;
-    }
-    if (form.checkOutDate <= form.checkInDate) {
-      pushAlert({
-        type: "system",
-        title: t("frontdesk.reservations.errors.invalidDatesTitle"),
-        desc: t("frontdesk.reservations.errors.invalidDatesDesc"),
-      });
-      return;
-    }
-    // Mantener datos de huesped para todas las filas; solo limpiamos campos de habitacion al seguir creando
+      if (!form.roomType) return alert("Selecciona un tipo de habitación");
+      if (!form.roomId) return alert("Selecciona una habitación específica");
+      if (!form.checkInDate || !form.checkOutDate) return alert("Fechas requeridas");
+      if (form.checkOutDate <= form.checkInDate) return alert("Check-out debe ser después del check-in");
       setDraftRows((rows) => [...rows, { ...form }]);
-    setRowSaved(true);
-    setShowRowEditor(false);
+      setRowSaved(true);
+      setShowRowEditor(false);
       setForm((f) => ({
         ...f,
         roomType: "",
         roomId: "",
-        ratePlanId: f.ratePlanId,
         mealPlanId: "",
         quantity: 1,
         adults: 2,
         children: 0,
         infants: 0,
         price: "",
-        priceRoom: "",
-        priceNet: "",
-        priceRegimen: "",
-        priceTax: "",
       }));
-  };
+    };
 
   const canCancel = (r) => {
     const code = (r.rawStatus || "").toUpperCase();
@@ -557,40 +527,71 @@ export default function ReservationsPage() {
   };
 
   const handleEmail = () => {
-    if (!form.email) {
-      pushAlert({
-        type: "payment",
-        title: t("frontdesk.reservations.errors.missingEmailTitle"),
-        desc: t("frontdesk.reservations.errors.missingEmailDesc"),
-      });
-      return;
-    }
-    const subject = encodeURIComponent(t("frontdesk.reservations.emailSubject", { code: form.code || "" }));
-    const body = encodeURIComponent(t("frontdesk.reservations.emailBody"));
+    if (!form.email) return alert("Email requerido");
+    const room = rooms.find(r => r.id === form.roomId);
+    const plan = ratePlans.find(r => r.id === form.ratePlanId);
+    const nights = form.checkInDate && form.checkOutDate
+      ? Math.max(1, Math.ceil((new Date(form.checkOutDate) - new Date(form.checkInDate)) / 86400000)) : 0;
+    const subject = encodeURIComponent(`Confirmación de reserva ${form.code || ""}`);
+    const body = encodeURIComponent(
+      `Estimado/a ${form.firstName} ${form.lastName},\n\n` +
+      `Su reserva ha sido confirmada:\n` +
+      `Código: ${form.code || "—"}\n` +
+      `Habitación: ${room?.number || "—"} (${room?.type || ""})\n` +
+      `Check-in: ${form.checkInDate}\n` +
+      `Check-out: ${form.checkOutDate}\n` +
+      `Noches: ${nights}\n` +
+      `Clientes: ${form.adults || 0} adultos, ${form.children || 0} niños\n` +
+      `Tarifa: ${plan?.name || "—"} — CRC ${Number(form.price || 0).toLocaleString()}\n\n` +
+      `Gracias por elegirnos.`
+    );
     window.location.href = `mailto:${form.email}?subject=${subject}&body=${body}`;
   };
 
   const handleWhatsapp = () => {
     const phone = (form.phone || "").replace(/\D/g, "");
-    if (!phone) {
-      pushAlert({
-        type: "payment",
-        title: t("frontdesk.reservations.errors.missingPhoneTitle"),
-        desc: t("frontdesk.reservations.errors.missingPhoneDesc"),
-      });
-      return;
-    }
-    window.open(`https://wa.me/${phone}`, "_blank", "noopener");
+    if (!phone) return alert("Teléfono requerido");
+    const room = rooms.find(r => r.id === form.roomId);
+    const nights = form.checkInDate && form.checkOutDate
+      ? Math.max(1, Math.ceil((new Date(form.checkOutDate) - new Date(form.checkInDate)) / 86400000)) : 0;
+    const msg = encodeURIComponent(
+      `✅ *Reserva Confirmada*\n` +
+      `Código: ${form.code || "—"}\n` +
+      `Hab: ${room?.number || "—"} (${room?.type || ""})\n` +
+      `📅 ${form.checkInDate} → ${form.checkOutDate} (${nights} noches)\n` +
+      `👤 ${form.firstName} ${form.lastName}\n` +
+      `💰 CRC ${Number(form.price || 0).toLocaleString()}`
+    );
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank", "noopener");
   };
 
   const handlePrint = () => window.print();
 
+  const [nameInput, setNameInput] = useState(
+    [form.firstName, form.lastName].filter(Boolean).join(" ")
+  );
+
+  const [conPerfil, setConPerfil] = useState(true); // true = con perfil, false = sin perfil
+
+  // Sincronizar nameInput cuando firstName/lastName cambian externamente (perfiles, ID lookup)
+  useEffect(() => {
+    const display = [form.firstName, form.lastName].filter(Boolean).join(" ");
+    if (display && display !== nameInput) setNameInput(display);
+  }, [form.firstName, form.lastName]);
+
   const handleNameChange = (value) => {
-    const parts = value.trim().split(/\s+/);
+    setNameInput(value);
+  };
+
+  const handleNameBlur = () => {
+    const clean = nameInput.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g, "").trim();
+    const parts = clean.split(/\s+/);
     const firstName = parts[0] || "";
-    const lastName = parts.slice(1).join(" ");
+    const lastName = parts.slice(1).join(" ") || "";
     setForm((f) => ({ ...f, firstName, lastName }));
   };
+
+  const sanitizeEmail = (v) => v.replace(/[<>"'&]/g, "");
 
   const handlePickProfile = () => {
     if (!guests || !guests.length) {
@@ -719,599 +720,368 @@ export default function ReservationsPage() {
           </div>
         </div>
 
-        {/* Contenido principal */}
+        {/* Contenido principal — FORMULARIO REDISEÑADO */}
         <div className="flex-1 space-y-4">
-          <div className="rounded-2xl border bg-white shadow-sm p-4 space-y-5">
-            {/* Top layout */}
-            <div className="flex flex-col xl:flex-row gap-4">
-              {/* Izquierda */}
-              <div className="flex-1 space-y-2">
-                <PillInput
-                  label={t("frontdesk.reservations.labels.ota")}
-                  value={form.otaCode}
-                  onChange={(v) => setForm((f) => ({ ...f, otaCode: v }))}
-                  inputClassName="max-w-[160px]"
-                  containerClassName="max-w-[200px]"
-                />
-                <PillSelect
-                  label={t("frontdesk.reservations.labels.contract")}
-                  value={form.contractId}
-                  onChange={(v) => {
-                    setForm((f) => ({ ...f, contractId: v, ratePlanId: "" }));
-                  }}
-                  options={[{ label: t("common.select"), value: "" }, ...contracts.map((c) => ({ label: c.channel || c.id, value: c.id }))]}
-                  selectClassName="max-w-[200px]"
-                />
-                <PillSelect
-                  label={t("frontdesk.reservations.labels.ratePlan")}
-                  value={form.ratePlanId}
-                  onChange={(v) => setForm((f) => ({ ...f, ratePlanId: v }))}
-                  options={[{ label: t("common.na"), value: "" }, ...ratePlans.filter((r) => {
+          <div className="rounded-2xl border shadow-sm p-5 space-y-5" style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}>
+
+            {/* ── FILA SUPERIOR ── */}
+            <div className="flex flex-wrap gap-2">
+              <div className="w-[130px]">
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">Check-in *</label>
+                <input type="date" value={form.checkInDate} onChange={(e) => handleDateFrom(e.target.value)}
+                  className="w-full rounded-lg border px-2 py-2 text-xs" style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+              </div>
+              <div className="w-[130px]">
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">Check-out *</label>
+                <input type="date" value={form.checkOutDate} onChange={(e) => handleDateTo(e.target.value)}
+                  min={form.checkInDate ? (() => { const d = new Date(form.checkInDate); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })() : undefined}
+                  className="w-full rounded-lg border px-2 py-2 text-xs" style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+              </div>
+              <div className="w-16">
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">Noches</label>
+                <input type="text" readOnly
+                  value={form.checkInDate && form.checkOutDate ? Math.max(1, Math.ceil((new Date(form.checkOutDate) - new Date(form.checkInDate)) / 86400000)) : "—"}
+                  className="w-full rounded-lg border px-2 py-2 text-xs text-center bg-slate-50 dark:bg-slate-800" style={{ borderColor: "var(--input-border)", color: "var(--color-text-base)" }} />
+              </div>
+              <div className="w-24">
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">ID Reserva</label>
+                <input type="text" value={form.code} onChange={(v) => setForm((f) => ({ ...f, code: v }))}
+                  placeholder="Auto" className="w-full rounded-lg border px-2 py-2 text-xs text-center"
+                  style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+              </div>
+              <div style={{ width: 170 }}>
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">Contrato / Canal</label>
+                <ContratoCanalGroup form={form} setForm={setForm} contracts={contracts} />
+              </div>
+              <div style={{ width: 150 }}>
+                <label className="text-[10px] font-medium mb-0.5 block opacity-50">Tarifario</label>
+                <select value={form.ratePlanId} onChange={(e) => {
+                  const rp = ratePlans.find(r => r.id === e.target.value);
+                  setForm((f) => ({ ...f, ratePlanId: e.target.value, price: rp?.price || f.price || "", priceRoom: rp?.price || "" }));
+                }}
+                  className="w-full rounded-lg border px-2 py-2 text-xs"
+                  style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}>
+                  <option value="">Sin tarifa</option>
+                  {ratePlans.filter((r) => {
                     if (!form.contractId) return true;
                     const c = contracts.find((x) => String(x.id) === String(form.contractId));
                     const ids = Array.isArray(c?.ratePlans) ? c.ratePlans : [];
                     return ids.includes(String(r.id));
-                  }).map((r) => ({ label: r.name, value: r.id }))]}
-                  selectClassName="max-w-[200px]"
-                />
-                <div className="flex items-end gap-[3px]">
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.from")}
-                    type="date"
-                    value={form.checkInDate}
-                    onChange={handleDateFrom}
-                    containerClassName="max-w-[120px]"
-                    pillClassName={rowSaved ? "bg-slate-100 opacity-80" : ""}
-                    disabled={rowSaved}
-                  />
-                  <div className="h-10 w-px bg-slate-300 rounded-full" />
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.to")}
-                    type="date"
-                    value={form.checkOutDate}
-                    onChange={handleDateTo}
-                    min={form.checkInDate ? (() => {
-                      const d = new Date(form.checkInDate);
-                      d.setDate(d.getDate() + 1);
-                      return d.toISOString().slice(0, 10);
-                    })() : undefined}
-                    containerClassName="max-w-[120px]"
-                    pillClassName={rowSaved ? "bg-slate-100 opacity-80" : ""}
-                    disabled={rowSaved}
-                  />
-                </div>
-                <div className="flex flex-col gap-1 text-xs text-slate-600 max-w-[200px]">
-                  <span>{t("frontdesk.reservations.depositLabel")}</span>
-                  <button
-                    type="button"
-                    onClick={handleDepositClick}
-                    className="rounded-full border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-800 hover:bg-slate-200 text-left"
-                  >
-                     {form.depositAmount ? `CRC ${form.depositAmount}` : t("frontdesk.reservations.depositSet")}
-                  </button>
-                </div>
-                <PillInput
-                  label={t("frontdesk.reservations.labels.discount")}
-                  value={form.discount}
-                  onChange={(v) => setForm((f) => ({ ...f, discount: v }))}
-                  inputClassName="max-w-[200px]"
-                  containerClassName="max-w-[200px]"
-                />
+                  }).map((r) => (
+                    <option key={r.id} value={r.id}>{r.name} — ₡{Number(r.price||0).toLocaleString()}</option>
+                  ))}
+                </select>
               </div>
-              <div className="hidden xl:block w-px bg-slate-200" />
+            </div>
 
-              {/* Centro */}
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-3">
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.reservationId")}
-                    value={form.code}
-                    onChange={(v) => setForm((f) => ({ ...f, code: v }))}
-                    disabled
-                    containerClassName="max-w-[110px]"
-                  />
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.rooming")}
-                    value={form.rooming}
-                    onChange={(v) => setForm((f) => ({ ...f, rooming: v }))}
-                    disabled
-                    containerClassName="max-w-[110px]"
-                  />
-                </div>
-                <div className="space-y-2 max-w-[620px]">
-                  <div className="flex items-end gap-3">
-                    <PillInput
-                      label={t("frontdesk.reservations.labels.fullName")}
-                      value={`${form.firstName} ${form.lastName}`.trim()}
-                      onChange={handleNameChange}
-                      placeholder={t("frontdesk.reservations.placeholders.fullName")}
-                      containerClassName="max-w-[350px]"
-                    />
-                    <PillButton label={t("frontdesk.reservations.labels.profiles")} onClick={handlePickProfile} />
+            {/* ── FILA: Cliente ── */}
+            <div className="rounded-xl border p-3 space-y-2" style={{ borderColor: "var(--card-border)", background: "var(--input-bg)" }}>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold flex items-center gap-1" style={{ color: "var(--color-text-base)" }}>
+                  <User size={13} className="text-emerald-500" /> Cliente
+                </h3>
+                <div className="flex items-center gap-2">
+                  <div className="flex rounded-lg border overflow-hidden text-[10px]"
+                    style={{ borderColor: "var(--card-border)" }}>
+                    <button type="button"
+                      onClick={() => setConPerfil(true)}
+                      className={`px-2.5 py-1.5 ${conPerfil ? "bg-emerald-500 text-white" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                      style={!conPerfil ? { color: "var(--color-text-muted)" } : {}}>
+                      Con perfil
+                    </button>
+                    <button type="button"
+                      onClick={() => setConPerfil(false)}
+                      className={`px-2.5 py-1.5 ${!conPerfil ? "bg-amber-500 text-white" : "hover:bg-slate-50 dark:hover:bg-slate-800"}`}
+                      style={conPerfil ? { color: "var(--color-text-muted)" } : {}}>
+                      Sin perfil
+                    </button>
                   </div>
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.email")}
-                    value={form.email}
-                    onChange={(v) => setForm((f) => ({ ...f, email: v }))}
-                    placeholder={t("frontdesk.reservations.placeholders.typeHere")}
-                    containerClassName="max-w-[350px]"
-                  />
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.phone")}
-                    value={form.phone}
-                    onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
-                    placeholder={t("frontdesk.reservations.placeholders.typeHere")}
-                    prefix="+"
-                    containerClassName="max-w-[220px]"
-                  />
+                  {conPerfil && <PillButton label={t("frontdesk.reservations.labels.profiles")} onClick={handlePickProfile} />}
                 </div>
-                <div className="text-xs text-slate-500">{t("frontdesk.reservations.metaCreated")}</div>
               </div>
-
-              {/* Derecha */}
-              <div className="flex-1 space-y-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.cardholder")}
-                    value={form.paymentMethod}
-                    onChange={(v) => setForm((f) => ({ ...f, paymentMethod: v }))}
-                    placeholder={t("frontdesk.reservations.placeholders.cardholder")}
-                  />
-                  <PillInput
-                    label={t("frontdesk.reservations.labels.cardNumber")}
-                    value={form.currency}
-                    onChange={(v) => setForm((f) => ({ ...f, currency: v }))}
-                    placeholder={t("frontdesk.reservations.placeholders.cardNumber")}
-                  />
+              <div className="flex flex-wrap gap-2">
+                <div className="w-64">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Nombre completo *</label>
+                  <input type="text" value={nameInput} onChange={(e) => handleNameChange(e.target.value)} onBlur={handleNameBlur}
+                    placeholder="Nombre Apellido" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+                    style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
+                </div>
+                <div className="w-44">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Email</label>
+                  <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: sanitizeEmail(e.target.value) }))}
+                    placeholder="correo@ejemplo.com" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+                    style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
+                </div>
+                <div className="w-36">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Teléfono</label>
+                  <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value.replace(/\D/g, "") }))}
+                    placeholder="+506 0000-0000" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+                    style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
+                </div>
+                <div className="w-36">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Identificación</label>
+                  <div className="flex gap-1">
+                    <select value={form.idType||""} onChange={(e) => setForm((f) => ({ ...f, idType: e.target.value, idNumber: "" }))}
+                      className="w-16 rounded-lg border px-1 py-2 text-[10px]"
+                      style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }}>
+                      <option value="">Tipo</option>
+                      <option value="CEDULA_FISICA">Céd.</option>
+                      <option value="CEDULA_JURIDICA">C.J.</option>
+                      <option value="DIMEX">DIMEX</option>
+                      <option value="PASAPORTE">Pasap.</option>
+                      <option value="OTRO">Otro</option>
+                    </select>
+                    <input type="text" value={form.idNumber||""}
+                      disabled={!form.idType}
+                      onChange={(e) => {
+                        let v = e.target.value;
+                        const max = form.idType === "CEDULA_FISICA" ? 9 : form.idType === "CEDULA_JURIDICA" ? 10 : form.idType === "DIMEX" ? 12 : 20;
+                        if (form.idType === "PASAPORTE") v = v.replace(/[^a-zA-Z0-9]/g, "").slice(0, max);
+                        else if (form.idType && form.idType !== "OTRO") v = v.replace(/\D/g, "").slice(0, max);
+                        setForm((f) => ({ ...f, idNumber: v }));
+                      }}
+                      onBlur={async () => {
+                        // Si hay ID y tipo, buscar huésped existente
+                        if (!form.idNumber || !form.idType) return;
+                        try {
+                          const { data } = await api.get(`/guests?q=${encodeURIComponent(form.idNumber)}`);
+                          const found = Array.isArray(data) ? data.find(g => g.idNumber === form.idNumber || g.idNumber === form.idNumber?.replace(/\D/g,"")) : null;
+                          if (found) {
+                            setForm((f) => ({
+                              ...f,
+                              guestId: found.id, firstName: found.firstName || "", lastName: found.lastName || "",
+                              email: found.email || "", phone: found.phone || "", idType: found.idType || f.idType,
+                              country: found.country || f.country, city: found.city || f.city, address: found.address || f.address,
+                            }));
+                          }
+                        } catch {} // silencioso si falla
+                      }}
+                      placeholder={form.idType ? "Número" : "Selecciona tipo"}
+                      className={`flex-1 rounded-lg border px-2 py-2 text-xs ${!form.idType ? "opacity-50 cursor-not-allowed" : ""}`}
+                      style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <div className="w-32">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">País</label>
+                  <CountrySelect value={form.country||""} onChange={(v) => setForm((f) => ({ ...f, country: v }))} />
+                </div>
+                <div className="w-32">
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Ciudad</label>
+                  <input type="text" value={form.city||""} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value.replace(/\d/g, "") }))}
+                    placeholder="Ciudad" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+                    style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
+                </div>
+                <div className="flex-1" style={{ minWidth: 180 }}>
+                  <label className="text-[10px] font-medium mb-0.5 block opacity-50">Dirección</label>
+                  <input type="text" value={form.address||""} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                    placeholder="Dirección completa" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+                    style={{ borderColor: "var(--input-border)", background: "var(--card-bg)", color: "var(--color-text-base)" }} />
                 </div>
               </div>
             </div>
 
-            {/* Tabla estilo maqueta unida al bloque superior */}
-            <div className="border-t border-emerald-100 pt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-emerald-800">
-                  <div className="text-xs font-semibold">{t("frontdesk.reservations.roomsTitle")}</div>
-                  <div className="flex gap-2 flex-wrap">
-                    <PillButton
-                      label={t("frontdesk.reservations.actions.create")}
-                      onClick={() => {
-                        setShowRowEditor(true);
-                        // Al crear una nueva reserva, limpiamos seleccion y borradores anteriores
-                        setSelectedRow(null);
-                        setDraftRows([]);
-                      setRowSaved(false);
-                      setRowConfirmed(false);
-                    }}
-                    disabled={creating}
-                  />
+            {/* ── TARJETA DE CRÉDITO (colapsable) ── */}
+            <CreditCardSection form={form} setForm={setForm} />
+
+            {/* ── HABITACIONES: Cards en vez de tabla ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold flex items-center gap-1.5" style={{ color: "var(--color-text-base)" }}>
+                  <Bed size={15} className="text-blue-500" /> Habitaciones
+                </h3>
+                <PillButton
+                  label={t("frontdesk.reservations.actions.create")}
+                  onClick={() => { setShowRowEditor(true); setSelectedRow(null); setRowSaved(false); setRowConfirmed(false); }}
+                  disabled={creating}
+                />
+              </div>
+
+              {/* Editor de fila */}
+              {showRowEditor && (
+                <div className="rounded-2xl border p-4 space-y-3" style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="w-14">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Cant.</label>
+                      <input type="number" min="1" className="w-full rounded-lg border px-2 py-2 text-xs" value={form.quantity || 1}
+                        onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) || 1 }))}
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+                    </div>
+                    <div style={{ width: 120 }}>
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Tipo</label>
+                      <select className="w-full rounded-lg border px-2 py-2 text-xs"
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}
+                        value={form.roomType} onChange={(e) => setForm((f) => ({ ...f, roomType: e.target.value, roomId: "" }))}>
+                        <option value="">Tipo...</option>
+                        {roomsByType.map(([type]) => <option key={type} value={type}>{type}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ width: 110 }}>
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Habitación</label>
+                      <select className="w-full rounded-lg border px-2 py-2 text-xs"
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}
+                        value={form.roomId} onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}>
+                        <option value="">Hab...</option>
+                        {rooms.filter((r) => (form.roomType ? r.type === form.roomType : false)).map((room) => (
+                          <option key={room.id} value={room.id}>Hab. {room.number || room.name || room.id}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ width: 120 }}>
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Plan comidas</label>
+                      <select className="w-full rounded-lg border px-2 py-2 text-xs"
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}
+                        value={form.mealPlanId} onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}>
+                        <option value="">Sin plan</option>
+                        {mealPlans.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="w-14">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Ad.</label>
+                      <input type="number" min="1" className="w-full rounded-lg border px-2 py-2 text-xs" value={form.adults}
+                        onChange={(e) => setForm((f) => ({ ...f, adults: Number(e.target.value) || 1 }))}
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+                    </div>
+                    <div className="w-14">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Niñ.</label>
+                      <input type="number" min="0" className="w-full rounded-lg border px-2 py-2 text-xs" value={form.children}
+                        onChange={(e) => setForm((f) => ({ ...f, children: Number(e.target.value) || 0 }))}
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+                    </div>
+                    <div className="w-14">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Inf.</label>
+                      <input type="number" min="0" className="w-full rounded-lg border px-2 py-2 text-xs" value={form.infants}
+                        onChange={(e) => setForm((f) => ({ ...f, infants: Number(e.target.value) || 0 }))}
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">Precio</label>
+                      <input type="number" min="0" step="0.01" className="w-full rounded-lg border px-2 py-2 text-xs" value={form.price || ""}
+                        onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                        placeholder={(() => {
+                          const rp = ratePlans.find(r => r.id === form.ratePlanId);
+                          return rp?.price ? `₡${Number(rp.price).toLocaleString()}` : form.priceRoom ? `₡${form.priceRoom}` : "Manual";
+                        })()}
+                        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+                    </div>
+                    <div className="w-16">
+                      <label className="text-[11px] font-medium mb-1 block opacity-50">IVA</label>
+                      <input type="text" readOnly
+                        value={(() => {
+                          const rp = ratePlans.find(r => r.id === form.ratePlanId);
+                          const taxRate = Number(rp?.taxes || rp?.taxAmount || rp?.iva || 13);
+                          const price = Number(form.price || rp?.price || form.priceRoom || 0);
+                          const taxAmount = price > 0 ? Math.round(price * taxRate / 100) : 0;
+                          return taxAmount > 0 ? `₡${taxAmount.toLocaleString()}` : "—";
+                        })()}
+                        className="w-full rounded-lg border px-2 py-2 text-xs text-center bg-slate-50 dark:bg-slate-800"
+                        style={{ borderColor: "var(--input-border)", color: "var(--color-text-base)" }} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end pt-2">
+                    <ActionButton tone="green" disabled={creating || rowSaved} onClick={handleSaveRow}>Guardar fila</ActionButton>
+                    <ActionButton tone="green" disabled={creating || rowSaved} onClick={() => { handleSaveRow(); setShowRowEditor(true); }}>
+                      + Otra
+                    </ActionButton>
+                    <ActionButton tone="blue" disabled={!rowSaved} onClick={() => { setRowSaved(false); setRowConfirmed(false); }}>Editar</ActionButton>
+                  </div>
                 </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border border-slate-200">
-                  <thead className="text-xs uppercase text-slate-600 bg-emerald-50">
-                    <tr>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.qty")}</th>
-                        <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.roomType")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.mealPlan")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.adults")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.children")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.infants")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.priceTax")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.room")}</th>
-                      <th className="px-2 py-1 border-x border-slate-200">{t("frontdesk.reservations.table.status")}</th>
-                      <th className="px-2 py-1 text-right border-x border-slate-200">{t("common.actions")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {showRowEditor && (
-                      <tr className="border-t border-slate-200 bg-emerald-50">
-                        <td className="px-2 py-2 text-center border-x border-slate-200">
-                          <input
-                            type="number"
-                            min="1"
-                            className="w-14 rounded border px-2 py-1 text-sm"
-                            value={form.quantity || 1}
-                            onChange={(e) => setForm((f) => ({ ...f, quantity: Number(e.target.value) || 1 }))}
-                            disabled={rowSaved}
-                          />
-                        </td>
-                          <td className="px-2 py-2 border-x border-slate-200">
-                            <select
-                              className="w-full rounded border px-2 py-1 text-sm"
-                              value={form.roomType}
-                              onChange={(e) =>
-                                setForm((f) => ({
-                                  ...f,
-                                  roomType: e.target.value,
-                                  roomId: "", // al cambiar de tipo limpiamos habitacion
-                                }))
-                              }
-                              disabled={rowSaved}
-                            >
-                              <option value="">{t("frontdesk.reservations.selectType")}</option>
-                              {roomsByType.map(([type]) => (
-                                <option key={type} value={type}>
-                                  {type}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          <select
-                            className="w-full rounded border px-2 py-1 text-sm"
-                            value={form.mealPlanId}
-                            onChange={(e) => setForm((f) => ({ ...f, mealPlanId: e.target.value }))}
-                            disabled={rowSaved}
-                          >
-                            <option value="">{t("common.select")}</option>
-                            {mealPlans.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">
-                          <input
-                            type="number"
-                            min="1"
-                            className="w-14 rounded border px-2 py-1 text-sm"
-                            value={form.adults}
-                            onChange={(e) => setForm((f) => ({ ...f, adults: Number(e.target.value) || 1 }))}
-                            disabled={rowSaved}
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">
-                          <input
-                            type="number"
-                            min="0"
-                            className="w-14 rounded border px-2 py-1 text-sm"
-                            value={form.children}
-                            onChange={(e) => setForm((f) => ({ ...f, children: Number(e.target.value) || 0 }))}
-                            disabled={rowSaved}
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">
-                          <input
-                            type="number"
-                            min="0"
-                            className="w-14 rounded border px-2 py-1 text-sm"
-                            value={form.infants}
-                            onChange={(e) => setForm((f) => ({ ...f, infants: Number(e.target.value) || 0 }))}
-                            disabled={rowSaved}
-                          />
-                        </td>
-                        <td className="px-2 py-2 text-right border-x border-slate-200">
-                          <span className="font-semibold text-emerald-700">{form.price ? `CRC ${form.price}` : "-"}</span>
-                        </td>
-                          <td className="px-2 py-2 border-x border-slate-200">
-                            <select
-                              className="w-full rounded border px-2 py-1 text-sm"
-                              value={form.roomId}
-                              onChange={(e) => setForm((f) => ({ ...f, roomId: e.target.value }))}
-                              disabled={rowSaved || !form.roomType}
-                            >
-                              <option value="">
-                                {form.roomType ? t("frontdesk.reservations.selectRoom") : t("frontdesk.reservations.selectRoomTypeFirst")}
-                              </option>
-                              {rooms
-                                .filter((r) => (form.roomType ? r.type === form.roomType : false))
-                                .map((room) => (
-                                  <option key={room.id} value={room.id}>
-                                    {room.number ? `Room ${room.number}` : room.name || `ID ${room.id}`}
-                                  </option>
-                                ))}
-                            </select>
-                          </td>
-                        <td className="px-2 py-2">
-                          {rowConfirmed ? <StatusBadge status="CONFIRMED" label={statusLabel("CONFIRMED")} /> : <span className="text-xs text-slate-400"></span>}
-                        </td>
-                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
-                          <ActionButton tone="green" disabled={creating || rowSaved} onClick={handleSaveRow}>
-                            Save row
-                          </ActionButton>
-                          <ActionButton
-                            tone="blue"
-                            disabled={!rowSaved}
-                            onClick={() => {
-                              setRowSaved(false);
-                              setRowConfirmed(false);
-                            }}
-                          >
-                            Edit row
-                          </ActionButton>
-                          <ActionButton
-                            tone="red"
-                            disabled={!selectedRow}
-                            onClick={() => {
-                              const ok = window.confirm(t("frontdesk.reservations.confirmDeleteRow"));
-                              if (!ok || !selectedRow) return;
-                              const reason = window.prompt(t("frontdesk.reservations.cancelReasonPrompt"), "");
-                              if (reason === null || reason.trim() === "") return;
-                              cancelReservation(selectedRow, { reason });
-                              setSelectedRow(null);
-                              refreshReservations();
-                            }}
-                          >
-                            Delete row
-                          </ActionButton>
-                        </td>
-                      </tr>
-                    )}
-                    {tableReservations.map((r) => (
-                      <tr key={r.id} className={`border-t border-slate-200 ${selectedRow === r.id ? "bg-emerald-50" : ""}`}>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">{r.room?.type || t("common.na")}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          {r.mealPlan?.name || mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || r.ratePlan?.name || t("common.na")}
-                        </td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.infants || 0}</td>
-                        <td className="px-2 py-2 text-right border-x border-slate-200">{r.price ? `CRC ${r.price}` : "-"}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">{r.roomNumber || r.roomId}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          {(r.rawStatus || r.status || "").toUpperCase() === "CONFIRMED" ? (
-                            <StatusBadge status={r.status || r.rawStatus} label={statusLabel(r.status || r.rawStatus)} />
-                          ) : (
-                            <span className="text-xs text-slate-400"></span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
-                          <ActionButton tone="red" disabled={!canCancel(r) || loading.action} onClick={() => cancelReservation(r.id)}>
-                            Void
-                          </ActionButton>
-                          <button className="text-xs underline" onClick={() => loadReservation(r)}>
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {draftRows.map((r, idx) => (
-                      <tr key={`draft-${idx}`} className="border-t border-slate-200 bg-amber-50">
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.quantity || 1}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          {rooms.find((room) => String(room.id) === String(r.roomId))?.type || t("common.na")}
-                        </td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          {mealPlans.find((m) => String(m.id) === String(r.mealPlanId))?.name || t("common.na")}
-                        </td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.adults || 0}</td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.children || 0}</td>
-                        <td className="px-2 py-2 text-center border-x border-slate-200">{r.infants || 0}</td>
-                        <td className="px-2 py-2 text-right border-x border-slate-200">{r.price ? `CRC ${r.price}` : "-"}</td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          {rooms.find((room) => String(room.id) === String(r.roomId))?.number || r.roomId}
-                        </td>
-                        <td className="px-2 py-2 border-x border-slate-200">
-                          <span className="text-xs text-amber-700">{t("frontdesk.reservations.draft")}</span>
-                        </td>
-                        <td className="px-2 py-2 text-right space-x-1 border-x border-slate-200">
-                          <ActionButton
-                            tone="blue"
-                            onClick={() => {
-                              setShowRowEditor(true);
-                              setForm(r);
-                              setRowSaved(false);
-                              setDraftRows((rows) => rows.filter((_, i) => i !== idx));
-                            }}
-                          >
-                            Edit
-                          </ActionButton>
-                          <ActionButton
-                            tone="red"
-                            onClick={() => {
-                              setDraftRows((rows) => rows.filter((_, i) => i !== idx));
-                            }}
-                          >
-                            Delete
-                          </ActionButton>
-                        </td>
-                      </tr>
-                    ))}
-                    {tableReservations.length === 0 && draftRows.length === 0 && !showRowEditor && (
-                      <tr>
-                        <td className="p-3 text-center text-slate-500" colSpan={10}>
-                          No reservations match the filter.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="grid grid-cols-6 gap-[8px] text-xs text-slate-700 w-fit justify-start">
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.table.room")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
-                    value={form.priceRoom}
-                    readOnly
-                  />
-                </label>
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.regimen")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
-                    value={form.priceRegimen}
-                    readOnly
-                  />
-                </label>
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.discount")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
-                    value={form.discount}
-                    readOnly
-                  />
-                </label>
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.tax")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
-                    value={form.priceTax}
-                    readOnly
-                  />
-                </label>
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.deposit")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-emerald-50 border-emerald-200 cursor-not-allowed"
-                    value={form.depositAmount || 0}
-                    readOnly
-                  />
-                </label>
-                <label className="flex flex-col gap-[4px] w-[130px]">
-                  <span>{t("frontdesk.reservations.total")}</span>
-                  <input
-                    type="number"
-                    className="w-full max-w-[120px] rounded border px-2 py-1 text-xs bg-blue-50 border-blue-200"
-                    value={(Number(form.price) || 0) - (Number(form.depositAmount) || 0)}
-                    readOnly
-                  />
-                </label>
+              )}
+
+              {/* Lista de habitaciones agregadas */}
+              <div className="space-y-2">
+                {draftRows.map((r, idx) => (
+                  <div key={`draft-${idx}`} className="flex items-center gap-3 rounded-xl border p-3"
+                    style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+                    <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                      <Bed size={14} className="text-amber-600" />
+                    </div>
+                    <div className="flex-1 grid grid-cols-3 sm:grid-cols-5 gap-2 text-xs">
+                      <span style={{ color: "var(--color-text-base)" }}><strong>{r.quantity}x</strong> {rooms.find(rm => rm.id === r.roomId)?.type || "—"}</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>Hab. {rooms.find(rm => rm.id === r.roomId)?.number || r.roomId}</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>{r.adults}A {r.children}N</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>{mealPlans.find(m => m.id === r.mealPlanId)?.name || "—"}</span>
+                      <span className="text-amber-600 font-medium">{t("frontdesk.reservations.draft")}</span>
+                    </div>
+                    <ActionButton tone="blue" onClick={() => { setShowRowEditor(true); setForm(r); setRowSaved(false); setDraftRows((rows) => rows.filter((_, i) => i !== idx)); }}>Editar</ActionButton>
+                  </div>
+                ))}
+                {tableReservations.map((r) => (
+                  <div key={r.id} className={`flex items-center gap-3 rounded-xl border p-3 ${selectedRow === r.id ? "ring-2 ring-emerald-400" : ""}`}
+                    style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center shrink-0">
+                      <Bed size={14} className="text-emerald-600" />
+                    </div>
+                    <div className="flex-1 grid grid-cols-3 sm:grid-cols-5 gap-2 text-xs">
+                      <span style={{ color: "var(--color-text-base)" }}><strong>{r.quantity || 1}x</strong> {r.room?.type || "—"}</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>Hab. {r.roomNumber || r.roomId}</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>{r.adults || 0}A {r.children || 0}N</span>
+                      <span style={{ color: "var(--color-text-muted)" }}>{r.mealPlan?.name || mealPlans.find(m => m.id === r.mealPlanId)?.name || "—"}</span>
+                      <span className="font-medium text-emerald-600">{r.price ? `CRC ${r.price}` : "—"}</span>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button className="text-xs underline" onClick={() => loadReservation(r)}>Editar</button>
+                      <ActionButton tone="red" disabled={!canCancel(r)} onClick={() => cancelReservation(r.id)}>Anular</ActionButton>
+                    </div>
+                  </div>
+                ))}
+                {draftRows.length === 0 && tableReservations.length === 0 && !showRowEditor && (
+                  <div className="text-center py-8 rounded-xl border-2 border-dashed"
+                    style={{ borderColor: "var(--card-border)" }}>
+                    <Bed size={28} className="mx-auto mb-2 opacity-20" />
+                    <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>Sin habitaciones. Haz clic en "Crear" para agregar.</p>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
 
-          {/* Barra de acciones rapidas */}
-          <div className="flex flex-wrap gap-3 justify-end">
-            {[
-              { key: "new", title: t("frontdesk.reservations.actions.new"), color: "bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200 text-emerald-800", icon: IconPlus, onClick: resetForm },
-              { key: "save", title: t("common.save"), color: "bg-gradient-to-br from-emerald-100 to-emerald-200 border-emerald-300 text-emerald-900", icon: IconSave, onClick: handleCreate },
-              { key: "email", title: t("common.email"), color: "bg-gradient-to-br from-sky-50 to-sky-100 border-sky-200 text-sky-800", icon: IconMail, onClick: handleEmail },
-              { key: "whatsapp", title: t("frontdesk.reservations.actions.whatsapp"), color: "bg-gradient-to-br from-green-50 to-green-100 border-green-200 text-green-800", icon: IconWhatsapp, onClick: handleWhatsapp },
-              { key: "print", title: t("common.print"), color: "bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 text-slate-800", icon: IconPrinter, onClick: handlePrint },
-              { key: "confirm", title: t("common.confirm"), color: "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 text-blue-800", icon: IconCheck, onClick: handleConfirmAction },
-              { key: "cancel", title: t("common.cancel"), color: "bg-gradient-to-br from-rose-50 to-rose-100 border-rose-200 text-rose-800", icon: IconClose, onClick: handleCancelAction },
-              ...(selectedRow ? [{ key: "edit", title: "Modificar reserva", color: "bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200 text-amber-800", icon: Pencil, onClick: () => { const r = reservations.find(x => x.id === selectedRow); if (r) setModifyModal(r); } }] : []),
-            ].map(({ key, title, color, icon: Icon, onClick }) => (
-              <button
-                key={key}
-                type="button"
-                title={title}
-                onClick={onClick}
-                className={`h-12 w-12 rounded-2xl border shadow-md hover:shadow-lg hover:-translate-y-0.5 transition transform flex items-center justify-center ${color}`}
-              >
-                <Icon />
-              </button>
-            ))}
+            {/* ── DEPÓSITOS (pre-pagos asociados) ── */}
+            {selectedRow && (
+              <DepositsSection reservationId={selectedRow} />
+            )}
+
+            {/* ── EXTRAS: Pre-pago, Descuento ── */}
+            <div className="flex flex-wrap gap-2 max-w-xl">
+              <div className="flex-1" style={{ minWidth: 200 }}>
+                <label className="text-xs font-medium mb-0.5 flex items-center gap-1 opacity-50">
+                  <Wallet size={11}/> Pre-pago
+                </label>
+                <PrePagoButton reservationId={selectedRow} currentDeposit={form.depositAmount}
+                  onSelect={(amount) => setForm((f) => ({ ...f, depositAmount: amount }))} />
+              </div>
+              <div style={{ width: 180 }}>
+                <label className="text-xs font-medium mb-0.5 flex items-center gap-1 opacity-50">
+                  Descuento
+                </label>
+                <DiscountPicker value={form.discount} onChange={(v) => setForm((f) => ({ ...f, discount: v }))} />
+              </div>
+            </div>
+
+            {/* ── ACCIONES ── */}
+            <div className="flex gap-2 justify-end pt-2 border-t" style={{ borderColor: "var(--card-border)" }}>
+              <ActionButton tone="blue" onClick={handleEmail} disabled={!form.email}>Email</ActionButton>
+              <ActionButton tone="blue" onClick={handleWhatsapp} disabled={!form.phone}>WhatsApp</ActionButton>
+              <ActionButton tone="gray" onClick={handlePrint}>Imprimir</ActionButton>
+              <ActionButton tone="green" disabled={creating || (!form.roomId && draftRows.length === 0)} onClick={handleCreate}>
+                {creating ? "Creando..." : "Crear Reserva"}
+              </ActionButton>
+              <ActionButton tone="red" onClick={handleCancelAction}>Cancelar</ActionButton>
+            </div>
+
           </div>
         </div>
       </div>
 
       {showGuestPicker && (
-        <div className="fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setShowGuestPicker(false)} />
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-[95vw] max-w-3xl max-h-[80vh] overflow-hidden border">
-              <div className="px-4 py-3 border-b flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-800">{t("frontdesk.reservations.guestPicker.title")}</h3>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
-                    <span>{t("frontdesk.reservations.guestPicker.typeLabel")}</span>
-                    <button
-                      type="button"
-                      className={`px-2 py-1 rounded-full border text-[11px] ${
-                        guestType === "PERSON"
-                          ? "bg-emerald-600 text-white border-emerald-600"
-                          : "bg-white text-slate-700 border-slate-300"
-                      }`}
-                      onClick={() => setGuestType("PERSON")}
-                    >
-                      {t("frontdesk.reservations.guestPicker.individuals")}
-                    </button>
-                    <button
-                      type="button"
-                      className={`px-2 py-1 rounded-full border text-[11px] ${
-                        guestType === "COMPANY"
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-slate-700 border-slate-300"
-                      }`}
-                      onClick={() => setGuestType("COMPANY")}
-                    >
-                      {t("frontdesk.reservations.guestPicker.companies")}
-                    </button>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded-full bg-slate-100 text-slate-700 text-lg leading-none flex items-center justify-center hover:bg-slate-200"
-                  onClick={() => setShowGuestPicker(false)}
-                  aria-label={t("common.close")}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="p-4 space-y-3">
-                <input
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  placeholder={t("frontdesk.reservations.placeholders.guestSearch")}
-                  value={guestQuery}
-                  onChange={(e) => setGuestQuery(e.target.value)}
-                />
-                <div className="max-h-[55vh] overflow-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-xs uppercase text-slate-500 border-b">
-                        <th className="p-2">{guestType === "COMPANY" ? t("frontdesk.reservations.guestPicker.companyFallback") : t("common.name")}</th>
-                        <th className="p-2">{guestType === "COMPANY" ? t("frontdesk.reservations.guestPicker.contact") : t("common.email")}</th>
-                        <th className="p-2">{t("common.phone")}</th>
-                        <th className="p-2">{t("frontdesk.reservations.guestPicker.document")}</th>
-                        <th className="p-2 text-right">{t("common.actions")}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredGuests.map((g) => (
-                        <tr key={g.id} className="border-b hover:bg-slate-50">
-                          <td className="p-2">
-                            {guestType === "COMPANY"
-                              ? g.company || t("frontdesk.reservations.guestPicker.companyFallback")
-                              : `${g.firstName || ""} ${g.lastName || ""}`.trim() || t("frontdesk.reservations.noName")}
-                          </td>
-                          <td className="p-2">
-                            {guestType === "COMPANY" ? (
-                              `${g.firstName || ""} ${g.lastName || ""}`.trim() || (
-                                <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noContact")}</span>
-                              )
-                            ) : (
-                              g.email || <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noEmail")}</span>
-                            )}
-                          </td>
-                          <td className="p-2">{g.phone || <span className="text-slate-400">{t("frontdesk.reservations.guestPicker.noPhone")}</span>}</td>
-                          <td className="p-2 text-xs">
-                            {g.idType || g.idNumber
-                              ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">{t("common.na")}</span>}
-                          </td>
-                          <td className="p-2 text-right">
-                            <button
-                              className="px-3 py-1 rounded border bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs"
-                              onClick={() => selectGuest(g)}
-                            >
-                              {t("frontdesk.reservations.guestPicker.useProfile")}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {!filteredGuests.length && (
-                        <tr>
-                          <td className="p-3 text-center text-slate-500" colSpan={5}>
-                            {t("frontdesk.reservations.guestPicker.empty")}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <GuestPicker
+          isOpen={showGuestPicker}
+          onClose={() => setShowGuestPicker(false)}
+          onSelect={(g) => {
+            setForm((f) => ({ ...f, guestId: g.id, firstName: g.firstName || "", lastName: g.lastName || "", email: g.email || "", phone: g.phone || "", idNumber: g.idNumber || "", idType: g.idType || "", country: g.country || "", city: g.city || "", address: g.address || "" }));
+            setShowGuestPicker(false);
+          }}
+        />
       )}
 
       {modifyModal && (
@@ -1323,6 +1093,37 @@ export default function ReservationsPage() {
           onClose={() => setModifyModal(null)}
           onSaved={async () => { setModifyModal(null); await refreshReservations(); await refreshRooms(); }}
         />
+      )}
+
+      {successMsg && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="rounded-2xl border bg-white dark:bg-slate-800 shadow-2xl px-5 py-4 flex items-center gap-3"
+            style={{ borderColor: "var(--card-border)" }}>
+            <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+              <Check size={22} className="text-emerald-500" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm" style={{ color: "var(--color-text-base)" }}>¡Listo!</div>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{successMsg}</div>
+            </div>
+            <button onClick={() => setSuccessMsg("")} className="ml-2 p-1 rounded-lg hover:bg-black/5"><X size={14}/></button>
+          </div>
+        </div>
+      )}
+      {errorMsg && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <div className="rounded-2xl border bg-white dark:bg-slate-800 shadow-2xl px-5 py-4 flex items-center gap-3"
+            style={{ borderColor: "var(--card-border)" }}>
+            <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+              <X size={22} className="text-rose-500" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm" style={{ color: "var(--color-text-base)" }}>Error</div>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{errorMsg}</div>
+            </div>
+            <button onClick={() => setErrorMsg("")} className="ml-2 p-1 rounded-lg hover:bg-black/5"><X size={14}/></button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1544,6 +1345,217 @@ function IconClose() {
     <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
       <path d="M6 6l12 12M18 6l-12 12" strokeLinecap="round" />
     </svg>
+  );
+}
+
+// ── Componente inline: muestra depósitos de una reservación ──
+function DepositsSection({ reservationId }) {
+  const [deps, setDeps] = useState([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!reservationId) return;
+    setLoading(true);
+    api.get(`/reservations/deposits?reservationId=${reservationId}`)
+      .then(({ data }) => setDeps(Array.isArray(data) ? data : []))
+      .catch(() => setDeps([]))
+      .finally(() => setLoading(false));
+  }, [reservationId]);
+
+  if (!deps.length) return null;
+
+  const total = deps.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const applied = deps.filter(d => d.appliedInvoice).reduce((s, d) => s + Number(d.amount || 0), 0);
+
+  return (
+    <div className="rounded-xl border p-3 space-y-2 text-xs" style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+      <div className="flex items-center justify-between">
+        <span className="font-semibold flex items-center gap-1" style={{ color: "var(--color-text-base)" }}>
+          <Wallet size={13} className="text-emerald-500"/> Pre-pagos ({deps.length})
+        </span>
+        <span style={{ color: "var(--color-text-muted)" }}>
+          Total: <strong style={{ color: "var(--color-text-base)" }}>₡{total.toLocaleString()}</strong>
+          {applied > 0 && <span className="text-blue-600 ml-1">· Aplicado: ₡{applied.toLocaleString()}</span>}
+          {total - applied > 0 && <span className="text-amber-600 ml-1">· Pendiente: ₡{(total - applied).toLocaleString()}</span>}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {deps.map(d => (
+          <div key={d.id} className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-[11px] ${
+            d.appliedInvoice ? "bg-blue-50 dark:bg-blue-900/20" : "bg-amber-50 dark:bg-amber-900/20"
+          }`}>
+            <span className="font-medium" style={{ color: "var(--color-text-base)" }}>
+              {d.voucher && <span className="opacity-40 mr-0.5">#{d.voucher}</span>}
+              {d.currency} {Number(d.amount).toLocaleString()}
+            </span>
+            <span className="opacity-50">{d.paymentMethod || ""}</span>
+            {d.appliedInvoice
+              ? <Check size={11} className="text-blue-500"/>
+              : <ArrowUpRight size={11} className="text-amber-500"/>
+            }
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── PrePagoButton: botón que muestra pre-pagos disponibles ──
+function PrePagoButton({ reservationId, currentDeposit, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [deps, setDeps] = useState([]);
+  useEffect(() => { if (open) api.get("/reservations/deposits").then(r => setDeps(Array.isArray(r.data)?r.data:[])).catch(()=>{}); }, [open]);
+  const unassigned = deps.filter(d => !d.reservationId && !d.appliedInvoice);
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full rounded-lg border px-2 py-2 text-xs text-left hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center justify-between"
+        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: currentDeposit ? "var(--color-text-base)" : "var(--color-text-muted)" }}>
+        <span>{currentDeposit ? `₡${Number(currentDeposit).toLocaleString()}` : "Asignar pre-pago"}</span>
+        {unassigned.length > 0 && <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded-full">{unassigned.length} disponible{unassigned.length>1?"s":""}</span>}
+      </button>
+      {open && (
+        <div className="absolute z-40 top-full mt-1 w-72 rounded-xl border shadow-xl p-2 space-y-1 max-h-60 overflow-y-auto"
+          style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+          {currentDeposit && (
+            <button onClick={() => { onSelect(""); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs text-rose-600 hover:bg-rose-50">✕ Quitar pre-pago</button>
+          )}
+          {unassigned.length === 0 && !currentDeposit && <p className="text-xs px-2 py-2 opacity-50">Sin pre-pagos disponibles</p>}
+          {unassigned.map(d => (
+            <button key={d.id} onClick={() => { onSelect(d.amount); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-emerald-50 dark:hover:bg-emerald-900/20 flex justify-between">
+              <span style={{ color: "var(--color-text-base)" }}>{d.voucher && <span className="opacity-40">#{d.voucher} </span>}{d.currency} {Number(d.amount).toLocaleString()}</span>
+              <span className="text-[10px] opacity-50 truncate ml-2 max-w-[120px]">{d.description||""}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DiscountPicker: carga descuentos desde Management ──
+function DiscountPicker({ value, onChange }) {
+  const [discounts, setDiscounts] = useState([]);
+  useEffect(() => { api.get("/discounts").then(r => setDiscounts(Array.isArray(r.data)?r.data.filter(d=>d.active):[])).catch(()=>{}); }, []);
+  return (
+    <div className="flex gap-1">
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="flex-1 rounded-lg border px-1.5 py-2 text-xs"
+        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}>
+        <option value="">Sin desc.</option>
+        {discounts.map(d => (
+          <option key={d.id} value={d.value}>{d.name} ({d.type==="percent"?`${d.value}%`:`₡${d.value}`})</option>
+        ))}
+      </select>
+      <input type="number" value={value} onChange={e => onChange(e.target.value)}
+        placeholder="Manual" className="w-14 rounded-lg border px-1.5 py-2 text-xs"
+        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+    </div>
+  );
+}
+
+// ── Sección de Tarjeta de Crédito (colapsable) ──
+function CreditCardSection({ form, setForm }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border" style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+      <button type="button" onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium"
+        style={{ color: "var(--color-text-base)" }}>
+        <span className="flex items-center gap-1.5"><CreditCard size={13} className="text-purple-500"/> Datos de tarjeta</span>
+        <span className="text-[10px] opacity-40">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 flex flex-wrap gap-2">
+          <div className="w-64">
+            <label className="text-[10px] font-medium mb-0.5 block opacity-50">Titular de la tarjeta</label>
+            <input value={form.cardName||""} onChange={e => setForm(f=>({...f,cardName:e.target.value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ\s]/g,"")}))}
+              placeholder="Nombre en la tarjeta" className="w-full rounded-lg border px-2.5 py-2 text-xs"
+              style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+          </div>
+          <div className="w-36">
+            <label className="text-[10px] font-medium mb-0.5 block opacity-50">Número de tarjeta</label>
+            <input value={form.cardNumber||""} onChange={e => setForm(f=>({...f,cardNumber:e.target.value.replace(/\D/g,"").slice(0,16)}))}
+              placeholder="0000 0000 0000 0000" maxLength={19} className="w-full rounded-lg border px-2.5 py-2 text-xs"
+              style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+          </div>
+          <div className="w-20">
+            <label className="text-[10px] font-medium mb-0.5 block opacity-50">Vencimiento</label>
+            <input value={form.cardExpiry||""} onChange={e => {
+              let v = e.target.value.replace(/\D/g,"").slice(0,4);
+              if (v.length > 2) v = v.slice(0,2) + "/" + v.slice(2);
+              setForm(f=>({...f,cardExpiry:v}));
+            }} placeholder="MM/AA" maxLength={5} className="w-full rounded-lg border px-2.5 py-2 text-xs"
+              style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+          </div>
+          <div className="w-12">
+            <label className="text-[10px] font-medium mb-0.5 block opacity-50">CVV</label>
+            <input value={form.cardCvv||""} onChange={e => setForm(f=>({...f,cardCvv:e.target.value.replace(/\D/g,"").slice(0,4)}))}
+              placeholder="···" type="password" maxLength={4} className="w-full rounded-lg border px-2.5 py-2 text-xs text-center"
+              style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ContratoCanalGroup: solo contrato desde management ──
+function ContratoCanalGroup({ form, setForm, contracts }) {
+  return (
+    <select value={form.contractId} onChange={e => { setForm(f => ({ ...f, contractId: e.target.value, ratePlanId: "" })); }}
+      className="w-full rounded-lg border px-1.5 py-2 text-xs"
+      style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}>
+      <option value="">Contrato...</option>
+      {contracts.map(c => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}
+    </select>
+  );
+}
+
+// ── OtaInfoPanel simplificado ──
+function OtaInfoPanel({ otaCode, source, channel, onOtaChange, onSourceChange, onChannelChange }) {
+  return (
+    <div className="space-y-1">
+      <select value={source} onChange={e => onSourceChange(e.target.value)}
+        className="w-full rounded-lg border px-2 py-2 text-[11px]"
+        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}>
+        <option value="DIRECT">Directa</option><option value="OTA">OTA (conectar channel manager)</option><option value="MANUAL">Manual</option>
+      </select>
+      <input value={otaCode||""} onChange={e => onOtaChange(e.target.value)}
+        placeholder={source==="OTA"?"Código OTA":"Referencia"} className="w-full rounded-lg border px-2 py-2 text-[11px]"
+        style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }} />
+    </div>
+  );
+}
+
+// ── CountrySelect: carga países precargados del sistema ──
+function CountrySelect({ value, onChange }) {
+  const [countries, setCountries] = useState([]);
+  useEffect(() => {
+    api.get("/geo/countries").then(r => {
+      const data = Array.isArray(r.data) && r.data.length ? r.data : [];
+      if (!data.length) {
+        // fallback estático
+        import("../../lib/countries").then(m => setCountries(m.COUNTRIES || []));
+      } else {
+        setCountries(data);
+      }
+    }).catch(() => {
+      import("../../lib/countries").then(m => setCountries(m.COUNTRIES || []));
+    });
+  }, []);
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      className="w-full rounded-lg border px-2.5 py-2 text-xs"
+      style={{ borderColor: "var(--input-border)", background: "var(--input-bg)", color: "var(--color-text-base)" }}>
+      <option value="">Seleccionar...</option>
+      {countries.map(c => {
+        const code = typeof c === "string" ? c : c.code || c.Code || "";
+        const name = typeof c === "string" ? c : c.name || c.Name || c.label || code;
+        return <option key={code||name} value={code||name}>{name}</option>;
+      })}
+    </select>
   );
 }
 

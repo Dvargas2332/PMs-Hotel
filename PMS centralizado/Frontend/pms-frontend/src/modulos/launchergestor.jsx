@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Building2, LogOut, RefreshCcw, ChevronRight, CircleUser,
   Plus, Pencil, Trash2, Upload, FileText, Settings, CreditCard,
-  Users, Database, Printer,
+  Users, Database, Printer, History, Ban, CheckCircle2,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -35,9 +35,9 @@ const PRINT_FORM_MODULES = [
 ];
 const CLIENT_FILTER_NONE = "__none__";
 const INITIAL_CLIENT_FORM = { name: "", companyId: "", email: "", phone1: "", phone2: "", ownerName: "", managerName: "", managerId: "" };
-const INITIAL_CREATE_FORM = { clientId: "", name: "", membership: "HBASIC", membershipMonthlyFee: "", currency: "CRC", phone1: "", phone2: "", ownerName: "", managerName: "", companyId: "", managerId: "", hotelUserName: "", hotelUserEmail: "", hotelUserPassword: "", adminName: "Administrador", adminUsername: "", adminPassword: "" };
+const INITIAL_CREATE_FORM = { clientId: "", name: "", membership: "HBASIC", membershipMonthlyFee: "", currency: "CRC", phone1: "", phone2: "", ownerName: "", managerName: "", companyId: "", managerId: "", hotelUserName: "", hotelUserEmail: "", adminName: "Administrador", adminUsername: "", adminPassword: "", adminContactEmail: "" };
 const INITIAL_EDIT_FORM = { clientId: "", name: "", membership: "HBASIC", membershipMonthlyFee: "", currency: "CRC", phone1: "", phone2: "", ownerName: "", managerName: "", companyId: "", managerId: "" };
-const INITIAL_ADMIN_FORM = { id: "", name: "", email: "", password: "", confirmPassword: "" };
+const INITIAL_ADMIN_FORM = { id: "", name: "", email: "", password: "", confirmPassword: "", contactEmail: "" };
 const INITIAL_SMTP_FORM = { host: "", port: "587", user: "", pass: "", secure: false, from: "", to: "", replyTo: "", passSet: false };
 
 const NAV = [
@@ -47,6 +47,7 @@ const NAV = [
   { id: "cobros",     label: "Cobros",       icon: CreditCard },
   { id: "importar",   label: "Base de datos",icon: Database },
   { id: "plantillas", label: "Plantillas",   icon: Printer },
+  { id: "auditoria",  label: "Auditoría",    icon: History },
   { id: "config",     label: "Configuración",icon: Settings },
 ];
 
@@ -177,6 +178,15 @@ export default function Launchergestor() {
   const [smtpSaving, setSmtpSaving] = useState(false);
   const [smtpStatus, setSmtpStatus] = useState("");
 
+  const [resendForm, setResendForm] = useState({ from: "", replyTo: "", apiKey: "", apiKeySet: false });
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendSaving, setResendSaving] = useState(false);
+  const [resendStatus, setResendStatus] = useState("");
+  const [testEmailTo, setTestEmailTo] = useState("");
+
+  const [audit, setAudit] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+
   // user menu close on outside click
   useEffect(() => {
     if (!userMenuOpen) return;
@@ -228,7 +238,7 @@ export default function Launchergestor() {
     setLauncherAdminLoading(true);
     try {
       const { data } = await api.get(`/gestor/hotels/${encodeURIComponent(hotelId)}/launcher-admin`);
-      setLauncherAdminForm((p) => ({ ...p, id: data?.id||"", name: data?.name||"", email: data?.username||"", password: "", confirmPassword: "" }));
+      setLauncherAdminForm((p) => ({ ...p, id: data?.id||"", name: data?.name||"", email: data?.username||"", contactEmail: data?.email||"", password: "", confirmPassword: "" }));
     } catch { setLauncherAdminForm({ ...INITIAL_ADMIN_FORM }); }
     finally { setLauncherAdminLoading(false); }
   }, []);
@@ -241,6 +251,27 @@ export default function Launchergestor() {
       setSmtpForm((p) => ({ ...p, ...INITIAL_SMTP_FORM, ...smtp, pass: "" }));
     } catch { setSmtpStatus("No se pudo cargar la configuración SMTP."); }
     finally { setSmtpLoading(false); }
+  }, []);
+
+  const loadResendConfig = useCallback(async () => {
+    setResendLoading(true);
+    try {
+      const { data } = await api.get("/gestor/resend-config");
+      setResendForm({ from: data?.from || "", replyTo: data?.replyTo || "", apiKey: "", apiKeySet: Boolean(data?.apiKeySet) });
+    } catch { setResendStatus("No se pudo cargar la configuración de Resend."); }
+    finally { setResendLoading(false); }
+  }, []);
+
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const { data } = await api.get("/gestor/audit", { params: { limit: 200 } });
+      setAudit(Array.isArray(data) ? data : []);
+    } catch {
+      setAudit([]);
+    } finally {
+      setAuditLoading(false);
+    }
   }, []);
 
   const loadPrintForms = useCallback(async () => {
@@ -276,7 +307,8 @@ export default function Launchergestor() {
 
   // ── effects ────────────────────────────────────────────────────────────────
   useEffect(() => { loadClients().catch(()=>{}); loadHotels().catch(()=>{}); loadPrintForms().catch(()=>{}); }, [loadClients, loadHotels, loadPrintForms]);
-  useEffect(() => { if (panel === "config") loadSaasConfig().catch(()=>{}); }, [panel, loadSaasConfig]);
+  useEffect(() => { if (panel === "config") { loadSaasConfig().catch(()=>{}); loadResendConfig().catch(()=>{}); } }, [panel, loadSaasConfig, loadResendConfig]);
+  useEffect(() => { if (panel === "auditoria") loadAudit().catch(()=>{}); }, [panel, loadAudit]);
 
   const filteredClients = useMemo(() => {
     const t = clientQ.trim().toLowerCase();
@@ -334,15 +366,34 @@ export default function Launchergestor() {
     if (!clientId) return alert("Selecciona el cliente (empresa).");
     const fee = Number(createForm.membershipMonthlyFee || 0);
     if (!Number.isFinite(fee) || fee < 0) return alert("Costo mensual inválido.");
-    const payload = { clientId, name: createForm.name.trim(), membership: createForm.membership, membershipMonthlyFee: fee, currency: normalizeCurrency(createForm.currency||"CRC")||"CRC", phone1: createForm.phone1.trim()||undefined, phone2: createForm.phone2.trim()||undefined, ownerName: createForm.ownerName.trim()||undefined, managerName: createForm.managerName.trim()||undefined, companyId: createForm.companyId.trim()||undefined, managerId: createForm.managerId.trim()||undefined, hotelUserName: createForm.hotelUserName.trim()||undefined, hotelUserEmail: createForm.hotelUserEmail.trim()||undefined, hotelUserPassword: createForm.hotelUserPassword||undefined, adminName: createForm.adminName.trim()||"Administrador", adminUsername: createForm.adminUsername.trim(), adminPassword: createForm.adminPassword };
+    const payload = { clientId, name: createForm.name.trim(), membership: createForm.membership, membershipMonthlyFee: fee, currency: normalizeCurrency(createForm.currency||"CRC")||"CRC", phone1: createForm.phone1.trim()||undefined, phone2: createForm.phone2.trim()||undefined, ownerName: createForm.ownerName.trim()||undefined, managerName: createForm.managerName.trim()||undefined, companyId: createForm.companyId.trim()||undefined, managerId: createForm.managerId.trim()||undefined, hotelUserName: createForm.hotelUserName.trim()||undefined, hotelUserEmail: createForm.hotelUserEmail.trim().toLowerCase(), adminName: createForm.adminName.trim()||"Administrador", adminUsername: createForm.adminUsername.trim(), adminPassword: createForm.adminPassword, adminContactEmail: createForm.adminContactEmail.trim().toLowerCase()||undefined };
     if (!payload.name) return alert("Nombre del hotel requerido");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.hotelUserEmail)) return alert("Correo real del usuario principal requerido (ahí llega la invitación)");
     if (!payload.adminUsername) return alert("Usuario del administrador requerido");
     if (!payload.adminPassword || payload.adminPassword.length < 4) return alert("Contraseña del administrador (min 4)");
-    if (payload.hotelUserPassword && payload.hotelUserPassword.length < 4) return alert("Contraseña del usuario del hotel (min 4)");
     setCreating(true);
     try { const { data } = await api.post("/gestor/hotels", payload); setLastCreatedCredentials(data?.credentials||null); await loadHotels(); if (data?.hotel?.id) setSelectedHotelId(data.hotel.id); setCreateForm({ ...INITIAL_CREATE_FORM }); }
     catch (err) { alert(err?.response?.data?.message || err?.message || "No se pudo crear el hotel"); }
     finally { setCreating(false); }
+  };
+
+  const onResendInvite = async () => {
+    if (!selectedHotelId) return;
+    try {
+      const { data } = await api.post(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}/invite`);
+      const lines = [`Invitación para ${data?.email || "el usuario principal"}`];
+      lines.push(data?.emailSent ? "Correo enviado." : `No se pudo enviar el correo${data?.emailError ? `: ${data.emailError}` : "."}`);
+      if (data?.inviteUrl) {
+        lines.push(`Enlace: ${data.inviteUrl}`);
+        try {
+          await navigator.clipboard?.writeText(data.inviteUrl);
+          lines.push("(Enlace copiado al portapapeles)");
+        } catch { /* clipboard no disponible */ }
+      }
+      alert(lines.join("\n"));
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo reenviar la invitación");
+    }
   };
 
   const onSaveAdmin = async () => {
@@ -361,14 +412,30 @@ export default function Launchergestor() {
   const onSaveLauncherAdmin = async () => {
     if (!selectedHotelId || launcherAdminSaving) return;
     const name = launcherAdminForm.name.trim(), username = launcherAdminForm.email.trim().toLowerCase(), password = launcherAdminForm.password, confirm = launcherAdminForm.confirmPassword;
+    const contactEmail = String(launcherAdminForm.contactEmail || "").trim().toLowerCase();
     if (!name) return alert("Nombre requerido"); if (!username) return alert("Usuario requerido");
+    if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) return alert("Email de contacto inválido");
     if (password && password.length < 4) return alert("Contraseña inválida (min 4)");
     if (password && password !== confirm) return alert("Las contraseñas no coinciden");
-    const payload = { name, username }; if (password) payload.password = password;
+    const payload = { name, username, email: contactEmail }; if (password) payload.password = password;
     setLauncherAdminSaving(true);
-    try { await api.put(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}/launcher-admin`, payload); await loadLauncherAdmin(selectedHotelId); alert("Launcher admin actualizado"); }
+    try { await api.put(`/gestor/hotels/${encodeURIComponent(selectedHotelId)}/launcher-admin`, payload); await loadLauncherAdmin(selectedHotelId); await loadHotels(); alert("Launcher admin actualizado"); }
     catch (err) { alert(err?.response?.data?.message || err?.message || "Error"); }
     finally { setLauncherAdminSaving(false); }
+  };
+
+  const onToggleHotelActive = async (hotel) => {
+    if (!hotel?.id) return;
+    const nextActive = hotel.active === false;
+    const verb = nextActive ? "reactivar" : "suspender";
+    if (!window.confirm(`¿Seguro que querés ${verb} "${hotel.name}"? ${nextActive ? "El hotel podrá volver a operar." : "Sus usuarios no podrán iniciar sesión."}`)) return;
+    try {
+      await api.put(`/gestor/hotels/${encodeURIComponent(hotel.id)}`, { active: nextActive });
+      await loadHotels();
+      alert(nextActive ? "Hotel reactivado" : "Hotel suspendido");
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo cambiar el estado");
+    }
   };
 
   const onDeleteClient = async (clientId) => {
@@ -435,6 +502,26 @@ export default function Launchergestor() {
       setSmtpStatus("Configuración guardada.");
     } catch { setSmtpStatus("No se pudo guardar la configuración SMTP."); }
     finally { setSmtpSaving(false); }
+  };
+
+  const onSaveResend = async () => {
+    setResendSaving(true); setResendStatus("");
+    try {
+      const payload = { from: resendForm.from, replyTo: resendForm.replyTo };
+      if (resendForm.apiKey.trim()) payload.apiKey = resendForm.apiKey.trim();
+      const { data } = await api.put("/gestor/resend-config", payload);
+      setResendForm((p) => ({ ...p, apiKey: "", apiKeySet: Boolean(data?.apiKeySet) }));
+      setResendStatus("Configuración guardada.");
+    } catch (err) { setResendStatus(err?.response?.data?.message || "No se pudo guardar la configuración de Resend."); }
+    finally { setResendSaving(false); }
+  };
+
+  const onTestResend = async () => {
+    setResendStatus("");
+    try {
+      const { data } = await api.post("/gestor/resend-config/test", { to: testEmailTo.trim() });
+      setResendStatus(data?.message || "Correo de prueba enviado.");
+    } catch (err) { setResendStatus(err?.response?.data?.message || "No se pudo enviar el correo de prueba."); }
   };
 
   const importEndpoints = useMemo(() => ({
@@ -538,13 +625,14 @@ export default function Launchergestor() {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-6 space-y-6">
-          {panel === "hoteles"    && <HotelesPanel hotels={filteredHotels} clients={clients} selectedHotelId={selectedHotelId} setSelectedHotelId={setSelectedHotelId} q={q} setQ={setQ} selectedClientId={selectedClientId} setSelectedClientId={setSelectedClientId} selectedClient={selectedClient} loadingHotels={loadingHotels} selectedHotel={selectedHotel} editingHotel={editingHotel} hotelEditForm={hotelEditForm} setHotelEditForm={setHotelEditForm} savingHotel={savingHotel} deletingHotelId={deletingHotelId} onStartEditHotel={onStartEditHotel} onCancelEditHotel={onCancelEditHotel} onSaveEditHotel={onSaveEditHotel} onDeleteHotel={onDeleteHotel} adminForm={adminForm} setAdminForm={setAdminForm} adminLoading={adminLoading} adminSaving={adminSaving} onSaveAdmin={onSaveAdmin} launcherAdminForm={launcherAdminForm} setLauncherAdminForm={setLauncherAdminForm} launcherAdminLoading={launcherAdminLoading} launcherAdminSaving={launcherAdminSaving} onSaveLauncherAdmin={onSaveLauncherAdmin} onRefresh={() => { loadClients().catch(()=>{}); loadHotels().catch(()=>{}); }} />}
+          {panel === "hoteles"    && <HotelesPanel hotels={filteredHotels} clients={clients} selectedHotelId={selectedHotelId} setSelectedHotelId={setSelectedHotelId} q={q} setQ={setQ} selectedClientId={selectedClientId} setSelectedClientId={setSelectedClientId} selectedClient={selectedClient} loadingHotels={loadingHotels} selectedHotel={selectedHotel} editingHotel={editingHotel} hotelEditForm={hotelEditForm} setHotelEditForm={setHotelEditForm} savingHotel={savingHotel} deletingHotelId={deletingHotelId} onStartEditHotel={onStartEditHotel} onCancelEditHotel={onCancelEditHotel} onSaveEditHotel={onSaveEditHotel} onDeleteHotel={onDeleteHotel} adminForm={adminForm} setAdminForm={setAdminForm} adminLoading={adminLoading} adminSaving={adminSaving} onSaveAdmin={onSaveAdmin} onResendInvite={onResendInvite} onToggleHotelActive={onToggleHotelActive} launcherAdminForm={launcherAdminForm} setLauncherAdminForm={setLauncherAdminForm} launcherAdminLoading={launcherAdminLoading} launcherAdminSaving={launcherAdminSaving} onSaveLauncherAdmin={onSaveLauncherAdmin} onRefresh={() => { loadClients().catch(()=>{}); loadHotels().catch(()=>{}); }} />}
           {panel === "clientes"   && <ClientesPanel clients={filteredClients} clientQ={clientQ} setClientQ={setClientQ} selectedClientId={selectedClientId} setSelectedClientId={setSelectedClientId} loadingClients={loadingClients} deletingClientId={deletingClientId} onDeleteClient={onDeleteClient} clientForm={clientForm} setClientForm={setClientForm} creatingClient={creatingClient} onCreateClient={onCreateClient} onRefresh={() => loadClients().catch(()=>{})} />}
           {panel === "crear"      && <CrearPanel clients={clients} createForm={createForm} setCreateForm={setCreateForm} creating={creating} onCreateHotel={onCreateHotel} lastCreatedCredentials={lastCreatedCredentials} setLastCreatedCredentials={setLastCreatedCredentials} />}
           {panel === "cobros"     && <CobrosPanel selectedHotel={selectedHotel} selectedHotelId={selectedHotelId} billing={billing} billingLoading={billingLoading} billingSaving={billingSaving} billingForm={billingForm} setBillingForm={setBillingForm} onAddBilling={onAddBilling} onDeleteBilling={onDeleteBilling} onRefresh={() => loadBilling(selectedHotelId).catch(()=>{})} />}
           {panel === "importar"   && <ImportarPanel selectedHotel={selectedHotel} selectedHotelId={selectedHotelId} importFiles={importFiles} setImportFiles={setImportFiles} importing={importing} lastImport={lastImport} onUpload={onUpload} />}
           {panel === "plantillas" && <PlantillasPanel printForms={printForms} printFormsLoading={printFormsLoading} printFormsSaving={printFormsSaving} globalFormIds={globalFormIds} setGlobalFormIds={setGlobalFormIds} globalModules={globalModules} setGlobalModules={setGlobalModules} selectedPrintFormId={selectedPrintFormId} setSelectedPrintFormId={setSelectedPrintFormId} selectedPrintForm={selectedPrintForm} saveGlobalForms={saveGlobalForms} onRefresh={() => loadPrintForms().catch(()=>{})} />}
-          {panel === "config"     && <ConfigPanel smtpForm={smtpForm} setSmtpForm={setSmtpForm} smtpLoading={smtpLoading} smtpSaving={smtpSaving} smtpStatus={smtpStatus} onSaveSmtp={onSaveSmtp} onRefresh={() => loadSaasConfig().catch(()=>{})} />}
+          {panel === "auditoria"  && <AuditoriaPanel audit={audit} loading={auditLoading} onRefresh={() => loadAudit().catch(()=>{})} />}
+          {panel === "config"     && <ConfigPanel smtpForm={smtpForm} setSmtpForm={setSmtpForm} smtpLoading={smtpLoading} smtpSaving={smtpSaving} smtpStatus={smtpStatus} onSaveSmtp={onSaveSmtp} resendForm={resendForm} setResendForm={setResendForm} resendLoading={resendLoading} resendSaving={resendSaving} resendStatus={resendStatus} testEmailTo={testEmailTo} setTestEmailTo={setTestEmailTo} onSaveResend={onSaveResend} onTestResend={onTestResend} onRefresh={() => { loadSaasConfig().catch(()=>{}); loadResendConfig().catch(()=>{}); }} />}
         </main>
       </div>
     </div>
@@ -552,7 +640,7 @@ export default function Launchergestor() {
 }
 
 // ─── Panel: Hoteles ────────────────────────────────────────────────────────────
-function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q, setQ, selectedClientId, setSelectedClientId, selectedClient, loadingHotels, selectedHotel, editingHotel, hotelEditForm, setHotelEditForm, savingHotel, deletingHotelId, onStartEditHotel, onCancelEditHotel, onSaveEditHotel, onDeleteHotel, adminForm, setAdminForm, adminLoading, adminSaving, onSaveAdmin, launcherAdminForm, setLauncherAdminForm, launcherAdminLoading, launcherAdminSaving, onSaveLauncherAdmin, onRefresh }) {
+function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q, setQ, selectedClientId, setSelectedClientId, selectedClient, loadingHotels, selectedHotel, editingHotel, hotelEditForm, setHotelEditForm, savingHotel, deletingHotelId, onStartEditHotel, onCancelEditHotel, onSaveEditHotel, onDeleteHotel, adminForm, setAdminForm, adminLoading, adminSaving, onSaveAdmin, onResendInvite, onToggleHotelActive, launcherAdminForm, setLauncherAdminForm, launcherAdminLoading, launcherAdminSaving, onSaveLauncherAdmin, onRefresh }) {
   return (
     <div className="grid grid-cols-1 xl:grid-cols-[320px_1fr] gap-6">
       {/* Lista */}
@@ -575,6 +663,17 @@ function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q,
                   <div className="text-sm font-medium text-white truncate">{h.name}</div>
                   <div className="text-xs text-slate-500 flex gap-2"><span>{MEMBERSHIP_LABELS[h.membership]||h.membership}</span><span>{fmtHotelNumber(h.number)}</span></div>
                   <div className="text-xs text-slate-600 truncate">{h.saasClientName||"-"}</div>
+                  <div className="text-xs truncate flex items-center gap-1.5 mt-0.5">
+                    {h.active === false ? (
+                      <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 text-[10px] font-semibold">Suspendido</span>
+                    ) : h.invitePending ? (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-semibold">Invitación pendiente</span>
+                    ) : h.principalEmail ? (
+                      <span className="text-emerald-400/80 truncate">{h.principalEmail}</span>
+                    ) : (
+                      <span className="text-slate-600">Sin usuario principal</span>
+                    )}
+                  </div>
                 </button>
                 <button onClick={() => onDeleteHotel(h.id)} disabled={Boolean(deletingHotelId)} className="text-red-400 hover:text-red-300 disabled:opacity-40 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
@@ -593,10 +692,25 @@ function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q,
             <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xl font-semibold text-white">{selectedHotel.name}</div>
+                  <div className="text-xl font-semibold text-white flex items-center gap-2">
+                    {selectedHotel.name}
+                    {selectedHotel.active === false && (
+                      <span className="px-2 py-0.5 rounded-full bg-red-500/15 text-red-300 text-[11px] font-semibold">Suspendido</span>
+                    )}
+                  </div>
                   <div className="text-sm text-slate-400">{fmtHotelNumber(selectedHotel.number)} · {selectedHotel.saasClientName||"Sin empresa"}</div>
                 </div>
                 <div className="flex gap-2">
+                  <GBtn
+                    variant={selectedHotel.active === false ? "primary" : "danger"}
+                    onClick={() => onToggleHotelActive(selectedHotel)}
+                  >
+                    {selectedHotel.active === false ? (
+                      <><CheckCircle2 className="w-3.5 h-3.5 mr-1.5 inline" />Reactivar</>
+                    ) : (
+                      <><Ban className="w-3.5 h-3.5 mr-1.5 inline" />Suspender</>
+                    )}
+                  </GBtn>
                   {!editingHotel && <GBtn variant="outline" onClick={onStartEditHotel}><Pencil className="w-3.5 h-3.5 mr-1.5 inline" />Editar</GBtn>}
                 </div>
               </div>
@@ -662,7 +776,10 @@ function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q,
                       <Field label="Nueva contraseña"><GInput type="password" value={adminForm.password} onChange={(e) => setAdminForm((p) => ({ ...p, password: e.target.value }))} /></Field>
                       <Field label="Confirmar contraseña"><GInput type="password" value={adminForm.confirmPassword} onChange={(e) => setAdminForm((p) => ({ ...p, confirmPassword: e.target.value }))} /></Field>
                     </div>
-                    <div className="flex justify-end"><GBtn onClick={onSaveAdmin} disabled={adminSaving}>{adminSaving ? "Guardando..." : "Guardar administrador"}</GBtn></div>
+                    <div className="flex justify-end gap-2">
+                      <GBtn variant="outline" onClick={onResendInvite}>Reenviar invitación</GBtn>
+                      <GBtn onClick={onSaveAdmin} disabled={adminSaving}>{adminSaving ? "Guardando..." : "Guardar administrador"}</GBtn>
+                    </div>
                   </div>
                 )}
               </div>
@@ -677,6 +794,7 @@ function HotelesPanel({ hotels, clients, selectedHotelId, setSelectedHotelId, q,
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <Field label="Nombre"><GInput value={launcherAdminForm.name} onChange={(e) => setLauncherAdminForm((p) => ({ ...p, name: e.target.value }))} /></Field>
                       <Field label="Usuario"><GInput value={launcherAdminForm.email} onChange={(e) => setLauncherAdminForm((p) => ({ ...p, email: e.target.value }))} /></Field>
+                      <Field label="Email de contacto"><GInput type="email" placeholder="Opcional" value={launcherAdminForm.contactEmail || ""} onChange={(e) => setLauncherAdminForm((p) => ({ ...p, contactEmail: e.target.value }))} /></Field>
                       <Field label="Nueva contraseña"><GInput type="password" value={launcherAdminForm.password} onChange={(e) => setLauncherAdminForm((p) => ({ ...p, password: e.target.value }))} /></Field>
                       <Field label="Confirmar contraseña"><GInput type="password" value={launcherAdminForm.confirmPassword} onChange={(e) => setLauncherAdminForm((p) => ({ ...p, confirmPassword: e.target.value }))} /></Field>
                     </div>
@@ -783,28 +901,44 @@ function CrearPanel({ clients, createForm, setCreateForm, creating, onCreateHote
 
         <div className="border-t border-white/10 pt-4">
           <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold mb-3">Usuario del hotel (login principal)</div>
-          <div className="text-xs text-slate-500 mb-3">Si dejas el email o la contraseña vacíos, se generarán automáticamente.</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="text-xs text-slate-500 mb-3">Le enviaremos una invitación por correo para que cree su propia contraseña.</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Field label="Nombre visible"><GInput name="hotelUserName" autoComplete="off" placeholder="Usuario principal" value={createForm.hotelUserName} onChange={(e) => set("hotelUserName", e.target.value)} /></Field>
-            <Field label="Email"><GInput name="hotelUserEmail" type="email" autoComplete="off" placeholder="Opcional" value={createForm.hotelUserEmail} onChange={(e) => set("hotelUserEmail", e.target.value)} /></Field>
-            <Field label="Contraseña"><GInput name="hotelUserPassword" type="password" autoComplete="new-password" placeholder="Opcional" value={createForm.hotelUserPassword} onChange={(e) => set("hotelUserPassword", e.target.value)} /></Field>
+            <Field label="Email (obligatorio)"><GInput name="hotelUserEmail" type="email" autoComplete="off" placeholder="dueno@hotel.com" value={createForm.hotelUserEmail} onChange={(e) => set("hotelUserEmail", e.target.value)} /></Field>
           </div>
         </div>
 
         <div className="border-t border-white/10 pt-4">
           <div className="text-xs uppercase tracking-wide text-slate-400 font-semibold mb-3">Administrador del launcher</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Field label="Nombre visible"><GInput name="hotelAdminName" autoComplete="off" placeholder="Nombre del administrador" value={createForm.adminName} onChange={(e) => set("adminName", e.target.value)} /></Field>
             <Field label="Usuario"><GInput name="hotelAdminUsername" autoComplete="off" placeholder="Usuario del administrador" value={createForm.adminUsername} onChange={(e) => set("adminUsername", e.target.value)} /></Field>
             <Field label="Contraseña"><GInput name="hotelAdminPassword" type="password" autoComplete="new-password" placeholder="min 4 caracteres" value={createForm.adminPassword} onChange={(e) => set("adminPassword", e.target.value)} /></Field>
+            <Field label="Email de contacto"><GInput name="hotelAdminContactEmail" type="email" autoComplete="off" placeholder="Opcional" value={createForm.adminContactEmail || ""} onChange={(e) => set("adminContactEmail", e.target.value)} /></Field>
           </div>
         </div>
 
         {lastCreatedCredentials && (
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-1">
-            <div className="text-sm font-semibold text-emerald-400">Credenciales generadas</div>
-            <div className="text-xs text-slate-300">Usuario del hotel: <span className="font-mono text-white">{lastCreatedCredentials?.hotelUser?.email||"-"}</span></div>
-            <div className="text-xs text-slate-300">Contraseña: <span className="font-mono text-white">{lastCreatedCredentials?.hotelUser?.password||"-"}</span></div>
+            <div className="text-sm font-semibold text-emerald-400">Hotel creado</div>
+            <div className="text-xs text-slate-300">Invitación enviada a: <span className="font-mono text-white">{lastCreatedCredentials?.hotelUser?.email||"-"}</span></div>
+            {lastCreatedCredentials?.hotelUser?.emailSent ? (
+              <div className="text-xs text-emerald-300">✓ Correo de invitación enviado. El usuario define su contraseña desde el enlace.</div>
+            ) : (
+              <div className="text-xs text-amber-300">⚠ No se pudo enviar el correo{lastCreatedCredentials?.hotelUser?.emailError ? `: ${lastCreatedCredentials.hotelUser.emailError}` : "."} Copiá el enlace y mandalo manualmente.</div>
+            )}
+            {lastCreatedCredentials?.hotelUser?.inviteUrl && (
+              <div className="text-xs text-slate-300 break-all">
+                Enlace: <span className="font-mono text-white">{lastCreatedCredentials.hotelUser.inviteUrl}</span>
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard?.writeText(lastCreatedCredentials.hotelUser.inviteUrl); }}
+                  className="ml-2 text-emerald-300 hover:text-emerald-200 underline"
+                >
+                  Copiar
+                </button>
+              </div>
+            )}
             <div className="text-xs text-slate-300 mt-1">Launcher admin: <span className="font-mono text-white">{lastCreatedCredentials?.launcherAdmin?.username||"-"}</span></div>
             <div className="text-xs text-slate-300">Contraseña: <span className="font-mono text-white">{lastCreatedCredentials?.launcherAdmin?.password||"-"}</span></div>
             <button onClick={() => setLastCreatedCredentials(null)} className="text-xs text-slate-500 hover:text-slate-300 mt-1 transition-colors">Cerrar</button>
@@ -914,59 +1048,211 @@ function ImportarPanel({ selectedHotel, selectedHotelId, importFiles, setImportF
 }
 
 // ─── Panel: Plantillas ────────────────────────────────────────────────────────
-function PlantillasPanel({ printForms, printFormsLoading, printFormsSaving, globalFormIds, setGlobalFormIds, globalModules, setGlobalModules, selectedPrintFormId, setSelectedPrintFormId, selectedPrintForm, saveGlobalForms, onRefresh }) {
+const PLANTILLA_TABS = [
+  { id: "restaurant",  label: "Restaurante",         moduleKey: "restaurant" },
+  { id: "frontdesk",   label: "Facturación Hotelera", moduleKey: "frontdesk"  },
+  { id: "reporteria",  label: "Reportería",           moduleKey: "accounting" },
+];
+
+const DOC_TYPE_LABELS = {
+  COMANDA:  "Comanda",
+  TE:       "Ticket (TE)",
+  FE:       "Factura electrónica (FE)",
+  CLOSES:   "Cierre de caja",
+  DOCUMENT: "Subfactura / Documento",
+  REPORT:   "Reporte",
+};
+
+const PAPER_COLORS = {
+  "80mm": "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
+  "58mm": "bg-sky-500/15 text-sky-300 border-sky-500/20",
+  "A4":   "bg-amber-500/15 text-amber-300 border-amber-500/20",
+};
+
+function TicketPreview({ form }) {
+  if (!form) return <div className="flex items-center justify-center h-full text-slate-600 text-sm">Selecciona una plantilla</div>;
+  const lines = buildPrintPreview(form).split("\n");
+  const isWide = form.paperType === "A4";
   return (
-    <div className="space-y-4">
+    <div className="flex justify-center items-start py-4 overflow-auto h-full">
+      <div
+        className={`rounded shadow-2xl border border-slate-300/20 bg-white ${isWide ? "w-full max-w-lg" : "w-64"}`}
+        style={{ fontFamily: "'Courier New', Courier, monospace" }}
+      >
+        {/* Ticket top tear */}
+        <div className="h-2 w-full bg-gradient-to-b from-slate-200 to-white rounded-t" style={{ backgroundImage: "repeating-linear-gradient(90deg,transparent,transparent 6px,#e2e8f0 6px,#e2e8f0 7px)" }} />
+        <div className={`px-4 py-3 space-y-0.5 ${isWide ? "text-sm" : "text-xs"}`}>
+          {lines.map((line, i) => {
+            const isSeparator = /^[-=]{3,}$/.test(line.trim());
+            const isTitle = i === 0;
+            return (
+              <div
+                key={i}
+                className={`leading-5 whitespace-pre text-center ${
+                  isTitle ? "font-bold text-slate-900 text-sm tracking-wide" :
+                  isSeparator ? "text-slate-300 select-none" :
+                  "text-slate-700"
+                }`}
+              >
+                {isSeparator ? "· · · · · · · · · · · · · · · · · ·" : line || "\u00a0"}
+              </div>
+            );
+          })}
+        </div>
+        {/* Ticket bottom tear */}
+        <div className="h-2 w-full bg-gradient-to-t from-slate-200 to-white rounded-b" style={{ backgroundImage: "repeating-linear-gradient(90deg,transparent,transparent 6px,#e2e8f0 6px,#e2e8f0 7px)" }} />
+      </div>
+    </div>
+  );
+}
+
+function PlantillasPanel({ printForms, printFormsLoading, printFormsSaving, globalFormIds, setGlobalFormIds, globalModules, setGlobalModules, selectedPrintFormId, setSelectedPrintFormId, selectedPrintForm, saveGlobalForms, onRefresh }) {
+  const [activeTab, setActiveTab] = useState("restaurant");
+
+  const tabForms = useMemo(() => {
+    const tab = PLANTILLA_TABS.find((t) => t.id === activeTab);
+    if (!tab) return [];
+    if (tab.id === "reporteria") return printForms.filter((f) => f.module === "accounting" || f.module === "einvoicing");
+    return printForms.filter((f) => f.module === tab.moduleKey);
+  }, [printForms, activeTab]);
+
+  // Group by docType
+  const grouped = useMemo(() => {
+    const map = {};
+    for (const f of tabForms) {
+      const key = f.docType || "OTHER";
+      if (!map[key]) map[key] = [];
+      map[key].push(f);
+    }
+    return map;
+  }, [tabForms]);
+
+  const activeModuleKey = PLANTILLA_TABS.find((t) => t.id === activeTab)?.moduleKey || activeTab;
+  const moduleEnabled = Boolean(globalModules?.[activeModuleKey]);
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-semibold text-white">Plantillas de impresión</div>
-          <div className="text-xs text-slate-500 mt-0.5">Vista previa y activación global de formatos para todos los módulos.</div>
+          <div className="text-xs text-slate-500 mt-0.5">Activa y configura los formatos de impresión por módulo.</div>
         </div>
         <button onClick={onRefresh} disabled={printFormsLoading} className="text-slate-400 hover:text-white transition-colors disabled:opacity-40"><RefreshCcw className="w-4 h-4" /></button>
       </div>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-        <SectionTitle>Módulos activos</SectionTitle>
-        <div className="flex flex-wrap gap-3 mt-2">
-          {PRINT_FORM_MODULES.map((mod) => (
-            <label key={mod.id} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-              <input type="checkbox" className="accent-violet-500" checked={Boolean(globalModules?.[mod.id])} disabled={printFormsSaving} onChange={(e) => { const next = { ...globalModules, [mod.id]: e.target.checked }; setGlobalModules(next); saveGlobalForms(globalFormIds, next); }} />
-              {mod.label}
-            </label>
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 bg-white/5 border border-white/10 rounded-xl p-1">
+        {PLANTILLA_TABS.map((tab) => {
+          const modKey = tab.moduleKey;
+          const enabled = Boolean(globalModules?.[modKey]);
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                activeTab === tab.id
+                  ? "bg-violet-600/30 text-violet-300 shadow shadow-violet-900/30"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {tab.label}
+              <span className={`text-xs px-1.5 py-0.5 rounded-full border font-semibold leading-none ${enabled ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/20" : "bg-white/5 text-slate-500 border-white/10"}`}>
+                {enabled ? "ON" : "OFF"}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {printFormsLoading ? (
-        <div className="text-sm text-slate-500">Cargando plantillas...</div>
+        <div className="text-sm text-slate-500 py-4">Cargando plantillas...</div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-3 space-y-2">
-            {printForms.length === 0 ? (
-              <div className="text-xs text-slate-500">No hay plantillas disponibles.</div>
-            ) : printForms.map((f) => {
-              const id = String(f.id||""), isSelected = id === selectedPrintFormId, isGlobal = globalFormIds.includes(id);
-              return (
-                <div key={id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors ${isSelected ? "border-violet-500/40 bg-violet-500/10" : "border-white/5 bg-white/3 hover:bg-white/5"}`}>
-                  <button className="flex-1 text-left" onClick={() => setSelectedPrintFormId(id)}>
-                    <div className="text-sm font-medium text-white">{f.name||id}</div>
-                    <div className="text-xs text-slate-500">{String(f.module||"").toUpperCase()} · {String(f.docType||"").toUpperCase()} · {f.paperType}</div>
-                  </button>
-                  <label className="text-xs text-slate-400 flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" className="accent-violet-500" checked={isGlobal} disabled={printFormsSaving} onChange={() => { const nextIds = isGlobal ? globalFormIds.filter((x) => x !== id) : [...globalFormIds, id]; setGlobalFormIds(nextIds); saveGlobalForms(nextIds, globalModules); }} />
-                    Global
-                  </label>
-                </div>
-              );
-            })}
-          </div>
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <div className="text-xs text-slate-400 mb-3">Vista previa</div>
-            {selectedPrintForm ? (
-              <pre className="text-xs leading-5 font-mono whitespace-pre-wrap text-slate-300">{buildPrintPreview(selectedPrintForm)}</pre>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-5">
+          {/* Left: module toggle + form list grouped by docType */}
+          <div className="space-y-4">
+            {/* Module active toggle */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-white">Módulo {PLANTILLA_TABS.find((t) => t.id === activeTab)?.label}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{moduleEnabled ? "Activo — usa plantillas globales para este módulo." : "Inactivo — usa plantillas locales de cada hotel."}</div>
+              </div>
+              <button
+                disabled={printFormsSaving}
+                onClick={() => { const next = { ...globalModules, [activeModuleKey]: !moduleEnabled }; setGlobalModules(next); saveGlobalForms(globalFormIds, next); }}
+                className={`relative w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${moduleEnabled ? "bg-violet-600" : "bg-white/10"}`}
+              >
+                <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${moduleEnabled ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            </div>
+
+            {/* Forms grouped by docType */}
+            {Object.keys(grouped).length === 0 ? (
+              <div className="text-sm text-slate-500 bg-white/5 border border-white/10 rounded-2xl p-6">
+                {activeTab === "reporteria" ? "No hay plantillas de reportería configuradas aún." : "No hay plantillas para este módulo."}
+              </div>
             ) : (
-              <div className="text-xs text-slate-500">Selecciona una plantilla.</div>
+              Object.entries(grouped).map(([docType, forms]) => (
+                <div key={docType} className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+                  <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-violet-400" />
+                    <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">{DOC_TYPE_LABELS[docType] || docType}</span>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {forms.map((f) => {
+                      const id = String(f.id || "");
+                      const isSelected = id === selectedPrintFormId;
+                      const isGlobal = globalFormIds.includes(id);
+                      const paperCls = PAPER_COLORS[f.paperType] || "bg-white/10 text-slate-400 border-white/10";
+                      return (
+                        <div
+                          key={id}
+                          className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${isSelected ? "bg-violet-500/10" : "hover:bg-white/5"}`}
+                          onClick={() => setSelectedPrintFormId(id)}
+                        >
+                          {/* Active indicator */}
+                          <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSelected ? "bg-violet-400" : "bg-white/10"}`} />
+                          <div className="flex-1 min-w-0">
+                            <div className={`text-sm font-medium truncate ${isSelected ? "text-white" : "text-slate-300"}`}>{f.name || id}</div>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium shrink-0 ${paperCls}`}>{f.paperType}</span>
+                          <label className="flex items-center gap-1.5 shrink-0 cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="accent-violet-500"
+                              checked={isGlobal}
+                              disabled={printFormsSaving}
+                              onChange={() => {
+                                const nextIds = isGlobal ? globalFormIds.filter((x) => x !== id) : [...globalFormIds, id];
+                                setGlobalFormIds(nextIds);
+                                saveGlobalForms(nextIds, globalModules);
+                              }}
+                            />
+                            <span className="text-xs text-slate-400">Global</span>
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
+          </div>
+
+          {/* Right: ticket preview */}
+          <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden flex flex-col" style={{ minHeight: 360 }}>
+            <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
+              <Printer className="w-3.5 h-3.5 text-violet-400" />
+              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Vista previa</span>
+              {selectedPrintForm && (
+                <span className={`ml-auto text-xs px-2 py-0.5 rounded-full border font-medium ${PAPER_COLORS[selectedPrintForm.paperType] || "bg-white/10 text-slate-400 border-white/10"}`}>
+                  {selectedPrintForm.paperType}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-auto" style={{ background: "repeating-linear-gradient(45deg,#1e1e2e,#1e1e2e 10px,#1a1a2a 10px,#1a1a2a 20px)" }}>
+              <TicketPreview form={selectedPrintForm} />
+            </div>
           </div>
         </div>
       )}
@@ -974,9 +1260,89 @@ function PlantillasPanel({ printForms, printFormsLoading, printFormsSaving, glob
   );
 }
 
+// ─── Panel: Auditoría ──────────────────────────────────────────────────────────
+const AUDIT_LABELS = {
+  CLIENT_CREATE: "Cliente creado",
+  CLIENT_UPDATE: "Cliente actualizado",
+  CLIENT_DELETE: "Cliente eliminado",
+  HOTEL_CREATE: "Hotel creado",
+  HOTEL_UPDATE: "Hotel actualizado",
+  HOTEL_DELETE: "Hotel eliminado",
+  HOTEL_SUSPEND: "Hotel suspendido",
+  HOTEL_ACTIVATE: "Hotel reactivado",
+  HOTEL_ADMIN_UPDATE: "Admin principal actualizado",
+  HOTEL_LAUNCHER_ADMIN_UPDATE: "Admin del launcher actualizado",
+  HOTEL_INVITE_RESEND: "Invitación reenviada",
+};
+
+function AuditoriaPanel({ audit, loading, onRefresh }) {
+  const summarize = (detail) => {
+    if (!detail || typeof detail !== "object") return "";
+    const parts = [];
+    if (detail.name) parts.push(detail.name);
+    if (detail.email) parts.push(detail.email);
+    if (detail.username) parts.push(`@${detail.username}`);
+    if (detail.previousMembership && detail.membership) parts.push(`${detail.previousMembership} → ${detail.membership}`);
+    if (Array.isArray(detail.fields) && detail.fields.length) parts.push(`campos: ${detail.fields.join(", ")}`);
+    if (detail.emailSent === false) parts.push("correo no enviado");
+    if (!parts.length) {
+      const json = JSON.stringify(detail);
+      return json.length > 80 ? `${json.slice(0, 77)}…` : json;
+    }
+    return parts.join(" · ");
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-base font-semibold text-white">Auditoría del gestor</div>
+          <div className="text-xs text-slate-500 mt-0.5">Últimas acciones sobre clientes y hoteles.</div>
+        </div>
+        <button onClick={onRefresh} disabled={loading} className="text-slate-400 hover:text-white transition-colors disabled:opacity-40">
+          <RefreshCcw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[720px]">
+            <thead>
+              <tr className="border-b border-white/10 text-slate-400 text-xs uppercase tracking-wide">
+                <th className="text-left px-4 py-3">Fecha</th>
+                <th className="text-left px-4 py-3">Acción</th>
+                <th className="text-left px-4 py-3">Detalle</th>
+                <th className="text-left px-4 py-3">Actor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={4} className="text-center py-8 text-slate-500">Cargando...</td></tr>}
+              {!loading && audit.length === 0 && (
+                <tr><td colSpan={4} className="text-center py-8 text-slate-500">Sin acciones registradas todavía.</td></tr>
+              )}
+              {!loading && audit.map((row) => (
+                <tr key={row.id} className="border-b border-white/5 hover:bg-white/5">
+                  <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">{fmtDate(row.createdAt)}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="text-white">{AUDIT_LABELS[row.action] || row.action}</span>
+                    <span className="ml-2 text-[10px] text-slate-500">{row.entity}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-slate-300 max-w-[420px] truncate">{summarize(row.detail)}</td>
+                  <td className="px-4 py-2.5 text-xs text-slate-500 truncate">{row.actor || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Panel: Configuración ──────────────────────────────────────────────────────
-function ConfigPanel({ smtpForm, setSmtpForm, smtpLoading, smtpSaving, smtpStatus, onSaveSmtp, onRefresh }) {
+function ConfigPanel({ smtpForm, setSmtpForm, smtpLoading, smtpSaving, smtpStatus, onSaveSmtp, resendForm, setResendForm, resendLoading, resendSaving, resendStatus, testEmailTo, setTestEmailTo, onSaveResend, onTestResend, onRefresh }) {
   const set = (k, v) => setSmtpForm((p) => ({ ...p, [k]: v }));
+  const setResend = (k, v) => setResendForm((p) => ({ ...p, [k]: v }));
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -1012,6 +1378,52 @@ function ConfigPanel({ smtpForm, setSmtpForm, smtpLoading, smtpSaving, smtpStatu
           </div>
         </div>
       )}
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
+        <div>
+          <div className="text-base font-semibold text-white">Correo del gestor (Resend)</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            Se usa para las invitaciones de acceso y los avisos de cobro. Si no hay clave configurada, la invitación igual se genera y podés copiar el enlace para enviarlo a mano.
+          </div>
+        </div>
+
+        {resendLoading ? (
+          <div className="text-sm text-slate-500">Cargando...</div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="API key de Resend">
+                <GInput
+                  type="password"
+                  autoComplete="off"
+                  placeholder={resendForm.apiKeySet ? "•••••••• (guardada)" : "re_..."}
+                  value={resendForm.apiKey}
+                  onChange={(e) => setResend("apiKey", e.target.value)}
+                />
+              </Field>
+              <Field label="Remitente (from)">
+                <GInput placeholder="Kazehana Cloud <noreply@tudominio.com>" value={resendForm.from} onChange={(e) => setResend("from", e.target.value)} />
+              </Field>
+              <Field label="Reply-To">
+                <GInput placeholder="Opcional" value={resendForm.replyTo} onChange={(e) => setResend("replyTo", e.target.value)} />
+              </Field>
+              <Field label="Enviar prueba a">
+                <div className="flex gap-2">
+                  <GInput type="email" placeholder="tu@correo.com" value={testEmailTo} onChange={(e) => setTestEmailTo(e.target.value)} />
+                  <GBtn variant="outline" onClick={onTestResend} disabled={!testEmailTo.trim()}>Probar</GBtn>
+                </div>
+              </Field>
+            </div>
+            <div className="flex items-center gap-3 pt-1">
+              <GBtn onClick={onSaveResend} disabled={resendSaving}>{resendSaving ? "Guardando..." : "Guardar correo del gestor"}</GBtn>
+              {resendForm.apiKeySet && !resendStatus && <span className="text-xs text-emerald-400">API key guardada</span>}
+              {resendStatus && (
+                <span className={`text-xs ${/pudo|inválid|error/i.test(resendStatus) ? "text-red-400" : "text-emerald-400"}`}>{resendStatus}</span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

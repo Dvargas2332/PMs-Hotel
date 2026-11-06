@@ -182,6 +182,18 @@ export default function RestaurantInventory() {
   const [previewInvoice, setPreviewInvoice] = useState(null);
   const [controlMode, setControlMode] = useState(false);
   const [baseCurrency, setBaseCurrency] = useState("CRC");
+  const [adjustTarget, setAdjustTarget] = useState(null);
+  const [adjustForm, setAdjustForm] = useState({ stock: "", min: "", cost: "", supplierName: "" });
+  // Merma / quema: salida de inventario que no pasa por una venta.
+  const [wasteTarget, setWasteTarget] = useState(null);
+  const [wasteForm, setWasteForm] = useState({ qty: "", reason: "MERMA", note: "" });
+  const [wasteBusy, setWasteBusy] = useState(false);
+  const [wasteError, setWasteError] = useState("");
+  const [movementsOpen, setMovementsOpen] = useState(false);
+  const [movements, setMovements] = useState([]);
+  const [movementsLoading, setMovementsLoading] = useState(false);
+  const [adjustBusy, setAdjustBusy] = useState(false);
+  const [adjustError, setAdjustError] = useState("");
 
   const [invoiceForm, setInvoiceForm] = useState({
     supplierName: "",
@@ -380,6 +392,110 @@ export default function RestaurantInventory() {
 
   const toggleInvoiceSelection = (id) => {
     setSelectedInvoiceIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const openAdjustModal = (item) => {
+    setAdjustTarget(item);
+    setAdjustForm({
+      stock: String(item?.stock ?? 0),
+      min: String(item?.minimo ?? item?.min ?? 0),
+      cost: String(item?.cost ?? item?.costo ?? 0),
+      supplierName: String(item?.supplierName || item?.proveedor || ""),
+    });
+    setAdjustError("");
+  };
+
+  const closeAdjustModal = () => {
+    if (adjustBusy) return;
+    setAdjustTarget(null);
+    setAdjustError("");
+  };
+
+  const saveAdjust = async () => {
+    if (adjustBusy || !adjustTarget?.id) return;
+    setAdjustBusy(true);
+    setAdjustError("");
+    try {
+      const { data } = await api.patch(`/restaurant/inventory/${adjustTarget.id}`, {
+        stock: adjustForm.stock,
+        min: adjustForm.min,
+        cost: adjustForm.cost,
+        supplierName: adjustForm.supplierName,
+      });
+      const item = data?.item;
+      if (item) {
+        setInventory((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...item } : i)));
+      }
+      setAdjustTarget(null);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Inventario", desc: "Inventario ajustado." },
+        })
+      );
+    } catch (err) {
+      setAdjustError(err?.response?.data?.message || err?.message || "No se pudo ajustar el inventario.");
+    } finally {
+      setAdjustBusy(false);
+    }
+  };
+
+  const openWasteModal = (item) => {
+    setWasteTarget(item);
+    setWasteForm({ qty: "", reason: "MERMA", note: "" });
+    setWasteError("");
+  };
+
+  const closeWasteModal = () => {
+    if (wasteBusy) return;
+    setWasteTarget(null);
+    setWasteError("");
+  };
+
+  const confirmWaste = async () => {
+    if (wasteBusy || !wasteTarget?.id) return;
+    const qty = Number(wasteForm.qty);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setWasteError("La cantidad debe ser mayor que cero.");
+      return;
+    }
+    setWasteBusy(true);
+    setWasteError("");
+    try {
+      const { data } = await api.post("/restaurant/inventory/waste", {
+        itemId: wasteTarget.id,
+        qty,
+        reason: wasteForm.reason,
+        note: wasteForm.note,
+      });
+      if (data?.item) {
+        setInventory((prev) => prev.map((i) => (i.id === data.item.id ? { ...i, ...data.item } : i)));
+      } else {
+        await reloadAll();
+      }
+      setWasteTarget(null);
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Inventario", desc: `Merma registrada (${wasteForm.reason}).` },
+        })
+      );
+    } catch (err) {
+      setWasteError(err?.response?.data?.message || err?.message || "No se pudo registrar la merma.");
+    } finally {
+      setWasteBusy(false);
+    }
+  };
+
+  const openMovements = async () => {
+    setMovementsOpen(true);
+    setMovementsLoading(true);
+    try {
+      const { data } = await api.get("/restaurant/inventory/movements", { params: { limit: 100 } });
+      setMovements(Array.isArray(data) ? data : []);
+    } catch {
+      setMovements([]);
+    } finally {
+      setMovementsLoading(false);
+    }
   };
 
   const clearInvoiceSelection = () => setSelectedInvoiceIds([]);
@@ -600,15 +716,15 @@ export default function RestaurantInventory() {
           <div style="min-width:280px;max-width:360px;border:1px solid #ddd;border-radius:10px;padding:10px 12px;background:#fafafa;">
             <div style="display:flex;justify-content:space-between;gap:16px;font-size:13px;color:#555;">
               <span>${t("mgmt.restaurant.inventory.labels.discount")}</span>
-              <strong>${formatAmountWithCurrency(discount, currency)}</strong>
+              <strong>${escapeHtml(formatAmountWithCurrency(discount, currency))}</strong>
             </div>
             <div style="display:flex;justify-content:space-between;gap:16px;margin-top:6px;font-size:13px;color:#555;">
               <span>${t("mgmt.restaurant.inventory.labels.tax")}</span>
-              <strong>${formatAmountWithCurrency(iva, currency)}</strong>
+              <strong>${escapeHtml(formatAmountWithCurrency(iva, currency))}</strong>
             </div>
             <div style="display:flex;justify-content:space-between;gap:16px;margin-top:8px;padding-top:8px;border-top:1px solid #ddd;font-size:17px;font-weight:700;color:#111;">
               <span>${t("mgmt.restaurant.inventory.labels.total")}</span>
-              <span>${formatAmountWithCurrency(total, currency)}</span>
+              <span>${escapeHtml(formatAmountWithCurrency(total, currency))}</span>
             </div>
           </div>
         </div>
@@ -664,30 +780,26 @@ export default function RestaurantInventory() {
           <div className="space-y-3">
             <div>
               <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.items.title")}</div>
-              <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.items.subtitle")}</div>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.items.subtitle")}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => setControlMode((v) => !v)}
-                className={`px-4 py-2 rounded-lg border text-sm font-semibold ${
-                  controlMode ? "bg-indigo-600 text-white border-indigo-600" : "bg-white/5 text-slate-300 hover:bg-white/10"
-                }`}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={controlMode
+                  ? { background: "#4f46e5", color: "#fff", border: "1px solid #4f46e5" }
+                  : { background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
               >
                 {t("mgmt.restaurant.inventory.items.control")}
               </button>
               <button
                 type="button"
-                onClick={() =>
-                  window.dispatchEvent(
-                    new CustomEvent("pms:push-alert", {
-                      detail: { title: t("mgmt.restaurant.inventory.alerts.title"), desc: t("mgmt.restaurant.inventory.items.adjustmentsSoon") },
-                    })
-                  )
-                }
-                className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-slate-200 text-sm font-semibold hover:bg-white/10"
+                onClick={openMovements}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
               >
-                {t("mgmt.restaurant.inventory.items.adjustments")}
+                Movimientos
               </button>
               <button
                 type="button"
@@ -698,20 +810,21 @@ export default function RestaurantInventory() {
                     })
                   )
                 }
-                className="px-4 py-2 rounded-lg border border-white/10 bg-white/5 text-slate-200 text-sm font-semibold hover:bg-white/10"
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
               >
                 {t("mgmt.restaurant.inventory.items.count")}
               </button>
             </div>
             {loading ? (
-              <div className="text-sm text-slate-400">{t("common.loading")}</div>
+              <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</div>
             ) : inventory.length === 0 ? (
-              <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.items.empty")}</div>
+              <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.items.empty")}</div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--card-border)" }}>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-white/5 text-slate-400">
+                    <thead style={{ background: "var(--input-bg, var(--card-bg))", color: "var(--color-text-muted)" }}>
                       <tr>
                         {controlMode && <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.control")}</th>}
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
@@ -728,9 +841,10 @@ export default function RestaurantInventory() {
                       {inventory.map((i, idx) => (
                         <tr
                           key={i.id}
-                          className={`${idx % 2 === 0 ? "bg-transparent" : "bg-white/3"} ${
-                            i.inventoryControlled === false ? "text-slate-400" : ""
-                          }`}
+                          style={{
+                            ...(idx % 2 !== 0 ? { background: "var(--input-bg, rgba(0,0,0,0.03))" } : {}),
+                            ...(i.inventoryControlled === false ? { color: "var(--color-text-muted)" } : {}),
+                          }}
                         >
                           {controlMode && (
                             <td className="px-3 py-2">
@@ -744,7 +858,25 @@ export default function RestaurantInventory() {
                           )}
                           <td className="px-3 py-2">{i.sku || "-"}</td>
                           <td className="px-3 py-2">{i.desc || i.descripcion || "-"}</td>
-                          <td className="px-3 py-2">{i.inventoryControlled === false ? 0 : i.stock || 0}</td>
+                          <td className="px-3 py-2">
+                            <span>{i.inventoryControlled === false ? 0 : i.stock || 0}</span>
+                            <button
+                              type="button"
+                              className="ml-2 text-xs underline opacity-70 hover:opacity-100"
+                              onClick={() => openAdjustModal(i)}
+                            >
+                              Ajustar
+                            </button>
+                            {i.inventoryControlled !== false && (
+                              <button
+                                type="button"
+                                className="ml-2 text-xs underline text-red-600 opacity-80 hover:opacity-100"
+                                onClick={() => openWasteModal(i)}
+                              >
+                                Merma
+                              </button>
+                            )}
+                          </td>
                           <td className="px-3 py-2">{i.minimo || i.min || 0}</td>
                           <td className="px-3 py-2">{i.unit || i.unidad || ""}</td>
                           <td className="px-3 py-2">{i.cost || i.costo || 0}</td>
@@ -767,7 +899,7 @@ export default function RestaurantInventory() {
             </div>
             {selectedInvoiceIds.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
-                <div className="text-xs text-slate-600">
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                   {t("mgmt.restaurant.inventory.invoices.selected")}{" "}
                   <span className="font-semibold">{selectedInvoiceIds.length}</span>
                 </div>
@@ -780,16 +912,16 @@ export default function RestaurantInventory() {
               </div>
             )}
             {invoices.length === 0 ? (
-              <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.invoices.empty")}</div>
+              <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.invoices.empty")}</div>
             ) : (
               <div className="space-y-2">
                 {invoices.map((inv) => (
-                  <div key={inv.id} className="border rounded-lg px-3 py-2 text-sm">
+                  <div key={inv.id} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid var(--card-border)" }}>
                     <div className="flex flex-wrap items-center gap-2">
-                      <label className="inline-flex items-center text-xs text-slate-600">
+                      <label className="inline-flex items-center text-xs" style={{ color: "var(--color-text-muted)" }}>
                         <input
                           type="checkbox"
-                          className="accent-lime-600"
+                          className="accent-indigo-600"
                           checked={selectedInvoiceIds.includes(inv.id)}
                           onChange={() => toggleInvoiceSelection(inv.id)}
                           aria-label={t("mgmt.restaurant.inventory.invoices.select")}
@@ -798,20 +930,20 @@ export default function RestaurantInventory() {
                       <div className="font-semibold flex-1 min-w-[220px]">
                         {(getInvoiceSupplierMeta(inv).displayName || inv.proveedor || inv.supplierName)} {inv.docNumber ? `- ${inv.docNumber}` : ""}
                       </div>
-                      <div className="text-xs text-slate-400 ml-auto">
+                      <div className="text-xs ml-auto" style={{ color: "var(--color-text-muted)" }}>
                         {inv.issueDate ? new Date(inv.issueDate).toLocaleDateString() : ""}
                       </div>
                       <Button variant="outline" onClick={() => setPreviewInvoice(inv)}>
                         {t("mgmt.restaurant.inventory.invoices.view")}
                       </Button>
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.total")}: {formatAmountWithCurrency(getInvoiceDisplayTotal(inv), getInvoiceCurrency(inv))} |{" "}
                       {t("mgmt.restaurant.inventory.labels.tax")}: {formatAmountWithCurrency(getInvoiceDisplayTax(inv), getInvoiceCurrency(inv))} |{" "}
                       {inv.source || t("mgmt.restaurant.inventory.invoices.sourceManual")}
                     </div>
                     {(inv.currency || inv.exchangeRate || inv.totalFromXml || inv.taxTotalFromXml || inv.totalSaleFromXml) && (
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                         {t("mgmt.restaurant.inventory.labels.currency")}: {inv.currency || "-"} |{" "}
                         {t("mgmt.restaurant.inventory.labels.exchangeRate")}: {inv.exchangeRate || "-"} |{" "}
                         {t("mgmt.restaurant.inventory.invoices.totalXml")}: {inv.totalFromXml || "-"} |{" "}
@@ -831,7 +963,7 @@ export default function RestaurantInventory() {
           <div className="space-y-4">
             <div>
               <div className="text-sm font-semibold">{t("mgmt.restaurant.inventory.manual.title")}</div>
-              <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.manual.subtitle")}</div>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.manual.subtitle")}</div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" onClick={() => setXmlModalOpen(true)}>
@@ -839,8 +971,8 @@ export default function RestaurantInventory() {
               </Button>
               {xmlPreview && (
               <div className="space-y-3">
-                <div className="text-xs text-slate-600">
-                  {t("mgmt.restaurant.inventory.labels.supplier")}: 
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {t("mgmt.restaurant.inventory.labels.supplier")}:
                   <span className="font-semibold">{xmlPreview.supplierName || "-"}</span>  -  
                   {t("mgmt.restaurant.inventory.labels.doc")}: 
                   <span className="font-semibold">{xmlPreview.docNumber || "-"}</span>  -  
@@ -848,7 +980,7 @@ export default function RestaurantInventory() {
                   <span className="font-semibold">{xmlPreview.issueDate || "-"}</span>
                 </div>
                 {(xmlPreview.supplierLegalId || xmlPreview.supplierEmail || xmlPreview.supplierPhone || xmlPreview.supplierAddress || xmlPreview.supplierLegalName || xmlPreview.supplierCommercialName) && (
-                  <div className="text-xs text-slate-600">
+                  <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                     {xmlPreview.supplierLegalName && (
                       <>
                         {t("mgmt.restaurant.inventory.labels.legalName")}:{" "}
@@ -887,7 +1019,7 @@ export default function RestaurantInventory() {
                     )}
                   </div>
                 )}
-                <div className="text-xs text-slate-600">
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                   {t("mgmt.restaurant.inventory.labels.currency")}: 
                   <span className="font-semibold">{xmlPreview.currency || "-"}</span>  -  
                   {t("mgmt.restaurant.inventory.labels.exchangeRate")}: 
@@ -900,12 +1032,12 @@ export default function RestaurantInventory() {
                   <span className="font-semibold">{xmlPreview.totals?.totalVenta || "-"}</span>
                 </div>
                 {xmlPreview.lines.length === 0 ? (
-                  <div className="text-sm text-slate-400">{t("mgmt.restaurant.inventory.manual.xmlNoLines")}</div>
+                  <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.manual.xmlNoLines")}</div>
                 ) : (
-                  <div className="border rounded-lg overflow-hidden">
+                  <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--card-border)" }}>
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
-                        <thead className="bg-white/5 text-slate-400">
+                        <thead style={{ background: "var(--input-bg, var(--card-bg))", color: "var(--color-text-muted)" }}>
                           <tr>
                             <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
                             <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
@@ -917,7 +1049,7 @@ export default function RestaurantInventory() {
                         </thead>
                         <tbody>
                           {xmlPreview.lines.map((l, idx) => (
-                            <tr key={`${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-transparent" : "bg-white/3"}>
+                            <tr key={`${l.sku}-${idx}`} style={idx % 2 !== 0 ? { background: "var(--input-bg, rgba(0,0,0,0.03))" } : {}}>
                               <td className="px-3 py-2">{l.sku || "-"}</td>
                               <td className="px-3 py-2">{l.name || "-"}</td>
                               <td className="px-3 py-2">{l.qty || 0}</td>
@@ -956,17 +1088,14 @@ export default function RestaurantInventory() {
       <Card className="p-0 overflow-hidden">
         <div className="px-5 pt-4 pb-3 border-b">
           <div className="text-lg font-semibold">{t("mgmt.restaurant.inventory.title")}</div>
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex gap-1 p-1 rounded-xl mt-3" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 text-sm font-semibold border rounded-t-lg transition ${
-                  activeTab === tab.id
-                    ? "bg-white/5 border-b-indigo-500/20 text-white"
-                    : "bg-white/10 text-slate-300 border-white/10 hover:bg-white/15"
-                }`}
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                style={activeTab === tab.id ? { background: "#4f46e5", color: "#ffffff", boxShadow: "0 1px 6px rgba(79,70,229,0.35)" } : { background: "transparent", color: "var(--color-text-muted)" }}
               >
                 {tab.label}
               </button>
@@ -976,65 +1105,65 @@ export default function RestaurantInventory() {
         <div className="p-5">{renderTabContent()}</div>
       </Card>
       {previewInvoice && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-3 sm:p-6">
-          <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl border border-white/10 bg-slate-800 shadow-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-lime-100">
-              <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold text-lime-800">{t("mgmt.restaurant.inventory.preview.title")}</div>
-              </div>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6">
+          <div className="w-full max-w-[1200px] h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
+              <div className="text-lg font-semibold">{t("mgmt.restaurant.inventory.preview.title")}</div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
+                  className="h-10 px-4 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: "#4f46e5", color: "#fff" }}
                   onClick={() => printInvoices([previewInvoice.id])}
                 >
                   {t("mgmt.restaurant.inventory.actions.print")}
                 </button>
                 <button
                   type="button"
-                  className="h-10 px-4 rounded-xl bg-lime-700 text-white text-sm font-semibold hover:bg-lime-600"
+                  className="h-10 px-4 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
                   onClick={() => setPreviewInvoice(null)}
                 >
                   {t("common.close")}
                 </button>
               </div>
             </div>
-            <div className="p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)] space-y-3 text-sm">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-3 text-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex-1 min-w-[340px] rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="flex-1 min-w-[340px] rounded-xl p-3" style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)" }}>
                   <div className="text-base font-semibold">{previewSupplierName}</div>
                   {previewSupplierMeta?.legalName && previewSupplierMeta.legalName !== previewSupplierName && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.legalName")}: {previewSupplierMeta.legalName}
                     </div>
                   )}
                   {previewSupplierMeta?.commercialName && previewSupplierMeta.commercialName !== previewSupplierName && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.commercialName")}: {previewSupplierMeta.commercialName}
                     </div>
                   )}
                   {previewSupplierMeta?.legalId && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.legalId")}: {previewSupplierMeta.legalId}
                     </div>
                   )}
                   {previewSupplierMeta?.email && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.email")}: {previewSupplierMeta.email}
                     </div>
                   )}
                   {previewSupplierMeta?.phone && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.phone")}: {previewSupplierMeta.phone}
                     </div>
                   )}
                   {previewSupplierMeta?.address && (
-                    <div className="text-xs text-slate-600">
+                    <div className="text-xs mt-1" style={{ color: "var(--color-text-muted)" }}>
                       {t("mgmt.restaurant.inventory.labels.address")}: {previewSupplierMeta.address}
                     </div>
                   )}
                 </div>
-                <div className="min-w-[280px] rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-300">
+                <div className="min-w-[280px] rounded-xl p-3 text-xs space-y-1" style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}>
                   <div>
                     <span className="font-semibold">{t("mgmt.restaurant.inventory.labels.doc")}:</span> {previewInvoice.docNumber || previewInvoice.id || "-"}
                   </div>
@@ -1050,10 +1179,10 @@ export default function RestaurantInventory() {
                   </div>
                 </div>
               </div>
-              <div className="border rounded-lg overflow-hidden">
+              <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--card-border)" }}>
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-white/5 text-slate-400">
+                    <thead style={{ background: "var(--input-bg, var(--card-bg))", color: "var(--color-text-muted)" }}>
                       <tr>
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.sku")}</th>
                         <th className="px-3 py-2 text-left font-semibold">{t("mgmt.restaurant.inventory.columns.item")}</th>
@@ -1065,7 +1194,7 @@ export default function RestaurantInventory() {
                     </thead>
                     <tbody>
                       {(previewInvoice.lines || []).map((l, idx) => (
-                        <tr key={l.id || `${l.sku}-${idx}`} className={idx % 2 === 0 ? "bg-transparent" : "bg-white/3"}>
+                        <tr key={l.id || `${l.sku}-${idx}`} style={idx % 2 !== 0 ? { background: "var(--input-bg, rgba(0,0,0,0.03))" } : {}}>
                           <td className="px-3 py-2">{l.sku || "-"}</td>
                           <td className="px-3 py-2">{l.name || "-"}</td>
                           <td className="px-3 py-2">{l.qty || 0}</td>
@@ -1079,20 +1208,20 @@ export default function RestaurantInventory() {
                 </div>
               </div>
               <div className="flex justify-end pt-2">
-                <div className="w-full max-w-md rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-                  <div className="flex items-center justify-between gap-4 text-sm text-slate-700">
+                <div className="w-full max-w-md rounded-xl px-4 py-3" style={{ border: "1px solid var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}>
+                  <div className="flex items-center justify-between gap-4 text-sm" style={{ color: "var(--color-text-muted)" }}>
                     <span>{t("mgmt.restaurant.inventory.labels.discount")}</span>
                     <span className="font-semibold">
                       {formatAmountWithCurrency(getInvoiceDisplayDiscount(previewInvoice), getInvoiceCurrency(previewInvoice))}
                     </span>
                   </div>
-                  <div className="mt-1 flex items-center justify-between gap-4 text-sm text-slate-700">
+                  <div className="mt-1 flex items-center justify-between gap-4 text-sm" style={{ color: "var(--color-text-muted)" }}>
                     <span>{t("mgmt.restaurant.inventory.labels.tax")}</span>
                     <span className="font-semibold">
                       {formatAmountWithCurrency(getInvoiceDisplayTax(previewInvoice), getInvoiceCurrency(previewInvoice))}
                     </span>
                   </div>
-                  <div className="mt-2 flex items-center justify-between gap-4 border-t border-slate-300 pt-2 text-xl font-bold text-slate-900">
+                  <div className="mt-2 flex items-center justify-between gap-4 pt-2 text-xl font-bold" style={{ borderTop: "1px solid var(--card-border)" }}>
                     <span>{t("mgmt.restaurant.inventory.labels.total")}</span>
                     <span>
                       {formatAmountWithCurrency(getInvoiceDisplayTotal(previewInvoice), getInvoiceCurrency(previewInvoice))}
@@ -1105,20 +1234,21 @@ export default function RestaurantInventory() {
         </div>
       )}
       {xmlModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
               <div className="text-base font-semibold">{t("mgmt.restaurant.inventory.manual.selectXml")}</div>
               <button
                 type="button"
-                className="h-9 px-3 rounded-lg bg-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-300"
+                className="h-9 px-3 rounded-lg text-sm font-semibold transition-all"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
                 onClick={() => setXmlModalOpen(false)}
               >
                 {t("common.close")}
               </button>
             </div>
             <div className="p-5 space-y-3 text-sm">
-              <div className="text-xs text-slate-600">{t("mgmt.restaurant.inventory.manual.selectXmlHelp")}</div>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.manual.selectXmlHelp")}</div>
               <input
                 type="file"
                 accept=".xml,text/xml"
@@ -1129,7 +1259,233 @@ export default function RestaurantInventory() {
                   setXmlModalOpen(false);
                 }}
               />
-              {xmlBusy && <div className="text-xs text-slate-400">{t("mgmt.restaurant.inventory.manual.importingXml")}</div>}
+              {xmlBusy && <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.inventory.manual.importingXml")}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+      {wasteTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
+              <div>
+                <div className="text-base font-semibold">Registrar merma / quema</div>
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {wasteTarget.desc || wasteTarget.sku || wasteTarget.id} · stock {wasteTarget.stock ?? 0} {wasteTarget.unit || wasteTarget.unidad || ""}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg text-sm font-semibold"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
+                onClick={closeWasteModal}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="space-y-1">
+                  <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>Cantidad</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-9 rounded-lg border px-2"
+                    style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                    value={wasteForm.qty}
+                    onChange={(e) => setWasteForm((f) => ({ ...f, qty: e.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>Motivo</span>
+                  <select
+                    className="w-full h-9 rounded-lg border px-2"
+                    style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                    value={wasteForm.reason}
+                    onChange={(e) => setWasteForm((f) => ({ ...f, reason: e.target.value }))}
+                  >
+                    <option value="MERMA">Merma</option>
+                    <option value="QUEMA">Quema</option>
+                    <option value="VENCIDO">Vencido</option>
+                    <option value="ROBO">Robo / pérdida</option>
+                    <option value="OTRO">Otro</option>
+                  </select>
+                </label>
+              </div>
+              <label className="space-y-1 block">
+                <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>Nota (opcional)</span>
+                <input
+                  className="w-full h-9 rounded-lg border px-2"
+                  style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                  value={wasteForm.note}
+                  onChange={(e) => setWasteForm((f) => ({ ...f, note: e.target.value }))}
+                />
+              </label>
+              {wasteError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{wasteError}</div>
+              )}
+              <div className="flex justify-end gap-2 pt-1">
+                <Button variant="outline" onClick={closeWasteModal} disabled={wasteBusy}>Cancelar</Button>
+                <Button onClick={confirmWaste} disabled={wasteBusy}>{wasteBusy ? "Registrando..." : "Registrar merma"}</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {movementsOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
+              <div>
+                <div className="text-base font-semibold">Movimientos de inventario</div>
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>Consumo por venta, ajustes y mermas.</div>
+              </div>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg text-sm font-semibold"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
+                onClick={() => setMovementsOpen(false)}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto">
+              {movementsLoading ? (
+                <div className="p-5 text-sm" style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</div>
+              ) : movements.length === 0 ? (
+                <div className="p-5 text-sm" style={{ color: "var(--color-text-muted)" }}>Sin movimientos registrados.</div>
+              ) : (
+                <table className="min-w-full text-sm">
+                  <thead style={{ background: "var(--input-bg, var(--card-bg))", color: "var(--color-text-muted)" }}>
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Fecha</th>
+                      <th className="px-3 py-2 text-left font-semibold">Insumo</th>
+                      <th className="px-3 py-2 text-right font-semibold">Cantidad</th>
+                      <th className="px-3 py-2 text-left font-semibold">Motivo</th>
+                      <th className="px-3 py-2 text-left font-semibold">Tipo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movements.map((m) => (
+                      <tr key={m.id}>
+                        <td className="px-3 py-2 text-xs" style={{ color: "var(--color-text-muted)" }}>
+                          {m.createdAt ? new Date(m.createdAt).toLocaleString() : "-"}
+                        </td>
+                        <td className="px-3 py-2">{m.item}</td>
+                        <td className="px-3 py-2 text-right font-semibold" style={{ color: Number(m.qtyDelta) < 0 ? "#dc2626" : "#059669" }}>
+                          {Number(m.qtyDelta) > 0 ? "+" : ""}{Number(m.qtyDelta)} {m.unit}
+                        </td>
+                        <td className="px-3 py-2 text-xs">{m.reason || "-"}</td>
+                        <td className="px-3 py-2 text-xs" style={{ color: "var(--color-text-muted)" }}>{m.refType || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {adjustTarget && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
+              <div>
+                <div className="text-base font-semibold">Ajustar inventario</div>
+                <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {adjustTarget.desc || adjustTarget.sku || adjustTarget.id}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-lg text-sm font-semibold"
+                style={{ background: "var(--input-bg, var(--card-bg))", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
+                onClick={closeAdjustModal}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-sm">
+              <div className="grid grid-cols-3 gap-2">
+                <label className="space-y-1">
+                  <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                    {t("mgmt.restaurant.inventory.columns.stock")}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-9 rounded-lg border px-2"
+                    style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                    value={adjustForm.stock}
+                    onChange={(e) => setAdjustForm((f) => ({ ...f, stock: e.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                    {t("mgmt.restaurant.inventory.columns.min")}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-9 rounded-lg border px-2"
+                    style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                    value={adjustForm.min}
+                    onChange={(e) => setAdjustForm((f) => ({ ...f, min: e.target.value }))}
+                  />
+                </label>
+                <label className="space-y-1">
+                  <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                    {t("mgmt.restaurant.inventory.columns.cost")}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full h-9 rounded-lg border px-2"
+                    style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                    value={adjustForm.cost}
+                    onChange={(e) => setAdjustForm((f) => ({ ...f, cost: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="space-y-1 block">
+                <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                  {t("mgmt.restaurant.inventory.columns.supplier")}
+                </span>
+                <input
+                  className="w-full h-9 rounded-lg border px-2"
+                  style={{ borderColor: "var(--card-border)", background: "var(--input-bg, var(--card-bg))" }}
+                  value={adjustForm.supplierName}
+                  onChange={(e) => setAdjustForm((f) => ({ ...f, supplierName: e.target.value }))}
+                />
+              </label>
+              <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                El cambio de stock queda registrado como ajuste manual en los movimientos.
+              </div>
+              {adjustError && <div className="text-xs text-red-600">{adjustError}</div>}
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-lg text-sm"
+                  style={{ border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}
+                  onClick={closeAdjustModal}
+                  disabled={adjustBusy}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-lg bg-lime-700 text-white text-sm font-semibold disabled:opacity-60"
+                  onClick={saveAdjust}
+                  disabled={adjustBusy}
+                >
+                  {adjustBusy ? "Guardando..." : t("common.save")}
+                </button>
+              </div>
             </div>
           </div>
         </div>

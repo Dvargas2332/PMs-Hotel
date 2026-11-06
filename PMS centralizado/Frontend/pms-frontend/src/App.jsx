@@ -16,6 +16,7 @@ import BillingPage from "./pages/FrontDeskPages/FacturacionPage";
 import HabitacionesBoard from "./pages/FrontDeskPages/HabitacionesBoard";
 import ReportesPage from "./pages/FrontDeskPages/ReportesPage";
 import InHouseGuestsPage from "./pages/FrontDeskPages/InHouseGuestsPage";
+import PrePagosPage from "./pages/FrontDeskPages/PrePagosPage";
 
 import Launcher from "./modulos/launcher";
 import AccountingPage from "./modulos/accounting/AccountingPage";
@@ -28,6 +29,7 @@ import RestaurantHistory from "./modulos/restaurant/RestaurantHistory";
 import RestaurantClientsPage from "./modulos/restaurant/RestaurantClientsPage";
 import Managementpage from "./pages/Management/ManagementPage";
 import Login from "./pages/Login";
+import AcceptInvite from "./pages/AcceptInvite";
 import ProtectedRoute from "./components/ProtectedRoutes";
 import Launchergestor from "./modulos/launchergestor";
 import { useLanguage } from "./context/LanguageContext";
@@ -39,6 +41,7 @@ export default function App() {
       <Routes>
         {/* Login */}
         <Route path="/login" element={<Login />} />
+        <Route path="/accept-invite" element={<AcceptInvite />} />
 
         {/* Inicio */}
         <Route path="/" element={<Navigate to="/login" replace />} />
@@ -73,6 +76,7 @@ export default function App() {
           <Route path="planning" element={<Planning />} />
           <Route path="reservas" element={<ReservationsPage />} />
           <Route path="inhouse" element={<InHouseGuestsPage />} />
+          <Route path="prepagos" element={<PrePagosPage />} />
           <Route path="clientes" element={<ClientesPage />} />
           <Route path="configuracion" element={<ConfiguracionPage />} />
           <Route path="facturacion" element={<BillingPage />} />

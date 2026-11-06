@@ -23,21 +23,26 @@ export default function EInvoicingUserMenu() {
   return (
     <div className="relative" ref={ref}>
       <button
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold"
+        className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/20 text-sm transition-colors"
+        style={{ color: "var(--color-text-base)" }}
         onClick={() => setOpen((s) => !s)}
       >
-        <CircleUser className="w-5 h-5" />
-        <span className="hidden sm:inline">{user?.name || user?.email || t("einv.userFallback")}</span>
+        <CircleUser className="w-5 h-5" style={{ color: "var(--color-text-muted)" }} />
+        <div className="text-left text-sm leading-tight hidden sm:block">
+          <div className="font-medium" style={{ color: "var(--color-text-base)" }}>{user?.name || user?.email || t("einv.userFallback")}</div>
+          <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{user?.role || "Facturación"}</div>
+        </div>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-56 bg-slate-800 border border-white/10 shadow-xl rounded-2xl overflow-hidden z-50">
-          <div className="px-3 py-2 text-sm border-b border-white/10">
-            <div className="font-semibold text-white">{user?.name || t("einv.userFallback")}</div>
-            <div className="text-xs text-slate-400">{user?.email || user?.username || ""}</div>
+        <div className="absolute right-0 mt-2 w-56 shadow-xl rounded-2xl overflow-hidden z-50" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+          <div className="px-3 py-2 text-sm" style={{ borderBottom: "1px solid var(--card-border)" }}>
+            <div className="font-semibold" style={{ color: "var(--color-text-base)" }}>{user?.name || t("einv.userFallback")}</div>
+            <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{user?.email || user?.username || ""}</div>
           </div>
           <button
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/10 hover:text-white text-left transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+            style={{ color: "var(--color-text-muted)" }}
             onClick={() => { setOpen(false); navigate("/launcher"); }}
           >
             <LogOut className="w-4 h-4 text-red-400" />

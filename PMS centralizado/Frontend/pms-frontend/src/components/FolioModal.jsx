@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { X, Plus, Trash2, CreditCard, Check, Printer } from "lucide-react";
 import { api } from "../lib/api";
+import { escapeHtml } from "../lib/security";
 
 const PAYMENT_METHODS = ["EFECTIVO", "TARJETA_CREDITO", "TARJETA_DEBITO", "TRANSFERENCIA", "DEPOSITO", "OTRO"];
 
@@ -176,7 +177,7 @@ export default function FolioModal({ invoiceId, onClose, onUpdated }) {
     const el = printRef.current;
     if (!el) return;
     const win = window.open("", "_blank", "width=600,height=700");
-    win.document.write(`<html><head><title>Folio ${inv?.number || ""}</title><style>body{margin:0;padding:0}</style></head><body>`);
+    win.document.write(`<html><head><title>Folio ${escapeHtml(inv?.number || "")}</title><style>body{margin:0;padding:0}</style></head><body>`);
     win.document.write(el.innerHTML);
     win.document.write("</body></html>");
     win.document.close();

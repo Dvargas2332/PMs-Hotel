@@ -128,9 +128,9 @@ export default function RestaurantLobby() {
   const [now, setNow] = useState(new Date());
   const shift = useMemo(() => {
     const h = now.getHours();
-    if (h < 15) return "Morning shift";
-    if (h < 22) return "Afternoon shift";
-    return "Night shift";
+    if (h < 15) return "Turno mañana";
+    if (h < 22) return "Turno tarde";
+    return "Turno noche";
   }, [now]);
 
   useEffect(() => {
@@ -167,7 +167,7 @@ export default function RestaurantLobby() {
       desc: "Inventario y recetario (configuracion).",
       icon: Boxes,
       size: "lg",
-      onClick: () => navigate("/management?view=restaurantInventory"),
+      onClick: () => navigate("/management?view=restaurantConfig&tab=inventory"),
       tone: "orange",
     },
     {

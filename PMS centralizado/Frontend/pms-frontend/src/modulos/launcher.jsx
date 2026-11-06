@@ -21,30 +21,8 @@ import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { useTheme } from "../context/ThemeContext";
 import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
 import { api } from "../lib/api";
-import { Sun, Moon } from "lucide-react";
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <div className="flex items-center gap-1 rounded-xl bg-white/10 p-1">
-      {[{ value: "light", icon: Sun }, { value: "dark", icon: Moon }].map(({ value, icon: Icon }) => (
-        <button
-          key={value}
-          onClick={() => setTheme(value)}
-          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-            theme === value ? "bg-white/20 text-white" : "text-slate-400 hover:bg-white/10 hover:text-white"
-          }`}
-          title={value}
-        >
-          <Icon className="w-3.5 h-3.5" />
-        </button>
-      ))}
-    </div>
-  );
-}
 
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
@@ -272,11 +250,11 @@ export default function Launcher() {
   return (
     <TooltipProvider>
       {/* Fondo con patrón sutil */}
-      <div className="h-screen w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden flex flex-col">
-        {/* Orbs decorativos de fondo */}
-        <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/2 -right-48 h-[500px] w-[500px] rounded-full bg-violet-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
+      <div className="h-screen w-full relative overflow-hidden flex flex-col" data-module="launcher" style={{ background: "var(--shell-bg)", color: "var(--color-text-base)" }}>
+        {/* Orbs decorativos — solo visibles en dark */}
+        <div className="dark:block hidden pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-emerald-500/10 blur-3xl" />
+        <div className="dark:block hidden pointer-events-none absolute top-1/2 -right-48 h-[500px] w-[500px] rounded-full bg-violet-500/10 blur-3xl" />
+        <div className="dark:block hidden pointer-events-none absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-sky-500/10 blur-3xl" />
 
         <div className="relative mx-auto w-full max-w-7xl px-4 pt-8 pb-0 sm:px-6 lg:px-8 flex flex-col flex-1 overflow-hidden">
 
@@ -285,19 +263,19 @@ export default function Launcher() {
             <div className="flex items-center gap-3">
               <img src="/kazehanalogo.png" alt="Kazehana PMS" className="h-9 w-9 object-contain" />
               <div>
-                <div className="text-sm font-bold text-white leading-none">Kazehana PMS</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
+                <div className="text-sm font-bold leading-none" style={{ color: "var(--color-text-base)" }}>Kazehana PMS</div>
+                <div className="text-[11px] mt-0.5" style={{ color: "var(--color-text-muted)" }}>
                   v{versionInfo?.appVersion || "0.0.0"}
                   {versionInfo?.dbVersion ? ` · DB ${String(versionInfo.dbVersion).split("_")[0]}` : ""}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <ThemeToggle />
               {/* Campana de alertas */}
               <button
                 onClick={() => setAlertsOpen((s) => !s)}
-                className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors"
+                className="relative flex h-9 w-9 items-center justify-center rounded-xl transition-colors hover:bg-black/5 dark:bg-white/10 dark:hover:bg-white/20"
+                style={{ color: "var(--color-text-base)", border: "1px solid var(--card-border)" }}
                 aria-label={t("launcher.alerts")}
               >
                 <Bell size={16} />
@@ -311,17 +289,19 @@ export default function Launcher() {
               {user ? (
                 <button
                   onClick={handleUserLogout}
-                  className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/20 transition-colors"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors hover:bg-black/5 dark:bg-white/10 dark:hover:bg-white/20"
+                  style={{ color: "var(--color-text-base)", border: "1px solid var(--card-border)" }}
                 >
-                  <LogOut size={13} className="text-amber-400" />
+                  <LogOut size={13} className="text-amber-500" />
                   {t("launcher.userLogout")}
                 </button>
               ) : (
                 <button
                   onClick={handleHotelLogout}
-                  className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/20 transition-colors"
+                  className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors hover:bg-black/5 dark:bg-white/10 dark:hover:bg-white/20"
+                  style={{ color: "var(--color-text-base)", border: "1px solid var(--card-border)" }}
                 >
-                  <LogOut size={13} className="text-rose-400" />
+                  <LogOut size={13} className="text-rose-500" />
                   {t("launcher.hotelLogout")}
                 </button>
               )}
@@ -330,31 +310,31 @@ export default function Launcher() {
 
           {/* ── PANEL DE ALERTAS ── */}
           {alertsOpen && (
-            <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-4">
+            <div className="mb-6 rounded-2xl p-4" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
               <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Bell size={14} className="text-amber-400" />
+                <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--color-text-base)" }}>
+                  <Bell size={14} className="text-amber-500" />
                   {t("launcher.alerts")}
                 </div>
                 <div className="flex gap-3">
-                  <button className="text-xs text-slate-400 hover:text-white transition-colors" onClick={() => setAlerts([])}>
+                  <button className="text-xs transition-colors hover:opacity-70" style={{ color: "var(--color-text-muted)" }} onClick={() => setAlerts([])}>
                     {t("launcher.clear")}
                   </button>
-                  <button className="text-xs text-slate-400 hover:text-white transition-colors" onClick={() => setAlertsOpen(false)}>
+                  <button className="text-xs transition-colors hover:opacity-70" style={{ color: "var(--color-text-muted)" }} onClick={() => setAlertsOpen(false)}>
                     <X size={14} />
                   </button>
                 </div>
               </div>
               {alerts.length === 0 ? (
-                <div className="text-sm text-slate-400">{t("launcher.noAlerts")}</div>
+                <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("launcher.noAlerts")}</div>
               ) : (
                 <ul className="space-y-2">
                   {alerts.map((a) => (
-                    <li key={a.id ?? a.title} className="flex items-start gap-3 rounded-xl bg-white/5 px-3 py-2">
+                    <li key={a.id ?? a.title} className="flex items-start gap-3 rounded-xl px-3 py-2" style={{ background: "var(--color-surface-2)", border: "1px solid var(--card-border)" }}>
                       <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-400" />
                       <div>
-                        <div className="text-sm font-medium text-white">{a.title || a.msg || t("launcher.alert")}</div>
-                        {(a.desc || a.msg) && <div className="text-xs text-slate-400 mt-0.5">{a.desc || a.msg}</div>}
+                        <div className="text-sm font-medium" style={{ color: "var(--color-text-base)" }}>{a.title || a.msg || t("launcher.alert")}</div>
+                        {(a.desc || a.msg) && <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{a.desc || a.msg}</div>}
                       </div>
                     </li>
                   ))}
@@ -392,22 +372,22 @@ export default function Launcher() {
               </div>
 
               {/* Card login / usuario */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-sm p-5">
+              <div className="rounded-2xl p-5" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
                 {user ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-sm">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
                         {(user.name || user.username || "U")[0].toUpperCase()}
                       </div>
                       <div>
-                        <div className="text-sm font-semibold text-white">{user.name || user.username}</div>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-sm font-semibold" style={{ color: "var(--color-text-base)" }}>{user.name || user.username}</div>
+                        <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                           {Array.isArray(user.roles) ? user.roles.join(", ") : user.role || "N/A"}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                       Sesión activa
                     </div>
                   </div>
@@ -416,23 +396,23 @@ export default function Launcher() {
                     <input type="text" name="fake_username" autoComplete="username" className="hidden" />
                     <input type="password" name="fake_password" autoComplete="new-password" className="hidden" />
                     <div>
-                      <h2 className="text-sm font-bold text-white">{t("launcher.userLoginTitle")}</h2>
-                      <p className="text-xs text-slate-400 mt-0.5">Ingrese sus credenciales para acceder</p>
+                      <h2 className="text-sm font-bold" style={{ color: "var(--color-text-base)" }}>{t("launcher.userLoginTitle")}</h2>
                     </div>
                     <div className="space-y-3">
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-300">{t("launcher.username")}</label>
+                        <label className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>Nombre</label>
                         <input
                           name="launcher_username"
                           value={userLogin.username}
                           onChange={(e) => setUserLogin((prev) => ({ ...prev, username: e.target.value }))}
-                          placeholder="usuario"
+                          placeholder="Nombre completo"
                           autoComplete="off"
-                          className="h-10 w-full rounded-xl border border-white/10 bg-white/10 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                          className="h-10 w-full rounded-xl px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                          style={{ background: "var(--input-bg)", border: "1px solid var(--input-border)", color: "var(--color-text-base)" }}
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-300">{t("launcher.password")}</label>
+                        <label className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>{t("launcher.password")}</label>
                         <input
                           type="password"
                           name="launcher_password"
@@ -440,19 +420,20 @@ export default function Launcher() {
                           onChange={(e) => setUserLogin((prev) => ({ ...prev, password: e.target.value }))}
                           placeholder="••••••••"
                           autoComplete="new-password"
-                          className="h-10 w-full rounded-xl border border-white/10 bg-white/10 px-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                          className="h-10 w-full rounded-xl px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
+                          style={{ background: "var(--input-bg)", border: "1px solid var(--input-border)", color: "var(--color-text-base)" }}
                         />
                       </div>
                     </div>
                     {userLogin.error && (
-                      <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                      <div className="rounded-xl px-3 py-2 text-xs text-red-600 dark:text-red-300" style={{ border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.08)" }}>
                         {userLogin.error}
                       </div>
                     )}
                     <button
                       type="submit"
                       disabled={userLogin.loading}
-                      className="w-full h-10 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-60 transition-all"
+                      className="w-full h-10 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-sm font-semibold text-white shadow-md hover:from-emerald-400 hover:to-teal-400 disabled:opacity-60 transition-all"
                     >
                       {userLogin.loading ? t("launcher.signingIn") : t("common.enter")}
                     </button>
@@ -467,16 +448,15 @@ export default function Launcher() {
               {!user ? (
                 <div className="flex flex-1 items-center justify-center min-h-[300px]">
                   <div className="text-center">
-                    <div className="text-5xl font-bold text-white mb-2">{t("Launcher.Welcome")}</div>
-                    <div className="text-sm text-slate-400">{t("Launcher.subtitle")}</div>
+                    <div className="text-5xl font-bold mb-2" style={{ color: "var(--color-text-base)" }}>{t("Launcher.Welcome")}</div>
+                    <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("Launcher.subtitle")}</div>
                   </div>
                 </div>
               ) : (
                 <>
                   {allowedModules.length > 0 && (
                     <div className="mb-5">
-                      <h1 className="text-xl font-bold text-white">Módulos disponibles</h1>
-                      <p className="text-sm text-slate-400 mt-0.5">Seleccione un módulo para continuar · <kbd className="text-xs bg-white/10 px-1.5 py-0.5 rounded">↑↓</kbd> navegar · <kbd className="text-xs bg-white/10 px-1.5 py-0.5 rounded">Enter</kbd> abrir</p>
+                      <h1 className="text-xl font-bold" style={{ color: "var(--color-text-base)" }}>Módulos disponibles</h1>
                     </div>
                   )}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -497,7 +477,7 @@ export default function Launcher() {
 
         </div>
         {/* ── FOOTER ── fijo al fondo, fuera del scroll */}
-        <footer className="relative flex shrink-0 items-center justify-between px-4 py-3 text-[11px] text-slate-600 sm:px-6 lg:px-8 border-t border-white/5">
+        <footer className="relative flex shrink-0 items-center justify-between px-4 py-3 text-[11px] sm:px-6 lg:px-8" style={{ color: "var(--color-text-muted)", borderTop: "1px solid var(--card-border)" }}>
           <span>© {new Date().getFullYear()} Kazehana Cloud · Todos los derechos reservados</span>
           <span className="hidden sm:block">
             {t("launcher.version.system")} v{versionInfo?.appVersion || "0.0.0"}
@@ -519,22 +499,20 @@ function ModuleCard({ mod, onOpen, focused }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       className={`group relative w-full text-left focus:outline-none transition-all duration-200 ${
-        focused ? "ring-2 ring-white/60 ring-offset-2 ring-offset-slate-900 rounded-2xl" : ""
+        focused ? "ring-2 ring-emerald-400/60 ring-offset-2 rounded-2xl" : ""
       }`}
     >
       <div
-        className={`relative overflow-hidden rounded-2xl border transition-all duration-200 ${
-          hovered
-            ? "border-white/20 shadow-2xl shadow-black/40 -translate-y-1 scale-[1.01]"
-            : "border-white/10 shadow-lg shadow-black/20"
-        } bg-white/5 backdrop-blur-sm`}
+        className="relative overflow-hidden rounded-2xl transition-all duration-200"
+        style={{
+          background: "var(--card-bg)",
+          border: `1px solid ${hovered ? "rgba(0,0,0,0.22)" : "var(--card-border)"}`,
+          boxShadow: hovered ? "0 8px 24px rgba(0,0,0,0.12)" : "0 1px 4px rgba(0,0,0,0.06)",
+          transform: hovered ? "translateY(-2px) scale(1.01)" : "none",
+        }}
       >
+        {/* Barra de color del módulo */}
         <div className={`h-1.5 w-full bg-gradient-to-r ${mod.theme.from} ${mod.theme.to}`} />
-        <div
-          className={`pointer-events-none absolute inset-0 bg-gradient-to-br from-white/5 to-transparent transition-opacity duration-200 ${
-            hovered ? "opacity-100" : "opacity-0"
-          }`}
-        />
         <div className="p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div
@@ -545,16 +523,15 @@ function ModuleCard({ mod, onOpen, focused }) {
               <div className="absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_30%_25%,white,transparent_55%)] opacity-25" />
               <Icon className="relative h-7 w-7 text-white" />
             </div>
-            <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-slate-300">
+            <span className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium" style={{ background: "var(--color-surface-2)", border: "1px solid var(--card-border)", color: "var(--color-text-muted)" }}>
               {mod.tag}
             </span>
           </div>
-          <h3 className="text-base font-bold text-white mb-1">{mod.name}</h3>
-          <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{mod.description}</p>
+          <h3 className="text-base font-bold mb-1" style={{ color: "var(--color-text-base)" }}>{mod.name}</h3>
+          <p className="text-xs leading-relaxed line-clamp-2" style={{ color: "var(--color-text-muted)" }}>{mod.description}</p>
           <div
-            className={`mt-4 flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${
-              hovered ? "text-white" : "text-slate-500"
-            }`}
+            className="mt-4 flex items-center gap-2 text-xs font-semibold transition-all duration-200"
+            style={{ color: hovered ? "var(--color-text-base)" : "var(--color-text-muted)" }}
           >
             <span>{t("common.enter")}</span>
             <ArrowRight

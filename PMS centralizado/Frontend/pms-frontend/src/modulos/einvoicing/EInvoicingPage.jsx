@@ -993,6 +993,7 @@ export default function EInvoicingPage() {
   return (
     <div
       className="min-h-screen w-full flex flex-col"
+      data-module="einvoicing"
       style={{
         background: "var(--shell-bg)",
         backgroundAttachment: "fixed",
@@ -1025,7 +1026,7 @@ export default function EInvoicingPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 flex flex-col overflow-hidden" style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
-          <div className="flex flex-col items-center justify-center py-6 gap-3" style={{ borderBottom: "1px solid var(--sidebar-border)" }}>
+          <div className="flex flex-col items-center justify-center py-6 gap-3" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "rgba(124,58,237,0.08)" }}>
             <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500/90 to-fuchsia-600/80 shadow-lg shadow-violet-900/40">
               <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-12 w-12 object-contain" />
             </div>
@@ -1061,11 +1062,11 @@ export default function EInvoicingPage() {
               {t("einv.nav.back")}
             </button>
           </nav>
-          <div className="flex items-center gap-3 px-4 py-4 shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)" }}>
+          <div className="flex items-center gap-3 px-4 py-4 shrink-0" style={{ borderTop: "1px solid var(--sidebar-border)", background: "#7c3aed" }}>
             <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-10 w-10 object-contain opacity-70" />
             <div>
-              <div className="text-sm font-semibold leading-tight" style={{ color: "var(--color-text-base)" }}>Kazehana PMS</div>
-              <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>{t("einv.title")}</div>
+              <div className="text-sm font-semibold leading-tight" style={{ color: "#ffffff" }}>Kazehana PMS</div>
+              <div className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.75)" }}>{t("einv.title")}</div>
             </div>
           </div>
         </aside>
@@ -2458,7 +2459,7 @@ export default function EInvoicingPage() {
         </main>
       </div>
       {ackDetailOpen && (
-        <div className="fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[60]" data-module="einvoicing">
           <div className="absolute inset-0 bg-black/40" onClick={closeAckDetail} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <Card className="w-full max-w-4xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">
@@ -2526,7 +2527,7 @@ export default function EInvoicingPage() {
       )}
 
       {ackCreateOpen && (
-        <div className="fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[60]" data-module="einvoicing">
           <div className="absolute inset-0 bg-black/40" onClick={closeAckCreate} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <Card className="w-full max-w-4xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">
@@ -2624,7 +2625,7 @@ export default function EInvoicingPage() {
       )}
 
       {docDetailOpen && (
-        <div className="fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[60]" data-module="einvoicing">
           <div className="absolute inset-0 bg-black/40" onClick={closeDocDetail} />
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <Card className="w-full max-w-5xl p-5 space-y-4 bg-slate-800 border border-white/10 text-white">

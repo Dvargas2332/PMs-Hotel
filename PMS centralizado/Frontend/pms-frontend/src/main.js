@@ -10,6 +10,17 @@ import { LanguageProvider } from "./context/LanguageContext";
 import { ThemeProvider } from "./context/ThemeContext";
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
+
+// PWA mínima: permite abrir la app sin internet (el shell queda en caché).
+// Los datos siempre se piden al servidor, no se cachean respuestas de la API.
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      /* sin service worker la app sigue funcionando, solo no abre offline */
+    });
+  });
+}
+
 root.render(
   React.createElement(
     React.StrictMode,

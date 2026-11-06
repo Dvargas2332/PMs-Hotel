@@ -8,7 +8,7 @@ import { api } from "../../../lib/api";
 import { useHotelData } from "../../../context/useHotelData";
 import { useLanguage } from "../../../context/LanguageContext";
 
-const STATUS_VALUES = ["AVAILABLE", "CLEANING", "BLOCKED"];
+const STATUS_VALUES = ["AVAILABLE", "OCCUPIED", "CLEANING", "BLOCKED", "MAINTENANCE"];
 
 export default function Rooms() {
   const { t } = useLanguage();

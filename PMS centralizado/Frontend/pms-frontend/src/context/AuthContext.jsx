@@ -10,26 +10,76 @@ import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
 
+// Helpers para sessionStorage (persiste entre refrescos pero no entre pestañas)
+function loadFromSession(key) {
+  try {
+    const val = sessionStorage.getItem(key);
+    return val ? JSON.parse(val) : null;
+  } catch {
+    return null;
+  }
+}
+function saveToSession(key, value) {
+  try {
+    if (value) sessionStorage.setItem(key, JSON.stringify(value));
+    else sessionStorage.removeItem(key);
+  } catch { /* noop */ }
+}
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem("token"));
-  // Hotel autenticado (login 1)
-  const [hotel, setHotel] = useState(() => {
-    try {
-      const stored = localStorage.getItem("hotel");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
+  // Ya no guardamos token en localStorage — va en cookies httpOnly
+  const [token, setToken] = useState(null); // solo en memoria para compat interna
+  const [hotel, setHotel] = useState(() => loadFromSession("hotel"));
+  const [user, setUser] = useState(() => loadFromSession("user"));
+  const [ready, setReady] = useState(false); // true cuando se completa el intento de restaurar sesión
+
+  // Persistir hotel/user en sessionStorage (NO en localStorage)
+  useEffect(() => { saveToSession("hotel", hotel); }, [hotel]);
+  useEffect(() => { saveToSession("user", user); }, [user]);
+
+  // Al montar, intentar restaurar sesión vía refresh token
+  useEffect(() => {
+    let cancelled = false;
+    async function restore() {
+      try {
+        // Solo intentar refresh si hay datos previos de sesión
+        if (!loadFromSession("hotel")) {
+          setReady(true);
+          return;
+        }
+        await api.refresh();
+        if (!cancelled) {
+          // Sesión restaurada — los datos de hotel/user se cargaron de sessionStorage
+        }
+      } catch {
+        // Refresh falló — limpiar sesión
+        if (!cancelled) {
+          setHotel(null);
+          setUser(null);
+          setToken(null);
+          saveToSession("hotel", null);
+          saveToSession("user", null);
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
     }
-  });
-  // Usuario del launcher (login 2, creado en Management > Perfiles)
-  const [user, setUser] = useState(() => {
-    try {
-      const stored = localStorage.getItem("user");
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  });
+    restore();
+
+    // Escuchar evento de logout forzado (desde el interceptor de axios)
+    const handleForceLogout = () => {
+      setToken(null);
+      setHotel(null);
+      setUser(null);
+      saveToSession("hotel", null);
+      saveToSession("user", null);
+    };
+    window.addEventListener("auth:logout", handleForceLogout);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("auth:logout", handleForceLogout);
+    };
+  }, []);
 
   const decodeToken = (t) => {
     try {
@@ -40,22 +90,7 @@ export function AuthProvider({ children }) {
     }
   };
 
-  useEffect(() => {
-    if (token) localStorage.setItem("token", token);
-    else localStorage.removeItem("token");
-  }, [token]);
-
-  useEffect(() => {
-    if (hotel) localStorage.setItem("hotel", JSON.stringify(hotel));
-    else localStorage.removeItem("hotel");
-  }, [hotel]);
-
-  useEffect(() => {
-    if (user) localStorage.setItem("user", JSON.stringify(user));
-    else localStorage.removeItem("user");
-  }, [user]);
-
-  // Login de HOTEL (primer nivel). Solo habilita acceso al launcher.
+  // Login de HOTEL (primer nivel). Las cookies httpOnly se setean automáticamente.
   const login = useCallback(
     async (email, password) => {
       const { token: hotelToken, user: userResp, hotel: hotelResp } = await api.login(
@@ -64,21 +99,23 @@ export function AuthProvider({ children }) {
       );
       const payload = decodeToken(hotelToken);
       const isGestor = Boolean(userResp?.isGestor ?? payload?.isGestor);
+      // token se guarda en memoria (el valor real está en la cookie httpOnly)
       setToken(hotelToken);
-      // Nivel 1: sesion del hotel (para launcher + management).
-      // Preferimos `hotel` real del backend si viene (incluye membership/allowedModules).
+
+      let hotelData;
       if (hotelResp) {
-        setHotel({ ...hotelResp, email: userResp?.email ?? email, isGestor });
+        hotelData = { ...hotelResp, email: userResp?.email ?? email, isGestor };
       } else if (userResp) {
-        setHotel({ ...userResp, isGestor });
+        hotelData = { ...userResp, isGestor };
       } else {
-        setHotel({ email, hotelId: payload?.hotelId, isGestor });
+        hotelData = { email, hotelId: payload?.hotelId, isGestor };
       }
-      // Al cambiar de hotel, se limpia cualquier usuario de launcher
+      setHotel(hotelData);
       setUser(null);
+      saveToSession("user", null);
       return payload ? { ...payload, isGestor } : { isGestor };
     },
-    [] // setToken/setHotel/setUser son estables
+    []
   );
 
   // Login de USUARIO DEL LAUNCHER (segundo nivel).
@@ -88,10 +125,6 @@ export function AuthProvider({ children }) {
     const launcher = data?.launcher ?? data?.user;
     const nextToken = data?.token;
     if (!launcher || !nextToken) return null;
-
-    // Por ahora mantenemos el token del HOTEL para que
-    // las pantallas de Management sigan funcionando sin 403.
-    // El token del launcher solo se usa para construir el perfil (permisos/front-end).
 
     const permissions = Array.isArray(launcher.permissions) ? launcher.permissions : [];
     const allowedModules = Array.isArray(launcher.allowedModules)
@@ -119,16 +152,22 @@ export function AuthProvider({ children }) {
     return u;
   }, [hotel]);
 
-  const logout = useCallback(() => {
-    // Cierra todo: hotel + usuario de launcher
+  const logout = useCallback(async () => {
+    try {
+      await api.logout();
+    } catch {
+      // No importa si falla
+    }
     setToken(null);
     setHotel(null);
     setUser(null);
+    saveToSession("hotel", null);
+    saveToSession("user", null);
   }, []);
 
   const logoutUser = useCallback(() => {
-    // Solo cierra la sesión del usuario de launcher, manteniendo el hotel
     setUser(null);
+    saveToSession("user", null);
   }, []);
 
   const value = useMemo(
@@ -136,13 +175,14 @@ export function AuthProvider({ children }) {
       token,
       hotel,
       user,
+      ready,
       setUser,
-      login, // login de hotel
+      login,
       loginUser,
-      logout, // logout completo (hotel + usuario)
+      logout,
       logoutUser,
     }),
-    [token, hotel, user, login, loginUser, logout, logoutUser]
+    [token, hotel, user, ready, login, loginUser, logout, logoutUser]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

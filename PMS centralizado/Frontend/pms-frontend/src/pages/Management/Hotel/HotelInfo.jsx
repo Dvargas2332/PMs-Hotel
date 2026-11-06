@@ -27,7 +27,7 @@ export default function HotelInfo() {
 
   const [meta, setMeta] = useState({
     id: "",
-    saasClientName: "",
+    companyName: "",
     membership: "",
     membershipMonthlyFee: 0,
     currency: "",
@@ -50,7 +50,7 @@ export default function HotelInfo() {
       const { data } = await api.get("/hotel");
       setMeta({
         id: data?.id || "",
-        saasClientName: data?.saasClientName || data?.saasClient?.name || "",
+        companyName: data?.company?.name || data?.saasClientName || data?.saasClient?.name || "",
         membership: data?.membership || "",
         membershipMonthlyFee: data?.membershipMonthlyFee ?? 0,
         currency: data?.currency || "",
@@ -113,7 +113,7 @@ export default function HotelInfo() {
   }, [save]);
 
   return (
-    <Card className="space-y-4 p-5">
+    <Card className="space-y-4 p-5 max-w-3xl mx-auto">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="font-medium">{t("mgmt.hotelInfo.title")}</h3>
@@ -138,10 +138,10 @@ export default function HotelInfo() {
         </div>
       </div>
 
-      <div className="grid gap-2 md:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-4 max-w-3xl">
         <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-xs text-slate-500">{t("mgmt.hotelInfo.company")}</div>
-          <div className="font-semibold text-slate-900">{meta.saasClientName || "-"}</div>
+          <div className="font-semibold text-slate-900">{meta.companyName || "-"}</div>
         </div>
         <div className="rounded-xl border border-white/10 bg-white/5 p-3">
           <div className="text-xs text-slate-500">{t("mgmt.hotelInfo.membershipLabel")}</div>
@@ -149,7 +149,7 @@ export default function HotelInfo() {
         </div>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2 max-w-3xl">
         <div className="space-y-1">
           <label className="text-xs text-slate-500">{t("mgmt.hotelInfo.hotelName")}</label>
           <Input value={form.name} onChange={(e) => setForm((state) => ({ ...state, name: e.target.value }))} />
@@ -177,7 +177,10 @@ export default function HotelInfo() {
 
         <div className="space-y-1">
           <label className="text-xs text-slate-500">{t("mgmt.hotelInfo.managerName")}</label>
-          <Input value={form.managerName} onChange={(e) => setForm((state) => ({ ...state, managerName: e.target.value }))} />
+          <Input
+            value={form.managerName}
+            onChange={(e) => setForm((state) => ({ ...state, managerName: e.target.value }))}
+          />
         </div>
 
         <div className="space-y-1 md:col-span-2">

@@ -59,19 +59,18 @@ export default function Planning() {
     height: typeof window !== "undefined" ? window.innerHeight : 720,
   }));
 
+  const loadData = async () => {
+    try {
+      const [resv, rms] = await Promise.all([api.get("/reservations"), api.get("/rooms")]);
+      if (Array.isArray(resv?.data)) setRemoteReservations(resv.data.map(mapRemoteReservation));
+      if (Array.isArray(rms?.data)) setRemoteRooms(rms.data.map(mapRemoteRoom));
+    } catch {
+      // si falla, seguimos con los datos del contexto
+    }
+  };
+
   // Cargar datos desde backend/mock para reflejar configuraciones del Management
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [resv, rms] = await Promise.all([api.get("/reservations"), api.get("/rooms")]);
-        if (Array.isArray(resv?.data)) setRemoteReservations(resv.data.map(mapRemoteReservation));
-        if (Array.isArray(rms?.data)) setRemoteRooms(rms.data.map(mapRemoteRoom));
-      } catch {
-        // si falla, seguimos con los datos del contexto
-      }
-    };
-    load();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
     const handleResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -437,9 +436,14 @@ export default function Planning() {
               </button>
               <button
                 className="px-3 py-2 rounded bg-emerald-600 text-white"
-                onClick={() => {
-                  alert("Check-in completed");
-                  closeModal();
+                onClick={async () => {
+                  try {
+                    await api.post(`/reservations/${active.data.id}/checkin`);
+                    closeModal();
+                    loadData();
+                  } catch (err) {
+                    alert(err?.response?.data?.message || "Error en check-in");
+                  }
                 }}
               >
                 Confirm check-in
@@ -473,12 +477,17 @@ export default function Planning() {
               </button>
               <button
                 className="px-3 py-2 rounded bg-indigo-600 text-white"
-                onClick={() => {
-                  alert("Invoice generated and checkout completed");
-                  closeModal();
+                onClick={async () => {
+                  try {
+                    await api.post(`/reservations/${active.data.id}/checkout`);
+                    closeModal();
+                    loadData();
+                  } catch (err) {
+                    alert(err?.response?.data?.message || "Error en check-out");
+                  }
                 }}
               >
-                Generate invoice and checkout
+                Confirmar check-out
               </button>
             </div>
           </div>

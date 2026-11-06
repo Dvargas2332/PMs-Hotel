@@ -10,7 +10,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import { Search, CircleUser } from "lucide-react";
+import { Search, CircleUser, X, Check, LogIn } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useHotelData } from "../../context/useHotelData";
 import { frontdeskTheme } from "../../theme/frontdeskTheme";
@@ -103,6 +103,7 @@ export default function Dashboard() {
   const { rooms, reservations } = useHotelData();
 
   const [flash, setFlash] = useState(null);
+  const [showArrivals, setShowArrivals] = useState(false);
   useEffect(() => {
     api.get("/reports/daily").then(({ data }) => setFlash(data)).catch(() => {});
   }, []);
@@ -274,7 +275,7 @@ export default function Dashboard() {
                   label={t("frontdesk.dashboard.arrivalsToday")}
                   value={flash ? flash.arrivals : arrivalsToday.length}
                   sub={t("frontdesk.dashboard.tapToView")}
-                  onClick={() => navigate("/reservas")}
+                  onClick={() => setShowArrivals(true)}
                 />
                 <KPI
                   label={t("frontdesk.dashboard.departuresToday")}
@@ -381,6 +382,48 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      {showArrivals && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setShowArrivals(false)}>
+          <div className="w-full max-w-md mx-3 rounded-2xl border shadow-2xl max-h-[80vh] overflow-y-auto"
+            style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "var(--card-border)" }}>
+              <h2 className="font-bold text-lg" style={{ color: "var(--color-text-base)" }}>Llegadas de hoy</h2>
+              <button onClick={() => setShowArrivals(false)} className="p-1.5 rounded-lg hover:bg-black/5"><X size={18}/></button>
+            </div>
+            <div className="px-5 py-3 space-y-2">
+              {arrivalsToday.map(r => (
+                <div key={r.id} className="flex items-center justify-between rounded-xl border p-3 text-sm"
+                  style={{ borderColor: "var(--card-border)" }}>
+                  <div>
+                    <div className="font-medium" style={{ color: "var(--color-text-base)" }}>
+                      {r.guestName || `${r.guest?.firstName||""} ${r.guest?.lastName||""}`.trim() || "Sin nombre"}
+                    </div>
+                    <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>
+                      {r.code} · Hab. {r.room?.number || r.roomId || "—"} · {r.room?.type || ""}
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.post(`/reservations/${r.id}/checkin`);
+                        setShowArrivals(false);
+                      } catch (err) {
+                        alert(err?.response?.data?.message || "Error en check-in");
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-emerald-500 hover:bg-emerald-600 flex items-center gap-1">
+                    <LogIn size={12}/> Check-in
+                  </button>
+                </div>
+              ))}
+              {arrivalsToday.length === 0 && (
+                <p className="text-center py-8 text-sm" style={{ color: "var(--color-text-muted)" }}>No hay llegadas hoy</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

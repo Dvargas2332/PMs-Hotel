@@ -15,13 +15,14 @@ export default function RoomCard({ room, onClick }) {
 
   const label = title || number || room.id;
 
+  const normalizedStatus = (status || "available").toUpperCase();
   const statusMeta = {
-    occupied: { text: "Ocupada", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
-    dirty: { text: "Sucio", cls: "bg-amber-100 text-amber-800 border-amber-200" },
-    blocked: { text: "Bloqueada", cls: "bg-rose-100 text-rose-800 border-rose-200" },
-    maintenance: { text: "Mantenimiento", cls: "bg-sky-100 text-sky-800 border-sky-200" },
-    available: { text: "Disponible", cls: "bg-slate-100 text-slate-700 border-slate-200" },
-  }[status || "available"];
+    AVAILABLE: { text: "Disponible", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+    OCCUPIED: { text: "Ocupada", cls: "bg-rose-100 text-rose-800 border-rose-200" },
+    CLEANING: { text: "Limpieza", cls: "bg-amber-100 text-amber-800 border-amber-200" },
+    BLOCKED: { text: "Bloqueada", cls: "bg-gray-100 text-gray-700 border-gray-200" },
+    MAINTENANCE: { text: "Mantenimiento", cls: "bg-sky-100 text-sky-800 border-sky-200" },
+  }[normalizedStatus] || { text: normalizedStatus, cls: "bg-slate-100 text-slate-700 border-slate-200" };
 
   return (
     <button
