@@ -31,6 +31,13 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
+      # La instancia no trae Node porque el backend compila dentro de Docker;
+      # setup-node lo descarga y queda en la caché del runner.
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Compilar el SPA
         run: |
           set -euo pipefail
