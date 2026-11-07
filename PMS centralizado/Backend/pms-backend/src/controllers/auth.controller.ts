@@ -1,10 +1,11 @@
 // src/controllers/auth.controller.ts
 import type { Request, Response } from "express";
 import bcrypt from "bcrypt";
-import { timingSafeEqual } from "crypto";
+import { createHash, timingSafeEqual } from "crypto";
 import prisma from "../lib/prisma.js";
-import { sign, signRefresh, verifyRefresh, getAccessCookieOpts, getRefreshCookieOpts } from "../lib/jwt.js";
+import { sign, signRefresh, verify, verifyRefresh, getAccessCookieOpts, getRefreshCookieOpts } from "../lib/jwt.js";
 import { hashInviteToken } from "../lib/userInvites.js";
+import { sendGestorMail, buildPasswordResetEmail } from "../lib/mailer.js";
 import { ALL_PERMISSIONS } from "../config/permissions.js";
 import { allowedModulesForMembership } from "../config/membership.js";
 import type { AuthUser } from "../middleware/auth.js";
@@ -243,6 +244,100 @@ export async function refresh(req: Request, res: Response) {
 export async function logout(_req: Request, res: Response) {
   clearAuthCookies(res);
   return res.json({ ok: true });
+}
+
+// ── Recuperación de contraseña ────────────────────────────────────────────────
+//
+// El enlace es un JWT de 1 hora que incluye la "versión" del hash actual: al
+// cambiar la contraseña la versión cambia, así que el mismo enlace no se puede
+// reutilizar. Evita añadir columnas de token a la base.
+
+function passwordVersion(hash: string) {
+  return createHash("sha256").update(String(hash || "")).digest("hex").slice(0, 16);
+}
+
+const FORGOT_GENERIC = {
+  message: "Si el correo está registrado, te enviamos un enlace para restablecer la contraseña.",
+};
+
+export async function forgotPassword(req: Request, res: Response) {
+  const email = String((req.body as any)?.email || "").trim().toLowerCase();
+  try {
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true, name: true, email: true, hotelId: true, password: true },
+    });
+    // Sin usuario se responde igual: no se revela si el correo existe.
+    // Sin contraseña (cuenta recién invitada) se usa el enlace de invitación.
+    if (!user || !user.password) return res.json(FORGOT_GENERIC);
+
+    const token = sign(
+      { sub: user.id, email: user.email, purpose: "reset", v: passwordVersion(user.password) },
+      { expiresIn: "1h" }
+    );
+    const base = String(process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/+$/, "");
+    const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    const hotel = await prisma.hotel.findUnique({ where: { id: user.hotelId }, select: { name: true } });
+    const mail = buildPasswordResetEmail({
+      name: user.name || user.email,
+      hotelName: hotel?.name || "Kazehana PMS",
+      resetUrl,
+      expiresAt,
+    });
+
+    try {
+      await sendGestorMail({ to: user.email, ...mail });
+    } catch (mailErr) {
+      // El fallo de correo no se filtra al cliente (ni cambia la respuesta),
+      // pero queda en el log para diagnosticar Resend.
+      console.error("[auth.forgotPassword] no se pudo enviar el correo:", mailErr);
+    }
+
+    return res.json(FORGOT_GENERIC);
+  } catch (err) {
+    console.error("[auth.forgotPassword] error:", err);
+    return res.json(FORGOT_GENERIC);
+  }
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  try {
+    const token = String((req.body as any)?.token || "");
+    const password = String((req.body as any)?.password || "");
+
+    let payload: any;
+    try {
+      payload = verify(token);
+    } catch {
+      return res.status(400).json({ message: "El enlace no es válido o venció. Pedí uno nuevo." });
+    }
+    if (payload?.purpose !== "reset" || !payload?.sub) {
+      return res.status(400).json({ message: "El enlace no es válido" });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: String(payload.sub) },
+      select: { id: true, hotelId: true, password: true },
+    });
+    if (!user) return res.status(400).json({ message: "El enlace no es válido" });
+
+    if (payload.v !== passwordVersion(user.password)) {
+      return res.status(409).json({ message: "Este enlace ya fue usado. Pedí uno nuevo." });
+    }
+
+    const hash = await bcrypt.hash(password, ROUNDS);
+    await prisma.user.updateMany({
+      where: { id: user.id, hotelId: user.hotelId },
+      data: { password: hash },
+    });
+
+    return res.json({ message: "Contraseña actualizada. Ya podés iniciar sesión." });
+  } catch (err) {
+    console.error("[auth.resetPassword] error:", err);
+    return res.status(500).json({ message: "No se pudo cambiar la contraseña" });
+  }
 }
 
 // ── Invitaciones del usuario principal ────────────────────────────────────────

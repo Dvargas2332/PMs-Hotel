@@ -16,6 +16,7 @@ import {
   updateHotelLauncherAdmin,
   listHotelBilling,
   createHotelBilling,
+  sendHotelBillingEmail,
   deleteHotelBilling,
   importRooms,
   importGuests,
@@ -55,6 +56,7 @@ router.post("/hotels/:id/invite", resendHotelInvite);
 router.get("/hotels/:id/billing", listHotelBilling);
 router.post("/hotels/:id/billing", createHotelBilling);
 router.delete("/hotels/:id/billing/:paymentId", deleteHotelBilling);
+router.post("/hotels/:id/billing/:paymentId/send", sendHotelBillingEmail);
 
 router.post("/hotels/:id/import/frontdesk/rooms", upload.single("file"), importRooms);
 router.post("/hotels/:id/import/frontdesk/guests", upload.single("file"), importGuests);

@@ -157,6 +157,31 @@ export function buildInviteEmail(opts: {
   };
 }
 
+export function buildPasswordResetEmail(opts: {
+  name: string;
+  hotelName: string;
+  resetUrl: string;
+  expiresAt: Date;
+}) {
+  const expires = opts.expiresAt.toLocaleString("es-CR");
+  const body = `
+    <p>Hola <strong>${opts.name || "equipo"}</strong>,</p>
+    <p>Pediste restablecer la contraseña de <strong>${opts.hotelName}</strong> en <strong>Kazehana PMS</strong>.</p>
+    <p style="margin:20px 0">
+      <a class="badge" href="${opts.resetUrl}" style="text-decoration:none">Cambiar contraseña</a>
+    </p>
+    <div class="card">
+      <div class="row"><span>Vence</span><span>${expires}</span></div>
+    </div>
+    <p style="font-size:12px;color:#6b7280">El enlace sirve una sola vez. Si no pediste este cambio, ignorá este correo: tu contraseña actual sigue funcionando.</p>
+    <p style="font-size:12px;color:#6b7280">Si el botón no funciona, copiá este enlace en el navegador:<br/>${opts.resetUrl}</p>`;
+  return {
+    subject: `Restablecer contraseña — ${opts.hotelName}`,
+    html: baseLayout(`Restablecer contraseña — ${opts.hotelName}`, body),
+    text: `Para cambiar tu contraseña de ${opts.hotelName} abrí ${opts.resetUrl} (vence ${expires}).`,
+  };
+}
+
 export function buildTestEmail(to: string) {
   const body = `
     <p>Este es un correo de prueba enviado desde el <strong>Gestor Kazehana Cloud</strong>.</p>

@@ -33,3 +33,16 @@ export const loginSchema = z
       }),
   });
 
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().email("Correo inválido"),
+  }),
+});
+
+export const resetPasswordSchema = z.object({
+  body: z.object({
+    token: z.string().min(10, "El enlace no es válido"),
+    password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  }),
+});
+

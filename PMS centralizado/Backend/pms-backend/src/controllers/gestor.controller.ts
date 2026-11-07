@@ -1116,6 +1116,57 @@ export async function createHotelBilling(req: Request, res: Response) {
   res.status(201).json(created);
 }
 
+/** Envía por correo el aviso de un cobro registrado a la dirección del hotel. */
+export async function sendHotelBillingEmail(req: Request, res: Response) {
+  const hotelId = String(req.params.id || "").trim();
+  const paymentId = String(req.params.paymentId || "").trim();
+  if (!hotelId || !paymentId) return res.status(400).json({ message: "Parametros requeridos" });
+
+  const payment = await prisma.saasBillingPayment.findFirst({ where: { id: paymentId, hotelId } });
+  if (!payment) return res.status(404).json({ message: "Cobro no encontrado" });
+
+  const hotel = await prisma.hotel.findUnique({ where: { id: hotelId }, select: { name: true } });
+  if (!hotel) return res.status(404).json({ message: "Hotel no encontrado" });
+
+  // Destinatario: el usuario principal del hotel; si no tiene, el correo del launcher.
+  const admin = await prisma.user.findFirst({
+    where: { hotelId, role: "ADMIN" },
+    select: { email: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const launcher = await prisma.launcherAccount.findFirst({
+    where: { hotelId, roleId: "ADMIN" },
+    select: { email: true },
+  });
+  const to = String(admin?.email || launcher?.email || "").trim();
+  if (!to || to.endsWith("@pms.local")) {
+    return res.status(400).json({ message: "El hotel no tiene un correo de contacto válido" });
+  }
+
+  const month = payment.paidAt.toLocaleDateString("es-CR", { year: "numeric", month: "long" });
+  const mail = buildBillingEmail({
+    hotelName: hotel.name,
+    month,
+    amount: Number(payment.amount || 0),
+    currency: payment.currency,
+    note: payment.note || undefined,
+  });
+
+  try {
+    const sent: any = await sendGestorMail({ to, ...mail });
+    await logSaasAction({
+      actor: String((req as any).user?.email || (req as any).user?.sub || "gestor"),
+      action: "billing.email",
+      entity: "SaasBillingPayment",
+      entityId: payment.id,
+      detail: { to, month },
+    });
+    return res.json({ sent: true, to, providerId: sent?.id ?? null });
+  } catch (err: any) {
+    return res.status(502).json({ message: err?.message || "No se pudo enviar el correo del cobro" });
+  }
+}
+
 export async function deleteHotelBilling(req: Request, res: Response) {
   const hotelId = String(req.params.id || "").trim();
   const paymentId = String(req.params.paymentId || "").trim();
