@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { LogIn, Info } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -117,6 +117,15 @@ export default function Login({ onSuccess }) {
                   required
                   autoComplete="new-password"
                 />
+                <div className="pt-1 text-right">
+                  <Link
+                    to="/forgot-password"
+                    className="text-xs font-medium hover:underline"
+                    style={{ color: "var(--color-text-muted)" }}
+                  >
+                    {t("login.forgotPassword")}
+                  </Link>
+                </div>
               </div>
 
               {err && (

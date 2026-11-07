@@ -30,6 +30,8 @@ import RestaurantClientsPage from "./modulos/restaurant/RestaurantClientsPage";
 import Managementpage from "./pages/Management/ManagementPage";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import ProtectedRoute from "./components/ProtectedRoutes";
 import Launchergestor from "./modulos/launchergestor";
 import { useLanguage } from "./context/LanguageContext";
@@ -42,6 +44,8 @@ export default function App() {
         {/* Login */}
         <Route path="/login" element={<Login />} />
         <Route path="/accept-invite" element={<AcceptInvite />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Inicio */}
         <Route path="/" element={<Navigate to="/login" replace />} />

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Building2, LogOut, RefreshCcw, ChevronRight, CircleUser,
   Plus, Pencil, Trash2, Upload, FileText, Settings, CreditCard,
-  Users, Database, Printer, History, Ban, CheckCircle2,
+  Users, Database, Printer, History, Ban, CheckCircle2, Mail,
 } from "lucide-react";
 import { api } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -469,6 +469,18 @@ export default function Launchergestor() {
     finally { setBillingSaving(false); }
   };
 
+  const onSendBilling = async (paymentId) => {
+    if (!selectedHotelId || !paymentId) return;
+    try {
+      const { data } = await api.post(
+        `/gestor/hotels/${encodeURIComponent(selectedHotelId)}/billing/${encodeURIComponent(paymentId)}/send`
+      );
+      alert(`Correo enviado a ${data?.to || "el hotel"}.`);
+    } catch (err) {
+      alert(err?.response?.data?.message || err?.message || "No se pudo enviar el correo");
+    }
+  };
+
   const onDeleteBilling = async (paymentId) => {
     if (!selectedHotelId || !paymentId) return;
     if (!window.confirm("¿Eliminar este cobro?")) return;
@@ -628,7 +640,7 @@ export default function Launchergestor() {
           {panel === "hoteles"    && <HotelesPanel hotels={filteredHotels} clients={clients} selectedHotelId={selectedHotelId} setSelectedHotelId={setSelectedHotelId} q={q} setQ={setQ} selectedClientId={selectedClientId} setSelectedClientId={setSelectedClientId} selectedClient={selectedClient} loadingHotels={loadingHotels} selectedHotel={selectedHotel} editingHotel={editingHotel} hotelEditForm={hotelEditForm} setHotelEditForm={setHotelEditForm} savingHotel={savingHotel} deletingHotelId={deletingHotelId} onStartEditHotel={onStartEditHotel} onCancelEditHotel={onCancelEditHotel} onSaveEditHotel={onSaveEditHotel} onDeleteHotel={onDeleteHotel} adminForm={adminForm} setAdminForm={setAdminForm} adminLoading={adminLoading} adminSaving={adminSaving} onSaveAdmin={onSaveAdmin} onResendInvite={onResendInvite} onToggleHotelActive={onToggleHotelActive} launcherAdminForm={launcherAdminForm} setLauncherAdminForm={setLauncherAdminForm} launcherAdminLoading={launcherAdminLoading} launcherAdminSaving={launcherAdminSaving} onSaveLauncherAdmin={onSaveLauncherAdmin} onRefresh={() => { loadClients().catch(()=>{}); loadHotels().catch(()=>{}); }} />}
           {panel === "clientes"   && <ClientesPanel clients={filteredClients} clientQ={clientQ} setClientQ={setClientQ} selectedClientId={selectedClientId} setSelectedClientId={setSelectedClientId} loadingClients={loadingClients} deletingClientId={deletingClientId} onDeleteClient={onDeleteClient} clientForm={clientForm} setClientForm={setClientForm} creatingClient={creatingClient} onCreateClient={onCreateClient} onRefresh={() => loadClients().catch(()=>{})} />}
           {panel === "crear"      && <CrearPanel clients={clients} createForm={createForm} setCreateForm={setCreateForm} creating={creating} onCreateHotel={onCreateHotel} lastCreatedCredentials={lastCreatedCredentials} setLastCreatedCredentials={setLastCreatedCredentials} />}
-          {panel === "cobros"     && <CobrosPanel selectedHotel={selectedHotel} selectedHotelId={selectedHotelId} billing={billing} billingLoading={billingLoading} billingSaving={billingSaving} billingForm={billingForm} setBillingForm={setBillingForm} onAddBilling={onAddBilling} onDeleteBilling={onDeleteBilling} onRefresh={() => loadBilling(selectedHotelId).catch(()=>{})} />}
+          {panel === "cobros"     && <CobrosPanel selectedHotel={selectedHotel} selectedHotelId={selectedHotelId} billing={billing} billingLoading={billingLoading} billingSaving={billingSaving} billingForm={billingForm} setBillingForm={setBillingForm} onAddBilling={onAddBilling} onSendBilling={onSendBilling} onDeleteBilling={onDeleteBilling} onRefresh={() => loadBilling(selectedHotelId).catch(()=>{})} />}
           {panel === "importar"   && <ImportarPanel selectedHotel={selectedHotel} selectedHotelId={selectedHotelId} importFiles={importFiles} setImportFiles={setImportFiles} importing={importing} lastImport={lastImport} onUpload={onUpload} />}
           {panel === "plantillas" && <PlantillasPanel printForms={printForms} printFormsLoading={printFormsLoading} printFormsSaving={printFormsSaving} globalFormIds={globalFormIds} setGlobalFormIds={setGlobalFormIds} globalModules={globalModules} setGlobalModules={setGlobalModules} selectedPrintFormId={selectedPrintFormId} setSelectedPrintFormId={setSelectedPrintFormId} selectedPrintForm={selectedPrintForm} saveGlobalForms={saveGlobalForms} onRefresh={() => loadPrintForms().catch(()=>{})} />}
           {panel === "auditoria"  && <AuditoriaPanel audit={audit} loading={auditLoading} onRefresh={() => loadAudit().catch(()=>{})} />}
@@ -954,7 +966,7 @@ function CrearPanel({ clients, createForm, setCreateForm, creating, onCreateHote
 }
 
 // ─── Panel: Cobros ─────────────────────────────────────────────────────────────
-function CobrosPanel({ selectedHotel, selectedHotelId, billing, billingLoading, billingSaving, billingForm, setBillingForm, onAddBilling, onDeleteBilling, onRefresh }) {
+function CobrosPanel({ selectedHotel, selectedHotelId, billing, billingLoading, billingSaving, billingForm, setBillingForm, onAddBilling, onSendBilling, onDeleteBilling, onRefresh }) {
   if (!selectedHotelId) return <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-slate-500 text-sm">Selecciona un hotel desde el panel Hoteles.</div>;
   return (
     <div className="space-y-5">
@@ -995,7 +1007,18 @@ function CobrosPanel({ selectedHotel, selectedHotelId, billing, billingLoading, 
                   <td className="px-4 py-3 text-white">{fmtMoney(p.amount, p.currency)}</td>
                   <td className="px-4 py-3 text-slate-400">{p.note||"-"}</td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{fmtDate(p.paidAt)}</td>
-                  <td className="px-4 py-3"><button onClick={() => onDeleteBilling(p.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => onSendBilling(p.id)}
+                        title="Enviar este cobro por correo al hotel"
+                        className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        <Mail className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => onDeleteBilling(p.id)} className="text-red-400 hover:text-red-300 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
