@@ -1,0 +1,70 @@
+name: deploy-api
+
+# Se dispara al tocar el backend o el compose, y también a mano desde la pestaña Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "PMS centralizado/Backend/**"
+      - "docker-compose.aws.yml"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+# OIDC: el runner pide un token temporal, no hay claves guardadas en GitHub.
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  INSTANCE_ID: i-014f1217378c0a229
+  ROLE_ARN: arn:aws:iam::057398475825:role/gha-pms-deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Credenciales temporales vía OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Reconstruir el contenedor en la instancia
+        run: |
+          set -euo pipefail
+
+          # Se ejecuta como ubuntu para que git no rechace el repo por "dubious
+          # ownership" y para usar su grupo docker.
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy ${GITHUB_SHA:0:7}" \
+            --parameters 'commands=["sudo -u ubuntu bash -lc \"cd /opt/pms && git fetch origin main && git reset --hard origin/main && docker compose -f docker-compose.aws.yml up -d --build && docker image prune -f\""]' \
+            --query "Command.CommandId" --output text)
+
+          echo "Comando SSM: $CMD_ID"
+
+          STATUS=Pending
+          for _ in $(seq 1 60); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query "Status" --output text 2>/dev/null || echo Pending)
+            echo "estado: $STATUS"
+            case "$STATUS" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 10
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --output json > /tmp/ssm.json
+
+          echo "--- salida ---"
+          jq -r '.StandardOutputContent' /tmp/ssm.json
+          echo "--- errores ---"
+          jq -r '.StandardErrorContent' /tmp/ssm.json
+
+          test "$(jq -r '.Status' /tmp/ssm.json)" = "Success"
