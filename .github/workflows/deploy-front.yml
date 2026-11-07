@@ -15,8 +15,10 @@ permissions:
   contents: read
 
 env:
-  BUCKET: pms-web-057398475825
-  WEBSITE: pms-web-057398475825.s3-website.us-east-2.amazonaws.com
+  # El bucket se llama igual que el dominio: así el Host que manda Cloudflare
+  # coincide con el del bucket y S3 sirve el sitio sin reescribir cabeceras.
+  BUCKET: app.kazehanacloud.com
+  WEBSITE: app.kazehanacloud.com.s3-website.us-east-2.amazonaws.com
   FRONT_DIR: "/opt/pms/PMS centralizado/Frontend/pms-frontend"
 
 jobs:
