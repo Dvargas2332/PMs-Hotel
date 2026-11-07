@@ -15,7 +15,9 @@ export function buildInviteUrl(token: string) {
   const base = String(
     process.env.FRONTEND_URL || process.env.APP_URL || process.env.PUBLIC_APP_URL || "http://localhost:3000"
   ).replace(/\/+$/, "");
-  return `${base}/accept-invite?token=${encodeURIComponent(token)}`;
+  // Apunta a la raíz (?invite=) y no a /accept-invite: el hosting estático
+  // responde 200 en "/" y 404 en rutas profundas, aunque el SPA se pinte igual.
+  return `${base}/?invite=${encodeURIComponent(token)}`;
 }
 
 export interface InviteResult {

@@ -276,7 +276,9 @@ export async function forgotPassword(req: Request, res: Response) {
       { expiresIn: "1h" }
     );
     const base = String(process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/+$/, "");
-    const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+    // Raíz con parámetro: "/" responde 200 en el hosting estático, las rutas
+    // profundas responden 404 aunque el SPA se pinte igual.
+    const resetUrl = `${base}/?reset=${encodeURIComponent(token)}`;
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
     const hotel = await prisma.hotel.findUnique({ where: { id: user.hotelId }, select: { name: true } });

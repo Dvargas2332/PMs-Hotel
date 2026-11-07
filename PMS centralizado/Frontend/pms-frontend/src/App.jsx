@@ -28,6 +28,7 @@ import RestaurantStaffPage from "./modulos/restaurant/RestaurantStaffPage";
 import RestaurantHistory from "./modulos/restaurant/RestaurantHistory";
 import RestaurantClientsPage from "./modulos/restaurant/RestaurantClientsPage";
 import Managementpage from "./pages/Management/ManagementPage";
+import { useSearchParams } from "react-router-dom";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -35,6 +36,20 @@ import ResetPassword from "./pages/ResetPassword";
 import ProtectedRoute from "./components/ProtectedRoutes";
 import Launchergestor from "./modulos/launchergestor";
 import { useLanguage } from "./context/LanguageContext";
+
+/**
+ * La raíz responde 200 en el hosting estático, mientras que una ruta profunda
+ * devuelve 404 (aunque el SPA se pinte igual). Los enlaces que llegan por correo
+ * entran por "/" con ?reset= o ?invite= y desde acá se navega dentro de la app.
+ */
+function RootEntry() {
+  const [params] = useSearchParams();
+  const reset = params.get("reset");
+  const invite = params.get("invite");
+  if (reset) return <Navigate to={`/reset-password?token=${encodeURIComponent(reset)}`} replace />;
+  if (invite) return <Navigate to={`/accept-invite?token=${encodeURIComponent(invite)}`} replace />;
+  return <Navigate to="/login" replace />;
+}
 
 export default function App() {
   const { t } = useLanguage();
@@ -47,8 +62,8 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* Inicio */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
+        {/* Inicio: la raíz también resuelve los enlaces que llegan por correo */}
+        <Route path="/" element={<RootEntry />} />
         <Route
           path="/launcher"
           element={
