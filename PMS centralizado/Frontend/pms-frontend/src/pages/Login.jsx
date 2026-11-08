@@ -74,7 +74,7 @@ export default function Login({ onSuccess }) {
       </div>
 
       <div
-        className="w-full max-w-5xl rounded-3xl overflow-hidden grid grid-cols-1 md:grid-cols-2 shadow-xl"
+        className="w-full max-w-4xl rounded-3xl overflow-hidden grid grid-cols-1 md:grid-cols-[1fr_420px] shadow-xl"
         style={{ border: "1px solid var(--card-border)", background: "var(--card-bg)" }}
       >
         {/* Left panel — keeps emerald brand identity */}
