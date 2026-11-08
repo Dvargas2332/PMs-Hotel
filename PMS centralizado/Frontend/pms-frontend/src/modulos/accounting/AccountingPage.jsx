@@ -17,6 +17,10 @@ import {
   Scale,
   FileText,
   Layers,
+  Pencil,
+  Trash2,
+  Download,
+  Receipt,
   CircleUser,
   LogOut,
 } from "lucide-react";
@@ -24,6 +28,32 @@ import {
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) =>
   Number(n ?? 0).toLocaleString("es-CR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Descarga un CSV que Excel abre en español: separador ";", decimal con coma y
+ * BOM para que respete las tildes. Lo que exporta el contador tiene que poder
+ * abrirse y sumarse sin retoques.
+ */
+function exportCsv(fileName, header, rows) {
+  const cell = (value) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value.toFixed(2).replace(".", ",");
+    }
+    const text = String(value);
+    return /[";\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const body = [header, ...rows].map((row) => row.map(cell).join(";")).join("\r\n");
+  const blob = new Blob([`\uFEFF${body}`], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 const BADGE = {
   DRAFT: "bg-slate-200/80 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300",
@@ -176,14 +206,18 @@ function JournalPanel() {
   const [entries, setEntries] = React.useState([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
-  const [filters, setFilters] = React.useState({ status: "", source: "", q: "", from: "", to: "" });
+  const [error, setError] = React.useState("");
+  const [filters, setFilters] = React.useState({ status: "", source: "", q: "", from: "", to: "", periodId: "" });
+  const [periods, setPeriods] = React.useState([]);
   const [offset, setOffset] = React.useState(0);
   const [selected, setSelected] = React.useState(null);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [editEntry, setEditEntry] = React.useState(null);
   const LIMIT = 25;
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setError("");
     try {
       const params = new URLSearchParams({ limit: LIMIT, offset });
       if (filters.status) params.set("status", filters.status);
@@ -191,26 +225,53 @@ function JournalPanel() {
       if (filters.q) params.set("q", filters.q);
       if (filters.from) params.set("from", filters.from);
       if (filters.to) params.set("to", filters.to);
+      if (filters.periodId) params.set("periodId", filters.periodId);
       const { data } = await api.get(`/accounting/entries?${params}`);
       setEntries(data.entries ?? []);
       setTotal(data.total ?? 0);
-    } catch {
+    } catch (e) {
       setEntries([]);
+      setError(e?.response?.data?.message ?? "No se pudieron cargar los asientos");
     } finally {
       setLoading(false);
     }
   }, [filters, offset]);
 
   React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    api.get("/accounting/periods")
+      .then(({ data }) => setPeriods(Array.isArray(data) ? data : []))
+      .catch(() => setPeriods([]));
+  }, []);
 
   const handlePost = async (id) => {
-    await api.post(`/accounting/entries/${id}/post`);
-    load();
+    setError("");
+    try {
+      await api.post(`/accounting/entries/${id}/post`);
+      load();
+    } catch (e) {
+      setError(e?.response?.data?.message ?? "No se pudo contabilizar el asiento");
+    }
   };
   const handleVoid = async (id) => {
     if (!window.confirm("¿Anular este asiento?")) return;
-    await api.post(`/accounting/entries/${id}/void`);
-    load();
+    setError("");
+    try {
+      await api.post(`/accounting/entries/${id}/void`);
+      load();
+    } catch (e) {
+      setError(e?.response?.data?.message ?? "No se pudo anular el asiento");
+    }
+  };
+  const handleDelete = async (entry) => {
+    if (!window.confirm(`¿Eliminar el borrador ${entry.number}? Esta acción no se puede deshacer.`)) return;
+    setError("");
+    try {
+      await api.delete(`/accounting/entries/${entry.id}`);
+      load();
+    } catch (e) {
+      setError(e?.response?.data?.message ?? "No se pudo eliminar el borrador");
+    }
   };
 
   return (
@@ -257,6 +318,18 @@ function JournalPanel() {
           <option value="RESTAURANT">Restaurante</option>
           <option value="FRONTDESK">Recepción</option>
         </select>
+        <select
+          value={filters.periodId}
+          onChange={(e) => { setFilters((f) => ({ ...f, periodId: e.target.value })); setOffset(0); }}
+          className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500"
+        >
+          <option value="">Todos los períodos</option>
+          {periods.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}{String(p.status).toUpperCase() === "CLOSED" ? " — cerrado" : ""}
+            </option>
+          ))}
+        </select>
         <input
           type="date"
           value={filters.from}
@@ -278,6 +351,11 @@ function JournalPanel() {
       </div>
 
       {/* Table */}
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {error}
+        </div>
+      )}
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -338,6 +416,24 @@ function JournalPanel() {
                           <CheckCircle2 className="w-3.5 h-3.5" />
                         </button>
                       )}
+                      {e.status === "DRAFT" && (
+                        <>
+                          <button
+                            onClick={() => setEditEntry(e)}
+                            className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-amber-400 transition-colors"
+                            title="Editar borrador"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(e)}
+                            className="p-1 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+                            title="Eliminar borrador"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                       {e.status !== "VOIDED" && (
                         <button
                           onClick={() => handleVoid(e.id)}
@@ -382,6 +478,14 @@ function JournalPanel() {
 
       {/* Create entry modal */}
       {createOpen && <CreateEntryModal onClose={() => { setCreateOpen(false); load(); }} />}
+
+      {/* Edit entry modal (sólo borradores) */}
+      {editEntry && (
+        <CreateEntryModal
+          entry={editEntry}
+          onClose={() => { setEditEntry(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -441,22 +545,44 @@ function EntryDetailModal({ entry, onClose }) {
 }
 
 // ─── Create Entry Modal ────────────────────────────────────────────────────────
-function CreateEntryModal({ onClose }) {
+function CreateEntryModal({ entry, onClose, onSaved }) {
+  const isEdit = !!entry;
   const [accounts, setAccounts] = React.useState([]);
+  const [periods, setPeriods] = React.useState([]);
+  const [loadError, setLoadError] = React.useState("");
   const [form, setForm] = React.useState({
-    date: new Date().toISOString().split("T")[0],
-    description: "",
-    currency: "CRC",
+    date: entry?.date ? String(entry.date).slice(0, 10) : new Date().toISOString().split("T")[0],
+    description: entry?.description ?? "",
+    currency: entry?.currency ?? "CRC",
+    periodId: entry?.periodId ?? "",
   });
-  const [lines, setLines] = React.useState([
-    { accountId: "", debit: "", credit: "", description: "" },
-    { accountId: "", debit: "", credit: "", description: "" },
-  ]);
+  const [lines, setLines] = React.useState(
+    isEdit && Array.isArray(entry.lines) && entry.lines.length >= 2
+      ? entry.lines.map((l) => ({
+          accountId: l.accountId ?? l.account?.id ?? "",
+          debit: l.debit ? String(Number(l.debit)) : "",
+          credit: l.credit ? String(Number(l.credit)) : "",
+          description: l.description ?? "",
+        }))
+      : [
+          { accountId: "", debit: "", credit: "", description: "" },
+          { accountId: "", debit: "", credit: "", description: "" },
+        ]
+  );
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
-    api.get("/accounting/accounts?active=true").then(({ data }) => setAccounts(Array.isArray(data) ? data : [])).catch(() => {});
+    api.get("/accounting/accounts?active=true")
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : [];
+        setAccounts(list);
+        if (list.length === 0) setLoadError("No hay cuentas activas: inicializá el plan de cuentas desde Management → Contabilidad.");
+      })
+      .catch((e) => setLoadError(e?.response?.data?.message ?? "No se pudo cargar el plan de cuentas"));
+    api.get("/accounting/periods")
+      .then(({ data }) => setPeriods(Array.isArray(data) ? data : []))
+      .catch(() => setPeriods([]));
   }, []);
 
   const setLine = (i, field, val) =>
@@ -477,13 +603,25 @@ function CreateEntryModal({ onClose }) {
     if (!balanced) return setError(`Asiento desbalanceado: Débito ${fmt(totalDebit)} ≠ Crédito ${fmt(totalCredit)}`);
     setSaving(true);
     try {
-      await api.post("/accounting/entries", {
-        ...form,
-        lines: validLines.map((l) => ({ accountId: l.accountId, debit: Number(l.debit || 0), credit: Number(l.credit || 0), description: l.description || null })),
-      });
+      const payload = {
+        date: form.date,
+        description: form.description,
+        currency: form.currency,
+        periodId: form.periodId || null,
+        lines: validLines.map((l) => ({
+          accountId: l.accountId,
+          debit: Number(l.debit || 0),
+          credit: Number(l.credit || 0),
+          description: l.description || null,
+        })),
+      };
+      const { data } = isEdit
+        ? await api.put(`/accounting/entries/${entry.id}`, payload)
+        : await api.post("/accounting/entries", payload);
+      onSaved?.(data ?? null);
       onClose();
     } catch (e) {
-      setError(e?.response?.data?.message ?? "Error al crear asiento");
+      setError(e?.response?.data?.message ?? (isEdit ? "Error al guardar el asiento" : "Error al crear asiento"));
     } finally {
       setSaving(false);
     }
@@ -493,11 +631,11 @@ function CreateEntryModal({ onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" data-module="accounting" style={{ background: "var(--card-bg)", borderColor: "var(--card-border)" }}>
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: "1px solid var(--card-border)" }}>
-          <div className="font-semibold text-white">Nuevo Asiento Manual</div>
+          <div className="font-semibold text-white">{isEdit ? `Editar Asiento ${entry.number || ""}` : "Nuevo Asiento Manual"}</div>
           <button onClick={onClose} className="text-xl leading-none" style={{ color: "var(--color-text-muted)" }}>×</button>
         </div>
         <div className="px-6 py-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-slate-400 mb-1 block">Fecha</label>
               <input
@@ -519,6 +657,21 @@ function CreateEntryModal({ onClose }) {
                 <option value="EUR">EUR — Euro</option>
               </select>
             </div>
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Período</label>
+              <select
+                value={form.periodId}
+                onChange={(e) => setForm((f) => ({ ...f, periodId: e.target.value }))}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+              >
+                <option value="">Automático (el que cubre la fecha)</option>
+                {periods.map((p) => (
+                  <option key={p.id} value={p.id} disabled={String(p.status).toUpperCase() === "CLOSED"}>
+                    {p.name}{String(p.status).toUpperCase() === "CLOSED" ? " — cerrado" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label className="text-xs text-slate-400 mb-1 block">Descripción</label>
@@ -529,6 +682,8 @@ function CreateEntryModal({ onClose }) {
               className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
             />
           </div>
+
+          {loadError && <div className="text-amber-300 text-xs bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">{loadError}</div>}
 
           {/* Lines */}
           <div>
@@ -604,7 +759,7 @@ function CreateEntryModal({ onClose }) {
               disabled={saving}
               className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
             >
-              {saving ? "Guardando..." : "Crear Asiento"}
+              {saving ? "Guardando..." : isEdit ? "Guardar cambios" : "Crear Asiento"}
             </button>
           </div>
         </div>
@@ -614,9 +769,21 @@ function CreateEntryModal({ onClose }) {
 }
 
 // ─── Panel: Plan de Cuentas ────────────────────────────────────────────────────
+const ACCOUNT_TYPE_LABELS = {
+  ASSET: "Activo",
+  LIABILITY: "Pasivo",
+  EQUITY: "Patrimonio",
+  INCOME: "Ingreso",
+  COST: "Costo",
+  EXPENSE: "Gasto",
+};
+
 function ChartOfAccountsPanel() {
   const [accounts, setAccounts] = React.useState([]);
+  const [allAccounts, setAllAccounts] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
+  const [loadError, setLoadError] = React.useState("");
+  const [notice, setNotice] = React.useState("");
   const [q, setQ] = React.useState("");
   const [typeFilter, setTypeFilter] = React.useState("");
   const [editOpen, setEditOpen] = React.useState(false);
@@ -624,24 +791,41 @@ function ChartOfAccountsPanel() {
 
   const load = React.useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (typeFilter) params.set("type", typeFilter);
-      const { data } = await api.get(`/accounting/accounts?${params}`);
+      const { data } = await api.get(`/accounting/accounts${params.toString() ? `?${params}` : ""}`);
       setAccounts(Array.isArray(data) ? data : []);
-    } catch {
-      setAccounts([]);
+    } catch (e) {
+      setLoadError(e?.response?.data?.message ?? e?.message ?? "No se pudo cargar el plan de cuentas");
     } finally {
       setLoading(false);
     }
   }, [q, typeFilter]);
 
+  // Lista completa sólo para el selector de cuenta padre, sin filtros de pantalla.
+  const loadAll = React.useCallback(async () => {
+    try {
+      const { data } = await api.get("/accounting/accounts");
+      setAllAccounts(Array.isArray(data) ? data : []);
+    } catch {
+      setAllAccounts([]);
+    }
+  }, []);
+
   React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { loadAll(); }, [loadAll]);
 
   const handleToggleActive = async (acc) => {
-    await api.put(`/accounting/accounts/${acc.id}`, { isActive: !acc.isActive });
-    load();
+    try {
+      await api.put(`/accounting/accounts/${acc.id}`, { isActive: !acc.isActive });
+      load();
+      loadAll();
+    } catch (e) {
+      setLoadError(e?.response?.data?.message ?? "No se pudo cambiar el estado de la cuenta");
+    }
   };
 
   const handleDelete = async (acc) => {
@@ -649,9 +833,22 @@ function ChartOfAccountsPanel() {
     try {
       await api.delete(`/accounting/accounts/${acc.id}`);
       load();
+      loadAll();
     } catch (e) {
-      alert(e?.response?.data?.message ?? "Error al eliminar");
+      setLoadError(e?.response?.data?.message ?? "Error al eliminar");
     }
+  };
+
+  const handleSaved = (saved) => {
+    setEditOpen(false);
+    setEditAccount(null);
+    // Deja a la vista la cuenta recién guardada: si el código está fuera del
+    // filtro actual, la pantalla parecía no haber creado nada.
+    setQ(saved?.code ?? "");
+    setTypeFilter("");
+    setNotice(saved ? `Cuenta ${saved.code} — ${saved.name} guardada` : "");
+    load();
+    loadAll();
   };
 
   return (
@@ -659,6 +856,9 @@ function ChartOfAccountsPanel() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--color-text-base)" }}>
           <Layers className="w-5 h-5 text-amber-400" /> Plan de Cuentas
+          <span className="text-xs font-normal" style={{ color: "var(--acc-text-muted, #475569)" }}>
+            {accounts.length} {accounts.length === 1 ? "cuenta" : "cuentas"}
+          </span>
         </h2>
         <button
           onClick={() => { setEditAccount(null); setEditOpen(true); }}
@@ -693,6 +893,18 @@ function ChartOfAccountsPanel() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {loadError}
+        </div>
+      )}
+      {notice && !loadError && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+          <span>{notice}</span>
+          <button onClick={() => setNotice("")} className="text-xs text-emerald-200/70 hover:text-emerald-100">Cerrar</button>
+        </div>
+      )}
+
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -709,7 +921,9 @@ function ChartOfAccountsPanel() {
               <tr><td colSpan={5} className="text-center py-8 text-slate-500">Cargando...</td></tr>
             )}
             {!loading && accounts.length === 0 && (
-              <tr><td colSpan={5} className="text-center py-8 text-slate-500">No hay cuentas</td></tr>
+              <tr><td colSpan={5} className="text-center py-8 text-slate-500">
+                {loadError ? "No se pudo leer el plan de cuentas." : q || typeFilter ? "Ninguna cuenta coincide con el filtro." : "No hay cuentas: inicializá el plan de cuentas desde Management → Contabilidad."}
+              </td></tr>
             )}
             {accounts.map((a) => (
               <tr key={a.id} className="border-b border-white/5 hover:bg-white/3 transition-colors">
@@ -718,7 +932,7 @@ function ChartOfAccountsPanel() {
                   {a.description && <div className="text-xs text-slate-500 leading-none mb-0.5">{a.description}</div>}
                   {a.name}
                 </td>
-                <td className={`px-4 py-2.5 text-xs font-medium ${ACCOUNT_TYPE_COLORS[a.type] ?? "text-slate-400"}`}>{a.type}</td>
+                <td className={`px-4 py-2.5 text-xs font-medium ${ACCOUNT_TYPE_COLORS[a.type] ?? "text-slate-400"}`}>{ACCOUNT_TYPE_LABELS[a.type] ?? a.type}</td>
                 <td className="px-4 py-2.5">
                   <span className={`px-2 py-0.5 rounded-full text-xs ${a.isActive ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" : "bg-slate-200 text-slate-500 dark:bg-slate-500/20 dark:text-slate-400"}`}>
                     {a.isActive ? "Activa" : "Inactiva"}
@@ -757,8 +971,9 @@ function ChartOfAccountsPanel() {
       {editOpen && (
         <AccountFormModal
           account={editAccount}
-          accounts={accounts}
-          onClose={() => { setEditOpen(false); load(); }}
+          accounts={allAccounts}
+          onClose={() => { setEditOpen(false); }}
+          onSaved={handleSaved}
         />
       )}
     </div>
@@ -766,7 +981,7 @@ function ChartOfAccountsPanel() {
 }
 
 // ─── Account Form Modal ────────────────────────────────────────────────────────
-function AccountFormModal({ account, accounts, onClose }) {
+function AccountFormModal({ account, accounts, onClose, onSaved }) {
   const isEdit = !!account;
   const [form, setForm] = React.useState({
     code: account?.code ?? "",
@@ -780,27 +995,25 @@ function AccountFormModal({ account, accounts, onClose }) {
 
   const handleSave = async () => {
     setError("");
-    if (!form.code || !form.name) return setError("Código y nombre son requeridos");
+    if (!form.code.trim() || !form.name.trim()) return setError("Código y nombre son requeridos");
     setSaving(true);
     try {
-      if (isEdit) {
-        await api.put(`/accounting/accounts/${account.id}`, {
-          name: form.name,
-          description: form.description || null,
-          parentId: form.parentId || null,
-        });
-      } else {
-        await api.post("/accounting/accounts", {
-          code: form.code,
-          name: form.name,
-          type: form.type,
-          description: form.description || null,
-          parentId: form.parentId || null,
-        });
-      }
-      onClose();
+      const { data } = isEdit
+        ? await api.put(`/accounting/accounts/${account.id}`, {
+            name: form.name.trim(),
+            description: form.description.trim() || null,
+            parentId: form.parentId || null,
+          })
+        : await api.post("/accounting/accounts", {
+            code: form.code.trim(),
+            name: form.name.trim(),
+            type: form.type,
+            description: form.description.trim() || null,
+            parentId: form.parentId || null,
+          });
+      onSaved(data ?? null);
     } catch (e) {
-      setError(e?.response?.data?.message ?? "Error al guardar");
+      setError(e?.response?.data?.message ?? e?.message ?? "Error al guardar");
     } finally {
       setSaving(false);
     }
@@ -1019,16 +1232,19 @@ function ReportsPanel() {
   const [asOf, setAsOf] = React.useState("");
   const [data, setData] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
 
   const REPORTS = [
     { id: "trial-balance", label: "Balance de Comprobación", icon: Scale },
     { id: "income-statement", label: "Estado de Resultados", icon: TrendingUp },
     { id: "balance-sheet", label: "Balance General", icon: FileText },
+    { id: "vat-book", label: "Libro de IVA", icon: Receipt },
   ];
 
   const loadReport = async () => {
     setLoading(true);
     setData(null);
+    setError("");
     try {
       const params = new URLSearchParams();
       if (activeReport !== "balance-sheet") {
@@ -1037,12 +1253,44 @@ function ReportsPanel() {
       } else {
         if (asOf) params.set("asOf", asOf);
       }
-      const { data: res } = await api.get(`/accounting/reports/${activeReport}?${params}`);
+      const { data: res } = await api.get(`/accounting/reports/${activeReport}${params.toString() ? `?${params}` : ""}`);
       setData(res);
-    } catch {
-      setData(null);
+    } catch (e) {
+      setError(e?.response?.data?.message ?? "No se pudo generar el reporte");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = () => {
+    if (!data) return;
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (activeReport === "trial-balance") {
+      exportCsv(`balance-comprobacion-${stamp}.csv`, ["Código", "Cuenta", "Tipo", "Débito", "Crédito"], [
+        ...data.rows.map((r) => [r.code, r.name, ACCOUNT_TYPE_LABELS[r.type] ?? r.type, r.debit, r.credit]),
+        ["", "TOTALES", "", data.totalDebit, data.totalCredit],
+      ]);
+    } else if (activeReport === "income-statement") {
+      exportCsv(`estado-resultados-${stamp}.csv`, ["Código", "Cuenta", "Tipo", "Neto"], [
+        ...data.rows.map((r) => [r.code, r.name, ACCOUNT_TYPE_LABELS[r.type] ?? r.type, r.net]),
+        ["", "Total ingresos", "", data.totalIncome],
+        ["", "Total costos", "", data.totalCost],
+        ["", "Total gastos", "", data.totalExpense],
+        ["", "Utilidad bruta", "", data.grossProfit],
+        ["", "Utilidad neta", "", data.netProfit],
+      ]);
+    } else if (activeReport === "balance-sheet") {
+      exportCsv(`balance-general-${stamp}.csv`, ["Código", "Cuenta", "Tipo", "Saldo"], [
+        ...data.rows.map((r) => [r.code, r.name, ACCOUNT_TYPE_LABELS[r.type] ?? r.type, r.balance]),
+        ["", "Total activo", "", data.totalAssets],
+        ["", "Total pasivo", "", data.totalLiabilities],
+        ["", "Total patrimonio", "", data.totalEquity],
+      ]);
+    } else if (activeReport === "vat-book") {
+      exportCsv(`libro-iva-${stamp}.csv`, ["Código", "Cuenta", "Débito", "Crédito", "Neto"], [
+        ...data.rows.map((r) => [r.code, r.name, r.debit, r.credit, r.net]),
+        ["", "TOTALES", data.totalDebit, data.totalCredit, ""],
+      ]);
     }
   };
 
@@ -1097,12 +1345,99 @@ function ReportsPanel() {
         >
           {loading ? "Generando..." : "Generar Reporte"}
         </button>
+        {data && (
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-sm rounded-lg transition-colors"
+          >
+            <Download className="w-4 h-4" /> Exportar CSV
+          </button>
+        )}
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</div>
+      )}
 
       {/* Report output */}
       {data && activeReport === "trial-balance" && <TrialBalanceReport data={data} />}
       {data && activeReport === "income-statement" && <IncomeStatementReport data={data} />}
       {data && activeReport === "balance-sheet" && <BalanceSheetReport data={data} />}
+      {data && activeReport === "vat-book" && <VatBookReport data={data} />}
+    </div>
+  );
+}
+
+function VatBookReport({ data }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        {data.note || "Agrupa los asientos contabilizados de las cuentas de IVA."}
+      </div>
+      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/10 text-slate-400 text-xs uppercase">
+              <th className="text-left px-4 py-3">Código</th>
+              <th className="text-left px-4 py-3">Cuenta</th>
+              <th className="text-right px-4 py-3">Débito</th>
+              <th className="text-right px-4 py-3">Crédito</th>
+              <th className="text-right px-4 py-3">Neto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-6 text-slate-500">Sin movimientos de IVA en el período</td></tr>
+            )}
+            {data.rows.map((r) => (
+              <tr key={r.code} className="border-b border-white/5 hover:bg-white/3">
+                <td className="px-4 py-2 font-mono text-xs text-amber-300">{r.code}</td>
+                <td className="px-4 py-2 text-white">{r.name}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-300">{r.debit ? `₡${fmt(r.debit)}` : ""}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-300">{r.credit ? `₡${fmt(r.credit)}` : ""}</td>
+                <td className="px-4 py-2 text-right font-mono text-white">{`₡${fmt(r.net)}`}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-white/10 font-semibold">
+              <td className="px-4 py-2" colSpan={2}>Totales</td>
+              <td className="px-4 py-2 text-right font-mono text-white">₡{fmt(data.totalDebit)}</td>
+              <td className="px-4 py-2 text-right font-mono text-white">₡{fmt(data.totalCredit)}</td>
+              <td className="px-4 py-2" />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {(data.movements ?? []).length > 0 && (
+        <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-slate-400 text-xs uppercase">
+                <th className="text-left px-4 py-3">Fecha</th>
+                <th className="text-left px-4 py-3">Asiento</th>
+                <th className="text-left px-4 py-3">Descripción</th>
+                <th className="text-left px-4 py-3">Cuenta</th>
+                <th className="text-right px-4 py-3">Débito</th>
+                <th className="text-right px-4 py-3">Crédito</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.movements.map((m, i) => (
+                <tr key={`${m.entryNumber}-${i}`} className="border-b border-white/5 hover:bg-white/3">
+                  <td className="px-4 py-2 text-slate-300">{m.date}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-amber-300">{m.entryNumber}</td>
+                  <td className="px-4 py-2 text-slate-300 max-w-xs truncate">{m.description}</td>
+                  <td className="px-4 py-2 text-slate-400 text-xs">{m.account}</td>
+                  <td className="px-4 py-2 text-right font-mono text-slate-300">{m.debit ? `₡${fmt(m.debit)}` : ""}</td>
+                  <td className="px-4 py-2 text-right font-mono text-slate-300">{m.credit ? `₡${fmt(m.credit)}` : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -1112,7 +1447,7 @@ function TrialBalanceReport({ data }) {
     <div className="space-y-3">
       <div className={`flex items-center gap-2 text-sm font-medium ${data.balanced ? "text-emerald-400" : "text-red-400"}`}>
         {data.balanced ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-        {data.balanced ? "Asiento balanceado" : "Asiento desbalanceado"}
+        {data.balanced ? "Débitos y créditos cuadran" : "El balance no cuadra: revisá los asientos"}
       </div>
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
         <table className="w-full text-sm">
@@ -1243,6 +1578,19 @@ function SettingsPanel() {
   const [saving, setSaving] = React.useState(false);
   const [seeding, setSeeding] = React.useState(false);
   const [seedResult, setSeedResult] = React.useState("");
+  const [periods, setPeriods] = React.useState([]);
+  const [periodMonth, setPeriodMonth] = React.useState(new Date().toISOString().slice(0, 7));
+  const [periodBusy, setPeriodBusy] = React.useState(false);
+  const [periodMsg, setPeriodMsg] = React.useState("");
+
+  const loadPeriods = React.useCallback(async () => {
+    try {
+      const { data } = await api.get("/accounting/periods");
+      setPeriods(Array.isArray(data) ? data : []);
+    } catch {
+      setPeriods([]);
+    }
+  }, []);
 
   React.useEffect(() => {
     setLoading(true);
@@ -1250,7 +1598,61 @@ function SettingsPanel() {
       .then(({ data }) => setSettings(data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+    loadPeriods();
+  }, [loadPeriods]);
+
+  const openPeriod = async () => {
+    setPeriodMsg("");
+    if (!periodMonth) return setPeriodMsg("Elegí el mes del período");
+    const [year, month] = periodMonth.split("-").map(Number);
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0));
+    const name = start.toLocaleDateString("es-CR", { month: "long", year: "numeric", timeZone: "UTC" });
+    setPeriodBusy(true);
+    try {
+      await api.post("/accounting/periods", {
+        name: `${name.charAt(0).toUpperCase()}${name.slice(1)}`,
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+      });
+      setPeriodMsg("Período abierto");
+      loadPeriods();
+    } catch (e) {
+      setPeriodMsg(e?.response?.data?.message ?? "No se pudo abrir el período");
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const closePeriod = async (period) => {
+    if (!window.confirm(`¿Cerrar el período ${period.name}? Después no admite asientos.`)) return;
+    setPeriodMsg("");
+    setPeriodBusy(true);
+    try {
+      await api.post(`/accounting/periods/${period.id}/close`);
+      setPeriodMsg(`Período ${period.name} cerrado`);
+      loadPeriods();
+    } catch (e) {
+      setPeriodMsg(e?.response?.data?.message ?? "No se pudo cerrar el período");
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const removePeriod = async (period) => {
+    if (!window.confirm(`¿Eliminar el período ${period.name}?`)) return;
+    setPeriodMsg("");
+    setPeriodBusy(true);
+    try {
+      await api.delete(`/accounting/periods/${period.id}`);
+      setPeriodMsg("Período eliminado");
+      loadPeriods();
+    } catch (e) {
+      setPeriodMsg(e?.response?.data?.message ?? "No se pudo eliminar el período");
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!settings) return;
@@ -1349,6 +1751,86 @@ function SettingsPanel() {
         {seedResult && (
           <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">{seedResult}</div>
         )}
+      </div>
+
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-3">
+        <div>
+          <div className="text-sm font-medium text-white">Períodos contables</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            El asiento toma el período que cubre su fecha. Un período cerrado no admite asientos, contabilizaciones ni anulaciones.
+          </div>
+        </div>
+
+        {!settings.fiscalPeriods && (
+          <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+            Activá «Períodos contables» arriba y guardá la configuración para poder abrirlos.
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <label className="text-xs text-slate-400 mb-1 block">Mes del período</label>
+            <input
+              type="month"
+              value={periodMonth}
+              onChange={(e) => setPeriodMonth(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+          <button
+            onClick={openPeriod}
+            disabled={periodBusy || !settings.fiscalPeriods}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-sm rounded-lg transition-colors"
+          >
+            {periodBusy ? "Procesando..." : "Abrir período"}
+          </button>
+        </div>
+
+        {periodMsg && <div className="text-xs text-slate-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2">{periodMsg}</div>}
+
+        <div className="rounded-xl border border-white/10 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/10 text-slate-400 text-xs uppercase">
+                <th className="text-left px-3 py-2">Período</th>
+                <th className="text-left px-3 py-2">Desde</th>
+                <th className="text-left px-3 py-2">Hasta</th>
+                <th className="text-left px-3 py-2">Estado</th>
+                <th className="text-center px-3 py-2">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {periods.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-4 text-slate-500 text-xs">Todavía no hay períodos abiertos</td></tr>
+              )}
+              {periods.map((p) => {
+                const isClosed = String(p.status).toUpperCase() === "CLOSED";
+                return (
+                  <tr key={p.id} className="border-b border-white/5">
+                    <td className="px-3 py-2 text-white">{p.name}</td>
+                    <td className="px-3 py-2 text-slate-400 text-xs">{String(p.startDate).slice(0, 10)}</td>
+                    <td className="px-3 py-2 text-slate-400 text-xs">{String(p.endDate).slice(0, 10)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs ${isClosed ? "bg-slate-500/20 text-slate-400" : "bg-emerald-500/20 text-emerald-300"}`}>
+                        {isClosed ? "Cerrado" : "Abierto"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-center gap-2 text-xs">
+                        {!isClosed && (
+                          <button onClick={() => closePeriod(p)} disabled={periodBusy} className="text-slate-400 hover:text-amber-300 disabled:opacity-40">Cerrar</button>
+                        )}
+                        {!isClosed && (
+                          <button onClick={() => removePeriod(p)} disabled={periodBusy} className="text-slate-400 hover:text-red-400 disabled:opacity-40">Eliminar</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
