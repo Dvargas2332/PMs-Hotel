@@ -109,7 +109,7 @@ export default function AccountingPage() {
       }}
     >
       {/* Header */}
-      <header className="shrink-0 flex items-center justify-between px-6 py-4 backdrop-blur-sm" style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--sidebar-border)" }}>
+      <header className="relative z-20 shrink-0 flex items-center justify-between px-6 py-4 backdrop-blur-sm" style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--sidebar-border)" }}>
         <div className="flex items-center gap-3">
           <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-8 w-8 object-contain" />
           <div className="space-y-0.5">

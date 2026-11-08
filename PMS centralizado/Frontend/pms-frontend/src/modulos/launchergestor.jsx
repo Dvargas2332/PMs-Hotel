@@ -590,7 +590,7 @@ export default function Launchergestor() {
       style={{ background: "linear-gradient(135deg, #0f0f1a 0%, #111827 50%, #0f0f1a 100%)", backgroundAttachment: "fixed" }}
     >
       {/* Header */}
-      <header className="shrink-0 flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 backdrop-blur-sm">
+      <header className="relative z-20 shrink-0 flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/20 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-8 w-8 object-contain" />
           <div className="space-y-0.5">
