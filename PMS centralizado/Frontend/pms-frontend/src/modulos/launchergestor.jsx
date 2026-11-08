@@ -162,7 +162,7 @@ export default function Launchergestor() {
   const [billingSaving, setBillingSaving] = useState(false);
   const [billingForm, setBillingForm] = useState({ month: "", amount: "", currency: "USD", note: "" });
 
-  const [importFiles, setImportFiles] = useState({ fdRooms: null, fdGuests: null, fdReservations: null, rPosItems: null, rInventoryItems: null, rSuppliers: null });
+  const [importFiles, setImportFiles] = useState({ fdRooms: null, fdGuests: null, fdReservations: null, rPosItems: null, rInventoryItems: null });
   const [importing, setImporting] = useState({});
   const [lastImport, setLastImport] = useState(null);
 
@@ -542,26 +542,45 @@ export default function Launchergestor() {
     fdReservations: (id) => `/gestor/hotels/${encodeURIComponent(id)}/import/frontdesk/reservations`,
     rPosItems: (id) => `/gestor/hotels/${encodeURIComponent(id)}/import/restaurant/pos-items`,
     rInventoryItems: (id) => `/gestor/hotels/${encodeURIComponent(id)}/import/restaurant/inventory-items`,
-    rSuppliers: (id) => `/gestor/hotels/${encodeURIComponent(id)}/import/restaurant/suppliers`,
   }), []);
 
-  const onUpload = async (key) => {
-    if (!selectedHotelId) return alert("Selecciona un hotel.");
-    const file = importFiles[key]; if (!file) return alert("Selecciona un archivo (.csv o .xlsx).");
-    if (importing[key]) return;
-    setImporting((p) => ({ ...p, [key]: true }));
+  // El destino de todas las subidas es siempre el hotel elegido en el encabezado.
+  const onUpload = async (kind) => {
+    if (!selectedHotelId) return setLastImport({ key: kind, ok: false, message: "Elegí un hotel antes de subir el archivo." });
+    const file = importFiles[kind];
+    if (!file) return setLastImport({ key: kind, ok: false, message: "Elegí un archivo .csv o .xlsx." });
+    if (importing[kind]) return;
+    const hotelName = selectedHotel?.name || selectedHotelId;
+    setImporting((p) => ({ ...p, [kind]: true }));
+    setLastImport(null);
     try {
-      const form = new FormData(); form.append("file", file);
-      const { data } = await api.post(importEndpoints[key](selectedHotelId), form, { timeout: 120000, headers: { "Content-Type": "multipart/form-data" } });
-      setLastImport({ key, ...data });
-      const skipped = Number(data?.skipped||0), errors = Array.isArray(data?.errors) ? data.errors : [];
-      const preview = errors.slice(0,5).map((e) => `L${e?.row??"?"}: ${e?.message||"Error"}`).join("\n");
-      alert(`Importación completada: ${data?.created??0} creados, ${data?.updated??0} actualizados${skipped > 0 ? `, ${skipped} omitidos` : ""}.${preview ? `\n\nDetalles:\n${preview}${errors.length>5 ? `\n... y ${errors.length-5} más` : ""}` : ""}`);
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await api.post(importEndpoints[kind](selectedHotelId), form, {
+        timeout: 120000,
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setLastImport({
+        key: kind,
+        ok: true,
+        fileName: file.name,
+        hotelName: data?.hotelName || hotelName,
+        hotelId: data?.hotelId || selectedHotelId,
+        rows: Number(data?.rows ?? 0),
+        created: Number(data?.created ?? 0),
+        updated: Number(data?.updated ?? 0),
+        skipped: Number(data?.skipped ?? 0),
+        errors: Array.isArray(data?.errors) ? data.errors : [],
+      });
+      setImportFiles((p) => ({ ...p, [kind]: null }));
     } catch (err) {
-      const msg = String(err?.message||""), code = String(err?.code||"");
-      if (code==="ECONNABORTED"||msg.toLowerCase().includes("timeout")) { alert("Tiempo de espera agotado. Intenta con un archivo más pequeño."); return; }
-      alert(err?.response?.data?.message || err?.message || "No se pudo importar");
-    } finally { setImporting((p) => ({ ...p, [key]: false })); }
+      const msg = String(err?.message || ""), code = String(err?.code || "");
+      const detail =
+        code === "ECONNABORTED" || msg.toLowerCase().includes("timeout")
+          ? "Tiempo de espera agotado. Probá con un archivo más chico."
+          : err?.response?.data?.message || msg || "No se pudo importar";
+      setLastImport({ key: kind, ok: false, fileName: file.name, hotelName, message: detail });
+    } finally { setImporting((p) => ({ ...p, [kind]: false })); }
   };
 
   // ── render ─────────────────────────────────────────────────────────────────
@@ -1030,40 +1049,93 @@ function CobrosPanel({ selectedHotel, selectedHotelId, billing, billingLoading, 
 }
 
 // ─── Panel: Importar ───────────────────────────────────────────────────────────
+const IMPORT_KINDS = {
+  fdRooms:        { label: "Habitaciones" },
+  fdGuests:       { label: "Clientes" },
+  fdReservations: { label: "Reservaciones" },
+  rPosItems:      { label: "Artículos de TPV" },
+  rInventoryItems:{ label: "Artículos de inventario" },
+};
+
 function ImportarPanel({ selectedHotel, selectedHotelId, importFiles, setImportFiles, importing, lastImport, onUpload }) {
-  const FileRow = ({ label, key: k }) => (
-    <div className="space-y-2">
-      <div className="text-xs text-slate-400">{label}</div>
-      <input type="file" accept=".csv,.xlsx,.xls" className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600/20 file:px-3 file:py-1.5 file:text-violet-300 file:text-xs hover:file:bg-violet-600/30 transition-colors" onChange={(e) => setImportFiles((p) => ({ ...p, [k]: e.target.files?.[0]||null }))} />
-      <GBtn variant="outline" onClick={() => onUpload(k)} disabled={importing[k]}><Upload className="w-3.5 h-3.5 mr-1.5 inline" />{importing[k] ? "Subiendo..." : "Subir"}</GBtn>
-    </div>
-  );
+  const hotelLabel = selectedHotel?.name || selectedHotelId || "";
+  const FileRow = ({ kind }) => {
+    const file = importFiles[kind];
+    const busy = Boolean(importing[kind]);
+    const disabled = !selectedHotelId || !file || busy;
+    return (
+      <div className="space-y-2">
+        <div className="text-xs text-slate-400">{IMPORT_KINDS[kind].label} (CSV/XLSX)</div>
+        <input
+          key={`${kind}-${file?.name || "vacio"}`}
+          type="file"
+          accept=".csv,.xlsx,.xls"
+          className="block w-full text-xs text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600/20 file:px-3 file:py-1.5 file:text-violet-300 file:text-xs hover:file:bg-violet-600/30 transition-colors"
+          onChange={(e) => setImportFiles((p) => ({ ...p, [kind]: e.target.files?.[0] || null }))}
+        />
+        <GBtn variant="outline" onClick={() => onUpload(kind)} disabled={disabled}>
+          <Upload className="w-3.5 h-3.5 mr-1.5 inline" />
+          {busy ? "Subiendo..." : "Subir"}
+        </GBtn>
+      </div>
+    );
+  };
+
   if (!selectedHotelId) return <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-slate-500 text-sm">Selecciona un hotel desde el panel Hoteles.</div>;
+
+  const result = lastImport;
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-base font-semibold text-white">Base de datos — {selectedHotel?.name}</div>
-          <div className="text-xs text-slate-500 mt-0.5">Carga archivos CSV/XLSX para importar datos al hotel.</div>
+      <div>
+        <div className="text-base font-semibold text-white">Base de datos — {hotelLabel}</div>
+        <div className="text-xs text-slate-500 mt-0.5">Carga archivos CSV/XLSX para importar datos al hotel.</div>
+      </div>
+
+      <div className="flex items-start gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2">
+        <Database className="w-4 h-4 shrink-0 text-violet-300 mt-0.5" />
+        <div className="text-xs text-violet-200">
+          Todo lo que subas acá entra en <span className="font-semibold text-white">{hotelLabel}</span>. Para cargar otro hotel, cambialo en el encabezado o en el panel Hoteles.
         </div>
       </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
           <SectionTitle>Front Desk</SectionTitle>
-          <FileRow label="Habitaciones (CSV/XLSX)" key="fdRooms" />
-          <FileRow label="Clientes (CSV/XLSX)" key="fdGuests" />
-          <FileRow label="Reservaciones (CSV/XLSX)" key="fdReservations" />
+          <FileRow kind="fdRooms" />
+          <FileRow kind="fdGuests" />
+          <FileRow kind="fdReservations" />
         </div>
         <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
           <SectionTitle>Restaurante</SectionTitle>
-          <FileRow label="Artículos de TPV (CSV/XLSX)" key="rPosItems" />
-          <FileRow label="Artículos de inventario (CSV/XLSX)" key="rInventoryItems" />
-          <FileRow label="Proveedores (CSV/XLSX)" key="rSuppliers" />
+          <FileRow kind="rPosItems" />
+          <FileRow kind="rInventoryItems" />
+          <div className="rounded-xl border border-white/10 bg-white/3 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+            Los proveedores no se importan aparte: se guardan por nombre en cada artículo de inventario o factura.
+          </div>
         </div>
       </div>
-      {lastImport && (
-        <div className="text-xs text-slate-500">
-          Última importación ({lastImport.key}): {lastImport.created??0} creados, {lastImport.updated??0} actualizados, {lastImport.errors??0} errores.
+
+      {result && (
+        <div className={`rounded-2xl border p-4 space-y-2 ${result.ok ? "border-emerald-500/30 bg-emerald-500/10" : "border-red-500/30 bg-red-500/10"}`}>
+          <div className={`text-sm font-semibold ${result.ok ? "text-emerald-200" : "text-red-200"}`}>
+            {result.ok
+              ? `${IMPORT_KINDS[result.key]?.label || "Importación"} — ${result.created} creados, ${result.updated} actualizados${result.skipped ? `, ${result.skipped} omitidos` : ""}`
+              : `No se pudo importar ${IMPORT_KINDS[result.key]?.label || "el archivo"}`}
+          </div>
+          <div className="text-xs text-slate-400">
+            Hotel: <span className="text-slate-200 font-medium">{result.hotelName}</span>
+            {result.fileName ? <> · Archivo: <span className="text-slate-200">{result.fileName}</span></> : null}
+            {result.ok ? <> · Filas leídas: <span className="text-slate-200">{result.rows}</span></> : null}
+          </div>
+          {!result.ok && result.message ? <div className="text-xs text-red-200">{result.message}</div> : null}
+          {result.ok && result.errors?.length > 0 && (
+            <div className="max-h-40 overflow-y-auto rounded-lg bg-black/20 p-2 space-y-1">
+              {result.errors.slice(0, 20).map((e, i) => (
+                <div key={i} className="text-[11px] text-amber-200">Fila {e?.row ?? "?"}: {e?.message || "Error"}</div>
+              ))}
+              {result.errors.length > 20 && <div className="text-[11px] text-slate-500">... y {result.errors.length - 20} más</div>}
+            </div>
+          )}
         </div>
       )}
     </div>

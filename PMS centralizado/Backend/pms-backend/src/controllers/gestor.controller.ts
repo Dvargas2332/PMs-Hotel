@@ -201,6 +201,30 @@ async function readUploadRows(req: Request) {
   return parseCsv(content);
 }
 
+type ImportTarget = { id: string; name: string };
+
+/**
+ * Resuelve el hotel destino del parámetro `:id`. Ninguna importación debe
+ * escribir si el hotel no existe: el gestor elige el destino en la pantalla y
+ * el backend responde con ese mismo hotel para que la pantalla lo confirme.
+ */
+async function resolveImportTarget(req: Request, res: Response): Promise<ImportTarget | null> {
+  const hotelId = normalizeText(req.params.id);
+  if (!hotelId) {
+    res.status(400).json({ message: "Hotel requerido" });
+    return null;
+  }
+  const hotel = await prisma.hotel.findUnique({
+    where: { id: hotelId },
+    select: { id: true, name: true },
+  });
+  if (!hotel) {
+    res.status(404).json({ message: "El hotel indicado no existe: elegí el hotel destino antes de subir el archivo" });
+    return null;
+  }
+  return { id: hotel.id, name: hotel.name };
+}
+
 async function ensureFamilyCode(hotelId: string, familyId: string) {
   const existing = await prisma.restaurantFamily.findFirst({
     where: { id: familyId, hotelId },
@@ -1177,17 +1201,29 @@ export async function deleteHotelBilling(req: Request, res: Response) {
 }
 
 export async function importRooms(req: Request, res: Response) {
-  const hotelId = normalizeText(req.params.id);
-  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+  const target = await resolveImportTarget(req, res);
+  if (!target) return;
+  const hotelId = target.id;
   const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
   let updated = 0;
-  for (const row of rows) {
+  let skipped = 0;
+  const errors: Array<{ row: number; message: string }> = [];
+  const addError = (rowIdx: number, message: string) => {
+    skipped += 1;
+    if (errors.length < 50) errors.push({ row: rowIdx + 2, message });
+  };
+
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] as any;
     const number = normalizeText(row.number || row.room || row.roomnumber);
     const type = normalizeText(row.type || row.roomtype || row.tipo);
-    if (!number || !type) continue;
+    if (!number || !type) {
+      addError(idx, !number ? "Número de habitación requerido" : "Tipo de habitación requerido");
+      continue;
+    }
     const statusRaw = normalizeText(row.status || "AVAILABLE").toUpperCase();
     const baseRate = Number(row.baserate || row.rate || row.precio || 0);
     const notes = row.notes ? normalizeText(row.notes) : undefined;
@@ -1212,21 +1248,33 @@ export async function importRooms(req: Request, res: Response) {
     if (result.createdAt.getTime() === result.updatedAt.getTime()) created += 1;
     else updated += 1;
   }
-  res.json({ created, updated });
+  res.json({ hotelId: target.id, hotelName: target.name, rows: rows.length, created, updated, skipped, errors });
 }
 
 export async function importGuests(req: Request, res: Response) {
-  const hotelId = normalizeText(req.params.id);
-  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+  const target = await resolveImportTarget(req, res);
+  if (!target) return;
+  const hotelId = target.id;
   const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
   let updated = 0;
-  for (const row of rows) {
+  let skipped = 0;
+  const errors: Array<{ row: number; message: string }> = [];
+  const addError = (rowIdx: number, message: string) => {
+    skipped += 1;
+    if (errors.length < 50) errors.push({ row: rowIdx + 2, message });
+  };
+
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] as any;
     const firstName = normalizeText(row.firstname || row.first_name || row.nombre);
     const lastName = normalizeText(row.lastname || row.last_name || row.apellido);
-    if (!firstName && !lastName) continue;
+    if (!firstName && !lastName) {
+      addError(idx, "Nombre y apellido vacíos");
+      continue;
+    }
     const email = row.email ? normalizeText(row.email) : undefined;
     const phone = row.phone ? normalizeText(row.phone) : undefined;
 
@@ -1244,27 +1292,42 @@ export async function importGuests(req: Request, res: Response) {
       created += 1;
     }
   }
-  res.json({ created, updated });
+  res.json({ hotelId: target.id, hotelName: target.name, rows: rows.length, created, updated, skipped, errors });
 }
 
 export async function importReservations(req: Request, res: Response) {
-  const hotelId = normalizeText(req.params.id);
-  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+  const target = await resolveImportTarget(req, res);
+  if (!target) return;
+  const hotelId = target.id;
   const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
-  for (const row of rows) {
+  let skipped = 0;
+  const errors: Array<{ row: number; message: string }> = [];
+  const addError = (rowIdx: number, message: string) => {
+    skipped += 1;
+    if (errors.length < 50) errors.push({ row: rowIdx + 2, message });
+  };
+
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] as any;
     const roomNumber = normalizeText(row.roomnumber || row.room || row.habitacion);
     const guestEmail = normalizeText(row.guestemail || row.email);
     const guestFirst = normalizeText(row.guestfirstname || row.firstname || row.nombre);
     const guestLast = normalizeText(row.guestlastname || row.lastname || row.apellido);
     const checkInRaw = normalizeText(row.checkin || row.check_in);
     const checkOutRaw = normalizeText(row.checkout || row.check_out);
-    if (!roomNumber || !checkInRaw || !checkOutRaw) continue;
+    if (!roomNumber || !checkInRaw || !checkOutRaw) {
+      addError(idx, "Faltan habitación, check-in o check-out");
+      continue;
+    }
 
     const room = await prisma.room.findFirst({ where: { hotelId, number: roomNumber } });
-    if (!room) continue;
+    if (!room) {
+      addError(idx, `La habitación ${roomNumber} no existe en el hotel`);
+      continue;
+    }
 
     let guest = null;
     if (guestEmail) {
@@ -1283,7 +1346,10 @@ export async function importReservations(req: Request, res: Response) {
 
     const checkIn = new Date(checkInRaw);
     const checkOut = new Date(checkOutRaw);
-    if (Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime())) continue;
+    if (Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime())) {
+      addError(idx, "Fecha de check-in o check-out inválida");
+      continue;
+    }
 
     const code = `IMP-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     await prisma.reservation.create({
@@ -1299,12 +1365,13 @@ export async function importReservations(req: Request, res: Response) {
     });
     created += 1;
   }
-  res.json({ created, updated: 0 });
+  res.json({ hotelId: target.id, hotelName: target.name, rows: rows.length, created, updated: 0, skipped, errors });
 }
 
 export async function importRestaurantItems(req: Request, res: Response) {
-  const hotelId = normalizeText(req.params.id);
-  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+  const target = await resolveImportTarget(req, res);
+  if (!target) return;
+  const hotelId = target.id;
   const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacio" });
 
@@ -1564,22 +1631,34 @@ export async function importRestaurantItems(req: Request, res: Response) {
       addError(idx, msg);
     }
   }
-  res.json({ created, updated, skipped, errors });
+  res.json({ hotelId: target.id, hotelName: target.name, rows: rows.length, created, updated, skipped, errors });
 }
 
 export async function importInventoryItems(req: Request, res: Response) {
-  const hotelId = normalizeText(req.params.id);
-  if (!hotelId) return res.status(400).json({ message: "Hotel requerido" });
+  const target = await resolveImportTarget(req, res);
+  if (!target) return;
+  const hotelId = target.id;
   const rows = await readUploadRows(req);
   if (!rows.length) return res.status(400).json({ message: "Archivo vacío" });
 
   let created = 0;
   let updated = 0;
-  for (const row of rows) {
+  let skipped = 0;
+  const errors: Array<{ row: number; message: string }> = [];
+  const addError = (rowIdx: number, message: string) => {
+    skipped += 1;
+    if (errors.length < 50) errors.push({ row: rowIdx + 2, message });
+  };
+
+  for (let idx = 0; idx < rows.length; idx += 1) {
+    const row = rows[idx] as any;
     const sku = normalizeText(row.sku || row.code || row.codigo);
     const desc = normalizeText(row.desc || row.descripcion || row.name);
     const unit = normalizeText(row.unit || row.unidad || "unit");
-    if (!sku || !desc) continue;
+    if (!sku || !desc) {
+      addError(idx, !sku ? "SKU requerido" : "Descripción requerida");
+      continue;
+    }
     const cost = Number(row.cost || row.costo || 0);
     const min = Number(row.min || row.minimo || 0);
 
@@ -1606,11 +1685,14 @@ export async function importInventoryItems(req: Request, res: Response) {
       created += 1;
     }
   }
-  res.json({ created, updated });
+  res.json({ hotelId: target.id, hotelName: target.name, rows: rows.length, created, updated, skipped, errors });
 }
 
 export async function importSuppliers(_req: Request, res: Response) {
-  return res.status(501).json({ message: "Importación de proveedores no soportada (no hay modelo de proveedores)." });
+  return res.status(501).json({
+    message:
+      "Los proveedores no tienen catálogo propio: se guardan por nombre en cada artículo de inventario o factura. No hay nada que importar por separado.",
+  });
 }
 
 // Launcher Gestor: reenvio interno a forminfo (sin exponer API key al frontend)
