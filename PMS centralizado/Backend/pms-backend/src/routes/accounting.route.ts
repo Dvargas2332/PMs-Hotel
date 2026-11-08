@@ -2,9 +2,9 @@ import { Router } from "express";
 import { auth, requirePermission } from "../middleware/auth.js";
 import { getAccountingSettings, updateAccountingSettings, initializeAccounting } from "../controllers/accounting.settings.controller.js";
 import { listAccounts, getAccount, createAccount, updateAccount, deleteAccount } from "../controllers/accounting.chart.controller.js";
-import { listEntries, getEntry, createEntry, postEntry, voidEntry, getLedger } from "../controllers/accounting.journal.controller.js";
+import { listEntries, getEntry, createEntry, updateEntry, deleteEntry, postEntry, voidEntry, getLedger } from "../controllers/accounting.journal.controller.js";
 import { listPeriods, createPeriod, closePeriod, deletePeriod } from "../controllers/accounting.periods.controller.js";
-import { getTrialBalance, getIncomeStatement, getBalanceSheet } from "../controllers/accounting.reports.controller.js";
+import { getTrialBalance, getIncomeStatement, getBalanceSheet, getVatBook } from "../controllers/accounting.reports.controller.js";
 
 const router = Router();
 
@@ -27,6 +27,8 @@ router.delete("/accounts/:id", requirePermission("accounting.accounts.write"), d
 router.get("/entries", listEntries);
 router.get("/entries/:id", getEntry);
 router.post("/entries", requirePermission("accounting.entries.write"), createEntry);
+router.put("/entries/:id", requirePermission("accounting.entries.write"), updateEntry);
+router.delete("/entries/:id", requirePermission("accounting.entries.write"), deleteEntry);
 router.post("/entries/:id/post", requirePermission("accounting.entries.approve"), postEntry);
 router.post("/entries/:id/void", requirePermission("accounting.entries.void"), voidEntry);
 
@@ -43,5 +45,6 @@ router.delete("/periods/:id", requirePermission("accounting.settings.write"), de
 router.get("/reports/trial-balance", getTrialBalance);
 router.get("/reports/income-statement", getIncomeStatement);
 router.get("/reports/balance-sheet", getBalanceSheet);
+router.get("/reports/vat-book", getVatBook);
 
 export default router;

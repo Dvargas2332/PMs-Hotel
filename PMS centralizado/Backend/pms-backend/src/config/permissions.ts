@@ -73,7 +73,13 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     id: "accounting",
     name: "Contabilidad",
     access: { id: "accounting.read", name: "Acceso a contabilidad" },
-    permissions: [],
+    permissions: [
+      { id: "accounting.accounts.write", name: "Crear y editar el plan de cuentas" },
+      { id: "accounting.entries.write", name: "Capturar y corregir asientos" },
+      { id: "accounting.entries.approve", name: "Contabilizar asientos" },
+      { id: "accounting.entries.void", name: "Anular asientos" },
+      { id: "accounting.settings.write", name: "Configurar contabilidad, períodos y cierres" },
+    ],
   },
   {
     id: "einvoicing",

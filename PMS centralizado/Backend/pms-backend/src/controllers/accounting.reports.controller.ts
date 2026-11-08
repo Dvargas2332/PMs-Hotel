@@ -129,3 +129,76 @@ export async function getBalanceSheet(req: Request, res: Response) {
     res.status(500).json({ message: "Error al generar balance general" });
   }
 }
+
+// GET /accounting/reports/vat-book — Libro de IVA según los asientos contabilizados
+//
+// No reemplaza la declaración: agrupa los movimientos de las cuentas de IVA
+// (por nombre o código) para que el contador vea el IVA crédito y el IVA por
+// pagar del período sin abrir el mayor cuenta por cuenta.
+export async function getVatBook(req: Request, res: Response) {
+  const hotelId = (req as any).hotelId as string;
+  const { from, to } = req.query;
+  try {
+    const lines = await prisma.accountingEntryLine.findMany({
+      where: {
+        hotelId,
+        entry: {
+          status: "POSTED",
+          ...((from || to) && {
+            date: {
+              ...(from && { gte: new Date(from as string) }),
+              ...(to && { lte: new Date(to as string) }),
+            },
+          }),
+        },
+        account: {
+          OR: [
+            { name: { contains: "IVA", mode: "insensitive" } },
+            { name: { contains: "impuesto", mode: "insensitive" } },
+            { code: { contains: "1.1.05" } },
+            { code: { contains: "2.1.04" } },
+          ],
+        },
+      },
+      include: {
+        account: { select: { id: true, code: true, name: true, type: true } },
+        entry: { select: { date: true, number: true, description: true } },
+      },
+      orderBy: { entry: { date: "asc" } },
+    });
+
+    const byAccount = new Map<
+      string,
+      { code: string; name: string; type: string; debit: number; credit: number; net: number }
+    >();
+    for (const l of lines) {
+      const row =
+        byAccount.get(l.accountId) ??
+        { code: l.account.code, name: l.account.name, type: l.account.type, debit: 0, credit: 0, net: 0 };
+      row.debit += Number(l.debit);
+      row.credit += Number(l.credit);
+      row.net = row.debit - row.credit;
+      byAccount.set(l.accountId, row);
+    }
+
+    const rows = Array.from(byAccount.values()).sort((a, b) => a.code.localeCompare(b.code));
+    const movements = lines.map((l) => ({
+      date: l.entry?.date ? l.entry.date.toISOString().slice(0, 10) : "",
+      entryNumber: l.entry?.number || "",
+      description: l.entry?.description || l.description || "",
+      account: `${l.account.code} ${l.account.name}`,
+      debit: Number(l.debit),
+      credit: Number(l.credit),
+    }));
+
+    res.json({
+      rows,
+      movements,
+      totalDebit: rows.reduce((s, r) => s + r.debit, 0),
+      totalCredit: rows.reduce((s, r) => s + r.credit, 0),
+      note: "Agrupa los asientos contabilizados de las cuentas de IVA. No sustituye la declaración ante Hacienda.",
+    });
+  } catch (e) {
+    res.status(500).json({ message: "Error al generar el libro de IVA" });
+  }
+}

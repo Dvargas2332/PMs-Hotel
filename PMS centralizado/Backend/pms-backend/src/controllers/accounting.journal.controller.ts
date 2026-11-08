@@ -30,10 +30,40 @@ async function ensurePeriodBelongsToHotel(hotelId: string, periodId: unknown) {
 
   const period = await prisma.accountingPeriod.findFirst({
     where: { id: normalizedPeriodId, hotelId },
-    select: { id: true },
+    select: { id: true, status: true },
   });
   if (!period) throw new Error("El período indicado no pertenece al hotel actual");
-  return period.id;
+  return period;
+}
+
+/** Un período cerrado no admite asientos nuevos, contabilizaciones ni anulaciones. */
+function assertPeriodOpen(period: { id: string; status?: string | null } | null) {
+  if (period && String(period.status || "").toUpperCase() === "CLOSED") {
+    throw new Error("El período está cerrado: no admite asientos nuevos, contabilizaciones ni anulaciones");
+  }
+}
+
+/**
+ * Devuelve el período del asiento: el indicado a mano (validando que sea del
+ * hotel y esté abierto) o, si no viene, el período abierto que cubre la fecha.
+ */
+async function resolvePeriod(hotelId: string, date: Date, explicitPeriodId?: unknown) {
+  if (explicitPeriodId) {
+    const period = await ensurePeriodBelongsToHotel(hotelId, explicitPeriodId);
+    assertPeriodOpen(period);
+    return period;
+  }
+  const covering = await prisma.accountingPeriod.findMany({
+    where: { hotelId, startDate: { lte: date }, endDate: { gte: date } },
+    select: { id: true, status: true },
+    orderBy: { startDate: "desc" },
+  });
+  if (covering.length === 0) return null;
+  const open = covering.find((p) => String(p.status || "").toUpperCase() !== "CLOSED");
+  if (!open) {
+    throw new Error("El período que cubre esa fecha está cerrado: abrí un período nuevo o cambiá la fecha");
+  }
+  return open;
 }
 
 async function ensureAccountsBelongToHotel(hotelId: string, lines: any[]) {
@@ -155,7 +185,9 @@ export async function createEntry(req: Request, res: Response) {
   }
   try {
     assertBalanced(lines);
-    const safePeriodId = await ensurePeriodBelongsToHotel(hotelId, periodId);
+    const entryDate = new Date(date);
+    const period = await resolvePeriod(hotelId, entryDate, periodId);
+    const safePeriodId = period?.id ?? null;
     await ensureAccountsBelongToHotel(hotelId, lines);
 
     const settings = await prisma.accountingSettings.findUnique({ where: { hotelId } });
@@ -202,10 +234,18 @@ export async function postEntry(req: Request, res: Response) {
   const userId = (req as any).user?.id as string | undefined;
   const { id } = req.params;
   try {
-    const entry = await prisma.accountingEntry.findFirst({ where: { id, hotelId } });
+    const entry = await prisma.accountingEntry.findFirst({
+      where: { id, hotelId },
+      select: { id: true, status: true, period: { select: { id: true, status: true } } },
+    });
     if (!entry) return res.status(404).json({ message: "Asiento no encontrado" });
     if (entry.status === "POSTED") return res.status(409).json({ message: "El asiento ya está contabilizado" });
     if (entry.status === "VOIDED") return res.status(409).json({ message: "El asiento está anulado" });
+    try {
+      assertPeriodOpen(entry.period);
+    } catch (e: any) {
+      return res.status(409).json({ message: e.message });
+    }
 
     const result = await prisma.accountingEntry.updateMany({
       where: { id, hotelId },
@@ -226,9 +266,17 @@ export async function voidEntry(req: Request, res: Response) {
   const userId = (req as any).user?.id as string | undefined;
   const { id } = req.params;
   try {
-    const entry = await prisma.accountingEntry.findFirst({ where: { id, hotelId } });
+    const entry = await prisma.accountingEntry.findFirst({
+      where: { id, hotelId },
+      select: { id: true, status: true, period: { select: { id: true, status: true } } },
+    });
     if (!entry) return res.status(404).json({ message: "Asiento no encontrado" });
     if (entry.status === "VOIDED") return res.status(409).json({ message: "El asiento ya está anulado" });
+    try {
+      assertPeriodOpen(entry.period);
+    } catch (e: any) {
+      return res.status(409).json({ message: e.message });
+    }
 
     const result = await prisma.accountingEntry.updateMany({
       where: { id, hotelId },
@@ -240,6 +288,93 @@ export async function voidEntry(req: Request, res: Response) {
     res.json(updated);
   } catch (e) {
     res.status(500).json({ message: "Error al anular asiento" });
+  }
+}
+
+// PUT /accounting/entries/:id — corregir un asiento en borrador
+export async function updateEntry(req: Request, res: Response) {
+  const hotelId = (req as any).hotelId as string;
+  const { id } = req.params;
+  const { date, description, lines, periodId } = req.body || {};
+  try {
+    const entry = await prisma.accountingEntry.findFirst({
+      where: { id, hotelId },
+      select: { id: true, status: true, period: { select: { id: true, status: true } } },
+    });
+    if (!entry) return res.status(404).json({ message: "Asiento no encontrado" });
+    if (entry.status !== "DRAFT") {
+      return res.status(409).json({
+        message: "Sólo se puede editar un asiento en borrador. Si ya está contabilizado, anulalo y hacé uno nuevo.",
+      });
+    }
+    assertPeriodOpen(entry.period);
+
+    const nextLines = Array.isArray(lines) ? lines : null;
+    if (nextLines && nextLines.length < 2) {
+      return res.status(400).json({ message: "Un asiento necesita al menos 2 líneas" });
+    }
+    if (nextLines) {
+      assertBalanced(nextLines);
+      await ensureAccountsBelongToHotel(hotelId, nextLines);
+    }
+    const nextDate = date ? new Date(date) : null;
+    const nextPeriod = nextDate ? await resolvePeriod(hotelId, nextDate, periodId) : null;
+
+    await prisma.accountingEntry.updateMany({
+      where: { id, hotelId, status: "DRAFT" },
+      data: {
+        ...(nextDate ? { date: nextDate } : {}),
+        ...(typeof description === "string" ? { description } : {}),
+        ...(nextPeriod ? { periodId: nextPeriod.id } : {}),
+        updatedAt: new Date(),
+      },
+    });
+
+    if (nextLines) {
+      await prisma.accountingEntryLine.deleteMany({ where: { entryId: id, hotelId } });
+      await prisma.accountingEntryLine.createMany({
+        data: nextLines.map((l: any) => ({
+          hotelId,
+          entryId: id,
+          accountId: String(l.accountId).trim(),
+          debit: Number(l.debit ?? 0),
+          credit: Number(l.credit ?? 0),
+          description: l.description ?? null,
+        })),
+      });
+    }
+
+    const updated = await prisma.accountingEntry.findFirst({
+      where: { id, hotelId },
+      include: { lines: true, period: true },
+    });
+    res.json(sanitizeEntry(updated, hotelId));
+  } catch (e: any) {
+    const message = e.message ?? "No se pudo editar el asiento";
+    res.status(message.includes("cerrado") ? 409 : 400).json({ message });
+  }
+}
+
+// DELETE /accounting/entries/:id — descartar un borrador
+export async function deleteEntry(req: Request, res: Response) {
+  const hotelId = (req as any).hotelId as string;
+  const { id } = req.params;
+  try {
+    const entry = await prisma.accountingEntry.findFirst({
+      where: { id, hotelId },
+      select: { id: true, status: true },
+    });
+    if (!entry) return res.status(404).json({ message: "Asiento no encontrado" });
+    if (entry.status !== "DRAFT") {
+      return res.status(409).json({
+        message: "Sólo se puede eliminar un borrador. Un asiento contabilizado se anula.",
+      });
+    }
+    await prisma.accountingEntryLine.deleteMany({ where: { entryId: id, hotelId } });
+    await prisma.accountingEntry.deleteMany({ where: { id, hotelId, status: "DRAFT" } });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ message: "No se pudo eliminar el borrador" });
   }
 }
 
