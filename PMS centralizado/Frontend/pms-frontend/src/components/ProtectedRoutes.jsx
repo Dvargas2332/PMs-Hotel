@@ -2,13 +2,24 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function ProtectedRoute({ children, fallback }) {
-  const { token, hotel, user } = useAuth();
+  const { hotel, user, ready } = useAuth();
   const location = useLocation();
   const isLauncher = location.pathname.startsWith("/launcher");
   const isGestorPanel = location.pathname.startsWith("/launchergestor");
 
-  // Sin login de HOTEL no se puede entrar a nada
-  if (!token || !hotel) {
+  // Mientras se intenta restaurar la sesión desde la cookie no se decide nada:
+  // redirigir acá mandaba al login a quien sólo había recargado la página.
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm" style={{ color: "var(--color-text-muted)" }}>
+        Cargando…
+      </div>
+    );
+  }
+
+  // Sin login de HOTEL no se puede entrar a nada. La cookie httpOnly es la
+  // fuente de verdad; `token` sólo existe en la pestaña donde se inició sesión.
+  if (!hotel) {
     if (fallback) return fallback;
     const next = encodeURIComponent(`${location.pathname}${location.search}${location.hash}`);
     return <Navigate to={`/login?next=${next}`} replace />;

@@ -45,11 +45,14 @@ import { useLanguage } from "./context/LanguageContext";
  */
 function RootEntry() {
   const [params] = useSearchParams();
-  const { hotel } = useAuth();
+  const { hotel, ready } = useAuth();
   const reset = params.get("reset");
   const invite = params.get("invite");
   if (reset) return <Navigate to={`/reset-password?token=${encodeURIComponent(reset)}`} replace />;
   if (invite) return <Navigate to={`/accept-invite?token=${encodeURIComponent(invite)}`} replace />;
+  // Esperar el intento de restaurar la sesión: decidir antes manda al login a
+  // quien recargó con la cookie todavía válida.
+  if (!ready) return null;
   // Con sesión abierta, recargar la raíz devuelve al launcher y no al login.
   return <Navigate to={hotel ? "/launcher" : "/login"} replace />;
 }

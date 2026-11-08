@@ -47,11 +47,20 @@ export function AuthProvider({ children }) {
         // o el usuario recargue.
         const data = await api.refresh();
         if (cancelled) return;
+        // El token vive sólo en memoria, así que tras una recarga hay que
+        // volver a ponerlo: las pantallas y el guard lo usan como señal de
+        // sesión válida y sin él la recarga parecía un cierre de sesión.
+        if (data?.token) setToken(data.token);
         if (data?.user) setUser(data.user);
         if (data?.hotel) setHotel(data.hotel);
-      } catch {
-        // Refresh falló — limpiar sesión
-        if (!cancelled) {
+      } catch (err) {
+        if (cancelled) return;
+        // Sólo se borra la sesión si el servidor la rechazó. Un corte de red,
+        // un 502 o un timeout no significan que la cookie venció: se conserva
+        // lo que ya estaba y el interceptor reintenta cuando vuelva la red.
+        const status = err?.response?.status;
+        const rejected = status === 401 || status === 403;
+        if (rejected) {
           setHotel(null);
           setUser(null);
           setToken(null);
@@ -123,6 +132,8 @@ export function AuthProvider({ children }) {
     const launcher = data?.launcher ?? data?.user;
     const nextToken = data?.token;
     if (!launcher || !nextToken) return null;
+    // El token del usuario interno reemplaza al del hotel también en memoria.
+    setToken(nextToken);
 
     const permissions = Array.isArray(launcher.permissions) ? launcher.permissions : [];
     const allowedModules = Array.isArray(launcher.allowedModules)
