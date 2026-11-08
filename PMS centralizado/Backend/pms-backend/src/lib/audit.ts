@@ -131,6 +131,88 @@ export function actionFromMethod(method: string, entity: string, statusCode?: nu
   return `${failedPrefix}${verb}_${toEntityToken(entity)}`;
 }
 
+// Rutas que no son tareas del usuario: el POS reescribe la orden con cada ítem
+// que se agrega y el KDS sólo consulta. Registrarlas llenaba la bitácora de
+// ruido técnico en vez de movimientos.
+const SKIP_AUDIT_EXACT = new Set(["/restaurant/order"]);
+const SKIP_AUDIT_PREFIXES = ["/restaurant/kds"];
+
+export function shouldSkipAuditPath(path: string): boolean {
+  const lower = normalizeAuditPath(path).toLowerCase();
+  if (SKIP_AUDIT_EXACT.has(lower)) return true;
+  return SKIP_AUDIT_PREFIXES.some((prefix) => lower === prefix || lower.startsWith(`${prefix}/`));
+}
+
+const VERB_LABEL: Record<string, string> = {
+  POST: "Creó",
+  PUT: "Modificó",
+  PATCH: "Modificó",
+  DELETE: "Eliminó",
+};
+
+const OBJECT_LABEL: Record<string, string> = {
+  order: "una orden",
+  orders: "una orden",
+  sections: "una sección",
+  tables: "una mesa",
+  objects: "un objeto del plano",
+  layout: "el plano del salón",
+  menus: "un menú",
+  items: "un artículo",
+  families: "una familia",
+  inventory: "el inventario",
+  recipes: "una receta",
+  staff: "el personal",
+  printers: "las impresoras",
+  discounts: "un descuento",
+  shift: "el turno de caja",
+  rooms: "una habitación",
+  roomtypes: "un tipo de habitación",
+  rateplans: "una tarifa",
+  mealplans: "un plan de comidas",
+  contracts: "un contrato",
+  guests: "un huésped",
+  reservations: "una reserva",
+  invoices: "una factura",
+  taxes: "los impuestos",
+  periods: "un período contable",
+  journal: "un asiento contable",
+  chart: "el plan de cuentas",
+  settings: "la configuración",
+  general: "los datos generales",
+  payments: "los medios de pago",
+  billing: "la facturación",
+  config: "la configuración",
+  documents: "un documento",
+  catalogs: "un catálogo",
+  issuer: "el emisor",
+  users: "un usuario",
+  roles: "un rol",
+  hotel: "el hotel",
+};
+
+/** Etiqueta legible de la tarea: "Creó una sección", "Cobró y cerró una orden"… */
+export function describeAction(method: string, path: string, entity: string): string {
+  const upper = String(method || "").toUpperCase();
+  const segments = normalizeAuditPath(path).split("/").filter(Boolean);
+  const last = String(segments[segments.length - 1] || "").toLowerCase();
+  const before = String(segments[segments.length - 2] || "").toLowerCase();
+
+  if (last === "close") return before === "shift" ? "Cerró el turno de caja" : "Cobró y cerró una orden";
+  if (last === "void-paid" || last === "void") return "Anuló una venta cobrada";
+  if (last === "layout") return "Guardó el plano del salón";
+  if (last === "position") return "Movió una mesa en el plano";
+  if (last === "send") return "Envió un correo";
+  if (last === "invite") return "Reenvió una invitación";
+  if (last === "reset-password") return "Restableció una contraseña";
+  if (last === "import" || last === "import-xml") return "Importó datos";
+  if (last === "login") return "Inició sesión";
+
+  const verb = VERB_LABEL[upper] || "Ejecutó";
+  const object = OBJECT_LABEL[last] || OBJECT_LABEL[before] || `cambios en ${entity || "el sistema"}`;
+  return `${verb} ${object}`;
+}
+
 export function extractEntityIdCandidate(input: {
   params?: Record<string, unknown>;
   body?: unknown;

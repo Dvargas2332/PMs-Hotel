@@ -19,9 +19,13 @@ export function Input({ className = "", money = false, onBlur, onChange, type, i
   const nextInputMode = money ? "decimal" : inputMode;
   const nextPattern = money ? "[0-9.,-]*" : pattern;
 
+  // .w-full esta declarado despues de .w-32/.w-24 en la hoja de Tailwind, asi que
+  // gana aunque el llamador pase su propio ancho. Si ya trae un w-*, no lo forzamos.
+  const hasWidth = /(^|\s)!?w-/.test(className);
+
   return (
     <input
-      className={`h-10 w-full rounded-xl text-sm pl-3 pr-3 placeholder:text-[var(--color-text-muted)] ${className}`}
+      className={`h-10 ${hasWidth ? "" : "w-full "}rounded-xl text-sm pl-3 pr-3 placeholder:text-[var(--color-text-muted)] ${className}`}
       style={{
         background: "var(--input-bg)",
         border: "1px solid var(--input-border)",

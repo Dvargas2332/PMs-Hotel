@@ -414,7 +414,7 @@ export default function RestaurantItems({ onItemsChange } = {}) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 mx-auto w-full max-w-5xl">
       <Card className="p-4 space-y-3 border border-indigo-500/30 shadow-sm bg-white/5">
         <div className="rounded-xl border border-indigo-700/40 bg-gradient-to-r from-indigo-900 via-indigo-800 to-indigo-900 p-2 flex flex-wrap gap-2">
           <button

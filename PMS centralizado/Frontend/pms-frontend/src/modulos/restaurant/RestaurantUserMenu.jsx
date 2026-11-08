@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { CircleUser, LogOut, MoreVertical } from "lucide-react";
+import { CircleUser, LogOut, Wallet, LayoutGrid } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
-export default function RestaurantUserMenu({ onOpenCashStatus }) {
+// Mismo botón de usuario que usa Facturación electrónica: ícono, nombre y rol en
+// una línea, y el desplegable con la ficha arriba y las acciones debajo.
+// `onDark` es para las cabeceras con degradado verde; el KDS tiene cabecera
+// blanca y pasa false.
+export default function RestaurantUserMenu({ onOpenCashStatus, onDark = true }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -21,58 +25,73 @@ export default function RestaurantUserMenu({ onOpenCashStatus }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
+  const displayName = user?.name || user?.email || "Usuario";
+  const displayRole = user?.role || "Restaurante";
+  const itemClass =
+    "w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors hover:bg-black/5 dark:hover:bg-white/10";
+
   return (
     <div className="relative" ref={ref}>
       <button
-        className="flex items-center justify-center w-12 h-12 rounded-full bg-lime-100 hover:bg-lime-200 text-lime-900"
+        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors ${
+          onDark ? "bg-white/15 text-white hover:bg-white/25" : "text-slate-800 hover:bg-black/5"
+        }`}
         onClick={() => setOpen((s) => !s)}
         aria-label="User menu"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
-        <MoreVertical className="w-5 h-5" />
+        <CircleUser className="w-5 h-5 shrink-0" style={{ opacity: 0.9 }} />
+        <div className="text-left text-sm leading-tight hidden sm:block">
+          <div className="font-medium">{displayName}</div>
+          <div className="text-xs" style={{ opacity: 0.8 }}>{displayRole}</div>
+        </div>
       </button>
 
       {open && (
-        <div className="absolute right-0 top-12 w-60 bg-white text-black rounded-lg shadow-lg border overflow-hidden z-50">
-          <button
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold bg-lime-50 hover:bg-lime-100"
-            onClick={() => setOpen(false)}
-          >
-            <CircleUser className="w-5 h-5" />
-            <div className="text-left">
-              <div>{user?.name || user?.email || "User"}</div>
-              <div className="text-xs font-normal text-slate-600">{user?.email || user?.username || ""}</div>
-            </div>
-          </button>
+        <div
+          className="absolute right-0 mt-2 w-56 shadow-xl rounded-2xl overflow-hidden z-50"
+          style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
+        >
+          <div className="px-3 py-2 text-sm" style={{ borderBottom: "1px solid var(--card-border)" }}>
+            <div className="font-semibold" style={{ color: "var(--color-text-base)" }}>{displayName}</div>
+            <div className="text-xs" style={{ color: "var(--color-text-muted)" }}>{user?.email || user?.username || ""}</div>
+          </div>
           {typeof onOpenCashStatus === "function" && (
             <button
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
+              className={itemClass}
+              style={{ color: "var(--color-text-muted)" }}
               onClick={() => {
                 setOpen(false);
                 onOpenCashStatus();
               }}
             >
+              <Wallet className="w-4 h-4" />
               <span>Estado de caja</span>
             </button>
           )}
           {!isLobbyRoute && (
             <button
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
+              className={itemClass}
+              style={{ color: "var(--color-text-muted)" }}
               onClick={() => {
                 setOpen(false);
                 navigate("/restaurant");
               }}
             >
+              <LayoutGrid className="w-4 h-4" />
               <span>Lobby</span>
             </button>
           )}
           <button
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-lime-50"
+            className={itemClass}
+            style={{ color: "var(--color-text-muted)" }}
             onClick={() => {
               setOpen(false);
               navigate("/launcher");
             }}
           >
-            <LogOut className="w-4 h-4" />
+            <LogOut className="w-4 h-4 text-red-400" />
             <span>Log out</span>
           </button>
         </div>

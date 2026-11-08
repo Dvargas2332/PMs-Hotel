@@ -182,6 +182,16 @@ const applyTableStylesToSections = (sectionsList, tableStyles) => {
 
 
 
+// Una dirección de imagen termina en extensión de imagen (o es data:/blob:).
+// Si no, lo más probable es que se haya pegado la dirección de la página donde
+// se vio la imagen, y el navegador no puede pintarla.
+function looksLikeImageUrl(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return true;
+  if (/^(data:image\/|blob:)/i.test(value)) return true;
+  return /\.(jpe?g|png|webp|gif|avif|svg)(\?.*)?(#.*)?$/i.test(value);
+}
+
 export default function RestaurantConfig() {
 
 
@@ -436,6 +446,13 @@ export default function RestaurantConfig() {
 
 
   const [formSection, setFormSection] = useState({ id: "", name: "", imageUrl: "", quickCashEnabled: false });
+
+  // Edición de una sección ya creada (sólo nombre e imagen, y sólo si no tiene ventas)
+  const [editingSection, setEditingSection] = useState(null);
+  const [savingSectionMeta, setSavingSectionMeta] = useState(false);
+  // Imágenes de sección que no cargaron: la URL guardada puede ser la de la
+  // página y no la del archivo, así que se muestra "Sin imagen" y no un roto.
+  const [brokenSectionImages, setBrokenSectionImages] = useState({});
 
 
 
@@ -4903,13 +4920,38 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
+      return false;
+
+
+
     }
+
+
+
+    return true;
 
 
 
   };
 
 
+
+  const saveSectionMeta = async (sectionId) => {
+    if (!editingSection || savingSectionMeta) return;
+    const name = String(editingSection.name || "").trim();
+    if (!name) return;
+    setSavingSectionMeta(true);
+    try {
+      const ok = await updateSectionMeta(sectionId, {
+        name,
+        imageUrl: String(editingSection.imageUrl || "").trim(),
+      });
+      if (!ok) return;
+      setEditingSection(null);
+    } finally {
+      setSavingSectionMeta(false);
+    }
+  };
 
   const renderSections = ({ showSections = true, showTables = true, showMenus = true } = {}) => (
 
@@ -4971,27 +5013,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="grid md:grid-cols-4 gap-3">
-
-
-
-            <Input
-
-
-
-              placeholder={t("mgmt.restaurant.sections.name")}
-
-
-
-              value={formSection.name}
-
-
-
-              onChange={(e) => setFormSection((f) => ({ ...f, name: e.target.value }))}
-
-
-
-            />
+          <div className="grid md:grid-cols-[9rem_1fr_1fr_auto] gap-3 items-center">
 
 
 
@@ -5008,6 +5030,26 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
               onChange={(e) => setFormSection((f) => ({ ...f, id: e.target.value }))}
+
+
+
+            />
+
+
+
+            <Input
+
+
+
+              placeholder={t("mgmt.restaurant.sections.name")}
+
+
+
+              value={formSection.name}
+
+
+
+              onChange={(e) => setFormSection((f) => ({ ...f, name: e.target.value }))}
 
 
 
@@ -5069,6 +5111,12 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
           </div>
 
+          {!looksLikeImageUrl(formSection.imageUrl) && (
+            <div className="text-[11px] text-amber-600">
+              Esa dirección parece una página, no una imagen. Usá clic derecho sobre la imagen → «Copiar dirección de la imagen» (termina en .jpg, .png o .webp).
+            </div>
+          )}
+
 
 
 
@@ -5115,22 +5163,18 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                  {s.imageUrl ? (
-
-
-
-                    <img src={sanitizeImageUrl(s.imageUrl)} alt={s.name || s.id} className="h-full w-full object-cover" />
-
-
-
+                  {s.imageUrl && !brokenSectionImages[s.id] ? (
+                    <img
+                      src={sanitizeImageUrl(s.imageUrl)}
+                      alt={s.name || s.id}
+                      className="h-full w-full object-cover"
+                      onError={() => setBrokenSectionImages((prev) => ({ ...prev, [s.id]: true }))}
+                    />
                   ) : (
-
-
-
-                    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400">{t("mgmt.restaurant.sections.noImage")}</div>
-
-
-
+                    <div className="h-full w-full flex flex-col items-center justify-center gap-0.5 px-2 text-center text-xs text-slate-400">
+                      <span>{t("mgmt.restaurant.sections.noImage")}</span>
+                      {s.imageUrl ? <span className="text-[10px] opacity-80">La dirección no es una imagen</span> : null}
+                    </div>
                   )}
 
 
@@ -5156,6 +5200,94 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
                   <div className="text-xs text-slate-500">{(s.tables || []).length} {t("mgmt.restaurant.common.tables")}</div>
+
+
+
+                  {editingSection?.id === s.id && (
+
+
+
+                    <div className="space-y-2 pt-2" onClick={(e) => e.stopPropagation()}>
+
+
+
+                      <Input
+
+
+
+                        placeholder={t("mgmt.restaurant.sections.name")}
+
+
+
+                        value={editingSection.name}
+
+
+
+                        onChange={(e) => setEditingSection((f) => ({ ...f, name: e.target.value }))}
+
+
+
+                      />
+
+
+
+                      <Input
+
+
+
+                        placeholder={t("mgmt.restaurant.sections.imageOptional")}
+
+
+
+                        value={editingSection.imageUrl}
+
+
+
+                        onChange={(e) => setEditingSection((f) => ({ ...f, imageUrl: e.target.value }))}
+
+
+
+                      />
+
+
+
+                      <div className="flex items-center gap-2">
+
+
+
+                        <Button
+
+
+
+                          onClick={() => saveSectionMeta(s.id)}
+
+
+
+                          disabled={savingSectionMeta || !String(editingSection.name || "").trim()}
+
+
+
+                          className={managementPrimaryButtonClass}
+
+
+
+                        >{savingSectionMeta ? "Guardando..." : "Guardar"}</Button>
+
+
+
+                        <Button variant="outline" onClick={() => setEditingSection(null)}>Cancelar</Button>
+
+
+
+                      </div>
+
+
+
+                    </div>
+
+
+
+                  )}
 
 
 
@@ -5196,6 +5328,58 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
                     >{t("mgmt.restaurant.common.delete")}</button>
+
+
+
+                    {s.used ? (
+
+
+
+                      <span className="text-[11px] text-slate-500" title="Ya tiene ventas registradas: el nombre queda fijo para no alterar reportes ni contabilidad.">En uso · nombre fijo</span>
+
+
+
+                    ) : (
+
+
+
+                      <button
+
+
+
+                        type="button"
+
+
+
+                        className="text-xs text-indigo-600"
+
+
+
+                        onClick={(e) => {
+
+
+
+                          e.preventDefault();
+
+
+
+                          e.stopPropagation();
+
+
+
+                          setEditingSection({ id: s.id, name: s.name || "", imageUrl: s.imageUrl || "" });
+
+
+
+                        }}
+
+
+
+                      >Editar</button>
+
+
+
+                    )}
 
 
 
@@ -5407,7 +5591,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              className="h-10"
+              className="h-10 w-60"
 
 
 
@@ -5732,16 +5916,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
           <h3 className="text-lg font-semibold" style={{ color: "var(--color-text-base)" }}>{t("mgmt.restaurant.menus.header")}</h3>
         </div>
 
-        {/* ── Crear menú + Horario ── */}
-        <Card className="p-0 overflow-hidden">
-          <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x" style={{ borderColor: "var(--card-border)" }}>
-
-            {/* Crear menú */}
-            <div className="p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 text-sm">☰</div>
-                <span className="font-medium text-sm" style={{ color: "var(--color-text-base)" }}>{t("mgmt.restaurant.menus.createTitle")}</span>
-              </div>
+        {/* ── Crear menú + Horario, todo en una fila ── */}
+        <Card className="p-4 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-[220px] max-w-[340px] flex-1">
+              <div className="text-[11px] mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.createTitle")}</div>
               <div className="flex gap-2">
                 <Input
                   className="flex-1"
@@ -5758,93 +5937,82 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                   <Button onClick={createMenu} className={managementPrimaryButtonClass}>{t("mgmt.restaurant.menus.createButton")}</Button>
                 )}
               </div>
-              <div className="space-y-2">
-                <div className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.visibleInSections")}</div>
-                <div className="flex flex-wrap gap-2">
-                  {(sections || []).map((s) => {
-                    const checked = (menuCreateSectionIds || []).includes(s.id);
-                    return (
-                      <label key={s.id} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer select-none transition-colors ${checked ? "bg-indigo-500/15 border-indigo-500/40 text-indigo-400 font-medium" : "bg-transparent border-white/10 text-slate-400 hover:bg-white/5"}`}>
-                        <input type="checkbox" className="hidden" checked={checked} onChange={(e) => {
-                          const isChecked = e.target.checked;
-                          setMenuCreateSectionIds((prev) => {
-                            const list = Array.isArray(prev) ? [...prev] : [];
-                            if (isChecked) { if (!list.includes(s.id)) list.push(s.id); }
-                            else { return list.filter((x) => x !== s.id); }
-                            return list;
-                          });
-                        }} />
-                        {checked ? "✓ " : ""}{s.name || s.id}
-                      </label>
-                    );
-                  })}
-                  {(sections || []).length === 0 && <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.noSections")}</div>}
-                </div>
+            </div>
+            <div className="w-44">
+              <div className="text-[11px] mb-1" style={{ color: "var(--color-text-muted)" }}>Tipo de servicio</div>
+              <select
+                className="h-10 w-full rounded-lg border px-2 text-sm"
+                style={{
+                  background: "var(--input-bg, var(--card-bg))",
+                  borderColor: "var(--card-border)",
+                  color: "var(--color-text-base)",
+                }}
+                value={menuAssignServiceType}
+                onChange={(e) => setMenuAssignServiceType(e.target.value)}
+              >
+                <option value="">Todos los servicios</option>
+                <option value="DINE_IN">Salón (Dine in)</option>
+                <option value="TAKEOUT">Para llevar</option>
+                <option value="DELIVERY">Delivery</option>
+                <option value="ROOM">Habitación</option>
+              </select>
+            </div>
+            <div className="w-28">
+              <div className="text-[11px] mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.start")}</div>
+              <Input type="time" value={menuAssignForm.startTime} onChange={(e) => setMenuAssignForm((p) => ({ ...p, startTime: e.target.value }))} />
+            </div>
+            <div className="w-28">
+              <div className="text-[11px] mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.end")}</div>
+              <Input type="time" value={menuAssignForm.endTime} onChange={(e) => setMenuAssignForm((p) => ({ ...p, endTime: e.target.value }))} />
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.assignments.column.days")}</div>
+              <div className="flex gap-1">
+                {[
+                  { bit: 1 << 1, label: t("mgmt.restaurant.days.mon") },
+                  { bit: 1 << 2, label: t("mgmt.restaurant.days.tue") },
+                  { bit: 1 << 3, label: t("mgmt.restaurant.days.wed") },
+                  { bit: 1 << 4, label: t("mgmt.restaurant.days.thu") },
+                  { bit: 1 << 5, label: t("mgmt.restaurant.days.fri") },
+                  { bit: 1 << 6, label: t("mgmt.restaurant.days.sat") },
+                  { bit: 1 << 0, label: t("mgmt.restaurant.days.sun") },
+                ].map((d) => {
+                  const checked = (Number(menuAssignForm.daysMask) & d.bit) !== 0;
+                  return (
+                    <label key={d.label} className={`inline-flex items-center justify-center w-9 h-10 rounded-lg border text-[10px] font-semibold cursor-pointer select-none transition-colors ${checked ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
+                      <input type="checkbox" className="hidden" checked={checked} onChange={(e) => setMenuAssignForm((p) => ({ ...p, daysMask: e.target.checked ? Number(p.daysMask) | d.bit : Number(p.daysMask) & ~d.bit }))} />
+                      {d.label}
+                    </label>
+                  );
+                })}
               </div>
             </div>
+          </div>
 
-            {/* Horario */}
-            <div className="p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-500 text-sm">🕐</div>
-                <span className="font-medium text-sm" style={{ color: "var(--color-text-base)" }}>{t("mgmt.restaurant.menus.scheduleTitle")}</span>
-              </div>
-              <div>
-                <div className="text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>Tipo de servicio</div>
-                <select
-                  className="h-9 w-full rounded-lg border px-2 text-sm"
-                  style={{
-                    background: "var(--input-bg, var(--card-bg))",
-                    borderColor: "var(--card-border)",
-                    color: "var(--color-text-base)",
-                  }}
-                  value={menuAssignServiceType}
-                  onChange={(e) => setMenuAssignServiceType(e.target.value)}
-                >
-                  <option value="">Todos los servicios</option>
-                  <option value="DINE_IN">Salón (Dine in)</option>
-                  <option value="TAKEOUT">Para llevar</option>
-                  <option value="DELIVERY">Delivery</option>
-                  <option value="ROOM">Habitación</option>
-                </select>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.start")}</div>
-                  <Input type="time" value={menuAssignForm.startTime} onChange={(e) => setMenuAssignForm((p) => ({ ...p, startTime: e.target.value }))} />
-                </div>
-                <div className="text-slate-400 mt-5">→</div>
-                <div className="flex-1">
-                  <div className="text-xs mb-1" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.end")}</div>
-                  <Input type="time" value={menuAssignForm.endTime} onChange={(e) => setMenuAssignForm((p) => ({ ...p, endTime: e.target.value }))} />
-                </div>
-              </div>
-              <div>
-                <div className="text-xs mb-2" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.assignments.column.days")}</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { bit: 1 << 1, label: t("mgmt.restaurant.days.mon") },
-                    { bit: 1 << 2, label: t("mgmt.restaurant.days.tue") },
-                    { bit: 1 << 3, label: t("mgmt.restaurant.days.wed") },
-                    { bit: 1 << 4, label: t("mgmt.restaurant.days.thu") },
-                    { bit: 1 << 5, label: t("mgmt.restaurant.days.fri") },
-                    { bit: 1 << 6, label: t("mgmt.restaurant.days.sat") },
-                    { bit: 1 << 0, label: t("mgmt.restaurant.days.sun") },
-                  ].map((d) => {
-                    const checked = (Number(menuAssignForm.daysMask) & d.bit) !== 0;
-                    return (
-                      <label key={d.label} className={`inline-flex items-center justify-center w-10 h-10 rounded-xl border text-xs font-semibold cursor-pointer select-none transition-colors ${checked ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"}`}>
-                        <input type="checkbox" className="hidden" checked={checked} onChange={(e) => setMenuAssignForm((p) => ({ ...p, daysMask: e.target.checked ? Number(p.daysMask) | d.bit : Number(p.daysMask) & ~d.bit }))} />
-                        {d.label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-              {editingAssignmentId && (
-                <div className="text-xs px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600">{t("mgmt.restaurant.assignments.editingHint")}</div>
-              )}
-            </div>
+          {editingAssignmentId && (
+            <div className="text-xs px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-600">{t("mgmt.restaurant.assignments.editingHint")}</div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-medium" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.visibleInSections")}</span>
+            {(sections || []).map((s) => {
+              const checked = (menuCreateSectionIds || []).includes(s.id);
+              return (
+                <label key={s.id} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer select-none transition-colors ${checked ? "bg-indigo-500/15 border-indigo-500/40 text-indigo-400 font-medium" : "bg-transparent border-white/10 text-slate-400 hover:bg-white/5"}`}>
+                  <input type="checkbox" className="hidden" checked={checked} onChange={(e) => {
+                    const isChecked = e.target.checked;
+                    setMenuCreateSectionIds((prev) => {
+                      const list = Array.isArray(prev) ? [...prev] : [];
+                      if (isChecked) { if (!list.includes(s.id)) list.push(s.id); }
+                      else { return list.filter((x) => x !== s.id); }
+                      return list;
+                    });
+                  }} />
+                  {checked ? "✓ " : ""}{s.name || s.id}
+                </label>
+              );
+            })}
+            {(sections || []).length === 0 && <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.restaurant.menus.noSections")}</div>}
           </div>
         </Card>
 
@@ -5860,118 +6028,135 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
               {t("mgmt.restaurant.assignments.empty")}
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              {(sectionMenuRows || []).map((row, idx) => {
-                const a = row.assignment;
-                const menu = row.menu;
-                const rowMenuId = String(row?.menuId || menu?.id || a?.menuId || a?.menu?.id || "").trim();
-                const visibleSections = Array.isArray(row?.visibleSections) ? row.visibleSections : [];
-                const isSelected = rowMenuId && String(selectedMenuId || "").trim() === rowMenuId;
-                const assignmentSectionId = String(a?.sectionId || a?.section?.id || "").trim();
-                const canEditAssignment = !!a && !!String(a?.id || "").trim() && !!assignmentSectionId;
-                const isActive = a ? a.active !== false : false;
-                const menuName_ = menu?.name || a?.menu?.name || rowMenuId || "-";
-                return (
-                  <div
-                    key={rowMenuId || menu?.id || a?.id || idx}
-                    className={`relative rounded-2xl border p-4 flex flex-col gap-3 cursor-pointer transition-all ${isSelected ? "border-indigo-500/60 bg-indigo-500/8 shadow-sm shadow-indigo-500/10" : "hover:border-indigo-400/30 hover:bg-white/3"}`}
-                    style={{ borderColor: isSelected ? undefined : "var(--card-border)", background: isSelected ? undefined : "var(--card-bg)" }}
-                    onClick={() => {
-                      if (!rowMenuId) return;
-                      setSelectedMenuId(rowMenuId);
-                      setMenuAssignForm((prev) => ({ ...prev, menuId: rowMenuId }));
-                      setMenuPickerMenuId(rowMenuId);
-                      setMenuItemsDrawerOpen(false);
-                    }}
-                  >
-                    {/* Badge status */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl bg-indigo-500/10 shrink-0">🍽</div>
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${isActive ? "bg-emerald-50 text-emerald-700 border-emerald-200" : a ? "bg-rose-50 text-rose-700 border-rose-200" : "bg-white/10 text-slate-400 border-white/10"}`}>
-                        {isActive ? t("mgmt.restaurant.assignments.status.active") : a ? t("mgmt.restaurant.assignments.status.inactive") : t("mgmt.restaurant.assignments.status.unassigned")}
-                      </span>
-                    </div>
-
-                    {/* Nombre */}
-                    <div>
-                      <div className="font-semibold text-sm leading-tight" style={{ color: "var(--color-text-base)" }}>{menuName_}</div>
-                      {a?.serviceType && (
-                        <div className="text-xs mt-0.5" style={{ color: "var(--color-text-muted)" }}>
-                          {serviceTypeLabels[a.serviceType] || a.serviceType}
-                        </div>
-                      )}
-                      {a && (
-                        <div className="text-xs mt-0.5 tabular-nums" style={{ color: "var(--color-text-muted)" }}>
-                          {a.startTime || "00:00"} – {a.endTime || "24:00"}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Secciones */}
-                    {visibleSections.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {visibleSections.map((sRef, si) => {
-                          const sid = String(sRef?.id || "").trim();
-                          const isCurrent = sid && String(selectedSectionId || "").trim() === sid;
-                          return (
-                            <span key={`${rowMenuId}-${sid || si}`} className={`text-xs px-2 py-0.5 rounded-full border ${isCurrent ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" : "bg-white/5 text-slate-400 border-white/10"}`}>
-                              {sRef?.name || sid || "-"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Acciones */}
-                    <div className="flex gap-1.5 mt-auto pt-1" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        className="flex-1 text-xs py-1.5 rounded-lg border font-medium transition-colors hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:text-indigo-400"
-                        style={{ borderColor: "var(--card-border)", color: "var(--color-text-muted)" }}
+            <div className="rounded-xl border overflow-x-auto" style={{ borderColor: "var(--card-border)", background: "var(--card-bg)" }}>
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wider" style={{ color: "var(--color-text-muted)", borderBottom: "1px solid var(--card-border)" }}>
+                    <th className="text-left font-semibold px-3 py-2 w-8">#</th>
+                    <th className="text-left font-semibold px-3 py-2">Menú</th>
+                    <th className="text-left font-semibold px-3 py-2">Estado</th>
+                    <th className="text-left font-semibold px-3 py-2">Servicio</th>
+                    <th className="text-left font-semibold px-3 py-2 whitespace-nowrap">Horario</th>
+                    <th className="text-left font-semibold px-3 py-2">Secciones</th>
+                    <th className="text-right font-semibold px-3 py-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(sectionMenuRows || []).map((row, idx) => {
+                    const a = row.assignment;
+                    const menu = row.menu;
+                    const rowMenuId = String(row?.menuId || menu?.id || a?.menuId || a?.menu?.id || "").trim();
+                    const visibleSections = Array.isArray(row?.visibleSections) ? row.visibleSections : [];
+                    const isSelected = rowMenuId && String(selectedMenuId || "").trim() === rowMenuId;
+                    const assignmentSectionId = String(a?.sectionId || a?.section?.id || "").trim();
+                    const canEditAssignment = !!a && !!String(a?.id || "").trim() && !!assignmentSectionId;
+                    const isActive = a ? a.active !== false : false;
+                    const menuName_ = menu?.name || a?.menu?.name || rowMenuId || "-";
+                    const statusLabel = isActive ? t("mgmt.restaurant.assignments.status.active") : a ? t("mgmt.restaurant.assignments.status.inactive") : t("mgmt.restaurant.assignments.status.unassigned");
+                    const statusDot = isActive ? "#059669" : a ? "#e11d48" : "#94a3b8";
+                    return (
+                      <tr
+                        key={rowMenuId || menu?.id || a?.id || idx}
+                        className="cursor-pointer transition-colors hover:bg-white/5"
+                        style={{
+                          borderBottom: "1px solid var(--card-border)",
+                          background: isSelected ? "rgba(99,102,241,0.10)" : undefined,
+                          boxShadow: isSelected ? "inset 3px 0 0 #6366f1" : undefined,
+                        }}
                         onClick={() => {
                           if (!rowMenuId) return;
                           setSelectedMenuId(rowMenuId);
                           setMenuAssignForm((prev) => ({ ...prev, menuId: rowMenuId }));
                           setMenuPickerMenuId(rowMenuId);
-                          setMenuItemsDrawerOpen(true);
+                          setMenuItemsDrawerOpen(false);
                         }}
                       >
-                        {t("mgmt.restaurant.menuItems.title")}
-                      </button>
-                      {canEditAssignment && (
-                        <button
-                          className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:text-indigo-400"
-                          style={{ borderColor: "var(--card-border)", color: "var(--color-text-muted)" }}
-                          onClick={() => {
-                            if (!a) return;
-                            const targetSectionId = String(a?.sectionId || a?.section?.id || "").trim();
-                            if (targetSectionId && targetSectionId !== String(selectedSectionId || "").trim()) setSelectedSectionId(targetSectionId);
-                            startEditAssignment({ ...a, menuId: String(a?.menuId || rowMenuId || "").trim() });
-                          }}
-                        >
-                          {t("mgmt.restaurant.assignments.action.edit")}
-                        </button>
-                      )}
-                      <button
-                        className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-rose-500 border-rose-200/50"
-                        onClick={() => deleteMenuById(rowMenuId)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                        <td className="px-3 py-2 tabular-nums text-xs align-middle" style={{ color: "var(--color-text-muted)" }}>{idx + 1}</td>
+                        <td className="px-3 py-2 align-middle">
+                          <div className="font-semibold leading-tight" style={{ color: "var(--color-text-base)" }}>{menuName_}</div>
+                        </td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--color-text-base)" }}>
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: statusDot }} />
+                            {statusLabel}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap text-xs" style={{ color: "var(--color-text-muted)" }}>
+                          {a?.serviceType ? (serviceTypeLabels[a.serviceType] || a.serviceType) : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-middle whitespace-nowrap text-xs tabular-nums" style={{ color: "var(--color-text-muted)" }}>
+                          {a ? `${a.startTime || "00:00"} – ${a.endTime || "24:00"}` : "—"}
+                        </td>
+                        <td className="px-3 py-2 align-middle">
+                          {visibleSections.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {visibleSections.map((sRef, si) => {
+                                const sid = String(sRef?.id || "").trim();
+                                const isCurrent = sid && String(selectedSectionId || "").trim() === sid;
+                                return (
+                                  <span key={`${rowMenuId}-${sid || si}`} className={`text-[11px] px-2 py-0.5 rounded-full border ${isCurrent ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/30" : "bg-white/5 text-slate-400 border-white/10"}`}>
+                                    {sRef?.name || sid || "-"}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 align-middle">
+                          <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className="text-xs px-2.5 py-1 rounded-lg border font-medium transition-colors hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:text-indigo-400 whitespace-nowrap"
+                              style={{ borderColor: "var(--card-border)", color: "var(--color-text-muted)" }}
+                              onClick={() => {
+                                if (!rowMenuId) return;
+                                setSelectedMenuId(rowMenuId);
+                                setMenuAssignForm((prev) => ({ ...prev, menuId: rowMenuId }));
+                                setMenuPickerMenuId(rowMenuId);
+                                setMenuItemsDrawerOpen(true);
+                              }}
+                            >
+                              {t("mgmt.restaurant.menuItems.title")}
+                            </button>
+                            {canEditAssignment && (
+                              <button
+                                className="text-xs px-2.5 py-1 rounded-lg border font-medium transition-colors hover:bg-indigo-500/10 hover:border-indigo-400/40 hover:text-indigo-400 whitespace-nowrap"
+                                style={{ borderColor: "var(--card-border)", color: "var(--color-text-muted)" }}
+                                onClick={() => {
+                                  if (!a) return;
+                                  const targetSectionId = String(a?.sectionId || a?.section?.id || "").trim();
+                                  if (targetSectionId && targetSectionId !== String(selectedSectionId || "").trim()) setSelectedSectionId(targetSectionId);
+                                  startEditAssignment({ ...a, menuId: String(a?.menuId || rowMenuId || "").trim() });
+                                }}
+                              >
+                                {t("mgmt.restaurant.assignments.action.edit")}
+                              </button>
+                            )}
+                            <button
+                              className="text-xs px-2 py-1 rounded-lg border font-medium transition-colors hover:bg-rose-50 hover:border-rose-200 hover:text-rose-600 text-rose-500 border-rose-200/50"
+                              onClick={() => deleteMenuById(rowMenuId)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
 
         {/* ── Drawer: items del menú seleccionado ── */}
         {menuItemsDrawerOpen && selectedMenuId && (
-          <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setMenuItemsDrawerOpen(false)}>
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-40 flex items-center justify-center p-3 md:p-6" onClick={() => setMenuItemsDrawerOpen(false)}>
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
             <div
-              className="relative z-10 flex flex-col h-full w-full max-w-2xl shadow-2xl"
-              style={{ background: "var(--card-bg)", borderLeft: "1px solid var(--card-border)" }}
+              className="relative z-10 flex flex-col w-full max-w-[min(94vw,760px)] max-h-[86vh] rounded-2xl shadow-2xl overflow-hidden"
+              style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header del drawer */}
@@ -6617,7 +6802,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-    <Card className="p-5 space-y-3">
+    <Card className="p-5 space-y-3 mx-auto w-full max-w-5xl">
 
 
 
@@ -7174,11 +7359,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      <div className="grid lg:grid-cols-[1fr_auto_1.4fr] gap-6 items-start">
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
 
 
 
-        <div className="space-y-3">
+        <div className="space-y-3 rounded-xl border p-4" style={{ borderColor: "var(--card-border)" }}>
 
 
 
@@ -7186,7 +7371,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="space-y-3">
+          <div className="flex flex-wrap items-end gap-4">
 
 
 
@@ -7314,15 +7499,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <div className="hidden lg:block w-px bg-slate-200 self-stretch" />
-
-
-
-
-
-
-
-        <div className="space-y-3">
+        <div className="space-y-3 rounded-xl border p-4" style={{ borderColor: "var(--card-border)" }}>
 
 
 
@@ -7362,7 +7539,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="grid md:grid-cols-2 gap-4 items-start">
+          <div className="space-y-3">
 
 
 
@@ -7440,7 +7617,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <div className="border rounded-lg overflow-hidden max-w-sm">
+            <div className="border rounded-lg overflow-hidden w-full">
 
 
 
@@ -9432,7 +9609,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-  const renderInventory = () => <RestaurantInventory />;
+  const renderInventory = () => (
+    <div className="mx-auto w-full max-w-5xl">
+      <RestaurantInventory />
+    </div>
+  );
 
 
 
@@ -9468,7 +9649,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      {subTab === "sections" && renderSections({ showTables: false, showMenus: false })}
+      {subTab === "sections" && (
+        <div className="mx-auto w-full max-w-5xl">
+          {renderSections({ showTables: false, showMenus: false })}
+        </div>
+      )}
 
 
 
@@ -9476,7 +9661,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <div className="space-y-4">
+        <div className="space-y-4 mx-auto w-full max-w-5xl">
 
 
 
@@ -9508,7 +9693,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-    <div className="space-y-4">
+    <div className="space-y-4 mx-auto w-full max-w-3xl">
 
 
 

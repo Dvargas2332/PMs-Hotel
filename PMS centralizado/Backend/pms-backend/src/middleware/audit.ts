@@ -2,11 +2,12 @@ import type { NextFunction, Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "./auth.js";
 import {
-  actionFromMethod,
+  describeAction,
   extractEntityIdCandidate,
   getAuditMeta,
   normalizeAuditPath,
   sanitizeForAudit,
+  shouldSkipAuditPath,
 } from "../lib/audit.js";
 
 const EXCLUDED_PREFIXES = ["/health", "/version", "/audit"];
@@ -16,6 +17,7 @@ function shouldSkip(path: string, method: string): boolean {
   const upper = String(method).toUpperCase();
   if (upper === "OPTIONS" || upper === "GET" || upper === "HEAD") return true;
   if (!MUTATION_METHODS.has(upper)) return true;
+  if (shouldSkipAuditPath(path)) return true;
   const lowerPath = path.toLowerCase();
   return EXCLUDED_PREFIXES.some((prefix) => lowerPath === prefix || lowerPath.startsWith(`${prefix}/`));
 }
@@ -32,6 +34,10 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
     // @ts-ignore
     const user = req.user as AuthUser | undefined;
     const hotelId = ((req as any).tenantId as string | undefined) || user?.hotelId;
+
+    // La bitácora es de tareas hechas por usuarios, no de errores del sistema:
+    // una petición rechazada no es un movimiento y sólo agrega ruido.
+    if (res.statusCode >= 400) return;
 
     if (!hotelId || !user?.sub) return;
 
@@ -59,10 +65,10 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
       .create({
         data: {
           actorId: user.sub,
-          action: actionFromMethod(req.method, entity, res.statusCode),
+          action: describeAction(req.method, normalizedPath, entity),
           entity,
           entityId,
-          reason: res.statusCode >= 400 ? `HTTP ${res.statusCode}` : null,
+          reason: normalizedPath,
           payload: payload as any,
           hotelId,
         },

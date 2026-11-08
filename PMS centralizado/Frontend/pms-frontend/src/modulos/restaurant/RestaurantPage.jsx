@@ -908,6 +908,15 @@ const [subCategory, setSubCategory] = useState("");
   }, [menuItems, category, subCategory, getMenuFamily, getMenuSubFamily, getMenuSubSubFamily]);
 
   const filteredMenu = useMemo(() => {
+    // Sin acentos y en minúsculas: "cafe" tiene que encontrar "Café" y "jamon" a "Jamón".
+    const norm = (v) =>
+      String(v || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim();
+    const tokens = norm(search).split(/\s+/).filter(Boolean);
+
     return (menuItems || []).filter((m) => {
       const family = getMenuFamily(m);
       const subFamily = getMenuSubFamily(m);
@@ -915,13 +924,15 @@ const [subCategory, setSubCategory] = useState("");
       const inCat = !category || family === category;
       const inSub = !subCategory || subFamily === subCategory;
       const inSubSub = !subSubCategory || subSubFamily === subSubCategory;
-      const term = String(search || "").toLowerCase();
-      const matches =
-        !term ||
-        [m.name, m.code, m.barcode]
-          .map((v) => String(v || "").toLowerCase())
-          .some((v) => v.includes(term));
-      return inCat && inSub && inSubSub && matches;
+      if (!inCat || !inSub || !inSubSub) return false;
+      if (tokens.length === 0) return true;
+
+      const haystack = norm(
+        [m.name, m.code, m.barcode, m.cabys, family, subFamily, subSubFamily]
+          .filter(Boolean)
+          .join(" ")
+      );
+      return tokens.every((token) => haystack.includes(token));
     });
   }, [menuItems, category, subCategory, subSubCategory, search, getMenuFamily, getMenuSubFamily, getMenuSubSubFamily]);
 
@@ -1153,6 +1164,8 @@ const [subCategory, setSubCategory] = useState("");
 
   const paymentTotal = useMemo(() => sumNumbers(paymentBaseForm), [paymentBaseForm]);
   const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
+  // El servidor exige que la suma de pagos cuadre con el total (tolerancia 1 CRC).
+  const paymentSquare = Math.abs(paymentDiff) <= 1;
 
   // Descuentos aplicados que exigen PIN de administrador.
   const discountsRequiringPin = useMemo(() => {
@@ -2319,6 +2332,43 @@ const [subCategory, setSubCategory] = useState("");
 
   const updatePaymentAmount = (key, value) => {
     setPaymentForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  // Al cambiar la moneda del cobro se reinterpreta el monto con el TC: si no, el
+  // importe escrito en colones se multiplica por el tipo de cambio (5000 con TC
+  // 530 pasaba a ₡2.650.000) y el cobro se rechazaba por no cuadrar.
+  const changePaymentCurrency = (key, nextCurrency) => {
+    const prevCurrency = methodCurrency(key);
+    const next = String(nextCurrency || "").toUpperCase();
+    if (!next || next === prevCurrency) return;
+
+    const rate = Number(paymentRates[key] ?? configuredRate) || 0;
+    setPaymentCurrency((prev) => ({ ...prev, [key]: next }));
+    if (rate <= 0) return;
+
+    // Lo que falta cobrar, sin contar este medio de pago.
+    const others = Object.keys(paymentForm || {})
+      .filter((k) => k !== key)
+      .reduce((sum, k) => sum + (Number(baseAmountFor(k, paymentForm[k])) || 0), 0);
+    const pendingBase = Math.max(0, (Number(totals?.total) || 0) - others);
+
+    setPaymentForm((prev) => {
+      const current = Number(String(prev[key] ?? "").replace(",", ".")) || 0;
+      let converted;
+      if (!current) {
+        // Campo vacío: se propone el equivalente de lo que falta.
+        converted = next === baseCurrency ? pendingBase : pendingBase / rate;
+      } else if (prevCurrency === baseCurrency && next !== baseCurrency) {
+        converted = current / rate;
+      } else if (prevCurrency !== baseCurrency && next === baseCurrency) {
+        converted = current * rate;
+      } else {
+        converted = current;
+      }
+      // 4 decimales en moneda extranjera: con 2, 9.43 × 530 = ₡4.997,90 y el
+      // cobro no cuadraba con el total por un par de colones.
+      return { ...prev, [key]: String(Math.round(converted * 10000) / 10000) };
+    });
   };
 
   const printPaidInvoice = async () => {
@@ -4310,7 +4360,7 @@ const [subCategory, setSubCategory] = useState("");
                                 <select
                                   className="h-11 rounded-lg border px-2 text-xs"
                                   value={methodCurrency(method.key)}
-                                  onChange={(e) => setPaymentCurrency((prev) => ({ ...prev, [method.key]: e.target.value }))}
+                                  onChange={(e) => changePaymentCurrency(method.key, e.target.value)}
                                   title="Moneda del cobro"
                                 >
                                   <option value={baseCurrency}>{baseCurrency}</option>
@@ -4337,8 +4387,22 @@ const [subCategory, setSubCategory] = useState("");
                       <div className="text-sm text-slate-500">Selecciona una forma de pago para ingresar el monto.</div>
                     )}
 
-                    <div className="text-sm text-lime-800 bg-lime-50 border border-lime-100 rounded-lg px-3 py-2">
-                      Pagado: {formatMoney(paymentTotal)}  Diferencia: {formatMoney(paymentDiff)}
+                    <div
+                      className={`text-sm rounded-lg px-3 py-2 border ${
+                        paymentSquare
+                          ? "text-emerald-800 bg-emerald-50 border-emerald-100"
+                          : paymentDiff > 0
+                          ? "text-amber-800 bg-amber-50 border-amber-100"
+                          : "text-rose-800 bg-rose-50 border-rose-100"
+                      }`}
+                    >
+                      Pagado: <span className="font-semibold">{formatMoney(paymentTotal)}</span>
+                      {" · "}
+                      {paymentSquare
+                        ? "Cuadra con el total"
+                        : paymentDiff > 0
+                        ? `Sobra ${formatMoney(paymentDiff)} — el cobro debe ser exacto`
+                        : `Falta ${formatMoney(Math.abs(paymentDiff))}`}
                     </div>
                   </>
                 )}
@@ -5375,12 +5439,14 @@ const [subCategory, setSubCategory] = useState("");
               <div className="text-base font-semibold text-lime-900">{selectedTable?.name || "Mesa"}</div>
             </div>
             <div className="flex flex-wrap items-center justify-start md:justify-end gap-2 text-sm">
-              <button
-                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
-                onClick={() => createNewOrderForTable(selectedTable?.id)}
-              >
-                Nueva orden
-              </button>
+              {!isQuickCashContext && (
+                <button
+                  className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
+                  onClick={() => createNewOrderForTable(selectedTable?.id)}
+                >
+                  Nueva orden
+                </button>
+              )}
               {!isQuickCashContext && (
                 <>
                   <button
@@ -5410,14 +5476,15 @@ const [subCategory, setSubCategory] = useState("");
                   </button>
                 </>
               )}
-              <button
-                className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100 ml-1"
-                onClick={cancelEmptyOrder}
-                
-                title="Cancelar orden"
-              >
-                Cancelar orden
-              </button>
+              {!isQuickCashContext && (
+                <button
+                  className="h-12 px-4 rounded-2xl bg-white border border-lime-200 text-lime-800 text-base font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100 ml-1"
+                  onClick={cancelEmptyOrder}
+                  title="Cancelar orden"
+                >
+                  Cancelar orden
+                </button>
+              )}
               <button
                 className="h-12 px-4 rounded-2xl bg-emerald-500 text-white text-base font-semibold transition-colors hover:bg-emerald-600 active:bg-emerald-700 ml-1"
                 onClick={resetToLobby}

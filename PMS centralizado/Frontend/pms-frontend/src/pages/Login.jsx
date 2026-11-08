@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { LogIn, Info } from "lucide-react";
+import { LogIn, Info, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -16,6 +16,7 @@ export default function Login({ onSuccess }) {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -108,15 +109,29 @@ export default function Login({ onSuccess }) {
 
               <div className="space-y-1">
                 <label className="text-sm font-medium" style={{ color: "var(--color-text-base)" }}>{t("login.password")}</label>
-                <Input
-                  type="password"
-                  name="login_password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t("login.passwordPlaceholder")}
-                  required
-                  autoComplete="new-password"
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    name="login_password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t("login.passwordPlaceholder")}
+                    required
+                    autoComplete="new-password"
+                    className="pr-11"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-lg flex items-center justify-center transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                    style={{ color: "var(--color-text-muted)" }}
+                    aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 <div className="pt-1 text-right">
                   <Link
                     to="/forgot-password"

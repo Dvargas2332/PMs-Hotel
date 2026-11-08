@@ -451,7 +451,7 @@ export default function Roles() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 mx-auto w-full max-w-5xl">
       {/* Tab bar */}
       <div className="flex gap-1 rounded-xl p-1" style={{ background: "var(--color-surface-2)", border: "1px solid var(--card-border)" }}>
         {TABS.map(({ id, label, icon: Icon }) => (

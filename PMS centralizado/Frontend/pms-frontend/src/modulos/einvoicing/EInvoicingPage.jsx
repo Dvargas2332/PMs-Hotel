@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { api } from "../../lib/api";
-import { FileCheck2, Search, RefreshCw, Download, Upload, BookOpen, Tag, AlertCircle, CheckCircle2, Trash2 } from "lucide-react";
+import { FileCheck2, Search, RefreshCw, Download, Upload, BookOpen, Tag, AlertCircle, CheckCircle2, Trash2, Building2, SlidersHorizontal } from "lucide-react";
 import EInvoicingUserMenu from "./EInvoicingUserMenu";
 import * as XLSX from "xlsx";
 import { useLanguage } from "../../context/LanguageContext";
@@ -1002,11 +1002,9 @@ export default function EInvoicingPage() {
       {/* Header */}
       <header className="shrink-0 flex items-center justify-between px-6 py-4 backdrop-blur-sm" style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--sidebar-border)" }}>
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-violet-500/90 to-fuchsia-600/80 shadow-lg shadow-violet-900/40">
-            <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-6 w-6 object-contain" />
-          </div>
+          <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-8 w-8 object-contain" />
           <div className="space-y-0.5">
-            <div className="text-xs uppercase tracking-wide font-medium bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">{t("einv.title")}</div>
+            <div className="text-xs uppercase tracking-wide text-violet-600 dark:text-violet-400">{t("einv.title")}</div>
             <div className="text-sm font-semibold" style={{ color: "var(--color-text-base)" }}>{t("einv.subtitle")}</div>
           </div>
         </div>
@@ -1026,31 +1024,29 @@ export default function EInvoicingPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 flex flex-col overflow-hidden" style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
-          <div className="flex flex-col items-center justify-center py-6 gap-3" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "rgba(124,58,237,0.08)" }}>
-            <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-violet-500/90 to-fuchsia-600/80 shadow-lg shadow-violet-900/40">
-              <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-12 w-12 object-contain" />
-            </div>
-            <div className="text-xs font-semibold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent uppercase tracking-wide">{t("einv.title")}</div>
+          <div className="flex items-center justify-center py-6" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "rgba(124,58,237,0.08)" }}>
+            <img src="/kazehanalogo.png" alt="Kazehana Cloud" className="h-24 w-24 object-contain" />
           </div>
           <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
             <div className="text-[11px] uppercase tracking-wide px-1 mb-2" style={{ color: "var(--color-text-muted)" }}>{t("einv.nav.title")}</div>
             {[
-              { id: "documents", label: t("einv.nav.documents") },
-              { id: "acks", label: t("einv.nav.acks") },
-              { id: "issuer", label: t("einv.nav.issuer") },
-              { id: "general", label: t("einv.nav.general") },
-              { id: "catalogs", label: t("einv.nav.catalogs") },
+              { id: "documents", label: t("einv.nav.documents"), icon: FileCheck2 },
+              { id: "acks", label: t("einv.nav.acks"), icon: CheckCircle2 },
+              { id: "issuer", label: t("einv.nav.issuer"), icon: Building2 },
+              { id: "general", label: t("einv.nav.general"), icon: SlidersHorizontal },
+              { id: "catalogs", label: t("einv.nav.catalogs"), icon: BookOpen },
             ].map((item) => (
               <button
                 key={item.id}
                 onClick={() => setPanel(item.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   panel === item.id
-                    ? "bg-violet-500/20 text-violet-300 shadow shadow-violet-900/40"
+                    ? "bg-violet-500/20 dark:shadow dark:shadow-violet-900/40"
                     : "hover:bg-black/5 dark:hover:bg-white/5"
                 }`}
-                style={panel !== item.id ? { color: "var(--color-text-muted)" } : {}}
+                style={panel === item.id ? { color: "var(--module-accent, #7c3aed)" } : { color: "var(--color-text-muted)" }}
               >
+                <item.icon className="w-4 h-4 shrink-0" />
                 {item.label}
               </button>
             ))}

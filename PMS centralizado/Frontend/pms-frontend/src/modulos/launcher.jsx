@@ -12,6 +12,7 @@ import {
   X,
   ArrowRight,
   Sparkles,
+  Info,
 } from "lucide-react";
 
 import { Card } from "../components/ui/card";
@@ -23,6 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { filterAllowedAlerts, isAllowedAlert } from "../lib/alertFilter";
 import { api } from "../lib/api";
+import HelpPanel from "../components/HelpPanel";
 
 const THEMES = {
   frontdesk: { from: "from-emerald-500/90", to: "to-sky-500/80", text: "text-white" },
@@ -32,6 +34,21 @@ const THEMES = {
   einvoicing: { from: "from-violet-500/90", to: "to-fuchsia-600/80", text: "text-white" },
 };
 
+// La base se identifica por su número de migraciones aplicadas (v1.0.71), no por
+// el timestamp de la carpeta de Prisma (20261105190000), que no dice nada.
+// El respaldo, si el conteo no llega, es la fecha con guiones: 05-11-2026.
+function dbVersionLabel(info) {
+  if (!info) return null;
+  if (info.dbMigrations) return `v1.0.${info.dbMigrations}`;
+  if (info.dbAppliedAt) {
+    const d = new Date(info.dbAppliedAt);
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${dd}-${mm}-${d.getFullYear()}`;
+  }
+  return null;
+}
+
 export default function Launcher() {
   const navigate = useNavigate();
   const { hotel, user, loginUser, logout, logoutUser } = useAuth();
@@ -40,6 +57,7 @@ export default function Launcher() {
   const [focusedIndex, setFocusedIndex] = useState(-1);
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [versionInfo, setVersionInfo] = useState(null);
   const [userLogin, setUserLogin] = useState({
     username: "",
@@ -266,11 +284,21 @@ export default function Launcher() {
                 <div className="text-sm font-bold leading-none" style={{ color: "var(--color-text-base)" }}>Kazehana PMS</div>
                 <div className="text-[11px] mt-0.5" style={{ color: "var(--color-text-muted)" }}>
                   v{versionInfo?.appVersion || "0.0.0"}
-                  {versionInfo?.dbVersion ? ` · DB ${String(versionInfo.dbVersion).split("_")[0]}` : ""}
+                  {dbVersionLabel(versionInfo) ? ` · DB ${dbVersionLabel(versionInfo)}` : ""}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {/* Ayuda y soporte */}
+              <button
+                onClick={() => setHelpOpen(true)}
+                className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition-colors hover:bg-black/5 dark:bg-white/10 dark:hover:bg-white/20"
+                style={{ color: "var(--color-text-base)", border: "1px solid var(--card-border)" }}
+                aria-label="Ayuda y soporte"
+              >
+                <Info size={14} className="text-emerald-500" />
+                <span className="hidden sm:inline">Ayuda</span>
+              </button>
               {/* Campana de alertas */}
               <button
                 onClick={() => setAlertsOpen((s) => !s)}
@@ -386,10 +414,6 @@ export default function Launcher() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Sesión activa
-                    </div>
                   </div>
                 ) : (
                   <form onSubmit={handleUserLoginSubmit} className="space-y-4" autoComplete="off">
@@ -481,9 +505,11 @@ export default function Launcher() {
           <span>© {new Date().getFullYear()} Kazehana Cloud · Todos los derechos reservados</span>
           <span className="hidden sm:block">
             {t("launcher.version.system")} v{versionInfo?.appVersion || "0.0.0"}
-            {versionInfo?.dbVersion ? ` · ${t("launcher.version.db")} ${String(versionInfo.dbVersion).split("_")[0]}` : ""}
+            {dbVersionLabel(versionInfo) ? ` · ${t("launcher.version.db")} ${dbVersionLabel(versionInfo)}` : ""}
           </span>
         </footer>
+
+        <HelpPanel open={helpOpen} onClose={() => setHelpOpen(false)} contextLabel={hotel?.name} />
       </div>
     </TooltipProvider>
   );

@@ -1,6 +1,6 @@
 // src/pages/Management/ManagementPage.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Bell, CircleUser, LogOut } from "lucide-react";
+import { ChevronRight, Bell, CircleUser, LogOut, Users, ClipboardList, BedDouble, UtensilsCrossed, Calculator, Network, SlidersHorizontal } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import Roles from "./Roles";
@@ -188,6 +188,26 @@ export default function ManagementPage() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menusRef = useRef(null);
 
+  // ── Campana de notificaciones (estado actual y trabajo futuro) ─────────────
+  //
+  // Hoy NO son notificaciones reales: `alerts` es estado en memoria que se llena
+  // con eventos `pms:push-alert` del navegador y se vacía al recargar. Además
+  // `lib/alertFilter` sólo deja pasar tres casos (kind "einvoice.error",
+  // "reservation.channel_manager" y textos de facturación electrónica con palabra
+  // de error), así que el resto de lo que emite la app se descarta en silencio.
+  //
+  // Pendiente de producto: convertirla en notificaciones de verdad.
+  //   1. Tabla en la base (id, hotelId, userId, kind, title, desc, readAt, createdAt)
+  //      con su migración de Prisma y el guard multi-tenant de siempre.
+  //   2. Endpoint en la API: GET de las del usuario, PATCH para marcar leídas y
+  //      el POST interno que usan los controladores al generar el aviso.
+  //   3. Campana persistente por usuario: badge con las no leídas, sondeo corto
+  //      (o SSE/WS si algún día hay servidor de eventos) y sobrevive al refresco.
+  //   4. Sustituir los `pms:push-alert` por llamadas a ese endpoint, para que el
+  //      aviso exista aunque el usuario no estuviera en la pantalla.
+  //
+  // Al implementarlo, `lib/alertFilter` deja de tener sentido: el filtro pasa a
+  // ser por `kind` en el backend, no por coincidencia de texto en el navegador.
   // Escucha eventos globales de alertas para mantener consistencia con el resto del app
   useEffect(() => {
     const onToggle = () => setAlertsOpen((v) => !v);
@@ -255,39 +275,45 @@ export default function ManagementPage() {
       {
         title: t("mgmt.shell.menu.profilesTitle"),
         key: "profiles",
-        items: [{ id: "profiles", label: t("mgmt.shell.menu.profilesItem"), requires: "management" }],
+        icon: Users,
+        items: [{ id: "profiles", label: t("mgmt.shell.menu.profilesItem"), icon: Users, requires: "management" }],
       },
       {
         title: t("mgmt.shell.menu.auditTitle"),
         key: "audit",
-        items: [{ id: "usageLog", label: t("mgmt.shell.menu.auditItem"), requires: "management" }],
+        icon: ClipboardList,
+        items: [{ id: "usageLog", label: t("mgmt.shell.menu.auditItem"), icon: ClipboardList, requires: "management" }],
       },
       {
         title: t("modules.frontdesk.name"),
         key: "frontdesk",
+        icon: BedDouble,
         items: [
-          { id: "frontdeskConfig", label: t("mgmt.shell.menu.frontdesk.config"), requires: "frontdesk" },
+          { id: "frontdeskConfig", label: t("mgmt.shell.menu.frontdesk.config"), icon: SlidersHorizontal, requires: "frontdesk" },
         ],
       },
       {
         title: t("modules.restaurant.name"),
         key: "restaurant",
+        icon: UtensilsCrossed,
         items: [
-          { id: "restaurantConfig", label: t("mgmt.shell.menu.restaurant.config"), requires: "restaurant" },
+          { id: "restaurantConfig", label: t("mgmt.shell.menu.restaurant.config"), icon: SlidersHorizontal, requires: "restaurant" },
         ],
       },
       {
         title: t("modules.accounting.name"),
         key: "accounting",
+        icon: Calculator,
         items: [
-          { id: "accountingConfig", label: t("mgmt.shell.menu.accounting.config"), requires: "accounting" },
+          { id: "accountingConfig", label: t("mgmt.shell.menu.accounting.config"), icon: SlidersHorizontal, requires: "accounting" },
         ],
       },
       {
         title: t("mgmt.shell.menu.channel.title"),
         key: "channel",
+        icon: Network,
         items: [
-          { id: "channelManager", label: t("mgmt.shell.menu.channel.config"), requires: "channel_manager" },
+          { id: "channelManager", label: t("mgmt.shell.menu.channel.config"), icon: SlidersHorizontal, requires: "channel_manager" },
         ],
       },
     ],
@@ -364,11 +390,9 @@ export default function ManagementPage() {
       {/* Header */}
       <header className="shrink-0 flex items-center justify-between px-6 py-4 backdrop-blur-sm" style={{ background: "var(--header-bg)", borderBottom: "1px solid var(--sidebar-border)" }}>
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500/90 to-blue-600/80 shadow-lg shadow-indigo-900/40">
-            <img src="/kazehanalogo.png" alt={t("mgmt.shell.logoAlt")} className="h-6 w-6 object-contain" />
-          </div>
+          <img src="/kazehanalogo.png" alt={t("mgmt.shell.logoAlt")} className="h-8 w-8 object-contain" />
           <div className="space-y-0.5">
-            <div className="text-xs uppercase tracking-wide font-medium bg-gradient-to-r from-indigo-400 to-blue-400 bg-clip-text text-transparent">{t("modules.management.name")}</div>
+            <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-400">{t("modules.management.name")}</div>
             <div className="text-sm font-semibold" style={{ color: "var(--color-text-base)" }}>{t("mgmt.shell.header.title")}</div>
           </div>
         </div>
@@ -454,11 +478,8 @@ export default function ManagementPage() {
         {/* Sidebar nav */}
         <aside className="w-64 shrink-0 flex flex-col overflow-hidden" style={{ background: "var(--sidebar-bg)", borderRight: "1px solid var(--sidebar-border)" }}>
           {/* Logo grande */}
-          <div className="flex flex-col items-center justify-center py-6 gap-3" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "rgba(99,102,241,0.08)" }}>
-            <div className="flex items-center justify-center h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500/90 to-blue-600/80 shadow-lg shadow-indigo-900/40">
-              <img src="/kazehanalogo.png" alt={t("mgmt.shell.logoAlt")} className="h-12 w-12 object-contain" />
-            </div>
-            <div className="text-xs font-semibold bg-gradient-to-r from-indigo-400 to-blue-400 bg-clip-text text-transparent uppercase tracking-wide">{t("modules.management.name")}</div>
+          <div className="flex items-center justify-center py-6" style={{ borderBottom: "1px solid var(--sidebar-border)", background: "rgba(99,102,241,0.08)" }}>
+            <img src="/kazehanalogo.png" alt={t("mgmt.shell.logoAlt")} className="h-24 w-24 object-contain" />
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -492,7 +513,10 @@ export default function ManagementPage() {
                     }`}
                     style={selected !== "profiles" ? { color: "var(--color-text-base)" } : {}}
                   >
-                    <span>{group.title}</span>
+                    <span className="flex items-center gap-3">
+                      {group.icon ? <group.icon className="w-4 h-4 shrink-0" /> : null}
+                      {group.title}
+                    </span>
                   </button>
                 );
               }
@@ -505,7 +529,10 @@ export default function ManagementPage() {
                     style={{ color: "var(--color-text-base)" }}
                     aria-expanded={isOpen}
                   >
-                    <span>{group.title}</span>
+                    <span className="flex items-center gap-3">
+                      {group.icon ? <group.icon className="w-4 h-4 shrink-0" /> : null}
+                      {group.title}
+                    </span>
                     <ChevronRight className={`h-4 w-4 transition-transform shrink-0 ${isOpen ? "rotate-90" : ""}`} />
                   </button>
                   <div className={`overflow-hidden transition-[max-height] duration-300 ease-in-out ${isOpen ? "max-h-[1000px]" : "max-h-0"}`}>
@@ -521,13 +548,14 @@ export default function ManagementPage() {
                               setSelected(item.id);
                               if (!expanded.has(group.key)) toggleGroup(group.key);
                             }}
-                            className={`flex w-full items-center text-left text-sm rounded-xl px-3 py-2 transition-all ${
+                            className={`flex w-full items-center gap-2.5 text-left text-sm rounded-xl px-3 py-2 transition-all ${
                               selected === item.id
                                 ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-900/40 font-semibold"
                                 : "hover:bg-black/5 dark:hover:bg-white/10"
                             }`}
                             style={selected !== item.id ? { color: "var(--color-text-base)" } : {}}
                           >
+                            {item.icon ? <item.icon className="w-4 h-4 shrink-0" /> : null}
                             {item.label}
                           </button>
                         </li>

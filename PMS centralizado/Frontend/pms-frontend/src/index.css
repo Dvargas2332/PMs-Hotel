@@ -493,6 +493,60 @@ body {
 [data-module="management"] .text-slate-400 { color: #475569 !important; }
 [data-module="management"] input, [data-module="management"] select, [data-module="management"] textarea { background-color: #ffffff !important; border-color: rgba(0,0,0,0.15) !important; color: #0f172a !important; }
 
+/* Management — light mode: el resto de la paleta que estaba escrita para fondo oscuro.
+   Se acota con :root:not(.dark) para no tener que reponer cada regla en .dark. */
+:root:not(.dark) [data-module="management"] .bg-white\/3,
+:root:not(.dark) [data-module="management"] .bg-white\/8 { background-color: #ffffff !important; }
+:root:not(.dark) [data-module="management"] .bg-white\/10 { background-color: rgba(15,23,42,0.06) !important; }
+:root:not(.dark) [data-module="management"] .bg-white\/15,
+:root:not(.dark) [data-module="management"] .bg-white\/20 { background-color: rgba(15,23,42,0.08) !important; }
+:root:not(.dark) [data-module="management"] .bg-white\/30 { background-color: rgba(15,23,42,0.12) !important; }
+:root:not(.dark) [data-module="management"] .border-white\/5 { border-color: rgba(0,0,0,0.07) !important; }
+:root:not(.dark) [data-module="management"] .border-white\/20 { border-color: rgba(0,0,0,0.15) !important; }
+:root:not(.dark) [data-module="management"] .hover\:bg-white\/3:hover,
+:root:not(.dark) [data-module="management"] .hover\:bg-white\/5:hover,
+:root:not(.dark) [data-module="management"] .hover\:bg-white\/8:hover,
+:root:not(.dark) [data-module="management"] .hover\:bg-white\/10:hover,
+:root:not(.dark) [data-module="management"] .hover\:bg-white\/15:hover { background-color: rgba(15,23,42,0.06) !important; }
+:root:not(.dark) [data-module="management"] .text-slate-200 { color: #334155 !important; }
+:root:not(.dark) [data-module="management"] .text-indigo-300 { color: #4338ca !important; }
+:root:not(.dark) [data-module="management"] .hover\:text-white:hover { color: #0f172a !important; }
+/* text-white pensado para fondo oscuro. Se respeta cuando el mismo elemento trae
+   un fondo de color (botones indigo/rojo/verde, degradados, insignias). */
+:root:not(.dark) [data-module="management"] .text-white:not([class*="bg-indigo"]):not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-green"]):not([class*="bg-lime"]):not([class*="bg-violet"]):not([class*="bg-blue"]):not([class*="bg-sky"]):not([class*="bg-amber"]):not([class*="bg-rose"]):not([class*="bg-slate-6"]):not([class*="bg-slate-7"]):not([class*="bg-slate-8"]):not([class*="bg-slate-9"]):not([class*="bg-black"]):not([class*="bg-gradient"]) { color: #0f172a !important; }
+/* La edición rápida de tarifas usa bg-indigo-900, que en claro queda lavanda */
+:root:not(.dark) [data-module="management"] .bg-indigo-900.text-white { color: #1e1b4b !important; }
+:root:not(.dark) [data-module="management"] input::placeholder,
+:root:not(.dark) [data-module="management"] textarea::placeholder { color: #94a3b8 !important; }
+
+/* Banners de cabecera de pantalla: en oscuro son un degradado indigo profundo con
+   texto claro; en claro se pasan a lavanda para no dejar un bloque oscuro suelto
+   en medio de la página (el texto ya lo oscurecen las reglas de text-indigo-50/200). */
+:root:not(.dark) [data-module="management"] [class*="from-indigo-9"] {
+  background-image: none !important;
+  background-color: #eef2ff !important;
+  color: #1e1b4b !important;
+  border-color: #c7d2fe !important;
+}
+:root:not(.dark) [data-module="management"] .border-indigo-700\/30,
+:root:not(.dark) [data-module="management"] .border-indigo-700\/40 { border-color: #c7d2fe !important; }
+
+/* Paneles y modales slate-800/900 (tabla de tarifas, modales de ayudas) */
+:root:not(.dark) [data-module="management"] .bg-slate-800,
+:root:not(.dark) [data-module="management"] .bg-slate-800\/80,
+:root:not(.dark) [data-module="management"] .bg-slate-900 {
+  background-color: var(--card-bg) !important;
+  color: var(--color-text-base) !important;
+}
+:root:not(.dark) [data-module="management"] .text-slate-100 { color: #1e293b !important; }
+:root:not(.dark) [data-module="management"] .text-amber-300 { color: #b45309 !important; }
+
+/* Tintes de estado que sólo tenían versión oscura (artículo ya en menú, día cerrado) */
+:root:not(.dark) [data-module="management"] .bg-emerald-900\/30 { background-color: #ecfdf5 !important; }
+:root:not(.dark) [data-module="management"] .border-emerald-500\/40 { border-color: #6ee7b7 !important; }
+:root:not(.dark) [data-module="management"] .bg-red-900\/40 { background-color: #fef2f2 !important; }
+:root:not(.dark) [data-module="management"] .text-red-300 { color: #b91c1c !important; }
+
 /* Management — dark mode restore */
 .dark [data-module="management"] .bg-indigo-900 { background-color: #1e1b4b !important; border-color: rgba(99,102,241,0.3) !important; }
 .dark [data-module="management"] .text-indigo-50 { color: #eef2ff !important; }

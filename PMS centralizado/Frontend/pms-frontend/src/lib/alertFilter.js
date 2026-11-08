@@ -1,3 +1,8 @@
+// Filtro de la campana de notificaciones. Hoy es un parche en el navegador: deja
+// pasar sólo unos pocos avisos y descarta el resto por coincidencia de texto.
+// El plan para convertir la campana en notificaciones persistentes (tabla,
+// endpoint y badge por usuario) está anotado en ManagementPage.jsx, sobre el
+// useEffect de `pms:push-alert`; cuando eso exista, este archivo sobra.
 const ALLOWED_KINDS = new Set([
   "reservation.channel_manager",
   "einvoice.error",

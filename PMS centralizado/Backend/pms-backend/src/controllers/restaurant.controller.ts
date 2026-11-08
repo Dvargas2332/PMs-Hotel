@@ -487,9 +487,21 @@ export async function listSections(req: Request, res: Response) {
     assignmentsBySection.set(a.sectionId, list);
   });
 
+  const usedOrders = sections.length
+    ? await prisma.restaurantOrder.findMany({
+        where: { hotelId, sectionId: { in: sections.map((s) => s.id) } },
+        select: { sectionId: true },
+        distinct: ["sectionId"],
+      })
+    : [];
+  const usedSections = new Set(usedOrders.map((o) => String(o.sectionId)));
+
   const mapped = sections.map((s) => ({
     ...sanitizeSection(s, hotelId),
     id: fromInternalId(hotelId, s.id),
+    // Una sección con ventas registradas queda bloqueada para edición: los
+    // reportes y la contabilidad la referencian por su nombre.
+    used: usedSections.has(s.id),
     activeMenu: (() => {
       const list = assignmentsBySection.get(s.id) || [];
       const activeAssignment = list.find((a) => isAssignmentActiveNow(a));
@@ -881,6 +893,24 @@ export async function updateSection(req: Request, res: Response) {
   if (!existing) return res.status(404).json({ message: "Sección no encontrada" });
 
   const { name, imageUrl, quickCashEnabled } = req.body || {};
+
+  // El nombre y la imagen sólo se pueden cambiar mientras la sección no tenga
+  // ventas: los reportes y la contabilidad ya la referencian con ese nombre.
+  // quickCashEnabled no entra en el candado porque no aparece en reportes.
+  const wantsMetaChange = typeof name === "string" || "imageUrl" in (req.body || {});
+  if (wantsMetaChange) {
+    const orders = await prisma.restaurantOrder.count({
+      where: { hotelId, sectionId: existing.id },
+    });
+    if (orders > 0) {
+      return res.status(409).json({
+        code: "SECTION_IN_USE",
+        message:
+          "Esta sección ya tiene ventas registradas y no se puede renombrar ni cambiar de imagen, para no alterar reportes ni contabilidad.",
+      });
+    }
+  }
+
   const data: any = {};
   if (typeof name === "string") data.name = name.trim();
   if ("imageUrl" in (req.body || {})) data.imageUrl = imageUrl ? String(imageUrl) : null;

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { RefreshCw, ChevronLeft } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { api } from "../../lib/api";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
@@ -24,7 +23,6 @@ const nextStatusFor = (status) => {
 };
 
 export default function KdsPage() {
-  const navigate = useNavigate();
   const [area, setArea] = useState("KITCHEN");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
@@ -98,28 +96,21 @@ export default function KdsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-lime-50 to-white text-black">
-      <header className="h-14 flex items-center justify-between px-5 bg-white border-b border-slate-200 text-black shadow">
+    <div className="min-h-screen bg-gradient-to-b from-white to-slate-200 text-black">
+      <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
         <div className="flex items-center gap-3">
-          <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2 text-sm"
-            onClick={() => navigate("/restaurant/pos")}
-          >
-            <ChevronLeft className="w-4 h-4" />
-            POS
-          </button>
-          <div>
-            <div className="text-xs uppercase text-black/80">KDS</div>
-            <div className="text-sm font-semibold">Kitchen / bar screen</div>
+          <div className="leading-tight">
+            <div className="text-lg font-semibold text-white">KDS</div>
+            <div className="text-xs text-white/80">Kitchen / bar screen</div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
-          <div className="px-3 py-1 rounded-lg bg-white">
+        <div className="flex items-center gap-4 text-sm font-semibold">
+          <div className="px-4 py-2 rounded-xl bg-white/15 text-white">
             {now.toLocaleDateString()} {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </div>
           <button
-            className="h-9 px-3 rounded-lg bg-white hover:bg-white flex items-center gap-2"
+            className="h-9 px-3 rounded-xl bg-white/15 text-white text-sm font-semibold hover:bg-white/20 flex items-center gap-2"
             onClick={refresh}
             disabled={loading}
             title="Refresh"
