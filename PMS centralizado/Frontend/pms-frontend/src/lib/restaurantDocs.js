@@ -5,7 +5,7 @@
  * se inyecta con `money` para respetar la moneda de cada pantalla.
  */
 
-const W = 40;
+const W = 42;
 
 const defaultMoney = (n) => (Number(n) || 0).toFixed(2);
 
@@ -24,6 +24,69 @@ const rjust = (label, value) => {
 const sep = () => "=".repeat(W);
 const sep2 = () => "-".repeat(W);
 
+/** Fecha y hora del ticket: dd-mm-aaaa hh:mm (las barras no se usan en el PMS). */
+const stamp = (value) => {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** Fila "Etiqueta     valor" con la etiqueta en una columna fija. */
+const metaRow = (label, value, width = 13) => `${String(label).padEnd(width)} ${value}`;
+
+/** Reparte un texto en líneas de `width`, cortando por palabra. */
+const wrapText = (text, width) => {
+  const words = String(text || "").replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const rows = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= width) {
+      current = candidate;
+      continue;
+    }
+    if (current) rows.push(current);
+    let rest = word;
+    while (rest.length > width) {
+      rows.push(rest.slice(0, width));
+      rest = rest.slice(width);
+    }
+    current = rest;
+  }
+  if (current) rows.push(current);
+  return rows.length > 0 ? rows : [""];
+};
+
+/** Una línea de artículo: cantidad, descripción y importe alineado a la derecha. */
+const itemLines = (qty, name, amountText) => {
+  const q = String(qty).padStart(3, " ");
+  const tail = amountText ? String(amountText) : "";
+  const budget = Math.max(8, W - q.length - 1 - (tail ? tail.length + 1 : 0));
+  const parts = wrapText(name, budget);
+  const first = `${q} ${parts[0]}`;
+  const out = [first + " ".repeat(Math.max(1, W - first.length - tail.length)) + tail];
+  for (const extra of parts.slice(1)) out.push(`     ${extra}`);
+  return out;
+};
+
+/** Fila de total: la etiqueta y el importe quedan alineados a la derecha. */
+const totalRow = (label, value, labelWidth = 24) => {
+  const l = String(label);
+  const v = String(value);
+  const left = " ".repeat(Math.max(0, labelWidth - l.length)) + l;
+  return left + " ".repeat(Math.max(1, W - left.length - v.length)) + v;
+};
+
+const DOC_TITLES = {
+  FE: "FACTURA ELECTRÓNICA",
+  TE: "TIQUETE ELECTRÓNICO",
+  COMANDA: "COMANDA",
+  CLOSES: "CIERRE DE CAJA",
+  DOCUMENT: "DOCUMENTO",
+  REPORT: "REPORTE",
+};
+
 /**
  * Encabezado con los datos del restaurante (Management → Configuraciones → General).
  * Se usa cuando la plantilla de facturación no define un encabezado propio.
@@ -36,11 +99,13 @@ export function buildRestaurantHeaderLines(restaurant) {
   if (name) lines.push(center(name));
   if (legalName && legalName !== name) lines.push(center(legalName));
   const legalId = String(restaurant?.cedula || "").trim();
-  if (legalId) lines.push(center(`Cedula: ${legalId}`));
-  const phone = String(restaurant?.telefono || "").trim();
-  if (phone) lines.push(center(`Tel: ${phone}`));
+  if (legalId) lines.push(center(`Cédula: ${legalId}`));
   const address = String(restaurant?.direccion || "").trim();
   if (address) lines.push(center(address));
+  const phone = String(restaurant?.telefono || "").trim();
+  if (phone) lines.push(center(`Tel: ${phone}`));
+  const email = String(restaurant?.email || restaurant?.correo || "").trim();
+  if (email) lines.push(center(email));
   return lines;
 }
 
@@ -124,52 +189,62 @@ export function buildPrintPreviewText({ title, payload, totals, money = defaultM
   const header = String(payload?.__printHeader || "").trim();
   const footer = String(payload?.__printFooter || "").trim();
 
+  lines.push(sep());
   if (header) {
-    lines.push(header);
-    lines.push("");
+    lines.push(...header.split("\n").map((l) => l.trimEnd()));
   } else {
     const headerLines = buildRestaurantHeaderLines(restaurant);
-    if (headerLines.length > 0) {
-      lines.push(...headerLines);
-      lines.push(sep2());
-    }
+    if (headerLines.length > 0) lines.push(...headerLines);
   }
+  lines.push(sep());
 
-  lines.push(String(title || "IMPRIMIR").toUpperCase());
-  const date = payload?.date ? new Date(payload.date) : new Date();
-  lines.push(`Fecha:    ${date.toLocaleString()}`);
-  if (payload?.saleNumber) lines.push(`Venta #:  ${String(payload.saleNumber)}`);
-  if (payload?.documentNumber) lines.push(`N° Documento: ${String(payload.documentNumber)}`);
-  if (payload?.shiftNumber) lines.push(`Turno:    #${String(payload.shiftNumber)}`);
-  if (payload?.type) lines.push(`Tipo:     ${String(payload.type)}`);
-  if (payload?.cashierName) lines.push(`Cajero:   ${String(payload.cashierName)}`);
-  if (payload?.waiterName) lines.push(`Mesero:   ${String(payload.waiterName)}`);
-  if (payload?.sectionId) lines.push(`Sección:  ${String(payload.sectionId)}`);
-  if (payload?.tableId) lines.push(`Mesa:     ${String(payload.tableId)}`);
-  if (payload?.covers != null) lines.push(`Personas: ${Number(payload.covers) || 0}`);
-  if (payload?.serviceType) lines.push(`Servicio: ${String(payload.serviceType)}`);
-  if (payload?.roomId) lines.push(`Habitac.: ${String(payload.roomId)}`);
+  const typeKey = String(payload?.type || "").toUpperCase();
+  const docTitle = DOC_TITLES[typeKey] || String(title || "DOCUMENTO").toUpperCase();
+  lines.push(center(docTitle));
+  if (payload?.saleNumber) lines.push(center(`Venta ${String(payload.saleNumber)}`));
+  if (payload?.documentNumber) lines.push(center(`N° ${String(payload.documentNumber)}`));
+  if (payload?.clave) {
+    lines.push(sep2());
+    lines.push("Clave numérica:");
+    for (const part of wrapText(String(payload.clave), W)) lines.push(part);
+  }
   lines.push(sep2());
+
+  const date = payload?.date ? new Date(payload.date) : new Date();
+  lines.push(metaRow("Fecha", stamp(date)));
+  if (payload?.cashierName) lines.push(metaRow("Cajero", String(payload.cashierName)));
+  if (payload?.waiterName) lines.push(metaRow("Mesero", String(payload.waiterName)));
+  if (payload?.shiftNumber) lines.push(metaRow("Turno", `#${String(payload.shiftNumber)}`));
+  if (payload?.sectionId) lines.push(metaRow("Sección", String(payload.sectionId)));
+  if (payload?.tableId) lines.push(metaRow("Mesa", String(payload.tableId)));
+  if (payload?.covers != null) lines.push(metaRow("Personas", String(Number(payload.covers) || 0)));
+  if (payload?.serviceType) lines.push(metaRow("Servicio", String(payload.serviceType)));
+  if (payload?.roomId) lines.push(metaRow("Habitación", String(payload.roomId)));
 
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (items.length > 0) {
+    lines.push(sep2());
+    const amountHead = "IMPORTE";
+    lines.push(`${"CANT".padEnd(5)}${"DESCRIPCIÓN".padEnd(W - 5 - amountHead.length)}${amountHead}`);
+    lines.push(sep2());
     for (const it of items) {
-      const qty = Math.trunc(Number(it?.qty ?? it?.quantity ?? 1)) || 1;
+      const qty = Number(it?.qty ?? it?.quantity ?? 1) || 1;
       const name = String(it?.name || it?.label || it?.title || it?.id || "Item");
       const price = it?.price ?? it?.unitPrice ?? it?.amount;
       const hasPrice = price != null && String(price).trim() !== "";
-      if (hasPrice) lines.push(rjust(`  ${qty} x ${name}`, money(qty * (Number(price) || 0))));
-      else lines.push(`  ${qty} x ${name}`);
-      const note = String(it?.note || it?.detailNote || "").trim();
-      if (note) lines.push(`    * ${note}`);
+      const amountText = hasPrice ? money(qty * (Number(price) || 0)) : "";
+      lines.push(...itemLines(qty, name, amountText));
+      const itemNote = String(it?.note || it?.detailNote || "").trim();
+      if (itemNote) for (const part of wrapText(itemNote, W - 6)) lines.push(`     * ${part}`);
     }
     lines.push(sep2());
   }
 
   const note = String(payload?.note || "").trim();
   if (note) {
-    lines.push(`Nota: ${note}`);
-    lines.push("");
+    lines.push("Observaciones:");
+    for (const part of wrapText(note, W)) lines.push(part);
+    lines.push(sep2());
   }
 
   const t = totals && typeof totals === "object" ? totals : null;
@@ -178,32 +253,48 @@ export function buildPrintPreviewText({ title, payload, totals, money = defaultM
     const total = t.total ?? t.system ?? t.grandTotal ?? t.totalAmount;
     const tax = t.tax ?? t.iva ?? t.impuesto;
     const service = t.service ?? t.servicio ?? t.tip10;
-    if (subtotal != null) lines.push(rjust("Subtotal:", money(subtotal)));
-    if (Number(t?.discountTotal) > 0) lines.push(rjust("Descuento:", `- ${money(t.discountTotal)}`));
-    if (service != null) lines.push(rjust("Servicio (10%):", money(service)));
-    if (tax != null) lines.push(rjust("Impuesto (IVA):", money(tax)));
-    if (total != null) lines.push(rjust("TOTAL:", money(total)));
+    if (subtotal != null) lines.push(totalRow("Subtotal", money(subtotal)));
+    if (Number(t?.discountTotal) > 0) lines.push(totalRow("Descuento", `-${money(t.discountTotal)}`));
+    if (service != null) lines.push(totalRow("Servicio", money(service)));
+    if (tax != null) lines.push(totalRow("IVA", money(tax)));
+    if (total != null) {
+      lines.push(sep2());
+      lines.push(totalRow("TOTAL", money(total)));
+      lines.push(sep());
+    }
   }
 
   const payMethods = Array.isArray(payload?.paymentMethods) ? payload.paymentMethods : [];
   if (payMethods.length > 0) {
-    lines.push(sep2());
     for (const pm of payMethods) {
-      if (pm?.name && Number(pm?.amount) > 0) lines.push(rjust(`  ${pm.name}:`, money(pm.amount)));
+      if (pm?.name && Number(pm?.amount) > 0) lines.push(rjust(`${pm.name}:`, money(pm.amount)));
     }
-    if (payload?.paid != null) lines.push(rjust("  Recibido:", money(payload.paid)));
-    if (payload?.change != null && Number(payload.change) > 0) lines.push(rjust("  Cambio:", money(payload.change)));
+    if (payload?.paid != null) lines.push(rjust("Recibido:", money(payload.paid)));
+    if (payload?.change != null) lines.push(rjust("Cambio:", money(payload.change)));
   }
 
   if (payload?.canceled) {
-    lines.push(sep2());
+    lines.push(sep());
     lines.push(center("*** DOCUMENTO ANULADO ***"));
-    if (payload?.cancelReason) lines.push(`Motivo: ${payload.cancelReason}`);
+    if (payload?.cancelReason) {
+      for (const part of wrapText(`Motivo: ${payload.cancelReason}`, W)) lines.push(part);
+    }
+    lines.push(sep());
   }
 
   if (footer) {
     lines.push("");
-    lines.push(footer);
+    for (const part of footer.split("\n")) lines.push(part.trimEnd());
+  } else {
+    lines.push(sep2());
+    lines.push(center("GRACIAS POR SU PREFERENCIA"));
+    for (const part of wrapText(
+      "Este documento es una representación gráfica del comprobante electrónico autorizado por Hacienda (DGT-R-48-2016).",
+      W
+    )) {
+      lines.push(center(part));
+    }
+    lines.push(sep2());
   }
 
   return lines.join("\n");

@@ -47,7 +47,7 @@ describe("buildCloseReportText", () => {
       salesCount: 0,
     });
     expect(text).toContain("Cafetería Kaze");
-    expect(text).toContain("Cedula: 3-101-123456");
+    expect(text).toContain("Cédula: 3-101-123456");
     expect(text).not.toContain("Hotel Demo");
   });
 });
@@ -57,7 +57,7 @@ describe("buildRestaurantHeaderLines", () => {
     const lines = buildRestaurantHeaderLines(restaurant);
     expect(lines.join("\n")).toContain("Cafetería Kaze");
     expect(lines.join("\n")).toContain("Kazehana Restaurante S.A.");
-    expect(lines.join("\n")).toContain("Cedula: 3-101-123456");
+    expect(lines.join("\n")).toContain("Cédula: 3-101-123456");
     expect(lines.join("\n")).toContain("Tel: 2222-3333");
     expect(lines.join("\n")).toContain("San José, Central");
   });
@@ -86,10 +86,10 @@ describe("buildPrintPreviewText", () => {
       money: (v) => `₡${Number(v).toFixed(2)}`,
     });
     expect(text).toContain("HOTEL DEMO");
-    expect(text).toContain("N° Documento: 001");
-    expect(text).toContain("2 x Cafe");
+    expect(text).toContain("N° 001");
+    expect(text).toContain("2 Cafe");
     expect(text).toContain("₡2000.00");
-    expect(text).toContain("TOTAL:");
+    expect(text).toContain("TOTAL");
     expect(text).toContain("*** DOCUMENTO ANULADO ***");
     expect(text).toContain("Motivo: error de cobro");
   });
@@ -102,7 +102,7 @@ describe("buildPrintPreviewText", () => {
       restaurant,
     });
     expect(text).toContain("Cafetería Kaze");
-    expect(text).toContain("Cedula: 3-101-123456");
+    expect(text).toContain("Cédula: 3-101-123456");
   });
 
   it("respeta el encabezado configurado por encima de los datos del restaurante", () => {

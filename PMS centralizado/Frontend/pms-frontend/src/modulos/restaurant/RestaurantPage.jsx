@@ -3582,8 +3582,10 @@ const [subCategory, setSubCategory] = useState("");
               </div>
               <RestaurantCloseXButton onClick={closePrintConfirm} />
             </div>
-            <div className="rounded-lg border bg-lime-50 p-3 max-h-[60vh] overflow-auto">
-              <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">{printConfirmText}</pre>
+            <div className="max-h-[62vh] overflow-auto rounded-xl bg-slate-100 p-3">
+              <div className="mx-auto w-full max-w-[370px] rounded-lg bg-white px-4 py-5 shadow-[0_2px_10px_rgba(15,23,42,0.12)] ring-1 ring-slate-200">
+                <pre className="whitespace-pre font-mono text-[11.5px] leading-[1.5] text-slate-900">{printConfirmText}</pre>
+              </div>
             </div>
             <div className="flex justify-end gap-2">
               <button className="h-12 px-4 rounded-lg border text-sm" disabled={printConfirmBusy} onClick={closePrintConfirm}>
@@ -4257,33 +4259,66 @@ const [subCategory, setSubCategory] = useState("");
       {paymentsModalOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
           <div className="w-full max-w-4xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-xs uppercase text-emerald-600">Payment</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">Pago</div>
                 <div className="text-lg font-semibold text-slate-900">{selectedTable?.name}</div>
               </div>
+              {paymentResult && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                  <CheckCircle className="h-4 w-4" /> Cobro exitoso
+                </span>
+              )}
             </div>
-            <div className="grid lg:grid-cols-[1.2fr_1fr] gap-4">
+            <div className={paymentResult ? "space-y-4" : "grid lg:grid-cols-[1.2fr_1fr] gap-4"}>
               <div className="space-y-4">
-                <div className="rounded-xl border bg-lime-50 px-4 py-4 text-sm">
-                  <div className="text-xs text-slate-600">Total due</div>
-                  <div className="text-2xl font-bold text-slate-900">{formatMoney(displayTotals.total)}</div>
-                  <div className="text-xs text-slate-500">
-                    Subtotal {formatMoney(displayTotals.subtotal)}  Service {formatMoney(displayTotals.service)}  Taxes {formatMoney(displayTotals.tax)}
-                    {displayTotals.discountTotal > 0 && (
-                      <span className="block">Descuento {formatMoney(displayTotals.discountTotal)}</span>
-                    )}
+                <div className="rounded-2xl border border-lime-200 bg-lime-50 px-5 py-4">
+                  <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Total a pagar</div>
+                      <div className="mt-1 text-4xl font-bold leading-none tabular-nums text-slate-900">
+                        {formatMoney(displayTotals.total)}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-[auto_auto] gap-x-6 gap-y-1 text-sm tabular-nums">
+                      <span className="text-slate-600">Subtotal</span>
+                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.subtotal)}</span>
+                      <span className="text-slate-600">Servicio</span>
+                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.service)}</span>
+                      <span className="text-slate-600">Impuestos</span>
+                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.tax)}</span>
+                      {displayTotals.discountTotal > 0 && (
+                        <>
+                          <span className="text-slate-600">Descuento</span>
+                          <span className="text-right font-medium text-emerald-700">-{formatMoney(displayTotals.discountTotal)}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
                 {paymentResult ? (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 space-y-1">
-                    <div className="text-lg font-semibold text-emerald-700">Cobro exitoso</div>
-                    {paymentChange > 0 && (
-                      <div className="text-sm text-emerald-700">Vuelto: {formatMoney(paymentChange)}</div>
-                    )}
-                    <div className="text-xs text-slate-600">Puedes imprimir la factura o cerrar sin imprimir.</div>
-                  </div>
+                  <>
+                    <div className="grid grid-cols-2 gap-3 tabular-nums sm:max-w-md">
+                      <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
+                        <div className="mt-1 text-2xl font-bold leading-none text-emerald-700">
+                          {formatMoney(paymentResult?.paid ?? displayTotals.total)}
+                        </div>
+                      </div>
+                      {paymentChange > 0 && (
+                        <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vuelto</div>
+                          <div className="mt-1 text-2xl font-bold leading-none text-slate-900">
+                            {formatMoney(paymentChange)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-slate-700">
+                      Puedes imprimir la factura o cerrar sin imprimir.
+                    </div>
+                  </>
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
@@ -4332,12 +4367,8 @@ const [subCategory, setSubCategory] = useState("");
                 )}
               </div>
 
-              <div className="space-y-3">
-                {paymentResult ? (
-                  <div className="text-sm text-slate-600">
-                    Pagado: <span className="font-semibold">{formatMoney(paymentResult?.paid ?? displayTotals.total)}</span>
-                  </div>
-                ) : (
+              <div className={paymentResult ? "hidden" : "space-y-3"}>
+                {paymentResult ? null : (
                   <>
                     <div className="text-sm font-semibold text-slate-800">Montos</div>
                     {selectedPaymentMethods.length > 0 ? (
@@ -4408,18 +4439,18 @@ const [subCategory, setSubCategory] = useState("");
                 )}
               </div>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
               {paymentResult ? (
                 <>
                   <button
-                    className="h-12 px-4 rounded-lg border text-sm"
+                    className="h-12 px-5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     onClick={finalizePaymentAndExit}
                     disabled={paymentPrintBusy}
                   >
                     Cerrar sin imprimir
                   </button>
-              <button
-                    className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
+                  <button
+                    className="h-12 px-8 rounded-lg bg-emerald-600 text-white text-sm font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
                     onClick={printPaidInvoice}
                     disabled={paymentPrintBusy}
                   >
@@ -4444,7 +4475,7 @@ const [subCategory, setSubCategory] = useState("");
                     {chargeBusy ? "Cobrando..." : "Confirm Payment"}
                   </button>
               <button
-                    className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-500"
+                    className="h-12 px-5 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50"
                     onClick={closePaymentsModal}
                   >
                     Cancelar
