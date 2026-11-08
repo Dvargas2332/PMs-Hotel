@@ -42,15 +42,13 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     async function restore() {
       try {
-        // Solo intentar refresh si hay datos previos de sesión
-        if (!loadFromSession("hotel")) {
-          setReady(true);
-          return;
-        }
-        await api.refresh();
-        if (!cancelled) {
-          // Sesión restaurada — los datos de hotel/user se cargaron de sessionStorage
-        }
+        // Siempre se intenta: la cookie de refresco dura 7 días, así que la
+        // sesión se restaura aunque sessionStorage esté vacío (pestaña nueva)
+        // o el usuario recargue.
+        const data = await api.refresh();
+        if (cancelled) return;
+        if (data?.user) setUser(data.user);
+        if (data?.hotel) setHotel(data.hotel);
       } catch {
         // Refresh falló — limpiar sesión
         if (!cancelled) {

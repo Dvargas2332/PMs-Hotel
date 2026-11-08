@@ -29,6 +29,7 @@ import RestaurantHistory from "./modulos/restaurant/RestaurantHistory";
 import RestaurantClientsPage from "./modulos/restaurant/RestaurantClientsPage";
 import Managementpage from "./pages/Management/ManagementPage";
 import { useSearchParams } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -44,11 +45,13 @@ import { useLanguage } from "./context/LanguageContext";
  */
 function RootEntry() {
   const [params] = useSearchParams();
+  const { hotel } = useAuth();
   const reset = params.get("reset");
   const invite = params.get("invite");
   if (reset) return <Navigate to={`/reset-password?token=${encodeURIComponent(reset)}`} replace />;
   if (invite) return <Navigate to={`/accept-invite?token=${encodeURIComponent(invite)}`} replace />;
-  return <Navigate to="/login" replace />;
+  // Con sesión abierta, recargar la raíz devuelve al launcher y no al login.
+  return <Navigate to={hotel ? "/launcher" : "/login"} replace />;
 }
 
 export default function App() {

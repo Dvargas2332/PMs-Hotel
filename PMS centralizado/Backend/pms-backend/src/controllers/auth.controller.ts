@@ -234,7 +234,46 @@ export async function refresh(req: Request, res: Response) {
     });
     setAuthCookies(res, newAccessToken, newRefreshToken);
 
-    return res.json({ token: newAccessToken });
+    // Se devuelven también el usuario y el hotel para que el front pueda
+    // restaurar la sesión sólo con la cookie: recargar o abrir otra pestaña
+    // deja de mandar al login.
+    let userOut: unknown = null;
+    let hotelOut: unknown = null;
+
+    if (payload.isGestor) {
+      userOut = {
+        id: "gestor",
+        name: process.env.GESTOR_NAME || "Gestor SaaS",
+        email: payload.email,
+        role: "ADMIN",
+        hotelId: "saas-gestor",
+        isGestor: true,
+      };
+      hotelOut = {
+        id: "saas-gestor",
+        name: process.env.GESTOR_SYSTEM_HOTEL_NAME || "Gestor SaaS",
+        membership: "PLATINUM",
+        allowedModules: allowedModulesForMembership("PLATINUM"),
+        isGestor: true,
+      };
+    } else if (!payload.isLauncher && payload.sub) {
+      const row = await prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, name: true, email: true, role: true, createdAt: true, hotelId: true },
+      });
+      if (row) {
+        userOut = row;
+        const hotel = await prisma.hotel.findUnique({
+          where: { id: row.hotelId },
+          select: { id: true, name: true, membership: true },
+        });
+        if (hotel) {
+          hotelOut = { ...hotel, allowedModules: allowedModulesForMembership(hotel.membership) };
+        }
+      }
+    }
+
+    return res.json({ token: newAccessToken, user: userOut, hotel: hotelOut });
   } catch (err) {
     console.error("[auth.refresh] error:", err);
     return res.status(500).json({ message: "No se pudo refrescar el token" });
