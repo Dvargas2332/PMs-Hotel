@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Pencil, Search } from "lucide-react";
 import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
@@ -222,7 +223,7 @@ export default function RestaurantClientsPage() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto p-6 space-y-5">
+      <div className="max-w-5xl mx-auto p-6 space-y-5">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{t("frontdesk.guests.title")}</h1>
@@ -230,7 +231,7 @@ export default function RestaurantClientsPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-lime-200 bg-white p-4 shadow-sm space-y-3">
+        <div className="mx-auto w-full max-w-3xl rounded-2xl border border-lime-200 bg-white p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-lg font-semibold">{editId ? t("frontdesk.guests.editTitle") : t("frontdesk.guests.createTitle")}</h2>
           <div className="flex items-center gap-2 text-xs">
@@ -250,7 +251,7 @@ export default function RestaurantClientsPage() {
               type="button"
               className={`px-3 py-1 rounded-full border text-xs ${
                 form.isCompany
-                  ? "bg-indigo-600 text-white border-indigo-600"
+                  ? "bg-emerald-600 text-white border-emerald-600"
                   : "bg-white text-slate-700 border-slate-300"
               }`}
               onClick={() => setForm((f) => ({ ...f, isCompany: true }))}
@@ -259,11 +260,11 @@ export default function RestaurantClientsPage() {
             </button>
           </div>
         </div>
-        <form className="grid grid-cols-1 md:grid-cols-2 gap-3" onSubmit={handleSubmit}>
+        <form className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3" onSubmit={handleSubmit}>
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.firstName")}</label>
             <input
-              className="w-full max-w-[300px] border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.firstName}
               onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
               required
@@ -272,7 +273,7 @@ export default function RestaurantClientsPage() {
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.lastName")}</label>
             <input
-              className="w-full max-w-[300px] border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.lastName}
               onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
               required
@@ -282,7 +283,7 @@ export default function RestaurantClientsPage() {
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.primaryEmail")}</label>
             <input
               type="email"
-              className="w-full max-w-[300px] border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.email}
               onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
             />
@@ -290,7 +291,7 @@ export default function RestaurantClientsPage() {
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("common.phone")}</label>
             <input
-              className="w-full max-w-[220px] border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.phone}
               onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
             />
@@ -298,7 +299,7 @@ export default function RestaurantClientsPage() {
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.idType")}</label>
             <select
-              className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.idType}
               onChange={(e) => {
                 const nextType = e.target.value;
@@ -320,7 +321,7 @@ export default function RestaurantClientsPage() {
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.idNumber")}</label>
             <input
-              className="w-full max-w-[220px] border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.idNumber}
               onChange={(e) =>
                 setForm((f) => ({
@@ -333,7 +334,7 @@ export default function RestaurantClientsPage() {
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.country")}</label>
             <select
-              className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.country}
               onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, state: "", city: "" }))}
             >
@@ -349,7 +350,7 @@ export default function RestaurantClientsPage() {
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.state")}</label>
             {form.country && regions.length > 0 ? (
               <select
-                className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                 value={form.state}
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value, city: "" }))}
               >
@@ -362,7 +363,7 @@ export default function RestaurantClientsPage() {
               </select>
             ) : (
               <input
-                className="w-full max-w-[220px] border rounded px-3 py-2"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                 value={form.state}
                 onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
                 placeholder={t("frontdesk.guests.statePlaceholder")}
@@ -373,7 +374,7 @@ export default function RestaurantClientsPage() {
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.city")}</label>
             {form.country && cities.length > 0 ? (
               <select
-                className="w-full max-w-[220px] border rounded px-3 py-2 bg-white"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
               >
@@ -386,7 +387,7 @@ export default function RestaurantClientsPage() {
               </select>
             ) : (
               <input
-                className="w-full max-w-[220px] border rounded px-3 py-2"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                 value={form.city}
                 onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
                 placeholder={t("frontdesk.guests.cityPlaceholder")}
@@ -396,7 +397,7 @@ export default function RestaurantClientsPage() {
           <div className="md:col-span-2">
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.address")}</label>
             <input
-              className="w-full border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.address}
               onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
             />
@@ -406,7 +407,7 @@ export default function RestaurantClientsPage() {
               {form.isCompany ? t("frontdesk.guests.companyName") : t("frontdesk.guests.companyOptional")}
             </label>
             <input
-              className="w-full border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               value={form.company}
               onChange={(e) => setForm((f) => ({ ...f, company: e.target.value }))}
               placeholder={form.isCompany ? t("frontdesk.guests.companyPlaceholder") : ""}
@@ -417,7 +418,7 @@ export default function RestaurantClientsPage() {
               <div>
                 <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.legalName")}</label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                   value={form.legalName}
                   onChange={(e) => setForm((f) => ({ ...f, legalName: e.target.value }))}
                 />
@@ -425,7 +426,7 @@ export default function RestaurantClientsPage() {
               <div>
                 <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.managerName")}</label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                   value={form.managerName}
                   onChange={(e) => setForm((f) => ({ ...f, managerName: e.target.value }))}
                 />
@@ -433,7 +434,7 @@ export default function RestaurantClientsPage() {
               <div>
                 <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.businessActivity")}</label>
                 <input
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                   value={form.economicActivity}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, economicActivity: e.target.value }))
@@ -444,7 +445,7 @@ export default function RestaurantClientsPage() {
                 <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.altEmail1")}</label>
                 <input
                   type="email"
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                   value={form.emailAlt1}
                   onChange={(e) => setForm((f) => ({ ...f, emailAlt1: e.target.value }))}
                 />
@@ -453,7 +454,7 @@ export default function RestaurantClientsPage() {
                 <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.altEmail2")}</label>
                 <input
                   type="email"
-                  className="w-full border rounded px-3 py-2"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
                   value={form.emailAlt2}
                   onChange={(e) => setForm((f) => ({ ...f, emailAlt2: e.target.value }))}
                 />
@@ -463,16 +464,16 @@ export default function RestaurantClientsPage() {
           <div className="md:col-span-2">
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.notes")}</label>
             <textarea
-              className="w-full border rounded px-3 py-2"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-lime-400 focus:outline-none"
               rows={2}
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
           </div>
-          <div className="md:col-span-2 flex justify-end gap-2">
+          <div className="md:col-span-2 flex justify-end gap-2 border-t border-slate-100 pt-4">
             <button
               type="button"
-              className="px-3 py-2 rounded border bg-gray-100 text-sm"
+              className="h-10 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
               onClick={() => {
                 setEditId(null);
                 setForm(emptyForm);
@@ -483,7 +484,7 @@ export default function RestaurantClientsPage() {
             <button
               type="submit"
               disabled={loading.action}
-              className="px-4 py-2 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-500"
+              className="h-10 px-5 rounded-lg bg-emerald-600 text-white text-sm font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
             >
               {editId ? t("common.update") : t("common.create")}
             </button>
@@ -491,15 +492,18 @@ export default function RestaurantClientsPage() {
         </form>
       </div>
 
-      <div className="rounded-2xl border border-lime-200 bg-white p-4 shadow-sm space-y-3">
+      <div className="rounded-2xl border border-lime-200 bg-white p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <h2 className="text-lg font-semibold">{t("frontdesk.guests.listsTitle")}</h2>
-          <input
-            className="border rounded px-3 py-2 text-sm w-full md:w-64"
-            placeholder={t("frontdesk.guests.searchPlaceholder")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <div className="relative w-full md:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-lime-400 focus:outline-none"
+              placeholder={t("frontdesk.guests.searchPlaceholder")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
 
         {(() => {
@@ -511,47 +515,50 @@ export default function RestaurantClientsPage() {
             <>
               {/* Clientes normales */}
               <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-slate-800">
-                  {t("frontdesk.guests.individualList")} ({personas.length})
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800">{t("frontdesk.guests.individualList")}</h3>
+                  <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-800">{personas.length}</span>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">{t("common.name")}</th>
-                        <th className="p-2">{t("frontdesk.guests.idShort")}</th>
-                        <th className="p-2">{t("common.email")}</th>
-                        <th className="p-2">{t("common.phone")}</th>
-                        <th className="p-2 text-right">{t("common.actions")}</th>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2.5">{t("common.name")}</th>
+                        <th className="px-3 py-2.5">{t("frontdesk.guests.idShort")}</th>
+                        <th className="px-3 py-2.5">{t("common.email")}</th>
+                        <th className="px-3 py-2.5">{t("common.phone")}</th>
+                        <th className="px-3 py-2.5 text-right">{t("common.actions")}</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {visiblePersonas.map((g) => (
-                        <tr key={g.id} className="border-t">
-                          <td className="p-2">
-                            <div className="font-medium">
+                        <tr key={g.id} className="hover:bg-lime-50/40">
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium text-slate-900">
                               {[g.firstName, g.lastName].filter(Boolean).join(" ") || g.id}
                             </div>
                             {g.company && (
                               <div className="text-xs text-slate-500">{g.company}</div>
                             )}
                           </td>
-                          <td className="p-2 text-xs">
+                          <td className="px-3 py-2.5 text-xs text-slate-600">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">{t("frontdesk.guests.noId")}</span>}
+                              : <span className="text-slate-400">—</span>}
                           </td>
-                          <td className="p-2">
+                          <td className="px-3 py-2.5">
                             {g.email || <span className="text-slate-400">{t("frontdesk.guests.noEmail")}</span>}
                           </td>
-                          <td className="p-2">
+                          <td className="px-3 py-2.5">
                             {g.phone || <span className="text-slate-400">{t("frontdesk.guests.noPhone")}</span>}
                           </td>
-                          <td className="p-2 text-right">
+                          <td className="px-3 py-2.5 text-right">
                             <button
-                              className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-lime-300 hover:bg-lime-50"
                               onClick={() => onEdit(g)}
                             >
+                              <Pencil className="h-3.5 w-3.5" />
                               {t("common.edit")}
                             </button>
                           </td>
@@ -559,13 +566,14 @@ export default function RestaurantClientsPage() {
                       ))}
                       {personas.length === 0 && (
                         <tr>
-                          <td className="p-3 text-center text-slate-500" colSpan={5}>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
                             {t("frontdesk.guests.noIndividuals")}
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
+                </div>
                 </div>
                 {personas.length > visiblePersonas.length && (
                   <button
@@ -578,45 +586,48 @@ export default function RestaurantClientsPage() {
               </div>
 
               {/* Clientes empresariales */}
-              <div className="space-y-2 mt-6">
-                <h3 className="text-sm font-semibold text-slate-800">
-                  {t("frontdesk.guests.corporateList")} ({empresas.length})
-                </h3>
+              <div className="space-y-2 border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-800">{t("frontdesk.guests.corporateList")}</h3>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{empresas.length}</span>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs uppercase text-slate-500">
-                        <th className="p-2">{t("frontdesk.guests.company")}</th>
-                        <th className="p-2">{t("frontdesk.guests.contact")}</th>
-                        <th className="p-2">{t("frontdesk.guests.idShort")}</th>
-                        <th className="p-2">{t("common.email")}</th>
-                        <th className="p-2">{t("common.phone")}</th>
-                        <th className="p-2 text-right">{t("common.actions")}</th>
+                      <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2.5">{t("frontdesk.guests.company")}</th>
+                        <th className="px-3 py-2.5">{t("frontdesk.guests.contact")}</th>
+                        <th className="px-3 py-2.5">{t("frontdesk.guests.idShort")}</th>
+                        <th className="px-3 py-2.5">{t("common.email")}</th>
+                        <th className="px-3 py-2.5">{t("common.phone")}</th>
+                        <th className="px-3 py-2.5 text-right">{t("common.actions")}</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-slate-100">
                       {visibleEmpresas.map((g) => (
-                        <tr key={g.id} className="border-t">
-                          <td className="p-2 font-medium">{g.company || t("frontdesk.guests.companyFallback")}</td>
-                          <td className="p-2 text-xs">
+                        <tr key={g.id} className="hover:bg-lime-50/40">
+                          <td className="px-3 py-2.5 font-medium text-slate-900">{g.company || t("frontdesk.guests.companyFallback")}</td>
+                          <td className="px-3 py-2.5 text-xs text-slate-600">
                             {[g.firstName, g.lastName].filter(Boolean).join(" ") || t("frontdesk.guests.noContact")}
                           </td>
-                          <td className="p-2 text-xs">
+                          <td className="px-3 py-2.5 text-xs text-slate-600">
                             {g.idType || g.idNumber
                               ? `${g.idType || ""} ${g.idNumber || ""}`.trim()
-                              : <span className="text-slate-400">{t("frontdesk.guests.noId")}</span>}
+                              : <span className="text-slate-400">—</span>}
                           </td>
-                          <td className="p-2">
+                          <td className="px-3 py-2.5">
                             {g.email || <span className="text-slate-400">{t("frontdesk.guests.noEmail")}</span>}
                           </td>
-                          <td className="p-2">
+                          <td className="px-3 py-2.5">
                             {g.phone || <span className="text-slate-400">{t("frontdesk.guests.noPhone")}</span>}
                           </td>
-                          <td className="p-2 text-right">
+                          <td className="px-3 py-2.5 text-right">
                             <button
-                              className="px-3 py-1.5 rounded border bg-white hover:bg-gray-100 text-xs"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-lime-300 hover:bg-lime-50"
                               onClick={() => onEdit(g)}
                             >
+                              <Pencil className="h-3.5 w-3.5" />
                               {t("common.edit")}
                             </button>
                           </td>
@@ -624,13 +635,14 @@ export default function RestaurantClientsPage() {
                       ))}
                       {empresas.length === 0 && (
                         <tr>
-                          <td className="p-3 text-center text-slate-500" colSpan={6}>
+                          <td className="px-3 py-6 text-center text-slate-500" colSpan={6}>
                             {t("frontdesk.guests.noCompanies")}
                           </td>
                         </tr>
                       )}
                     </tbody>
                   </table>
+                </div>
                 </div>
                 {empresas.length > visibleEmpresas.length && (
                   <button
