@@ -3,7 +3,7 @@ import { Pencil, Plus, Search, X } from "lucide-react";
 import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
-import { pushAlert } from "../../lib/uiAlerts";
+import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import { useLanguage } from "../../context/LanguageContext";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
@@ -31,6 +31,7 @@ const emptyForm = {
 export default function RestaurantClientsPage() {
   const { t } = useLanguage();
   const { guests, loading, refreshGuests, createGuest, updateGuest } = useHotelData();
+  useNoAutocomplete();
   const [now, setNow] = useState(new Date());
   const [form, setForm] = useState(emptyForm);
   const [search, setSearch] = useState("");
@@ -38,6 +39,7 @@ export default function RestaurantClientsPage() {
   const [companyLimit, setCompanyLimit] = useState(50);
   const [editId, setEditId] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [formError, setFormError] = useState("");
   const [countries, setCountries] = useState([]);
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
@@ -151,40 +153,47 @@ export default function RestaurantClientsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.firstName || !form.lastName) {
-      pushAlert({
-        type: "system",
-        title: t("frontdesk.guests.errors.incompleteTitle"),
-        desc: t("frontdesk.guests.errors.incompleteDesc"),
-      });
+    setFormError("");
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setFormError(t("frontdesk.guests.errors.incompleteDesc"));
       return;
     }
     if (form.isCompany && !form.company.trim()) {
-      pushAlert({
-        type: "system",
-        title: t("frontdesk.guests.errors.companyMissingTitle"),
-        desc: t("frontdesk.guests.errors.companyMissingDesc"),
-      });
+      setFormError(t("frontdesk.guests.errors.companyMissingDesc"));
       return;
     }
+    // Los campos vacíos van como ausentes: el backend valida que el correo sea
+    // un correo y una cadena vacía no lo es, así que el guardado fallaba.
+    const payload = Object.fromEntries(
+      Object.entries(form).map(([key, value]) => [
+        key,
+        typeof value === "string" ? (value.trim() ? value.trim() : undefined) : value,
+      ])
+    );
+    delete payload.isCompany;
     try {
       if (editId) {
-        await updateGuest(editId, { ...form, isCompany: undefined });
+        await updateGuest(editId, payload);
       } else {
-        await createGuest({ ...form, isCompany: undefined });
+        await createGuest(payload);
       }
       setForm(emptyForm);
       setEditId(null);
       setSearch("");
       setFormOpen(false);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || t("frontdesk.guests.errors.saveFailedFallback");
-      pushAlert({ type: "system", title: t("frontdesk.guests.errors.saveFailedTitle"), desc: msg });
+      setFormError(
+        err?.response?.data?.message ||
+          err?.response?.data?.errors?.[0]?.message ||
+          err?.message ||
+          t("restaurant.clients.saveFailed")
+      );
     }
   };
 
   const onEdit = (g) => {
     setEditId(g.id);
+    setFormError("");
     setFormOpen(true);
     setForm({
       firstName: g.firstName || "",
@@ -229,20 +238,20 @@ export default function RestaurantClientsPage() {
       <div className="max-w-5xl mx-auto p-6 space-y-5">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">{t("frontdesk.guests.title")}</h1>
-            <p className="text-sm text-slate-600">{t("frontdesk.guests.subtitle")}</p>
+            <h1 className="text-2xl font-bold text-slate-900">{t("restaurant.clients.title")}</h1>
           </div>
           <button
             type="button"
             onClick={() => {
               setEditId(null);
               setForm(emptyForm);
+              setFormError("");
               setFormOpen(true);
             }}
             className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
           >
             <Plus className="h-4 w-4" />
-            {t("frontdesk.guests.createTitle")}
+            {t("restaurant.clients.createTitle")}
           </button>
         </div>
 
@@ -256,7 +265,7 @@ export default function RestaurantClientsPage() {
           onClick={(e) => e.stopPropagation()}
         >
         <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 px-5 py-4">
-          <h2 className="text-lg font-semibold">{editId ? t("frontdesk.guests.editTitle") : t("frontdesk.guests.createTitle")}</h2>
+          <h2 className="text-lg font-semibold">{editId ? t("restaurant.clients.editTitle") : t("restaurant.clients.createTitle")}</h2>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-slate-500">{t("frontdesk.guests.typeLabel")}</span>
             <button
@@ -501,6 +510,11 @@ export default function RestaurantClientsPage() {
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
           </div>
+          {formError && (
+            <div className="md:col-span-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {formError}
+            </div>
+          )}
           <div className="md:col-span-2 flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
             <button
               type="button"
@@ -528,7 +542,7 @@ export default function RestaurantClientsPage() {
       <div className="rounded-2xl border border-lime-200 bg-white p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{t("frontdesk.guests.listsTitle")}</h2>
+            <h2 className="text-lg font-semibold">{t("restaurant.clients.listsTitle")}</h2>
             <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{filtered.length}</span>
           </div>
           <div className="relative w-full md:w-72">
@@ -552,7 +566,7 @@ export default function RestaurantClientsPage() {
               {/* Clientes normales */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-800">{t("frontdesk.guests.individualList")}</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">{t("restaurant.clients.individualList")}</h3>
                   <span className="rounded-full bg-lime-100 px-2 py-0.5 text-xs font-semibold text-lime-800">{personas.length}</span>
                 </div>
                 <div className="overflow-hidden rounded-xl border border-slate-200">
@@ -603,7 +617,7 @@ export default function RestaurantClientsPage() {
                       {personas.length === 0 && (
                         <tr>
                           <td className="px-3 py-6 text-center text-slate-500" colSpan={5}>
-                            {t("frontdesk.guests.noIndividuals")}
+                            {t("restaurant.clients.noIndividuals")}
                           </td>
                         </tr>
                       )}

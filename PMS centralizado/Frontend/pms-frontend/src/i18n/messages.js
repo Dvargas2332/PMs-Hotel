@@ -541,6 +541,14 @@ export const MESSAGES = {
     "frontdesk.reservations.guestPicker.useProfile": "Usar perfil",
     "frontdesk.reservations.guestPicker.empty": "No hay perfiles disponibles.",
 
+    "restaurant.clients.title": "Clientes",
+    "restaurant.clients.createTitle": "Crear cliente",
+    "restaurant.clients.editTitle": "Editar cliente",
+    "restaurant.clients.listsTitle": "Listas de clientes",
+    "restaurant.clients.individualList": "Clientes individuales",
+    "restaurant.clients.noIndividuals": "No hay clientes registrados.",
+    "restaurant.clients.saveFailed": "No se pudo guardar el cliente.",
+
     "frontdesk.guests.title": "Huespedes",
     "frontdesk.guests.subtitle": "Listado conectado al backend /guests.",
     "frontdesk.guests.createTitle": "Crear huesped",
@@ -1405,6 +1413,14 @@ export const MESSAGES = {
     "frontdesk.reservations.guestPicker.noId": "No ID",
     "frontdesk.reservations.guestPicker.useProfile": "Use profile",
     "frontdesk.reservations.guestPicker.empty": "No profiles available.",
+
+    "restaurant.clients.title": "Customers",
+    "restaurant.clients.createTitle": "New customer",
+    "restaurant.clients.editTitle": "Edit customer",
+    "restaurant.clients.listsTitle": "Customer lists",
+    "restaurant.clients.individualList": "Individual customers",
+    "restaurant.clients.noIndividuals": "No customers yet.",
+    "restaurant.clients.saveFailed": "Could not save the customer.",
 
     "frontdesk.guests.title": "Guests",
     "frontdesk.guests.subtitle": "List connected to backend /guests.",
