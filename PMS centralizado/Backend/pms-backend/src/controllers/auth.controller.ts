@@ -6,7 +6,7 @@ import prisma from "../lib/prisma.js";
 import { sign, signRefresh, verify, verifyRefresh, getAccessCookieOpts, getRefreshCookieOpts } from "../lib/jwt.js";
 import { hashInviteToken } from "../lib/userInvites.js";
 import { sendGestorMail, buildPasswordResetEmail } from "../lib/mailer.js";
-import { ALL_PERMISSIONS } from "../config/permissions.js";
+import { ALL_PERMISSIONS, PERMISSION_MODULES } from "../config/permissions.js";
 import { allowedModulesForMembership } from "../config/membership.js";
 import type { AuthUser } from "../middleware/auth.js";
 
@@ -189,31 +189,64 @@ export async function refresh(req: Request, res: Response) {
 
     // Verificar que el usuario siga existiendo y activo
     if (!payload.isGestor && payload.sub) {
-      const user = await prisma.user.findUnique({
-        where: { id: payload.sub },
-        select: { id: true, email: true, role: true, hotelId: true },
-      });
-      if (!user) {
-        clearAuthCookies(res);
-        return res.status(401).json({ message: "Usuario no encontrado" });
-      }
-      const hotel = await prisma.hotel.findUnique({
-        where: { id: user.hotelId },
-        select: { active: true },
-      });
-      if (hotel && hotel.active === false) {
-        clearAuthCookies(res);
-        return res.status(403).json({
-          code: "HOTEL_SUSPENDED",
-          message: "El hotel está suspendido. Contacte al proveedor del sistema.",
+      if (payload.isLauncher) {
+        // Las cuentas del launcher viven en otra tabla (UserLauncher) y su id
+        // no es el de User: sin esta rama el refresco no encontraba a nadie,
+        // respondía 401 y borraba las cookies, así que recargar dejaba al
+        // usuario fuera del sistema.
+        const account = await prisma.launcherAccount.findFirst({
+          where: { id: payload.sub },
+          select: { id: true, username: true, name: true, email: true, hotelId: true, roleId: true },
         });
+        if (!account) {
+          clearAuthCookies(res);
+          return res.status(401).json({ message: "Usuario no encontrado" });
+        }
+        const hotel = await prisma.hotel.findUnique({
+          where: { id: account.hotelId },
+          select: { active: true },
+        });
+        if (hotel && hotel.active === false) {
+          clearAuthCookies(res);
+          return res.status(403).json({
+            code: "HOTEL_SUSPENDED",
+            message: "El hotel está suspendido. Contacte al proveedor del sistema.",
+          });
+        }
+        payload = {
+          sub: account.id,
+          email: account.email ?? account.username,
+          role: (account.roleId || "ADMIN") as AuthUser["role"],
+          hotelId: account.hotelId,
+          isLauncher: true,
+        };
+      } else {
+        const user = await prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { id: true, email: true, role: true, hotelId: true },
+        });
+        if (!user) {
+          clearAuthCookies(res);
+          return res.status(401).json({ message: "Usuario no encontrado" });
+        }
+        const hotel = await prisma.hotel.findUnique({
+          where: { id: user.hotelId },
+          select: { active: true },
+        });
+        if (hotel && hotel.active === false) {
+          clearAuthCookies(res);
+          return res.status(403).json({
+            code: "HOTEL_SUSPENDED",
+            message: "El hotel está suspendido. Contacte al proveedor del sistema.",
+          });
+        }
+        payload = {
+          sub: user.id,
+          email: user.email,
+          role: user.role as AuthUser["role"],
+          hotelId: user.hotelId,
+        };
       }
-      payload = {
-        sub: user.id,
-        email: user.email,
-        role: user.role as AuthUser["role"],
-        hotelId: user.hotelId,
-      };
     }
 
     const newAccessToken = sign({
@@ -256,6 +289,44 @@ export async function refresh(req: Request, res: Response) {
         allowedModules: allowedModulesForMembership("PLATINUM"),
         isGestor: true,
       };
+    } else if (payload.isLauncher && payload.sub) {
+      // Cuenta del selector de usuario: se devuelve con la misma forma que el
+      // login del launcher para que el front repinte módulos y permisos.
+      const account = await prisma.launcherAccount.findFirst({
+        where: { id: payload.sub },
+        select: { id: true, username: true, name: true, email: true, hotelId: true, roleId: true },
+      });
+      if (account) {
+        const roleId = account.roleId || "ADMIN";
+        const permRows = await prisma.rolePermission.findMany({
+          where: { hotelId: account.hotelId, roleId },
+          select: { permissionId: true },
+        });
+        const permissionIds = permRows.map((p) => p.permissionId);
+        const hotel = await prisma.hotel.findUnique({
+          where: { id: account.hotelId },
+          select: { id: true, name: true, membership: true },
+        });
+        const allowedModules = PERMISSION_MODULES.filter((m) =>
+          permissionIds.includes(m.access.id)
+        ).map((m) => m.id);
+        userOut = {
+          id: account.id,
+          username: account.username,
+          name: account.name || account.username,
+          email: account.email ?? undefined,
+          hotelId: account.hotelId,
+          hotelName: hotel?.name ?? "",
+          roleId,
+          role: roleId,
+          permissions: permissionIds,
+          allowedModules,
+          isLauncher: true,
+        };
+        hotelOut = hotel
+          ? { ...hotel, allowedModules: allowedModulesForMembership(hotel.membership) }
+          : null;
+      }
     } else if (!payload.isLauncher && payload.sub) {
       const row = await prisma.user.findUnique({
         where: { id: payload.sub },
