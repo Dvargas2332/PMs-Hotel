@@ -12,6 +12,37 @@ import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
 const BASE_URL = import.meta.env.BASE_URL || "/";
+
+/**
+ * La sesión del cajero/mesero que abre el turno vivía sólo en memoria, así que
+ * recargar el TPV la borraba y parecía un cierre de sesión. Se guarda por
+ * pestaña y sólo se restaura mientras el token siga vigente.
+ */
+const STAFF_SESSION_KEY = "restaurant.staffSession";
+
+function readStaffSession() {
+  try {
+    const raw = sessionStorage.getItem(STAFF_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token || !parsed?.staff) return null;
+    const payload = JSON.parse(atob(String(parsed.token).split(".")[1] || ""));
+    if (payload?.exp && Date.now() >= Number(payload.exp) * 1000) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveStaffSession(staff, token) {
+  try {
+    if (!staff || !token) sessionStorage.removeItem(STAFF_SESSION_KEY);
+    else sessionStorage.setItem(STAFF_SESSION_KEY, JSON.stringify({ staff, token }));
+  } catch {
+    /* almacenamiento no disponible */
+  }
+}
+
 const ICON_ASSET_VERSION = "20260320-occupied";
 const FREE_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 const OCCUPIED_TABLE_ICON_URL = `${BASE_URL}assets/restaurant/table-occupied.png?v=${ICON_ASSET_VERSION}`;
@@ -430,7 +461,7 @@ const [subCategory, setSubCategory] = useState("");
   const [selectedGuestId, setSelectedGuestId] = useState("");
   const [guestSearch, setGuestSearch] = useState("");
   const [showCustomerPanel, setShowCustomerPanel] = useState(false);
-  const [activeStaff, setActiveStaff] = useState(null);
+  const [activeStaff, setActiveStaff] = useState(() => readStaffSession()?.staff ?? null);
   const activeStaffRef = useRef(null);
   const [staffLoginOpen, setStaffLoginOpen] = useState(true);
   const [staffLoginForm, setStaffLoginForm] = useState({ username: "", password: "" });
@@ -497,6 +528,12 @@ const [subCategory, setSubCategory] = useState("");
   useEffect(() => {
     floorPanRef.current = floorPan;
   }, [floorPan]);
+
+  // Devolver el token de personal al cliente HTTP cuando la pestaña se recarga.
+  useEffect(() => {
+    const restored = readStaffSession();
+    if (restored?.token) setStaffToken(restored.token);
+  }, []);
 
   useEffect(() => {
     activeStaffRef.current = activeStaff;
@@ -1416,6 +1453,7 @@ const [subCategory, setSubCategory] = useState("");
       const { data } = await api.post("/restaurant/staff/login", { username, password });
       setActiveStaff(data || null);
       setStaffToken(data?.token);
+      saveStaffSession(data || null, data?.token);
       setStaffLoginForm({ username: "", password: "" });
       const staff = (staffOptions || []).find((s) => String(s?.username || "") === username);
       const staffId = staff?.id ? String(staff.id) : "";
@@ -2439,6 +2477,7 @@ const [subCategory, setSubCategory] = useState("");
   const clearStaffSession = () => {
     setActiveStaff(null);
     setStaffToken(null);
+    saveStaffSession(null, null);
     setStaffLoginForm({ username: "", password: "" });
     setStaffLoginError("");
     setStaffLoginOpen(true);
@@ -2461,6 +2500,7 @@ const [subCategory, setSubCategory] = useState("");
       const { data } = await api.post("/restaurant/staff/login", payload);
       setActiveStaff(data || null);
       setStaffToken(data?.token);
+      saveStaffSession(data || null, data?.token);
       setStaffLoginForm({ username: "", password: "" });
       setStaffLoginError("");
       setStaffLoginOpen(false);
