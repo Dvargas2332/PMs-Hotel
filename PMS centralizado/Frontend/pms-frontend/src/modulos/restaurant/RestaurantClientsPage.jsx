@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pencil, Search } from "lucide-react";
+import { Pencil, Plus, Search, X } from "lucide-react";
 import { useHotelData } from "../../context/useHotelData";
 import { api } from "../../lib/api";
 import { COUNTRIES } from "../../lib/countries";
@@ -37,6 +37,7 @@ export default function RestaurantClientsPage() {
   const [peopleLimit, setPeopleLimit] = useState(50);
   const [companyLimit, setCompanyLimit] = useState(50);
   const [editId, setEditId] = useState(null);
+  const [formOpen, setFormOpen] = useState(false);
   const [countries, setCountries] = useState([]);
   const [regions, setRegions] = useState([]);
   const [cities, setCities] = useState([]);
@@ -175,6 +176,7 @@ export default function RestaurantClientsPage() {
       setForm(emptyForm);
       setEditId(null);
       setSearch("");
+      setFormOpen(false);
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || t("frontdesk.guests.errors.saveFailedFallback");
       pushAlert({ type: "system", title: t("frontdesk.guests.errors.saveFailedTitle"), desc: msg });
@@ -183,6 +185,7 @@ export default function RestaurantClientsPage() {
 
   const onEdit = (g) => {
     setEditId(g.id);
+    setFormOpen(true);
     setForm({
       firstName: g.firstName || "",
       lastName: g.lastName || "",
@@ -224,15 +227,35 @@ export default function RestaurantClientsPage() {
       </header>
 
       <div className="max-w-5xl mx-auto p-6 space-y-5">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{t("frontdesk.guests.title")}</h1>
             <p className="text-sm text-slate-600">{t("frontdesk.guests.subtitle")}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEditId(null);
+              setForm(emptyForm);
+              setFormOpen(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+          >
+            <Plus className="h-4 w-4" />
+            {t("frontdesk.guests.createTitle")}
+          </button>
         </div>
 
-        <div className="mx-auto w-full max-w-3xl rounded-2xl border border-lime-200 bg-white p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+        {formOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-[1px]"
+          onClick={() => setFormOpen(false)}
+        >
+        <div
+          className="my-6 w-full max-w-3xl rounded-2xl border border-lime-200 bg-white shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+        <div className="flex items-center justify-between gap-3 flex-wrap border-b border-slate-100 px-5 py-4">
           <h2 className="text-lg font-semibold">{editId ? t("frontdesk.guests.editTitle") : t("frontdesk.guests.createTitle")}</h2>
           <div className="flex items-center gap-2 text-xs">
             <span className="text-slate-500">{t("frontdesk.guests.typeLabel")}</span>
@@ -258,9 +281,17 @@ export default function RestaurantClientsPage() {
             >
               {t("frontdesk.guests.typeCorporate")}
             </button>
+            <button
+              type="button"
+              onClick={() => setFormOpen(false)}
+              className="ml-1 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              aria-label="Cerrar"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
-        <form className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3" onSubmit={handleSubmit}>
+        <form className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3 px-5 py-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-xs text-slate-500 mb-1">{t("frontdesk.guests.firstName")}</label>
             <input
@@ -470,7 +501,7 @@ export default function RestaurantClientsPage() {
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
           </div>
-          <div className="md:col-span-2 flex justify-end gap-2 border-t border-slate-100 pt-4">
+          <div className="md:col-span-2 flex justify-end gap-2 border-t border-slate-100 px-5 py-4">
             <button
               type="button"
               className="h-10 px-4 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -486,15 +517,20 @@ export default function RestaurantClientsPage() {
               disabled={loading.action}
               className="h-10 px-5 rounded-lg bg-emerald-600 text-white text-sm font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
             >
-              {editId ? t("common.update") : t("common.create")}
+              {t("common.save")}
             </button>
           </div>
         </form>
-      </div>
+        </div>
+        </div>
+        )}
 
       <div className="rounded-2xl border border-lime-200 bg-white p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <h2 className="text-lg font-semibold">{t("frontdesk.guests.listsTitle")}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{t("frontdesk.guests.listsTitle")}</h2>
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">{filtered.length}</span>
+          </div>
           <div className="relative w-full md:w-72">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
