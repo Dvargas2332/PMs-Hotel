@@ -8,6 +8,7 @@ import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/p
 import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
 import { calculateOrderTotals } from "../../lib/restaurantTaxes";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
+import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 import RestaurantCloseXButton from "./RestaurantCloseXButton";
 
@@ -312,6 +313,7 @@ const getOrderSaveKey = (payload) => String(payload?.orderId || payload?.localId
 export default function RestaurantPage() {
   const { user, hotel } = useAuth();
   const navigate = useNavigate();
+  useNoAutocomplete();
 
   const orderSaveTimerRef = useRef(null);
   const lastOrderActivityRef = useRef(0);
@@ -394,6 +396,7 @@ const [subCategory, setSubCategory] = useState("");
   const [voidInvoiceTarget, setVoidInvoiceTarget] = useState(null);
   const [voidInvoiceAuthOpen, setVoidInvoiceAuthOpen] = useState(false);
   const [voidInvoiceSuccessOpen, setVoidInvoiceSuccessOpen] = useState(false);
+  const [voidInvoiceSuccessLabel, setVoidInvoiceSuccessLabel] = useState("Factura anulada");
   const voidInvoiceSuccessTimerRef = useRef(null);
   const [cancelOrderModalOpen, setCancelOrderModalOpen] = useState(false);
   const [cancelOrderForm, setCancelOrderForm] = useState({ username: "", password: "", reason: "" });
@@ -1908,7 +1911,8 @@ const [subCategory, setSubCategory] = useState("");
     setVoidInvoiceTarget(null);
   };
 
-  const showVoidInvoiceSuccess = () => {
+  const showVoidInvoiceSuccess = (label = "Factura anulada") => {
+    setVoidInvoiceSuccessLabel(label);
     setVoidInvoiceSuccessOpen(true);
     if (voidInvoiceSuccessTimerRef.current) clearTimeout(voidInvoiceSuccessTimerRef.current);
     voidInvoiceSuccessTimerRef.current = setTimeout(() => {
@@ -1949,10 +1953,8 @@ const [subCategory, setSubCategory] = useState("");
       setVoidInvoiceError("La factura ya esta anulada.");
       return;
     }
-    if (targetStatus === "NO_DOC") {
-      setVoidInvoiceError("Esta factura no tiene documento electronico.");
-      return;
-    }
+    // Sin comprobante electrónico (NO_DOC) se anula la venta, no el documento:
+    // antes se cortaba acá y el botón parecía muerto.
     setVoidInvoiceAuthOpen(true);
     setVoidInvoiceError("");
     setVoidInvoiceForm({ username: "", password: "", reason: "" });
@@ -1987,18 +1989,60 @@ const [subCategory, setSubCategory] = useState("");
     setVoidInvoiceBusy(true);
     setVoidInvoiceError("");
     try {
-      await api.post("/restaurant/order/void-invoice", {
-        restaurantOrderId: voidInvoiceTarget.restaurantOrderId,
-        tableId: voidInvoiceTarget?.order?.tableId || undefined,
-        docType: voidInvoiceTarget.docType,
-        reason,
-        adminCode: password,
-        adminUser: username,
-      });
+      const statusRaw = String(voidInvoiceTarget.status || "").toUpperCase();
+      const typeRaw = String(voidInvoiceTarget.docType || "").toUpperCase();
+      const withoutDocument = statusRaw === "NO_DOC" || typeRaw === "NO_DOC";
+      if (withoutDocument) {
+        // La venta no tiene comprobante electrónico: se anula como venta, que
+        // es lo que revierte caja, inventario y contabilidad.
+        await api.post("/restaurant/order/void-paid", {
+          orderId: voidInvoiceTarget.restaurantOrderId,
+          reason,
+          adminCode: password,
+          adminUser: username,
+        });
+      } else {
+        await api.post("/restaurant/order/void-invoice", {
+          restaurantOrderId: voidInvoiceTarget.restaurantOrderId,
+          tableId: voidInvoiceTarget?.order?.tableId || undefined,
+          docType: voidInvoiceTarget.docType,
+          reason,
+          adminCode: password,
+          adminUser: username,
+        });
+      }
+
+      const tableId = voidInvoiceTarget?.order?.tableId;
+      const voidedOrderId = String(voidInvoiceTarget.restaurantOrderId || "");
+      if (tableId) {
+        let nextActiveKey = "";
+        setOrdersByTable((prev) => {
+          const list = normalizeOrderList(prev[tableId]);
+          const nextList = list.filter(
+            (o) => String(o?.id || o?.orderId || "") !== voidedOrderId
+          );
+          nextActiveKey = nextList.length > 0 ? getOrderKey(nextList[0]) : "";
+          const next = { ...prev };
+          if (nextList.length > 0) next[tableId] = nextList;
+          else delete next[tableId];
+          return next;
+        });
+        setActiveOrderByTable((prev) => {
+          const next = { ...prev };
+          if (nextActiveKey) next[tableId] = nextActiveKey;
+          else delete next[tableId];
+          return next;
+        });
+      }
+      refreshStats();
 
       closeVoidInvoiceModal();
-      showVoidInvoiceSuccess();
-      window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Factura anulada." } }));
+      showVoidInvoiceSuccess(withoutDocument ? "Venta anulada" : "Factura anulada");
+      window.dispatchEvent(
+        new CustomEvent("pms:push-alert", {
+          detail: { title: "Restaurant", desc: withoutDocument ? "Venta anulada." : "Factura anulada." },
+        })
+      );
     } catch (err) {
       const msg = err?.response?.data?.message || err?.message || "No se pudo anular la factura.";
       setVoidInvoiceError(msg);
@@ -3355,10 +3399,6 @@ const [subCategory, setSubCategory] = useState("");
             <div>
               <div className="text-xs uppercase text-emerald-600">Apertura de turno</div>
               <div className="text-lg font-semibold text-slate-900">Abrir caja</div>
-              <div className="text-xs text-slate-500">Debes abrir un turno para usar el TPV.</div>
-              <div className="text-[11px] text-slate-500 mt-1">
-                Moneda: {paymentsCfg.monedaBase} · TC {paymentsCfg.tipoCambio}
-              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-[1fr_200px] gap-3 items-stretch">
               <div className="space-y-2">
@@ -3650,7 +3690,12 @@ const [subCategory, setSubCategory] = useState("");
               <div>
                 <div className="text-xs uppercase text-red-600">Anular factura</div>
                 <div className="text-lg font-semibold text-slate-900">Facturas del turno</div>
-                <div className="text-xs text-slate-500">Selecciona una factura emitida para anularla.</div>
+                <div className="text-xs text-slate-500">
+                  {String(voidInvoiceTarget?.status || "").toUpperCase() === "NO_DOC" ||
+                  String(voidInvoiceTarget?.docType || "").toUpperCase() === "NO_DOC"
+                    ? "Esta venta no tiene comprobante electrónico: se anulará la venta."
+                    : "Selecciona una factura emitida para anularla."}
+                </div>
               </div>
               <RestaurantCloseXButton onClick={closeVoidInvoiceModal} />
             </div>
@@ -3728,6 +3773,12 @@ const [subCategory, setSubCategory] = useState("");
               </div>
             </div>
 
+            {voidInvoiceError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {voidInvoiceError}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 pt-2">
               <button className="h-12 px-4 rounded-lg border text-sm" disabled={voidInvoiceBusy} onClick={closeVoidInvoiceModal}>
                 Cerrar
@@ -3737,7 +3788,10 @@ const [subCategory, setSubCategory] = useState("");
                 disabled={voidInvoiceBusy || !voidInvoiceTarget}
                 onClick={openVoidInvoiceAuth}
               >
-                Anular factura
+                {String(voidInvoiceTarget?.status || "").toUpperCase() === "NO_DOC" ||
+                String(voidInvoiceTarget?.docType || "").toUpperCase() === "NO_DOC"
+                  ? "Anular venta"
+                  : "Anular factura"}
               </button>
             </div>
           </div>
@@ -3811,7 +3865,7 @@ const [subCategory, setSubCategory] = useState("");
             <div className="h-14 w-14 rounded-full bg-emerald-100 flex items-center justify-center">
               <CheckCircle className="h-9 w-9 text-emerald-600" />
             </div>
-            <div className="text-lg font-semibold text-emerald-700">Factura anulada</div>
+            <div className="text-lg font-semibold text-emerald-700">{voidInvoiceSuccessLabel}</div>
           </div>
         </div>
       )}
