@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
+import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import {
   BarChart3,
   Receipt,
@@ -16,6 +17,7 @@ const LOBBY_TILE_SIZE = "lg";
 
 export default function RestaurantHistory() {
   const navigate = useNavigate();
+  useNoAutocomplete();
   const [now, setNow] = useState(new Date());
   const [salesDialogOpen, setSalesDialogOpen] = useState(false);
   const [invoicesDialogOpen, setInvoicesDialogOpen] = useState(false);

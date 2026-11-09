@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Pencil, Plus, RefreshCw, Search, ShieldCheck, Trash2, UserX } from "lucide-react";
 import { api } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import RestaurantUserMenu from "./RestaurantUserMenu";
 
 const ROLE_OPTIONS = [
@@ -36,6 +37,7 @@ const shiftLabel = (date) => {
 
 export default function RestaurantStaffPage({ embedded = false }) {
   const { user } = useAuth();
+  useNoAutocomplete();
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
