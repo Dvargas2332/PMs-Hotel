@@ -269,7 +269,6 @@ export default function RestaurantStaffPage({ embedded = false }) {
                 <div className="text-sm font-semibold text-lime-900">
                   {editingId ? "Editar personal" : "Nuevo personal"}
                 </div>
-                <div className="text-xs text-slate-500">Cajeros y meseros del punto de venta.</div>
               </div>
               <div className="h-9 w-9 rounded-xl bg-lime-700 text-white flex items-center justify-center shadow">
                 {editingId ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -309,10 +308,8 @@ export default function RestaurantStaffPage({ embedded = false }) {
                   value={form.username}
                   onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
                 />
-                {fieldErrors.username ? (
+                {fieldErrors.username && (
                   <div className="text-xs text-red-600">{fieldErrors.username}</div>
-                ) : (
-                  <div className="text-[11px] text-slate-500">Con este usuario entra al TPV.</div>
                 )}
               </div>
 
@@ -380,9 +377,6 @@ export default function RestaurantStaffPage({ embedded = false }) {
                     </option>
                   ))}
                 </select>
-                <div className="text-[11px] text-slate-500">
-                  Define si la venta se atribuye a caja o a un mesero.
-                </div>
               </div>
 
               <div className="space-y-1">
@@ -403,12 +397,8 @@ export default function RestaurantStaffPage({ embedded = false }) {
                     </option>
                   ))}
                 </select>
-                {rolesError ? (
+                {rolesError && (
                   <div className="text-xs text-amber-700">{rolesError}</div>
-                ) : (
-                  <div className="text-[11px] text-slate-500">
-                    El perfil limita cobrar, anular, descontar y cambiar precios desde el TPV.
-                  </div>
                 )}
               </div>
 
