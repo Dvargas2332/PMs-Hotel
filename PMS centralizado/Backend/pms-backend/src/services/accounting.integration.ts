@@ -18,6 +18,8 @@ export interface RestaurantSaleEvent {
   currency?: string;
   paidAt?: Date;
   actorId?: string | null;
+  /** Desglose por medio de cobro, para debitar la cuenta de cada uno. */
+  payments?: { name?: string | null; key?: string | null; amount: number }[];
 }
 
 export interface EInvoicingDocumentEvent {
@@ -82,6 +84,71 @@ async function resolveAccount(hotelId: string, exactCode: string, fallbackPrefix
   return findAccount(hotelId, fallbackPrefix);
 }
 
+/**
+ * Códigos por defecto del plan CR. La pantalla de Contabilidad puede cambiar a
+ * qué cuenta va cada concepto; esto es sólo el punto de partida.
+ */
+const DEFAULT_ACCOUNT_CODES = {
+  cash: "1.1.01.01",       // Caja General
+  card: "1.1.01.06",       // Tarjetas y SINPE por cobrar
+  sinpe: "1.1.01.06",      // Tarjetas y SINPE por cobrar
+  transfer: "1.1.01.04",   // Banco — cuenta corriente moneda local
+  receivable: "1.1.02.01", // Clientes — Hospedaje
+  restaurantSales: "4.1.01.01",
+  roomRevenue: "4.1.02.01",
+  vat: "2.1.04.01",
+  advance: "2.1.03.01",
+} as const;
+
+type AccountMap = Partial<Record<keyof typeof DEFAULT_ACCOUNT_CODES, string>>;
+
+function getAccountMap(settings: any): AccountMap {
+  const integrations = settings?.integrations && typeof settings.integrations === "object" ? settings.integrations : {};
+  const accounts = (integrations as any)?.accounts;
+  return accounts && typeof accounts === "object" ? (accounts as AccountMap) : {};
+}
+
+/**
+ * Cuenta del concepto: primero la que eligió el contador (id guardado), después
+ * el código estándar y, si no existe, la primera cuenta con ese prefijo.
+ */
+async function resolveMappedAccount(
+  hotelId: string,
+  map: AccountMap,
+  key: keyof typeof DEFAULT_ACCOUNT_CODES
+) {
+  const mappedId = map?.[key];
+  if (mappedId) {
+    const mapped = await prisma.accountingAccount.findFirst({
+      where: { id: String(mappedId), hotelId, isActive: true },
+      select: { id: true, code: true, name: true },
+    });
+    if (mapped) return mapped;
+  }
+  const code = DEFAULT_ACCOUNT_CODES[key];
+  return resolveAccount(hotelId, code, code.split(".").slice(0, -1).join("."));
+}
+
+/** Cuenta configurada para una forma de cobro del restaurante, si la hay. */
+async function resolvePaymentMethodAccount(hotelId: string, methodName?: string | null, methodKey?: string | null) {
+  const target = String(methodName || methodKey || "").trim();
+  if (!target) return null;
+  const cfg = await prisma.restaurantConfig.findUnique({ where: { hotelId }, select: { payments: true } });
+  const payments = (cfg?.payments && typeof cfg.payments === "object" ? cfg.payments : {}) as any;
+  const methods = Array.isArray(payments.paymentMethods) ? payments.paymentMethods : [];
+  const match = methods.find(
+    (m: any) =>
+      String(m?.id || "").toLowerCase() === target.toLowerCase() ||
+      String(m?.name || "").toLowerCase() === target.toLowerCase()
+  );
+  const accountId = String(match?.account || "").trim();
+  if (!accountId) return null;
+  return prisma.accountingAccount.findFirst({
+    where: { id: accountId, hotelId, isActive: true },
+    select: { id: true, code: true, name: true },
+  });
+}
+
 async function createEntry(params: {
   hotelId: string;
   description: string;
@@ -124,9 +191,48 @@ async function createEntry(params: {
 // ─── Restaurant integration ────────────────────────────────────────────────────
 
 /**
+ * Reparte el cobro entre las cuentas ligadas a cada forma de pago. Lo que no
+ * venga desglosado (o el redondeo) cae a la cuenta de efectivo del mapa.
+ */
+async function paymentAllocations(
+  hotelId: string,
+  map: AccountMap,
+  payments: RestaurantSaleEvent["payments"],
+  gross: number
+): Promise<{ accountId: string; amount: number; label: string }[] | null> {
+  const cash = await resolveMappedAccount(hotelId, map, "cash");
+  const list = (payments ?? []).filter((p) => Number(p.amount ?? 0) > 0);
+
+  if (!list.length) {
+    if (!cash) return null;
+    return [{ accountId: cash.id, amount: gross, label: "Cobro venta restaurante" }];
+  }
+
+  const out: { accountId: string; amount: number; label: string }[] = [];
+  for (const p of list) {
+    const amount = Number(p.amount ?? 0);
+    const account =
+      (await resolvePaymentMethodAccount(hotelId, p.name, p.key)) ?? cash;
+    if (!account) continue;
+    out.push({ accountId: account.id, amount, label: `Cobro ${p.name || p.key || "venta"}` });
+  }
+  if (!out.length) return null;
+
+  const sum = out.reduce((s, l) => s + l.amount, 0);
+  const rest = Math.round((gross - sum) * 100) / 100;
+  if (rest > 0.01) {
+    if (cash) out.push({ accountId: cash.id, amount: rest, label: "Cobro venta restaurante" });
+  } else if (rest < -0.01) {
+    // El desglose no puede exceder el total cobrado: se ajusta a prorrata.
+    const factor = gross / sum;
+    for (const line of out) line.amount = Math.round(line.amount * factor * 100) / 100;
+  }
+  return out;
+}
+
+/**
  * Called after a restaurant order is marked PAID.
- * DR Caja/Banco  |  CR Ingresos por ventas
- * DR Impuestos   |  (if tax present)
+ * DR Caja/Banco (o la cuenta de cada forma de cobro)  |  CR Ingresos + IVA
  */
 export async function onRestaurantSale(event: RestaurantSaleEvent): Promise<void> {
   try {
@@ -138,12 +244,12 @@ export async function onRestaurantSale(event: RestaurantSaleEvent): Promise<void
     const gross = Number(event.total ?? 0);
     if (gross <= 0) return;
 
-    // Accounts: try standard CR NIIF codes, fall back to prefix
-    const cashAccount = await resolveAccount(hotelId, "1.1.01.01", "1.1.01");   // Caja / Efectivo
-    const incomeAccount = await resolveAccount(hotelId, "4.1.01.01", "4.1");    // Ventas Restaurante
-    const taxLiabilityAccount = await resolveAccount(hotelId, "2.1.04.01", "2.1.04"); // IVA por Pagar
+    const map = getAccountMap(settings);
+    const incomeAccount = await resolveMappedAccount(hotelId, map, "restaurantSales");
+    const taxLiabilityAccount = await resolveMappedAccount(hotelId, map, "vat");
+    const charges = await paymentAllocations(hotelId, map, event.payments, gross);
 
-    if (!cashAccount || !incomeAccount) {
+    if (!charges || !incomeAccount) {
       console.warn(`[accounting] restaurant: missing accounts for hotel ${hotelId}`);
       return;
     }
@@ -153,8 +259,9 @@ export async function onRestaurantSale(event: RestaurantSaleEvent): Promise<void
 
     const lines: { accountId: string; debit: number; credit: number; description?: string }[] = [];
 
-    // DR Caja — total cobrado
-    lines.push({ accountId: cashAccount.id, debit: gross, credit: 0, description: "Cobro venta restaurante" });
+    for (const charge of charges) {
+      lines.push({ accountId: charge.accountId, debit: charge.amount, credit: 0, description: charge.label });
+    }
 
     // CR Ingresos netos
     lines.push({ accountId: incomeAccount.id, debit: 0, credit: netIncome > 0 ? netIncome : gross, description: "Ingreso por ventas" });
@@ -193,10 +300,11 @@ export async function onRestaurantSaleVoid(event: RestaurantSaleEvent): Promise<
     const gross = Number(event.total ?? 0);
     if (gross <= 0) return;
 
-    const cashAccount = await resolveAccount(hotelId, "1.1.01.01", "1.1.01");
-    const incomeAccount = await resolveAccount(hotelId, "4.1.01.01", "4.1");
-    const taxLiabilityAccount = await resolveAccount(hotelId, "2.1.04.01", "2.1.04");
-    if (!cashAccount || !incomeAccount) {
+    const map = getAccountMap(settings);
+    const incomeAccount = await resolveMappedAccount(hotelId, map, "restaurantSales");
+    const taxLiabilityAccount = await resolveMappedAccount(hotelId, map, "vat");
+    const refunds = await paymentAllocations(hotelId, map, event.payments, gross);
+    if (!refunds || !incomeAccount) {
       console.warn(`[accounting] restaurant void: missing accounts for hotel ${hotelId}`);
       return;
     }
@@ -210,7 +318,14 @@ export async function onRestaurantSaleVoid(event: RestaurantSaleEvent): Promise<
     if (taxAmount > 0 && taxLiabilityAccount) {
       lines.push({ accountId: taxLiabilityAccount.id, debit: taxAmount, credit: 0, description: "Reversión IVA" });
     }
-    lines.push({ accountId: cashAccount.id, debit: 0, credit: gross, description: "Devolución al cliente" });
+    for (const refund of refunds) {
+      lines.push({
+        accountId: refund.accountId,
+        debit: 0,
+        credit: refund.amount,
+        description: refund.label.replace("Cobro", "Devolución"),
+      });
+    }
 
     await createEntry({
       hotelId,
@@ -259,9 +374,10 @@ export async function onEInvoicingDocument(event: EInvoicingDocumentEvent): Prom
     const gross = resolvedTotal;
     if (gross <= 0) return;
 
-    const receivableAccount = await resolveAccount(hotelId, "1.1.02.01", "1.1.02"); // Cuentas por Cobrar
-    const incomeAccount = await resolveAccount(hotelId, "4.1.01.01", "4.1");         // Ingresos por ventas
-    const taxLiabilityAccount = await resolveAccount(hotelId, "2.1.04.01", "2.1.04"); // IVA por Pagar
+    const map = getAccountMap(settings);
+    const receivableAccount = await resolveMappedAccount(hotelId, map, "receivable"); // Cuentas por Cobrar
+    const incomeAccount = await resolveMappedAccount(hotelId, map, "restaurantSales"); // Ingresos por ventas
+    const taxLiabilityAccount = await resolveMappedAccount(hotelId, map, "vat");       // IVA por Pagar
 
     if (!receivableAccount || !incomeAccount) {
       console.warn(`[accounting] einvoicing: missing accounts for hotel ${hotelId}`);
@@ -322,9 +438,10 @@ export async function onFrontdeskCheckout(event: FrontdeskCheckoutEvent): Promis
     const gross = Number(event.total ?? 0);
     if (gross <= 0) return;
 
-    const receivableAccount = await resolveAccount(hotelId, "1.1.02.01", "1.1.02"); // CxC
-    const incomeAccount = await resolveAccount(hotelId, "4.1.02.01", "4.1.02");      // Ingresos Hospedaje (fallback 4.1)
-    const taxLiabilityAccount = await resolveAccount(hotelId, "2.1.04.01", "2.1.04");
+    const map = getAccountMap(settings);
+    const receivableAccount = await resolveMappedAccount(hotelId, map, "receivable"); // CxC
+    const incomeAccount = await resolveMappedAccount(hotelId, map, "roomRevenue");    // Ingresos Hospedaje
+    const taxLiabilityAccount = await resolveMappedAccount(hotelId, map, "vat");      // IVA por Pagar
 
     if (!receivableAccount || !incomeAccount) {
       console.warn(`[accounting] frontdesk: missing accounts for hotel ${hotelId}`);

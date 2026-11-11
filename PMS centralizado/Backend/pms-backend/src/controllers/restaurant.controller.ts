@@ -6,6 +6,7 @@ import type { AuthUser } from "../middleware/auth.js";
 import { nextHotelSequence, padNumber } from "../lib/sequences.js";
 import { canConvert, convertQty, isSupportedUnit, normalizeUnit } from "../lib/units.js";
 import { parseCrEInvoiceXml } from "../services/einvoicing.xml.js";
+import { fetchBccrExchangeRate } from "../services/bccr.js";
 import { applyInventoryInvoice, buildInventoryLinesFromXml } from "../services/inventory.integration.js";
 import { onRestaurantSale, onRestaurantSaleVoid } from "../services/accounting.integration.js";
 import {
@@ -103,15 +104,17 @@ function sanitizeFamily(f: any): any {
   return safe;
 }
 
+// El id del padre (familyId / subFamilyId) se conserva: la pantalla de artículos
+// lo necesita para filtrar la sub-familia y la sub-sub-familia de la elegida.
 function sanitizeSubFamily(sf: any): any {
   if (!sf) return sf;
-  const { hotelId: _h, familyId: _f, ...safe } = sf;
+  const { hotelId: _h, ...safe } = sf;
   return safe;
 }
 
 function sanitizeSubSubFamily(ssf: any): any {
   if (!ssf) return ssf;
-  const { hotelId: _h, subFamilyId: _s, ...safe } = ssf;
+  const { hotelId: _h, ...safe } = ssf;
   return safe;
 }
 
@@ -3171,10 +3174,32 @@ export async function closeOrder(req: Request, res: Response) {
       currency: String(updated.currency || saleCurrency || "CRC"),
       paidAt: paidAt,
       actorId: user?.sub ?? null,
+      payments: buildAccountingPayments(updated),
     }).catch((err) => {
       console.error("[restaurant.closeOrder] accounting entry failed:", err);
     });
   }
+}
+
+/**
+ * Desglose de cobro de una orden en la forma que espera la contabilidad, para
+ * debitar la cuenta ligada a cada forma de pago.
+ */
+function buildAccountingPayments(order: any): { key?: string | null; name?: string | null; amount: number }[] {
+  const details = Array.isArray(order?.paymentDetails) ? order.paymentDetails : [];
+  if (details.length > 0) {
+    return details
+      .map((d: any) => ({
+        key: d?.key ? String(d.key) : null,
+        name: d?.name ? String(d.name) : null,
+        amount: asNumber(d?.amountBase ?? d?.amount),
+      }))
+      .filter((d: any) => d.amount > 0);
+  }
+  const breakdown = order?.paymentBreakdown && typeof order.paymentBreakdown === "object" ? order.paymentBreakdown : {};
+  return Object.entries(breakdown as Record<string, unknown>)
+    .map(([key, amount]) => ({ key, name: key, amount: asNumber(amount) }))
+    .filter((p) => p.amount > 0);
 }
 
 // === Inventory ===
@@ -3784,6 +3809,7 @@ export async function voidPaidRestaurantOrder(req: Request, res: Response) {
       service: asNumber(order.tip10),
       currency: String(order.currency || "CRC"),
       actorId: user.sub ?? null,
+      payments: buildAccountingPayments(order),
     });
   } catch (err) {
     console.error("[restaurant.voidPaidOrder] reversa contable falló:", err);
@@ -4187,25 +4213,39 @@ export async function getRestaurantPayments(req: Request, res: Response) {
 
   const cfg = await getOrCreateRestaurantConfig(user.hotelId);
   const stored = (cfg.payments && typeof cfg.payments === "object" ? cfg.payments : {}) as any;
-  const cobros = Array.isArray(stored.cobros)
+  res.json(publicPayments(stored));
+}
+
+/**
+ * Configuración de pagos sin secretos. El token del BCCR nunca sale de la API:
+ * la pantalla sólo sabe si está puesto.
+ */
+function publicPayments(stored: any) {
+  const cobros = Array.isArray(stored?.cobros)
     ? stored.cobros
-    : typeof stored.cobros === "string"
+    : typeof stored?.cobros === "string"
       ? String(stored.cobros)
           .split(",")
           .map((s: string) => s.trim())
           .filter(Boolean)
       : ["Efectivo", "Tarjeta"];
-  const resolved = {
-    ...stored,
-    monedaBase: String(stored.monedaBase || "CRC"),
-    monedaSec: String(stored.monedaSec || "USD"),
-    tipoCambio: asNumber(stored.tipoCambio || 530),
+  const { bccrToken, ...safe } = stored || {};
+  return {
+    ...safe,
+    monedaBase: String(stored?.monedaBase || "CRC"),
+    monedaSec: String(stored?.monedaSec || "USD"),
+    tipoCambio: asNumber(stored?.tipoCambio || 530),
+    tipoCambioCompra: asNumber(stored?.tipoCambioCompra || stored?.tipoCambio || 530),
+    tipoCambioVenta: asNumber(stored?.tipoCambioVenta || stored?.tipoCambio || 530),
     cobros,
-    cargoHabitacion: typeof stored.cargoHabitacion === "boolean" ? stored.cargoHabitacion : true,
-    paymentMethods: normalizePaymentMethods(stored.paymentMethods),
-    accountingEnabled: Boolean(stored.accountingEnabled),
+    cargoHabitacion: typeof stored?.cargoHabitacion === "boolean" ? stored.cargoHabitacion : true,
+    paymentMethods: normalizePaymentMethods(stored?.paymentMethods),
+    accountingEnabled: Boolean(stored?.accountingEnabled),
+    useBCCR: stored?.useBCCR === true,
+    bccrEmail: String(stored?.bccrEmail || ""),
+    bccrTokenSet: Boolean(bccrToken),
+    bccrLastSync: stored?.bccrLastSync ?? null,
   };
-  res.json(resolved);
 }
 
 /** Normaliza la lista de métodos de cobro conservando cuenta contable y código de Hacienda. */
@@ -4258,6 +4298,16 @@ export async function updateRestaurantPayments(req: Request, res: Response) {
     if (!(rate > 0)) return res.status(400).json({ message: "El tipo de cambio debe ser mayor que cero." });
     next.tipoCambio = rate;
   }
+  if ((body as any).tipoCambioCompra !== undefined) {
+    const rate = asNumber((body as any).tipoCambioCompra);
+    if (!(rate > 0)) return res.status(400).json({ message: "El tipo de cambio de compra debe ser mayor que cero." });
+    next.tipoCambioCompra = rate;
+  }
+  if ((body as any).tipoCambioVenta !== undefined) {
+    const rate = asNumber((body as any).tipoCambioVenta);
+    if (!(rate > 0)) return res.status(400).json({ message: "El tipo de cambio de venta debe ser mayor que cero." });
+    next.tipoCambioVenta = rate;
+  }
   if ((body as any).cobros !== undefined) {
     next.cobros = Array.isArray((body as any).cobros)
       ? (body as any).cobros.map((c: unknown) => String(c || "").trim()).filter(Boolean)
@@ -4272,12 +4322,29 @@ export async function updateRestaurantPayments(req: Request, res: Response) {
   if ((body as any).accountingEnabled !== undefined) {
     next.accountingEnabled = Boolean((body as any).accountingEnabled);
   }
+  if ((body as any).useBCCR !== undefined) {
+    next.useBCCR = Boolean((body as any).useBCCR);
+  }
+  if ((body as any).bccrEmail !== undefined) {
+    next.bccrEmail = String((body as any).bccrEmail || "").trim();
+  }
+  // El token sólo se reemplaza cuando llega uno nuevo: la pantalla nunca lo
+  // recibe de vuelta, así que un campo vacío significa "dejar el que está".
+  if ((body as any).bccrToken !== undefined) {
+    const incomingToken = String((body as any).bccrToken || "").trim();
+    if (incomingToken) next.bccrToken = incomingToken;
+  }
+  if ((body as any).clearBccrToken === true) {
+    delete next.bccrToken;
+  }
   if ((body as any).paymentMethods !== undefined) {
     next.paymentMethods = normalizePaymentMethods((body as any).paymentMethods);
   }
   if (next.monedaBase === undefined) next.monedaBase = "CRC";
   if (next.monedaSec === undefined) next.monedaSec = "USD";
   if (next.tipoCambio === undefined) next.tipoCambio = 530;
+  if (next.tipoCambioCompra === undefined) next.tipoCambioCompra = next.tipoCambio;
+  if (next.tipoCambioVenta === undefined) next.tipoCambioVenta = next.tipoCambio;
   if (next.cobros === undefined) next.cobros = [];
   if (next.cargoHabitacion === undefined) next.cargoHabitacion = true;
 
@@ -4286,7 +4353,53 @@ export async function updateRestaurantPayments(req: Request, res: Response) {
     update: { payments: next as any },
     create: { hotelId: user.hotelId, kitchenPrinter: "", barPrinter: "", payments: next as any },
   });
-  res.json(saved.payments);
+  res.json(publicPayments(saved.payments));
+}
+
+/**
+ * POST /restaurant/payments/bccr-sync
+ * Pide al Banco Central el tipo de cambio de referencia y lo guarda como TC de
+ * compra y de venta. Sin correo y token registrados no hay nada que consultar.
+ */
+export async function syncRestaurantBccrRate(req: Request, res: Response) {
+  // @ts-ignore
+  const user = req.user as AuthUser | undefined;
+  if (!user?.hotelId) return res.status(401).json({ message: "No autenticado" });
+
+  const cfg = await getOrCreateRestaurantConfig(user.hotelId);
+  const stored = (cfg.payments && typeof cfg.payments === "object" ? cfg.payments : {}) as any;
+  // Se aceptan el correo y el token del cuerpo para poder actualizar sin guardar
+  // primero; si no vienen, se usan los que ya están configurados.
+  const email = String((req.body as any)?.bccrEmail ?? stored.bccrEmail ?? "").trim();
+  const incomingToken = String((req.body as any)?.bccrToken ?? "").trim();
+  const token = incomingToken || String(stored.bccrToken || "").trim();
+  if (!email || !token) {
+    return res.status(400).json({
+      message: "Falta el correo y el token del BCCR. Se obtienen gratis en el registro de Indicadores económicos del Banco Central.",
+    });
+  }
+
+  let rate;
+  try {
+    rate = await fetchBccrExchangeRate(email, token);
+  } catch (err: any) {
+    return res.status(502).json({ message: err?.message || "No se pudo consultar el BCCR." });
+  }
+
+  const next = {
+    ...stored,
+    bccrEmail: email,
+    bccrToken: token,
+    tipoCambioCompra: rate.buy,
+    tipoCambioVenta: rate.sell,
+    tipoCambio: rate.buy,
+    bccrLastSync: new Date().toISOString(),
+  };
+  const saved = await prisma.restaurantConfig.update({
+    where: { hotelId: user.hotelId },
+    data: { payments: next as any },
+  });
+  res.json({ ...publicPayments(saved.payments), rate: { buy: rate.buy, sell: rate.sell, date: rate.date } });
 }
 
 export async function getRestaurantGeneral(req: Request, res: Response) {

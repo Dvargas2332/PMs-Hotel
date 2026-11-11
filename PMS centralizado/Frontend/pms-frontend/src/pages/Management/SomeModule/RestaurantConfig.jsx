@@ -1156,6 +1156,9 @@ export default function RestaurantConfig() {
 
 
 
+  // Pagos y divisas se ordena en dos carpetas: la divisa que manda sobre los
+  // precios y, aparte, los métodos de cobro que ve el TPV.
+  const [paymentsTab, setPaymentsTab] = useState("currency");
   const [paymentMethodForm, setPaymentMethodForm] = useState({ id: "", name: "", account: "" });
 
 
@@ -3909,6 +3912,29 @@ export default function RestaurantConfig() {
 
 
 
+    // La moneda base manda sobre los precios del restaurante: base y cambio
+    // tienen que ser distintas y las dos tasas mayores que cero.
+    const baseCurrency = String(payments.monedaBase || "").toUpperCase();
+    const exchangeCurrency = String(payments.monedaSec || "").toUpperCase();
+    if (!baseCurrency || !exchangeCurrency) {
+      alert(t("mgmt.restaurant.alert.title"), "Elegí la moneda base y la moneda de cambio.");
+      return;
+    }
+    if (baseCurrency === exchangeCurrency) {
+      alert(t("mgmt.restaurant.alert.title"), "La moneda base y la moneda de cambio deben ser distintas.");
+      return;
+    }
+    const buyRate = Number(String(payments.tipoCambioCompra ?? "").replace(",", "."));
+    const sellRate = Number(String(payments.tipoCambioVenta ?? "").replace(",", "."));
+    if (!payments.useBCCR && (!Number.isFinite(buyRate) || buyRate <= 0 || !Number.isFinite(sellRate) || sellRate <= 0)) {
+      alert(t("mgmt.restaurant.alert.title"), "Los tipos de cambio de compra y de venta deben ser mayores que cero.");
+      return;
+    }
+    if (buyRate > sellRate) {
+      alert(t("mgmt.restaurant.alert.title"), "El tipo de cambio de compra no puede ser mayor que el de venta.");
+      return;
+    }
+
     const enabledCobros = (payments.paymentMethods || [])
 
 
@@ -3949,7 +3975,7 @@ export default function RestaurantConfig() {
 
 
 
-  const normalizeDiscountId = (value) =>
+    const normalizeDiscountId = (value) =>
 
 
 
@@ -4134,47 +4160,7 @@ export default function RestaurantConfig() {
 
 
 
-  const saveGeneralConfig = async () => {
-
-
-
-    try {
-
-
-
-      await saveGeneral(true);
-
-
-
-      await saveBilling(true);
-
-
-
-      await savePayments(true);
-
-
-
-      await saveTaxes(true);
-
-
-
-      alert(t("mgmt.restaurant.alert.title"), t("mgmt.restaurant.alert.generalConfigSaved"));
-
-
-
-    } catch (err) {
-
-
-
-      alert(t("mgmt.restaurant.alert.title"), getApiError(err, t("mgmt.restaurant.alert.generalConfigSaveFailed")));
-
-
-
-    }
-
-
-
-  };
+  
 
 
 
@@ -8278,6 +8264,30 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
           <p className="text-sm text-slate-400">{t("mgmt.restaurant.payments.subtitle")}</p>
+          <div className="mt-3 flex flex-wrap gap-1">
+            <button
+              type="button"
+              onClick={() => setPaymentsTab("currency")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg border-b-2 transition-colors ${
+                paymentsTab === "currency"
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Divisa
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentsTab("methods")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg border-b-2 transition-colors ${
+                paymentsTab === "methods"
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Métodos de pago
+            </button>
+          </div>
 
 
 
@@ -8301,7 +8311,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      <Card className="p-5 space-y-4">
+      <Card className={"p-5 space-y-4 " + (paymentsTab === "currency" ? "" : "hidden")}>
 
 
 
@@ -8321,7 +8331,9 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            {t("mgmt.restaurant.payments.currencyHelp")}
+            <div className="text-[11px] text-slate-500">
+              {t("mgmt.restaurant.payments.currencyNote")}
+            </div>
 
 
 
@@ -8337,7 +8349,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <div className="grid md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 max-w-[360px]">
 
 
 
@@ -8469,55 +8481,31 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <label className="text-sm">
-
-
-
-            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.exchangeRate") }</div>
-
-
-
+                    <label className="text-sm">
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.rateBuy") }</div>
             <Input
-
-
-
               type="number"
-
-
-
+              step="0.01"
+              inputMode="decimal"
               placeholder={t("mgmt.restaurant.payments.exchangePlaceholder")}
-
-
-
-              value={payments.tipoCambio}
-
-
-
+              value={payments.tipoCambioCompra ?? ""}
               disabled={Boolean(payments.useBCCR)}
-
-
-
-              onChange={(e) => setPayments((p) => ({ ...p, tipoCambio: e.target.value }))}
-
-
-
+              onChange={(e) => setPayments((p) => ({ ...p, tipoCambioCompra: e.target.value }))}
             />
-
-
-
-            {Boolean(payments.useBCCR) && (
-
-
-
-              <div className="text-[11px] text-slate-400 mt-1">{t("mgmt.restaurant.payments.autoUpdate") }</div>
-
-
-
-            )}
-
-
-
           </label>
+          <label className="text-sm">
+            <div className="text-xs text-slate-400 mb-1">{t("mgmt.restaurant.payments.rateSell") }</div>
+            <Input
+              type="number"
+              step="0.01"
+              inputMode="decimal"
+              placeholder={t("mgmt.restaurant.payments.exchangePlaceholder")}
+              value={payments.tipoCambioVenta ?? ""}
+              disabled={Boolean(payments.useBCCR)}
+              onChange={(e) => setPayments((p) => ({ ...p, tipoCambioVenta: e.target.value }))}
+            />
+          </label>
+          
 
 
 
@@ -8577,7 +8565,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      <Card className="p-5 space-y-4">
+      <Card className={"p-5 space-y-4 " + (paymentsTab === "methods" ? "" : "hidden")}>
 
 
 
@@ -8800,16 +8788,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
                   <th className="px-3 py-2 text-left w-16">{t("mgmt.restaurant.common.active")}</th>
 
 
-
                   <th className="px-3 py-2 text-left">{t("mgmt.restaurant.payments.method")}</th>
 
 
 
-                  {payments.accountingEnabled && <th className="px-3 py-2 text-left">{t("mgmt.restaurant.payments.account")}</th>}
 
 
 
-                  <th className="px-3 py-2 text-right w-28">{t("mgmt.restaurant.payments.action")}</th>
+
+                  
 
 
 
@@ -8885,51 +8872,19 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                      {payments.accountingEnabled && (
 
 
 
-                        <td className="px-3 py-2 text-slate-600">{m.account ? <span className="font-mono">{m.account}</span> : "-"}</td>
 
 
 
-                      )}
 
 
 
-                      <td className="px-3 py-2 text-right">
 
 
 
-                        <button
-
-
-
-                          type="button"
-
-
-
-                          className="text-xs px-2 py-1 rounded border hover:bg-white/5"
-
-
-
-                          onClick={() => startEditPaymentMethod(m)}
-
-
-
-                        >
-
-
-
-                          Editar
-
-
-
-                        </button>
-
-
-
-                      </td>
+                      
 
 
 
@@ -8953,7 +8908,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    <td className="px-3 py-4 text-slate-500" colSpan={payments.accountingEnabled ? 5 : 4}>{t("mgmt.restaurant.payments.empty")}</td>
+                    <td className="px-3 py-4 text-slate-500" colSpan={3}>{t("mgmt.restaurant.payments.empty")}</td>
 
 
 
@@ -9013,23 +8968,23 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-              <Input
+            <p className="text-xs text-slate-500">La cuenta contable de cada método se asigna en Management → Contabilidad → Formas de cobro del restaurante.</p>
 
 
 
-                placeholder={t("mgmt.restaurant.payments.accountingAccount")}
 
 
 
-                value={paymentMethodForm.account}
 
 
 
-                onChange={(e) => setPaymentMethodForm((f) => ({ ...f, account: e.target.value }))}
 
 
 
-              />
+
+
+
+
 
 
 
@@ -9721,9 +9676,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <Button onClick={saveGeneralConfig} className={`${managementPrimaryButtonClass} mt-3`}>
-            {t("mgmt.restaurant.menuPicker.save")}
-          </Button>
+          
 
 
 
@@ -9766,15 +9719,15 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      {generalConfigTab === "general" && renderGeneral({ showSave: false })}
+      {generalConfigTab === "general" && renderGeneral({ showSave: true })}
 
 
 
-      {generalConfigTab === "billing" && renderBilling({ showSave: false })}
+      {generalConfigTab === "billing" && renderBilling({ showSave: true })}
 
 
 
-      {generalConfigTab === "payments" && renderPayments({ showSave: false })}
+      {generalConfigTab === "payments" && renderPayments({ showSave: true })}
 
 
 

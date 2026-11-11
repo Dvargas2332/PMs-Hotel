@@ -209,6 +209,7 @@ function JournalPanel() {
   const [error, setError] = React.useState("");
   const [filters, setFilters] = React.useState({ status: "", source: "", q: "", from: "", to: "", periodId: "" });
   const [periods, setPeriods] = React.useState([]);
+  const [settings, setSettings] = React.useState(null);
   const [offset, setOffset] = React.useState(0);
   const [selected, setSelected] = React.useState(null);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -242,6 +243,9 @@ function JournalPanel() {
     api.get("/accounting/periods")
       .then(({ data }) => setPeriods(Array.isArray(data) ? data : []))
       .catch(() => setPeriods([]));
+    api.get("/accounting/settings")
+      .then(({ data }) => setSettings(data))
+      .catch(() => setSettings(null));
   }, []);
 
   const handlePost = async (id) => {
@@ -273,6 +277,10 @@ function JournalPanel() {
       setError(e?.response?.data?.message ?? "No se pudo eliminar el borrador");
     }
   };
+
+  const integrations = settings?.integrations ?? {};
+  const connectedModules = ["restaurant", "einvoicing", "frontdesk"].filter((key) => integrations[key] === true);
+  const nothingPostsAutomatically = Boolean(settings) && (connectedModules.length === 0 || settings.autoPost !== true);
 
   return (
     <div className="space-y-4">
@@ -354,6 +362,25 @@ function JournalPanel() {
       {error && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
           {error}
+        </div>
+      )}
+      {!loading && !error && total === 0 && nothingPostsAutomatically && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200 space-y-1">
+          {connectedModules.length === 0 ? (
+            <p>
+              No entran asientos porque las conexiones con módulos están apagadas: las ventas del restaurante, los
+              documentos electrónicos y los check-outs no se contabilizan. Se activan en Management → Contabilidad →
+              Conexiones con módulos.
+            </p>
+          ) : (
+            <p>
+              Las conexiones activas ({connectedModules.join(", ")}) sí registran asientos, pero el registro automático
+              está desactivado: cada asiento nuevo queda en borrador y hay que contabilizarlo a mano.
+            </p>
+          )}
+          <p className="text-xs text-amber-200/70">
+            También podés cargar un asiento manualmente con «Nuevo Asiento».
+          </p>
         </div>
       )}
       <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">

@@ -183,6 +183,10 @@ export default function ManagementPage() {
   const location = useLocation();
   const { user, hotel } = useAuth();
   const [selected, setSelected] = useState("hotelInfo");
+  // Cada vez que se elige una sección del menú se remonta su pantalla, para que
+  // abra en su vista inicial y no en la última que quedó (Restaurante abría en
+  // Inventario si se llegó antes con ?tab=inventory).
+  const [viewNonce, setViewNonce] = useState(0);
   const [alerts, setAlerts] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -373,7 +377,7 @@ export default function ManagementPage() {
     if (!Comp) return <div className="p-6" style={{ color: "var(--color-text-muted)" }}>{t("mgmt.shell.selectPrompt")}</div>;
     return (
       <React.Suspense fallback={<div className="p-6" style={{ color: "var(--color-text-muted)" }}>{t("common.loading")}</div>}>
-        <Comp />
+        <Comp key={`${selected}-${viewNonce}`} />
       </React.Suspense>
     );
   };
@@ -546,6 +550,12 @@ export default function ManagementPage() {
                                 return;
                               }
                               setSelected(item.id);
+                              setViewNonce((n) => n + 1);
+                              // Se limpia la query para no arrastrar un ?tab= de
+                              // un enlace anterior (p. ej. el tile de Inventario).
+                              if (location.search) {
+                                navigate({ pathname: location.pathname, search: `?view=${item.id}` }, { replace: true });
+                              }
                               if (!expanded.has(group.key)) toggleGroup(group.key);
                             }}
                             className={`flex w-full items-center gap-2.5 text-left text-sm rounded-xl px-3 py-2 transition-all ${

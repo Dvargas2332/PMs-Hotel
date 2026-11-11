@@ -6,6 +6,7 @@ import {
   updateRestaurantTaxes,
   getRestaurantPayments,
   updateRestaurantPayments,
+  syncRestaurantBccrRate,
   getRestaurantGeneral,
   updateRestaurantGeneral,
   getRestaurantBilling,
@@ -105,6 +106,7 @@ router.get("/taxes", requirePermission("restaurant.access.pos", "restaurant.pos.
 router.put("/taxes", requirePermission("restaurant.config.write"), updateRestaurantTaxes);
 router.get("/payments", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantPayments);
 router.put("/payments", requirePermission("restaurant.config.write"), updateRestaurantPayments);
+router.post("/payments/bccr-sync", requirePermission("restaurant.config.write"), syncRestaurantBccrRate);
 router.get("/general", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantGeneral);
 router.put("/general", requirePermission("restaurant.config.write"), updateRestaurantGeneral);
 router.get("/billing", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantBilling);

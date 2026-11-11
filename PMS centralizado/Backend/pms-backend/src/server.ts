@@ -6,6 +6,7 @@ import app from "./app.js";
 import { logger } from "./lib/logger.js";
 import prisma from "./lib/prisma.js";
 import { startDailyChargesJob } from "./jobs/charges.cron.js";
+import { startBccrRateJob } from "./jobs/bccr.cron.js";
 
 // Health fuera de /api, útil para uptime checks SIN auth
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
@@ -22,3 +23,4 @@ const port = Number(process.env.PORT || 4000);
 app.listen(port, () => logger.info({ port }, "HTTP server listening"));
 
 startDailyChargesJob();  // cron
+startBccrRateJob();      // tipo de cambio del BCCR

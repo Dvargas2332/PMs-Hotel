@@ -5,7 +5,11 @@ import { seedChartOfAccounts } from "./accounting.seed.js";
 function sanitizeSettings(s: any): any {
   if (!s) return s;
   const { hotelId: _h, ...safe } = s;
-  return safe;
+  const integrations = (safe.integrations && typeof safe.integrations === "object" ? safe.integrations : {}) as any;
+  // El mapa de cuentas vive dentro de `integrations` para no agregar columnas:
+  // { ..., accounts: { cash: "<accountId>", vat: "<accountId>" } }
+  const { accounts, ...rest } = integrations;
+  return { ...safe, integrations: rest, accountMap: accounts && typeof accounts === "object" ? accounts : {} };
 }
 
 // GET /accounting/settings
@@ -34,8 +38,17 @@ export async function getAccountingSettings(req: Request, res: Response) {
 // PUT /accounting/settings
 export async function updateAccountingSettings(req: Request, res: Response) {
   const hotelId = (req as any).hotelId as string;
-  const { autoPost, fiscalPeriods, integrations, country } = req.body;
+  const { autoPost, fiscalPeriods, integrations, country, accountMap } = req.body;
   try {
+    const current = await prisma.accountingSettings.findUnique({ where: { hotelId } });
+    const currentIntegrations =
+      current?.integrations && typeof current.integrations === "object" ? (current.integrations as any) : {};
+    const nextIntegrations = {
+      ...currentIntegrations,
+      ...(integrations && typeof integrations === "object" ? integrations : {}),
+      ...(accountMap && typeof accountMap === "object" ? { accounts: accountMap } : {}),
+    };
+
     const settings = await prisma.accountingSettings.upsert({
       where: { hotelId },
       create: {
@@ -43,14 +56,14 @@ export async function updateAccountingSettings(req: Request, res: Response) {
         country: country ?? "CR",
         autoPost: autoPost ?? false,
         fiscalPeriods: fiscalPeriods ?? false,
-        integrations: integrations ?? {},
+        integrations: nextIntegrations,
         updatedAt: new Date(),
       },
       update: {
         ...(country !== undefined && { country }),
         ...(autoPost !== undefined && { autoPost }),
         ...(fiscalPeriods !== undefined && { fiscalPeriods }),
-        ...(integrations !== undefined && { integrations }),
+        integrations: nextIntegrations,
         updatedAt: new Date(),
       },
     });

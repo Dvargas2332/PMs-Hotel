@@ -1172,7 +1172,10 @@ const [subCategory, setSubCategory] = useState("");
     () => String(paymentsCfg?.monedaSec || "").toUpperCase(),
     [paymentsCfg?.monedaSec]
   );
-  const configuredRate = useMemo(() => Number(paymentsCfg?.tipoCambio || 0) || 0, [paymentsCfg?.tipoCambio]);
+  const configuredRate = useMemo(
+    () => Number(paymentsCfg?.tipoCambioCompra || paymentsCfg?.tipoCambio || 0) || 0,
+    [paymentsCfg?.tipoCambioCompra, paymentsCfg?.tipoCambio]
+  );
   const canPayInForeign = Boolean(secondaryCurrency) && secondaryCurrency !== baseCurrency && configuredRate > 0;
 
   const methodCurrency = useCallback(
@@ -1603,6 +1606,10 @@ const [subCategory, setSubCategory] = useState("");
           monedaBase: data.monedaBase || "CRC",
           monedaSec: data.monedaSec || "USD",
           tipoCambio: Number(data.tipoCambio || 0) || 530,
+          // Al recibir divisa el negocio la compra: ese es el TC por defecto
+          // del cobro en la moneda extranjera.
+          tipoCambioCompra: Number(data.tipoCambioCompra || 0) || Number(data.tipoCambio || 0) || 530,
+          tipoCambioVenta: Number(data.tipoCambioVenta || 0) || Number(data.tipoCambio || 0) || 530,
           cobros: cobrosList,
           cargoHabitacion: Boolean(data.cargoHabitacion),
           paymentMethods: Array.isArray(data.paymentMethods) ? data.paymentMethods : [],
@@ -3527,7 +3534,7 @@ const [subCategory, setSubCategory] = useState("");
               <div className="px-4 py-2 rounded-xl bg-white/15 text-white">{shift}</div>
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-1.5 rounded-lg bg-white/15">{paymentsCfg.monedaBase} - {paymentsCfg.monedaSec}</span>
-                <span className="px-2.5 py-1.5 rounded-lg bg-white/15">TC {paymentsCfg.tipoCambio}</span>
+                <span className="px-2.5 py-1.5 rounded-lg bg-white/15">TC {configuredRate}</span>
               </div>
             </div>
             <button
@@ -3984,7 +3991,7 @@ const [subCategory, setSubCategory] = useState("");
                 <div className="text-xs uppercase text-lime-500">{closeStage === "Z" ? "Cash close Z" : "Cash close X"}</div>
                 <div className="text-base font-semibold text-lime-900">Restaurant cash</div>
                 <div className="text-[11px] text-slate-500">
-                  Moneda: {paymentsCfg.monedaBase} - TC {paymentsCfg.tipoCambio}
+                  Moneda: {paymentsCfg.monedaBase} - TC {configuredRate}
                 </div>
               </div>
               <RestaurantCloseXButton onClick={() => setCloseModalOpen(false)} />
