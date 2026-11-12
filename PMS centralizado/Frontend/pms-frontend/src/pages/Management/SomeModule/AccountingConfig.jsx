@@ -566,26 +566,28 @@ function AccountSelect({ value, onChange, accounts, placeholder }) {
 }
 
 function ToggleRow({ label, description, value, onChange }) {
+  const on = Boolean(value);
   return (
-    <div className="flex items-start justify-between gap-4 rounded-lg border border-white/10 px-3 py-2.5">
-      <div className="flex-1 min-w-0">
+    <div className="flex items-center justify-between gap-4 rounded-lg border border-white/10 px-3 py-2.5">
+      <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-tight text-white">{label}</div>
-        {description && <div className="mt-0.5 text-xs text-slate-400">{description}</div>}
+        {description && <div className="mt-0.5 text-xs leading-snug text-slate-400">{description}</div>}
       </div>
+      {/* Medidas fijas: el riel y la bolita no dependen de utilidades que puedan faltar. */}
       <button
         type="button"
         role="switch"
-        aria-checked={Boolean(value)}
+        aria-checked={on}
         aria-label={label}
         onClick={onChange}
-        className={`relative mt-0.5 h-[22px] w-10 shrink-0 rounded-full transition-colors ${
-          value ? "bg-indigo-600" : "bg-slate-400/50"
+        className={`relative shrink-0 rounded-full border transition-colors ${
+          on ? "border-indigo-700 bg-indigo-600" : "border-black/10 bg-slate-300 dark:border-white/20 dark:bg-white/20"
         }`}
+        style={{ width: 44, height: 24 }}
       >
         <span
-          className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
-            value ? "translate-x-[21px]" : "translate-x-[3px]"
-          }`}
+          className="absolute rounded-full bg-white shadow transition-transform"
+          style={{ width: 18, height: 18, top: 2, left: 2, transform: `translateX(${on ? 20 : 0}px)` }}
         />
       </button>
     </div>
