@@ -1,4 +1,4 @@
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { render, screen, waitFor, cleanup, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
 
@@ -52,6 +52,8 @@ function mockApi() {
   });
 }
 
+const openTab = (name) => fireEvent.click(screen.getByRole("tab", { name }));
+
 describe("Configuración contable: conexión de cuentas", () => {
   beforeEach(() => {
     get.mockReset();
@@ -62,20 +64,42 @@ describe("Configuración contable: conexión de cuentas", () => {
     cleanup();
   });
 
+  it("abre en General y sólo muestra esa sección", async () => {
+    mockApi();
+    render(<AccountingConfig />);
+    expect(await screen.findByText("Registro de asientos")).toBeInTheDocument();
+    expect(screen.getByText("Normativa contable")).toBeInTheDocument();
+    // Las otras secciones no se montan hasta abrir su pestaña: la pantalla no se alarga.
+    expect(screen.queryByText("Cuentas por concepto")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /General/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("cambia de sección con la barra de pestañas", async () => {
+    mockApi();
+    render(<AccountingConfig />);
+    await screen.findByText("Registro de asientos");
+    openTab(/Conexiones/);
+    expect(screen.getByText("Conexiones con módulos")).toBeInTheDocument();
+    expect(screen.queryByText("Registro de asientos")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Conexiones/ })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("lista los conceptos con su selector de cuenta", async () => {
     mockApi();
     render(<AccountingConfig />);
-    expect(await screen.findByText("Cuentas por concepto")).toBeInTheDocument();
-    expect(await screen.findByText("Efectivo / Caja")).toBeInTheDocument();
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/accounting/accounts?active=true"));
+    openTab(/Cuentas y cobros/);
+    expect(screen.getByText("Cuentas por concepto")).toBeInTheDocument();
+    expect(screen.getByText("Efectivo / Caja")).toBeInTheDocument();
     expect(screen.getByText("IVA por pagar")).toBeInTheDocument();
-    // El selector se alimenta del plan de cuentas activo.
-    expect(get).toHaveBeenCalledWith("/accounting/accounts?active=true");
   });
 
   it("muestra cada forma de cobro del restaurante con su cuenta", async () => {
     mockApi();
     render(<AccountingConfig />);
-    expect(await screen.findByText("Formas de cobro del restaurante")).toBeInTheDocument();
+    await screen.findByText("Registro de asientos");
+    openTab(/Cuentas y cobros/);
+    expect(screen.getByText("Formas de cobro del restaurante")).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText("Tarjeta").length).toBeGreaterThan(0));
     expect(screen.getByText("Guardar cuentas de cobro")).toBeInTheDocument();
   });

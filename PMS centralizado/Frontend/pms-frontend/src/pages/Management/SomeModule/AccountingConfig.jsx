@@ -1,7 +1,7 @@
 import React from "react";
 import { api } from "../../../lib/api";
 import { useAuth } from "../../../context/AuthContext";
-import { CheckCircle2, Lock } from "lucide-react";
+import { BookOpen, CheckCircle2, CreditCard, Database, Landmark, Lock, Plug, Scale, Wallet } from "lucide-react";
 import { CustomSelect } from "../../../components/ui/CustomSelect";
 import { Input } from "../../../components/ui/input";
 
@@ -47,6 +47,14 @@ const ACCOUNT_CONCEPTS = [
   { key: "advance", label: "Anticipos de clientes", group: "Ingresos y contrapartidas" },
 ];
 
+/** Secciones de la pantalla: una a la vez, para no convertirla en una tira larga. */
+const CONFIG_TABS = [
+  { id: "general", label: "General", icon: BookOpen },
+  { id: "conexiones", label: "Conexiones", icon: Plug },
+  { id: "cuentas", label: "Cuentas y cobros", icon: Wallet },
+  { id: "banco", label: "Banco y plan", icon: Landmark },
+];
+
 export default function AccountingConfig() {
   const { user } = useAuth();
   const [settings, setSettings] = React.useState(null);
@@ -67,6 +75,8 @@ export default function AccountingConfig() {
   const [methodsSaving, setMethodsSaving] = React.useState(false);
   const [methodsMsg, setMethodsMsg] = React.useState("");
   const [settingsError, setSettingsError] = React.useState("");
+  // Una sección a la vez: la pantalla deja de ser una tira larga de bloques.
+  const [tab, setTab] = React.useState("general");
 
   const hasAccounting = React.useMemo(() => {
     if (!user) return false;
@@ -205,25 +215,23 @@ export default function AccountingConfig() {
 
   if (!hasAccounting) {
     return (
-      <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/3 text-slate-500 text-sm">
-        <Lock className="w-4 h-4 mt-0.5 shrink-0 text-slate-600" />
+      <div className="flex items-start gap-3 p-4 rounded-xl border border-white/10 bg-white/5 text-sm">
+        <Lock className="w-4 h-4 mt-0.5 shrink-0 text-slate-400" />
         <div>
-          <div className="font-medium text-slate-400 mb-0.5">Módulo Contable no activado</div>
-          <div className="text-xs">Este perfil no tiene acceso al módulo de contabilidad.</div>
+          <div className="font-medium text-white mb-0.5">Módulo Contable no activado</div>
+          <div className="text-xs text-slate-400">Este perfil no tiene acceso al módulo de contabilidad.</div>
         </div>
       </div>
     );
   }
 
-  if (loading) return <div className="text-slate-500 text-sm py-4">Cargando...</div>;
+  if (loading) return <div className="text-slate-400 text-sm py-4">Cargando...</div>;
 
   if (!settings) {
     return (
-      <div className="space-y-2 py-4">
-        <div className="text-sm text-red-400">
-          {settingsError || "No se pudo cargar la configuración contable."}
-        </div>
-        <p className="text-xs text-slate-500">
+      <div className="mx-auto w-full max-w-5xl rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-3">
+        <div className="text-sm font-medium text-red-300">{settingsError || "No se pudo cargar la configuración contable."}</div>
+        <p className="text-xs text-red-300/80 mt-1">
           Si el mensaje dice «Permiso insuficiente», tu perfil no tiene el módulo Contabilidad: entrá con un perfil
           que sí lo tenga (por ejemplo el perfil admin).
         </p>
@@ -232,223 +240,311 @@ export default function AccountingConfig() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-5xl space-y-4">
       {settingsError && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-2.5 text-sm text-red-300">
           {settingsError}
-          <span className="block text-xs text-red-300/70 mt-0.5">
+          <span className="block text-xs text-red-300/80 mt-0.5">
             Se muestran los valores por defecto; al guardar se reintenta contra el servidor.
           </span>
         </div>
       )}
-      <section className="space-y-3">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Registro de asientos</h4>
-        <ToggleRow
-          label="Registro automático (Auto-Post)"
-          description="Los asientos se contabilizan inmediatamente sin aprobación manual."
-          value={settings.autoPost}
-          onChange={() => toggle("autoPost")}
-        />
-        <ToggleRow
-          label="Períodos contables"
-          description="Habilita gestión de períodos y cierres mensuales/anuales."
-          value={settings.fiscalPeriods}
-          onChange={() => toggle("fiscalPeriods")}
-        />
-      </section>
 
-      <section className="space-y-3">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Conexiones con módulos</h4>
-        <p className="text-xs text-slate-500">
-          Al activar una conexión, el módulo generará asientos contables automáticamente cuando ocurran transacciones.
-        </p>
-        {INTEGRATION_OPTIONS.map((opt) => (
-          <ToggleRow
-            key={opt.id}
-            label={opt.label}
-            description={opt.description}
-            value={settings.integrations?.[opt.id] ?? false}
-            onChange={() => toggleIntegration(opt.id)}
-          />
+      <div
+        role="tablist"
+        aria-label="Secciones de la configuración contable"
+        className="flex flex-wrap gap-1 rounded-xl border border-white/10 bg-white/5 p-1"
+      >
+        {CONFIG_TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`inline-flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-medium transition-colors ${
+              tab === id
+                ? "bg-indigo-600 text-white shadow-sm"
+                : "text-slate-400 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <Icon className="w-4 h-4" />
+            {label}
+          </button>
         ))}
-      </section>
+      </div>
 
-      <section className="space-y-3 border-t border-white/10 pt-4">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Cuentas por concepto</h4>
-        <p className="text-xs text-slate-500">
-          Cuenta del plan que recibe cada movimiento automático de los módulos.
-        </p>
-        {accounts.length === 0 ? (
-          <p className="text-xs text-amber-400">
-            No hay cuentas activas: inicializá el plan de cuentas para poder ligarlas.
-          </p>
-        ) : (
-          ["Formas de cobro", "Ingresos y contrapartidas"].map((group) => (
-            <div key={group} className="space-y-2">
-              <div className="text-[11px] uppercase tracking-wide text-slate-500">{group}</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {ACCOUNT_CONCEPTS.filter((c) => c.group === group).map((concept) => (
-                  <label key={concept.key} className="text-sm">
-                    <div className="mb-1 text-xs text-slate-400">{concept.label}</div>
-                    <AccountSelect
-                      accounts={accounts}
-                      value={accountMap?.[concept.key] ?? ""}
-                      onChange={(val) =>
-                        setAccountMap((m) => ({ ...m, [concept.key]: val }))
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
+      {/* General: cómo se contabiliza y bajo qué normativa */}
+      <Section active={tab === "general"} className="grid gap-4 lg:grid-cols-2">
+        <Panel icon={BookOpen} title="Registro de asientos" description="Cuándo se contabiliza lo que entra de los módulos.">
+          <ToggleRow
+            label="Registro automático (Auto-Post)"
+            description="Los asientos se contabilizan de inmediato, sin aprobación manual."
+            value={settings.autoPost}
+            onChange={() => toggle("autoPost")}
+          />
+          <ToggleRow
+            label="Períodos contables"
+            description="Habilita períodos y cierres mensuales/anuales."
+            value={settings.fiscalPeriods}
+            onChange={() => toggle("fiscalPeriods")}
+          />
+        </Panel>
+
+        <Panel icon={Scale} title="Normativa contable" description="Marco con el que se presentan los estados financieros.">
+          <CustomSelect
+            value={settings.country ?? "CR"}
+            onChange={(e) => setSettings((s) => s ? { ...s, country: e.target.value } : s)}
+            className="h-9 w-full max-w-xs"
+          >
+            <option value="CR">Costa Rica - NIIF PYMES</option>
+          </CustomSelect>
+          <p className="text-xs text-slate-400">La moneda base se define en Restaurante → Pagos y divisas.</p>
+        </Panel>
+
+        <div className="lg:col-span-2">
+          <SaveBar
+            note="Auto-Post, períodos y normativa se guardan juntos."
+            onSave={handleSave}
+            saving={saving}
+            saved={saveOk}
+          />
+        </div>
+      </Section>
+
+      {/* Conexiones: qué módulos generan asiento */}
+      <Section active={tab === "conexiones"} className="space-y-4">
+        <Panel
+          icon={Plug}
+          title="Conexiones con módulos"
+          description="El módulo conectado asienta solo cuando ocurre la transacción."
+        >
+          {INTEGRATION_OPTIONS.map((opt) => (
+            <ToggleRow
+              key={opt.id}
+              label={opt.label}
+              description={opt.description}
+              value={settings.integrations?.[opt.id] ?? false}
+              onChange={() => toggleIntegration(opt.id)}
+            />
+          ))}
+        </Panel>
+        <SaveBar
+          note="Las conexiones se guardan con la configuración general."
+          onSave={handleSave}
+          saving={saving}
+          saved={saveOk}
+        />
+      </Section>
+
+      {/* Cuentas: concepto contable y forma de cobro, cada bloque con su guardado */}
+      <Section active={tab === "cuentas"} className="space-y-4">
+        <Panel
+          icon={Wallet}
+          title="Cuentas por concepto"
+          description="Cuenta del plan que recibe cada movimiento automático de los módulos."
+        >
+          {accounts.length === 0 ? (
+            <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+              No hay cuentas activas: inicializá el plan de cuentas para poder ligarlas.
+            </p>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {["Formas de cobro", "Ingresos y contrapartidas"].map((group) => (
+                <div key={group} className="rounded-lg border border-white/10 p-3 space-y-2.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                    {group}
+                  </div>
+                  {ACCOUNT_CONCEPTS.filter((c) => c.group === group).map((concept) => (
+                    <label key={concept.key} className="block">
+                      <span className="mb-1 block text-xs text-slate-400">{concept.label}</span>
+                      <AccountSelect
+                        accounts={accounts}
+                        value={accountMap?.[concept.key] ?? ""}
+                        onChange={(val) =>
+                          setAccountMap((m) => ({ ...m, [concept.key]: val }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              ))}
             </div>
-          ))
-        )}
-      </section>
+          )}
+          <SaveBar
+            note="Cada concepto apunta a una cuenta del plan."
+            onSave={handleSave}
+            saving={saving}
+            saved={saveOk}
+          />
+        </Panel>
 
-      <section className="space-y-2">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Normativa contable</h4>
-        <CustomSelect
-          value={settings.country ?? "CR"}
-          onChange={(e) => setSettings((s) => s ? { ...s, country: e.target.value } : s)}
-          className="h-9 w-full max-w-xs"
+        <Panel
+          icon={CreditCard}
+          title="Formas de cobro del restaurante"
+          description="Cada cobro del punto de venta entra a la cuenta acá asignada."
         >
-          <option value="CR">Costa Rica - NIIF PYMES</option>
-        </CustomSelect>
-        <p className="text-xs text-slate-600">La moneda base se define en Restaurante → Pagos y divisas.</p>
-      </section>
+          {methods.length === 0 ? (
+            <p className="text-xs text-slate-400">
+              El restaurante todavía no tiene formas de cobro: se definen en Restaurante → Pagos y divisas.
+            </p>
+          ) : (
+            <>
+              <div className="overflow-x-auto rounded-lg border border-white/10">
+                <table className="w-full text-sm">
+                  <thead className="bg-white/10 text-[11px] uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-semibold">Forma de cobro</th>
+                      <th className="text-left px-3 py-2 font-semibold w-[45%]">Cuenta contable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {methods.map((method, idx) => (
+                      <tr key={method.id || method.name} className="border-t border-white/10">
+                        <td className="px-3 py-2 align-middle">
+                          <span className="text-sm font-medium text-white">{method.name}</span>
+                          {method.enabled === false && (
+                            <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-slate-400">
+                              inactivo
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <AccountSelect
+                            accounts={accounts}
+                            value={method.account ?? ""}
+                            placeholder="— usa la cuenta de efectivo —"
+                            onChange={(val) =>
+                              setMethods((list) =>
+                                list.map((m, i) => (i === idx ? { ...m, account: val } : m))
+                              )
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button onClick={saveMethodAccounts} disabled={methodsSaving} className={BTN_PRIMARY}>
+                  {methodsSaving ? "Guardando..." : "Guardar cuentas de cobro"}
+                </button>
+                {methodsMsg && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {methodsMsg}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </Panel>
+      </Section>
 
+      {/* Banco y plan: credenciales del BCCR y plan de cuentas */}
+      <Section active={tab === "banco"} className="grid gap-4 lg:grid-cols-2">
+        <Panel
+          icon={Landmark}
+          title="Tipo de cambio del Banco Central"
+          description="Credenciales del BCCR. Se activa en Restaurante → Pagos y divisas."
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-400">Correo registrado en el BCCR</span>
+              <Input
+                value={bccr.email}
+                placeholder="correo@ejemplo.com"
+                onChange={(e) => setBccr((b) => ({ ...b, email: e.target.value }))}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs text-slate-400">Token del BCCR</span>
+              <Input
+                type="password"
+                value={bccr.token}
+                placeholder={bccr.tokenSet ? "ya guardado" : "token de indicadores"}
+                onChange={(e) => setBccr((b) => ({ ...b, token: e.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={syncBccr} disabled={bccrBusy} className={BTN_PRIMARY}>
+              {bccrBusy ? "Consultando..." : "Actualizar desde el BCCR"}
+            </button>
+            {bccrMsg && <span className="text-xs text-slate-400">{bccrMsg}</span>}
+          </div>
+          {bccr.lastSync && !bccrMsg && (
+            <p className="text-[11px] text-slate-400">Última actualización: {formatStamp(bccr.lastSync)}</p>
+          )}
+        </Panel>
+
+        <Panel
+          icon={Database}
+          title="Plan de cuentas"
+          description="Plan estándar de Costa Rica (NIIF PYMES)."
+        >
+          <p className="text-xs text-slate-400">
+            Solo agrega las cuentas faltantes: no sobreescribe las que ya existen.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={handleSeed} disabled={seeding} className={BTN_PRIMARY}>
+              {seeding ? "Inicializando..." : "Inicializar plan de cuentas CR"}
+            </button>
+            {seedMsg && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" /> {seedMsg}
+              </span>
+            )}
+          </div>
+        </Panel>
+      </Section>
+    </div>
+  );
+}
+
+/** Contenedor de una sección: sólo se monta la sección activa. */
+function Section({ active, className = "", children }) {
+  if (!active) return null;
+  return <div className={className}>{children}</div>;
+}
+
+/** Barra de guardado de una sección: el botón vive en la sección que guarda. */
+function SaveBar({ note, onSave, saving, saved, label = "Guardar configuración" }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+      <p className="text-xs text-slate-400">{note}</p>
       <div className="flex items-center gap-3">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
-        >
-          {saving ? "Guardando..." : "Guardar configuración"}
-        </button>
-        {saveOk && (
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+        {saved && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 className="w-3.5 h-3.5" /> Guardado
           </span>
         )}
+        <button onClick={onSave} disabled={saving} className={BTN_PRIMARY}>
+          {saving ? "Guardando..." : label}
+        </button>
       </div>
-
-      <section className="border-t border-white/10 pt-4 space-y-3">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">
-          Formas de cobro del restaurante
-        </h4>
-        <p className="text-xs text-slate-500">
-          Cada cobro del punto de venta entra a la cuenta acá asignada.
-        </p>
-        {methods.length === 0 ? (
-          <p className="text-xs text-slate-500">
-            El restaurante todavía no tiene formas de cobro: se definen en Restaurante → Pagos y divisas.
-          </p>
-        ) : (
-          <>
-            <div className="overflow-x-auto rounded-lg border border-white/10">
-              <table className="w-full text-sm">
-                <thead className="bg-white/5 text-[11px] uppercase tracking-wide text-slate-400">
-                  <tr>
-                    <th className="text-left px-3 py-2 font-medium">Forma de cobro</th>
-                    <th className="text-left px-3 py-2 font-medium w-[45%]">Cuenta contable</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {methods.map((method, idx) => (
-                    <tr key={method.id || method.name} className="border-t border-white/5">
-                      <td className="px-3 py-2 text-white">
-                        {method.name}
-                        {method.enabled === false && (
-                          <span className="ml-2 text-[11px] text-slate-500">inactivo</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2">
-                        <AccountSelect
-                          accounts={accounts}
-                          value={method.account ?? ""}
-                          placeholder="— usa la cuenta de efectivo —"
-                          onChange={(val) =>
-                            setMethods((list) =>
-                              list.map((m, i) => (i === idx ? { ...m, account: val } : m))
-                            )
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={saveMethodAccounts}
-                disabled={methodsSaving}
-                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
-              >
-                {methodsSaving ? "Guardando..." : "Guardar cuentas de cobro"}
-              </button>
-              {methodsMsg && <span className="text-xs text-slate-400">{methodsMsg}</span>}
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="border-t border-white/10 pt-4 space-y-3">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Tipo de cambio del Banco Central</h4>
-        <p className="text-xs text-slate-500">
-          Credenciales del servicio de indicadores económicos (BCCR). Se activa en Restaurante → Pagos y divisas.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 max-w-[520px]">
-          <label className="text-sm">
-            <div className="mb-1 text-xs text-slate-400">Correo registrado en el BCCR</div>
-            <Input
-              value={bccr.email}
-              placeholder="correo@ejemplo.com"
-              onChange={(e) => setBccr((b) => ({ ...b, email: e.target.value }))}
-            />
-          </label>
-          <label className="text-sm">
-            <div className="mb-1 text-xs text-slate-400">Token del BCCR</div>
-            <Input
-              type="password"
-              value={bccr.token}
-              placeholder={bccr.tokenSet ? "ya guardado" : "token de indicadores"}
-              onChange={(e) => setBccr((b) => ({ ...b, token: e.target.value }))}
-            />
-          </label>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={syncBccr}
-            disabled={bccrBusy}
-            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
-          >
-            {bccrBusy ? "Consultando..." : "Actualizar desde el BCCR"}
-          </button>
-          {bccrMsg && <span className="text-xs text-slate-400">{bccrMsg}</span>}
-        </div>
-        {bccr.lastSync && !bccrMsg && (
-          <p className="text-[11px] text-slate-500">Última actualización: {formatStamp(bccr.lastSync)}</p>
-        )}
-      </section>
-
-      <section className="border-t border-white/10 pt-4 space-y-2">
-        <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Plan de Cuentas</h4>
-        <p className="text-xs text-slate-500">
-          Inicializa el plan de cuentas estándar para Costa Rica (NIIF PYMES). Solo agrega cuentas faltantes, no sobreescribe las existentes.
-        </p>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="px-4 py-2 bg-emerald-600/80 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm rounded-lg transition-colors"
-          >
-            {seeding ? "Inicializando..." : "Inicializar plan de cuentas CR"}
-          </button>
-          {seedMsg && <span className="text-xs text-emerald-400">{seedMsg}</span>}
-        </div>
-      </section>
     </div>
+  );
+}
+
+const BTN_PRIMARY =
+  "inline-flex items-center justify-center gap-2 h-9 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors";
+
+/** Bloque de configuración: encabezado con icono y título, y el contenido debajo. */
+function Panel({ icon: Icon, title, description, children }) {
+  return (
+    <section className="rounded-xl border border-white/10 bg-white/5 p-4">
+      <header className="flex items-start gap-2.5 pb-3 mb-3 border-b border-white/10">
+        <span className="mt-0.5 grid place-items-center w-7 h-7 shrink-0 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-300">
+          <Icon className="w-4 h-4" />
+        </span>
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold leading-tight text-white">{title}</h4>
+          {description && <p className="mt-0.5 text-xs text-slate-400">{description}</p>}
+        </div>
+      </header>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }
 
@@ -471,16 +567,26 @@ function AccountSelect({ value, onChange, accounts, placeholder }) {
 
 function ToggleRow({ label, description, value, onChange }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-2.5 border-b border-white/5 last:border-0">
+    <div className="flex items-start justify-between gap-4 rounded-lg border border-white/10 px-3 py-2.5">
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-white leading-tight">{label}</div>
-        {description && <div className="text-xs text-slate-500 mt-0.5">{description}</div>}
+        <div className="text-sm font-medium leading-tight text-white">{label}</div>
+        {description && <div className="mt-0.5 text-xs text-slate-400">{description}</div>}
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-checked={Boolean(value)}
+        aria-label={label}
         onClick={onChange}
-        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors mt-0.5 ${value ? "bg-violet-600" : "bg-white/10"}`}
+        className={`relative mt-0.5 h-[22px] w-10 shrink-0 rounded-full transition-colors ${
+          value ? "bg-indigo-600" : "bg-slate-400/50"
+        }`}
       >
-        <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${value ? "translate-x-6" : "translate-x-1"}`} />
+        <span
+          className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+            value ? "translate-x-[21px]" : "translate-x-[3px]"
+          }`}
+        />
       </button>
     </div>
   );
