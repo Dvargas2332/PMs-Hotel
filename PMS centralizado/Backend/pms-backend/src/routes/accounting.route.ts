@@ -13,22 +13,22 @@ router.use(auth, requirePermission("accounting.read"));
 
 // Configuración
 router.get("/settings", getAccountingSettings);
-router.put("/settings", requirePermission("accounting.settings.write"), updateAccountingSettings);
-router.post("/initialize", requirePermission("accounting.settings.write"), initializeAccounting);
+router.put("/settings", requirePermission("accounting.settings.write", "accounting.integrations.write", "accounting.accountmap.write"), updateAccountingSettings);
+router.post("/initialize", requirePermission("accounting.settings.write", "accounting.seed.write", "accounting.accounts.write"), initializeAccounting);
 
 // Plan de cuentas
 router.get("/accounts", listAccounts);
 router.get("/accounts/:id", getAccount);
-router.post("/accounts", requirePermission("accounting.accounts.write"), createAccount);
-router.put("/accounts/:id", requirePermission("accounting.accounts.write"), updateAccount);
-router.delete("/accounts/:id", requirePermission("accounting.accounts.write"), deleteAccount);
+router.post("/accounts", requirePermission("accounting.accounts.write", "accounting.accounts.create"), createAccount);
+router.put("/accounts/:id", requirePermission("accounting.accounts.write", "accounting.accounts.edit"), updateAccount);
+router.delete("/accounts/:id", requirePermission("accounting.accounts.write", "accounting.accounts.delete"), deleteAccount);
 
 // Libro Diario
 router.get("/entries", listEntries);
 router.get("/entries/:id", getEntry);
-router.post("/entries", requirePermission("accounting.entries.write"), createEntry);
-router.put("/entries/:id", requirePermission("accounting.entries.write"), updateEntry);
-router.delete("/entries/:id", requirePermission("accounting.entries.write"), deleteEntry);
+router.post("/entries", requirePermission("accounting.entries.write", "accounting.entries.create"), createEntry);
+router.put("/entries/:id", requirePermission("accounting.entries.write", "accounting.entries.edit"), updateEntry);
+router.delete("/entries/:id", requirePermission("accounting.entries.write", "accounting.entries.delete"), deleteEntry);
 router.post("/entries/:id/post", requirePermission("accounting.entries.approve"), postEntry);
 router.post("/entries/:id/void", requirePermission("accounting.entries.void"), voidEntry);
 
@@ -37,9 +37,9 @@ router.get("/ledger/:accountId", getLedger);
 
 // Períodos contables
 router.get("/periods", listPeriods);
-router.post("/periods", requirePermission("accounting.settings.write"), createPeriod);
-router.post("/periods/:id/close", requirePermission("accounting.settings.write"), closePeriod);
-router.delete("/periods/:id", requirePermission("accounting.settings.write"), deletePeriod);
+router.post("/periods", requirePermission("accounting.settings.write", "accounting.periods.write"), createPeriod);
+router.post("/periods/:id/close", requirePermission("accounting.settings.write", "accounting.periods.write"), closePeriod);
+router.delete("/periods/:id", requirePermission("accounting.settings.write", "accounting.periods.write"), deletePeriod);
 
 // Reportes
 router.get("/reports/trial-balance", getTrialBalance);

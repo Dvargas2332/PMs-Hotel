@@ -85,11 +85,33 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     name: "Contabilidad",
     access: { id: "accounting.read", name: "Acceso a contabilidad" },
     permissions: [
-      { id: "accounting.accounts.write", name: "Crear y editar el plan de cuentas" },
-      { id: "accounting.entries.write", name: "Capturar y corregir asientos" },
+      // Libro Diario
+      { id: "accounting.entries.read", name: "Ver el libro diario" },
+      { id: "accounting.entries.create", name: "Crear asientos en borrador" },
+      { id: "accounting.entries.edit", name: "Corregir borradores" },
+      { id: "accounting.entries.delete", name: "Eliminar borradores" },
       { id: "accounting.entries.approve", name: "Contabilizar asientos" },
       { id: "accounting.entries.void", name: "Anular asientos" },
-      { id: "accounting.settings.write", name: "Configurar contabilidad, períodos y cierres" },
+      // Plan de cuentas y mayor
+      { id: "accounting.accounts.read", name: "Ver el plan de cuentas y el mayor" },
+      { id: "accounting.accounts.create", name: "Crear cuentas" },
+      { id: "accounting.accounts.edit", name: "Editar cuentas" },
+      { id: "accounting.accounts.delete", name: "Desactivar y eliminar cuentas" },
+      { id: "accounting.seed.write", name: "Inicializar el plan de cuentas del pais" },
+      // Reportes
+      { id: "accounting.reports.read", name: "Ver balance, resultados y comprobacion" },
+      { id: "accounting.reports.vat", name: "Ver el libro de IVA" },
+      { id: "accounting.reports.export", name: "Exportar reportes a CSV" },
+      // Configuracion (Management -> Contabilidad)
+      { id: "accounting.settings.read", name: "Ver la configuracion contable" },
+      { id: "accounting.settings.write", name: "Guardar la configuracion contable" },
+      { id: "accounting.integrations.write", name: "Conectar o desconectar modulos" },
+      { id: "accounting.accountmap.write", name: "Elegir la cuenta de cada concepto y forma de cobro" },
+      { id: "accounting.bccr.write", name: "Credenciales y sincronizacion del Banco Central" },
+      { id: "accounting.periods.write", name: "Abrir, cerrar y eliminar periodos contables" },
+      // Permisos anteriores que se mantienen para no romper perfiles ya creados
+      { id: "accounting.accounts.write", name: "Crear y editar el plan de cuentas (general)" },
+      { id: "accounting.entries.write", name: "Capturar y corregir asientos (general)" },
     ],
   },
   {
