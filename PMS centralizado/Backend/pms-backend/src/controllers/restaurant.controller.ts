@@ -897,11 +897,11 @@ export async function updateSection(req: Request, res: Response) {
 
   const { name, imageUrl, quickCashEnabled } = req.body || {};
 
-  // El nombre y la imagen sólo se pueden cambiar mientras la sección no tenga
-  // ventas: los reportes y la contabilidad ya la referencian con ese nombre.
-  // quickCashEnabled no entra en el candado porque no aparece en reportes.
-  const wantsMetaChange = typeof name === "string" || "imageUrl" in (req.body || {});
-  if (wantsMetaChange) {
+  // El nombre sólo se puede cambiar mientras la sección no tenga ventas: los
+  // reportes y la contabilidad ya la referencian con ese nombre. La imagen y
+  // quickCashEnabled no aparecen en reportes, así que nunca se bloquean.
+  const wantsRename = typeof name === "string" && name.trim() && name.trim() !== existing.name;
+  if (wantsRename) {
     const orders = await prisma.restaurantOrder.count({
       where: { hotelId, sectionId: existing.id },
     });
@@ -909,7 +909,7 @@ export async function updateSection(req: Request, res: Response) {
       return res.status(409).json({
         code: "SECTION_IN_USE",
         message:
-          "Esta sección ya tiene ventas registradas y no se puede renombrar ni cambiar de imagen, para no alterar reportes ni contabilidad.",
+          "Esta sección ya tiene ventas registradas y no se puede renombrar, para no alterar reportes ni contabilidad. La imagen sí se puede cambiar.",
       });
     }
   }
@@ -5674,16 +5674,17 @@ export async function listShiftInvoices(req: Request, res: Response) {
   const since = shift.openedAt || shift.createdAt || new Date(0);
 
   // Las ventas del turno se resuelven por shiftId (con respaldo por fecha para
-  // las ventas viejas que no tienen turno asignado).
+  // las ventas viejas que no tienen turno asignado). Se trae la venta completa
+  // con sus líneas para poder reimprimir el comprobante desde el TPV.
   const shiftOrders = await prisma.restaurantOrder.findMany({
     where: {
       hotelId,
       status: "PAID",
       OR: [{ shiftId: shift.id }, { shiftId: null, updatedAt: { gte: since } }],
     },
+    include: { items: true },
     orderBy: { updatedAt: "desc" },
     take: 500,
-    select: { id: true, tableId: true, total: true, updatedAt: true, createdAt: true },
   });
   const shiftOrderIds = shiftOrders.map((o) => o.id);
 
@@ -5707,7 +5708,7 @@ export async function listShiftInvoices(req: Request, res: Response) {
 
   const docOrders = await prisma.restaurantOrder.findMany({
     where: { hotelId, id: { in: Array.from(docOrderIds) } },
-    select: { id: true, tableId: true, total: true },
+    include: { items: true },
   });
   const docOrderMap = new Map(docOrders.map((o) => [o.id, o]));
 
@@ -5724,13 +5725,8 @@ export async function listShiftInvoices(req: Request, res: Response) {
       consecutive: d.consecutive,
       key: d.key,
       createdAt: d.createdAt,
-      order: order
-        ? {
-            id: order.id,
-            tableId: fromInternalId(hotelId, order.tableId),
-            total: order.total,
-          }
-        : null,
+      saleNumber: order?.saleNumber || null,
+      order: order ? sanitizeOrder(order, hotelId) : null,
     });
     }),
     ...ordersWithoutDoc.map((o) => ({
@@ -5741,11 +5737,8 @@ export async function listShiftInvoices(req: Request, res: Response) {
       consecutive: null,
       key: null,
       createdAt: o.updatedAt || o.createdAt,
-      order: {
-        id: o.id,
-        tableId: fromInternalId(hotelId, o.tableId),
-        total: o.total,
-      },
+      saleNumber: o.saleNumber || null,
+      order: sanitizeOrder(o, hotelId),
     })),
   ];
 

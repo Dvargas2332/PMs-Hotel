@@ -31,6 +31,7 @@ import ConfirmDialog from "../../../components/common/ConfirmDialog";
 import { api } from "../../../lib/api";
 import { useLanguage } from "../../../context/LanguageContext";
 import { sanitizeCssBackgroundImage, sanitizeImageUrl } from "../../../lib/security";
+import SectionImageField from "../../../components/restaurant/SectionImageField";
 
 
 
@@ -5043,22 +5044,10 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-            <Input
-
-
-
+            <SectionImageField
               placeholder={t("mgmt.restaurant.sections.imageOptional")}
-
-
-
               value={formSection.imageUrl}
-
-
-
-              onChange={(e) => setFormSection((f) => ({ ...f, imageUrl: e.target.value }))}
-
-
-
+              onChange={(next) => setFormSection((f) => ({ ...f, imageUrl: next }))}
             />
 
 
@@ -5210,6 +5199,8 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
                         onChange={(e) => setEditingSection((f) => ({ ...f, name: e.target.value }))}
+                        disabled={Boolean(s.used)}
+                        title={s.used ? "Ya tiene ventas: el nombre no se puede cambiar, la imagen sí" : undefined}
 
 
 
@@ -5217,22 +5208,10 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                      <Input
-
-
-
+                      <SectionImageField
                         placeholder={t("mgmt.restaurant.sections.imageOptional")}
-
-
-
                         value={editingSection.imageUrl}
-
-
-
-                        onChange={(e) => setEditingSection((f) => ({ ...f, imageUrl: e.target.value }))}
-
-
-
+                        onChange={(next) => setEditingSection((f) => ({ ...f, imageUrl: next }))}
                       />
 
 
@@ -5317,55 +5296,19 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-                    {s.used ? (
-
-
-
-                      <span className="text-[11px] text-slate-500" title="Ya tiene ventas registradas: el nombre queda fijo para no alterar reportes ni contabilidad.">En uso · nombre fijo</span>
-
-
-
-                    ) : (
-
-
-
+                    {s.used && (
+                      <span className="text-[11px] text-slate-500" title="Ya tiene ventas registradas: el nombre queda fijo para no alterar reportes ni contabilidad. La imagen sí se puede cambiar.">En uso · nombre fijo</span>
+                    )}
                       <button
-
-
-
                         type="button"
-
-
-
                         className="text-xs text-indigo-600"
-
-
-
                         onClick={(e) => {
-
-
-
                           e.preventDefault();
-
-
-
                           e.stopPropagation();
-
-
-
                           setEditingSection({ id: s.id, name: s.name || "", imageUrl: s.imageUrl || "" });
-
-
-
                         }}
-
-
-
                       >Editar</button>
 
-
-
-                    )}
 
 
 

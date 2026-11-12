@@ -7,6 +7,7 @@ import { api, setStaffToken } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
 import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
 import { calculateOrderTotals } from "../../lib/restaurantTaxes";
+import { computePaymentSplit } from "../../lib/restaurantChange";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
 import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import RestaurantUserMenu from "./RestaurantUserMenu";
@@ -352,6 +353,9 @@ const [subCategory, setSubCategory] = useState("");
   const [sections, setSections] = useState([]);
   const [sectionsLoading, setSectionsLoading] = useState(false);
   const [sectionsError, setSectionsError] = useState("");
+  // Una dirección que no es una imagen (la página donde se vio, por ejemplo) se
+  // marca para no dejar el ícono de imagen rota en la tarjeta de la sección.
+  const [brokenSectionImages, setBrokenSectionImages] = useState({});
   const [menuItems, setMenuItems] = useState([]);
   const [ordersByTable, setOrdersByTable] = useState({});
   const ordersByTableRef = useRef({});
@@ -398,6 +402,13 @@ const [subCategory, setSubCategory] = useState("");
   const [voidInvoiceSuccessOpen, setVoidInvoiceSuccessOpen] = useState(false);
   const [voidInvoiceSuccessLabel, setVoidInvoiceSuccessLabel] = useState("Factura anulada");
   const voidInvoiceSuccessTimerRef = useRef(null);
+  // Reimpresión de una factura del turno en curso.
+  const [reprintModalOpen, setReprintModalOpen] = useState(false);
+  const [reprintList, setReprintList] = useState([]);
+  const [reprintLoading, setReprintLoading] = useState(false);
+  const [reprintTarget, setReprintTarget] = useState(null);
+  const [reprintBusy, setReprintBusy] = useState(false);
+  const [reprintError, setReprintError] = useState("");
   const [cancelOrderModalOpen, setCancelOrderModalOpen] = useState(false);
   const [cancelOrderForm, setCancelOrderForm] = useState({ username: "", password: "", reason: "" });
   const [cancelOrderBusy, setCancelOrderBusy] = useState(false);
@@ -1205,11 +1216,6 @@ const [subCategory, setSubCategory] = useState("");
     return out;
   }, [paymentForm, baseAmountFor]);
 
-  const paymentTotal = useMemo(() => sumNumbers(paymentBaseForm), [paymentBaseForm]);
-  const paymentDiff = useMemo(() => paymentTotal - totals.total, [paymentTotal, totals.total]);
-  // El servidor exige que la suma de pagos cuadre con el total (tolerancia 1 CRC).
-  const paymentSquare = Math.abs(paymentDiff) <= 1;
-
   // Descuentos aplicados que exigen PIN de administrador.
   const discountsRequiringPin = useMemo(() => {
     const ids = new Set();
@@ -1334,6 +1340,29 @@ const [subCategory, setSubCategory] = useState("");
     return selectedPaymentKeys.map((k) => byKey.get(k)).filter(Boolean);
   }, [availablePaymentMethods, selectedPaymentKeys]);
 
+  const paymentTotal = useMemo(() => sumNumbers(paymentBaseForm), [paymentBaseForm]);
+
+  // El efectivo es la única forma de cobro que devuelve vuelto; tarjeta, SINPE y
+  // transferencia se cobran exactas. El excedente se descuenta del efectivo antes
+  // de mandar el cobro, porque el servidor exige que los pagos sumen el total.
+  // Va después de availablePaymentMethods: usarlo antes rompía el TPV en blanco.
+  const cashMethodKey = useMemo(() => {
+    const found = (availablePaymentMethods || []).find((m) =>
+      /efectivo|efect|cash|contado/i.test(`${m?.name || ""} ${m?.key || ""}`)
+    );
+    return found?.key ?? null;
+  }, [availablePaymentMethods]);
+
+  const paymentSplit = useMemo(
+    () => computePaymentSplit({ amounts: paymentBaseForm, total: totals.total, cashKey: cashMethodKey }),
+    [paymentBaseForm, totals.total, cashMethodKey]
+  );
+  const cashChange = paymentSplit.change;
+  const paymentAppliedBase = paymentSplit.applied;
+  // El servidor exige que la suma de pagos cuadre con el total (tolerancia 1 CRC).
+  const paymentSquare = paymentSplit.square;
+  const paymentMissing = paymentSplit.missing;
+
   const displayTotals = paymentResult?.totals || totals;
   const paymentChange = paymentResult?.change || 0;
 
@@ -1368,6 +1397,28 @@ const [subCategory, setSubCategory] = useState("");
     () => (isRBasic ? serviceOptions.filter((opt) => !["DELIVERY", "ROOM"].includes(opt.id)) : serviceOptions),
     [isRBasic, serviceOptions]
   );
+
+  // Para el listado de reimpresión: el id público de la mesa se muestra con su nombre.
+  const tableNameById = useMemo(() => {
+    const map = new Map();
+    for (const sec of sections || []) {
+      for (const t of sec?.tables || []) {
+        if (t?.id) map.set(String(t.id), String(t.name || t.id));
+      }
+    }
+    return map;
+  }, [sections]);
+
+  // El nombre de la mesa ya suele incluir el de la sección ("Caja Rapida - Quick"),
+  // así que no se repite el prefijo: antes decía "Caja Rapida - Caja Rapida - Quick".
+  const orderTitle = useMemo(() => {
+    const tableName = String(selectedTable?.name || "").trim();
+    const sectionName = String(selectedSection?.name || "").trim();
+    if (!tableName) return sectionName || "No table";
+    if (!sectionName) return tableName;
+    if (tableName.toLowerCase().startsWith(sectionName.toLowerCase())) return tableName;
+    return `${sectionName} - ${tableName}`;
+  }, [selectedSection?.name, selectedTable?.name]);
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
@@ -1948,6 +1999,101 @@ const [subCategory, setSubCategory] = useState("");
     setVoidInvoiceBusy(false);
     setVoidInvoiceTarget(null);
     loadVoidInvoices();
+  };
+
+  // ── Reimpresión: sólo las facturas emitidas en el turno abierto ─────────────
+  const loadReprintInvoices = async () => {
+    setReprintLoading(true);
+    setReprintError("");
+    try {
+      const { data } = await api.get("/restaurant/shift/invoices");
+      const rows = Array.isArray(data) ? data : [];
+      setReprintList(rows.filter((row) => row?.order));
+    } catch (e) {
+      setReprintList([]);
+      setReprintError(e?.response?.data?.message || "No se pudieron cargar las facturas del turno");
+    } finally {
+      setReprintLoading(false);
+    }
+  };
+
+  const openReprintModal = () => {
+    setReprintModalOpen(true);
+    setReprintTarget(null);
+    setReprintBusy(false);
+    setReprintError("");
+    loadReprintInvoices();
+  };
+
+  const closeReprintModal = () => {
+    setReprintModalOpen(false);
+    setReprintTarget(null);
+    setReprintError("");
+  };
+
+  const printReprint = async (row) => {
+    const order = row?.order;
+    if (!order) {
+      setReprintError("Esa venta no tiene el detalle para reimprimir.");
+      return;
+    }
+    setReprintBusy(true);
+    setReprintError("");
+    try {
+      const invoiceCfg = getInvoicePrintConfig();
+      const isFE = String(row?.docType || "").toUpperCase() === "FE";
+      const header = isFE ? billingCfg.invoiceHeader : billingCfg.ticketHeader;
+      const footer = isFE ? billingCfg.invoiceFooter : billingCfg.ticketFooter;
+      const payload = {
+        __printHeader: header,
+        __printFooter: footer,
+        documentNumber: row?.consecutive || order?.saleNumber || "",
+        date: order?.updatedAt || row?.createdAt,
+        cashierName: activeStaffRef.current?.name || "",
+        sectionId: order?.sectionId,
+        tableId: order?.tableId,
+        covers: order?.covers,
+        serviceType: order?.serviceType,
+        roomId: order?.roomId,
+        items: (Array.isArray(order?.items) ? order.items : []).map((it) => ({
+          ...it,
+          note: it?.detailNote || it?.note,
+        })),
+        note: order?.note,
+        paymentMethods:
+          order?.paymentBreakdown && typeof order.paymentBreakdown === "object"
+            ? Object.entries(order.paymentBreakdown)
+                .filter(([, v]) => Number(v) > 0)
+                .map(([name, amount]) => ({ name, amount: Number(amount) }))
+            : [],
+      };
+      const totals = {
+        subtotal: order?.subtotal,
+        tax: order?.tax,
+        service: order?.tip10,
+        discountTotal: order?.discountAmount,
+        total: order?.total,
+      };
+      const run = async () => {
+        const baseText = buildPrintPreviewText({ title: "Reimpresión", payload, totals, restaurant: restaurantInfo });
+        const text = composePrintText({ header, body: baseText, footer });
+        await printToAgent({ printerNames: [invoiceCfg.printerId], text, copies: invoiceCfg.copies });
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", { detail: { title: "Restaurant", desc: "Reimpresión enviada." } })
+        );
+      };
+      await runPrintWithPreview({
+        title: "Reimpresión",
+        payload,
+        totals,
+        onConfirm: run,
+        previewKey: "invoice",
+      });
+    } catch (err) {
+      setReprintError(err?.message || err?.response?.data?.message || "No se pudo reimprimir.");
+    } finally {
+      setReprintBusy(false);
+    }
   };
 
   const openVoidInvoiceAuth = () => {
@@ -3250,29 +3396,35 @@ const [subCategory, setSubCategory] = useState("");
       const snapshotTotals = { ...totals };
       const invoiceCfg = getInvoicePrintConfig();
       // Importes en moneda base + detalle por medio (moneda original y tipo de cambio).
-      const paymentMethodsSnapshot = Object.entries(paymentBaseForm)
+      // Se manda lo aplicado a la venta: el vuelto ya se descontó del efectivo.
+      const paymentMethodsSnapshot = Object.entries(paymentAppliedBase)
         .filter(([, v]) => Number(v) > 0)
         .map(([key, amount]) => {
           const def = (availablePaymentMethods || []).find((m) => String(m.key) === String(key));
           return { name: def?.name || key, amount: Number(amount) };
         });
-      const paymentDetailsPayload = Object.entries(paymentForm)
+      const paymentDetailsPayload = Object.entries(paymentAppliedBase)
         .filter(([, v]) => Number(v) > 0)
-        .map(([key, amount]) => {
+        .map(([key, appliedBase]) => {
           const def = (availablePaymentMethods || []).find((m) => String(m.key) === String(key));
           const currency = methodCurrency(key);
           const rate = methodRate(key);
+          const amount =
+            currency === baseCurrency
+              ? Number(appliedBase)
+              : Math.round((Number(appliedBase) / (rate || 1)) * 100) / 100;
           return {
             key,
             name: def?.name || key,
-            amount: Number(amount) || 0,
+            amount,
+            amountBase: Number(appliedBase),
             currency,
             exchangeRate: currency === baseCurrency ? 1 : rate,
           };
         })
         .filter((p) => p.currency === baseCurrency || p.exchangeRate > 0);
       const paidAmount = sumNumbers(paymentBaseForm);
-      const change = Math.max(0, paidAmount - (snapshotTotals.total || 0));
+      const change = cashChange;
       const snapshotPayload = {
         sectionId: selectedSection?.id,
         tableId: selectedTable.id,
@@ -3294,7 +3446,7 @@ const [subCategory, setSubCategory] = useState("");
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
         orderId: currentOrder?.id || currentOrder?.orderId || undefined,
         docType: invoiceCfg.docType,
-        payments: paymentBaseForm,
+        payments: paymentAppliedBase,
         paymentDetails: paymentDetailsPayload.length > 0 ? paymentDetailsPayload : undefined,
         totals,
         note: orderNote,
@@ -4359,58 +4511,60 @@ const [subCategory, setSubCategory] = useState("");
 
       {paymentsModalOpen && (
         <div className="fixed inset-0 z-50 bg-lime-900/30 backdrop-blur-[1px] flex items-start justify-center p-4">
-          <div className="w-full max-w-4xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-4 overflow-y-auto max-h-[85vh]">
+          <div className="w-full max-w-5xl force-light bg-white rounded-3xl shadow-2xl p-6 space-y-5 overflow-y-auto max-h-[88vh]">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">Pago</div>
-                <div className="text-lg font-semibold text-slate-900">{selectedTable?.name}</div>
+                <div className="text-xl font-semibold text-slate-900">{selectedTable?.name}</div>
               </div>
               {paymentResult && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-800">
                   <CheckCircle className="h-4 w-4" /> Cobro exitoso
                 </span>
               )}
             </div>
-            <div className={paymentResult ? "space-y-4" : "grid lg:grid-cols-[1.2fr_1fr] gap-4"}>
+            <div className={paymentResult ? "space-y-4" : "grid lg:grid-cols-[minmax(0,400px)_minmax(0,1fr)] gap-5 items-start"}>
               <div className="space-y-4">
-                <div className="rounded-2xl border border-lime-200 bg-lime-50 px-5 py-4">
-                  <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Total a pagar</div>
-                      <div className="mt-1 text-4xl font-bold leading-none tabular-nums text-slate-900">
-                        {formatMoney(displayTotals.total)}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-[auto_auto] gap-x-6 gap-y-1 text-sm tabular-nums">
+                <div className="rounded-2xl border border-lime-200 bg-lime-50 px-5 py-4 space-y-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Total a pagar</div>
+                  <div className="text-5xl font-bold leading-none tabular-nums text-slate-900">
+                    {formatMoney(displayTotals.total)}
+                  </div>
+                  <div className="space-y-1 border-t border-lime-200 pt-3 text-sm tabular-nums">
+                    <div className="flex items-center justify-between">
                       <span className="text-slate-600">Subtotal</span>
-                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.subtotal)}</span>
-                      <span className="text-slate-600">Servicio</span>
-                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.service)}</span>
-                      <span className="text-slate-600">Impuestos</span>
-                      <span className="text-right font-medium text-slate-900">{formatMoney(displayTotals.tax)}</span>
-                      {displayTotals.discountTotal > 0 && (
-                        <>
-                          <span className="text-slate-600">Descuento</span>
-                          <span className="text-right font-medium text-emerald-700">-{formatMoney(displayTotals.discountTotal)}</span>
-                        </>
-                      )}
+                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.subtotal)}</span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Servicio</span>
+                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.service)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600">Impuestos</span>
+                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.tax)}</span>
+                    </div>
+                    {displayTotals.discountTotal > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-600">Descuento</span>
+                        <span className="font-medium text-emerald-700">-{formatMoney(displayTotals.discountTotal)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {paymentResult ? (
                   <>
-                    <div className="grid grid-cols-2 gap-3 tabular-nums sm:max-w-md">
-                      <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pagado</div>
-                        <div className="mt-1 text-2xl font-bold leading-none text-emerald-700">
+                    <div className="grid grid-cols-2 gap-3 tabular-nums">
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Recibido</div>
+                        <div className="mt-1 text-3xl font-bold leading-none text-slate-900">
                           {formatMoney(paymentResult?.paid ?? displayTotals.total)}
                         </div>
                       </div>
                       {paymentChange > 0 && (
-                        <div className="rounded-2xl border border-emerald-200 bg-white px-4 py-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vuelto</div>
-                          <div className="mt-1 text-2xl font-bold leading-none text-slate-900">
+                        <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-600 px-4 py-3 text-white">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-100">Vuelto</div>
+                          <div className="mt-1 text-4xl font-bold leading-none tabular-nums">
                             {formatMoney(paymentChange)}
                           </div>
                         </div>
@@ -4420,66 +4574,109 @@ const [subCategory, setSubCategory] = useState("");
                       Puedes imprimir la factura o cerrar sin imprimir.
                     </div>
                   </>
+                ) : cashChange > 0 ? (
+                  paymentSquare ? (
+                    <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-600 px-5 py-4 text-white">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-100">Vuelto</div>
+                      <div className="mt-1 text-6xl font-bold leading-none tabular-nums">
+                        {formatMoney(cashChange)}
+                      </div>
+                      <div className="mt-2 text-sm text-emerald-50">Entregá este vuelto al cliente.</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-4">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Vuelto</div>
+                      <div className="mt-1 text-5xl font-bold leading-none tabular-nums text-amber-800">
+                        {formatMoney(cashChange)}
+                      </div>
+                      <div className="mt-2 text-sm text-amber-800">
+                        El vuelto sale del efectivo: subí el monto en efectivo o bajá el de las demás formas de pago.
+                      </div>
+                    </div>
+                  )
+                ) : paymentTotal > 0 && paymentMissing > 1 ? (
+                  <div className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-5 py-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Falta por cobrar</div>
+                    <div className="mt-1 text-5xl font-bold leading-none tabular-nums text-rose-700">
+                      {formatMoney(paymentMissing)}
+                    </div>
+                  </div>
+                ) : paymentSquare ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Pago exacto</div>
+                    <div className="mt-1 text-lg font-semibold text-emerald-800">No hay vuelto que entregar</div>
+                  </div>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-slate-800">Forma de pago</div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          className={`h-8 px-3 rounded-full text-xs font-semibold border transition ${
-                            splitPayments ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700"
-                          }`}
-                          onClick={handleSplitToggle}
-                        >
-                          {splitPayments ? "Pago dividido: Si" : "Pago dividido: No"}
-                        </button>
-                      </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Vuelto</div>
+                    <div className="mt-1 text-lg font-semibold text-slate-600">
+                      Escribí el monto que entrega el cliente
                     </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {availablePaymentMethods.map((method) => {
-                        const active = selectedPaymentKeys.includes(method.key);
-                        return (
-                          <button
-                            key={method.key}
-                            className={`px-3 py-2 rounded-lg border text-sm font-semibold transition ${
-                              active
-                                ? "bg-emerald-600 border-emerald-600 text-white"
-                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                            }`}
-                            onClick={() => handlePaymentMethodToggle(method.key)}
-                          >
-                            {method.name}
-                          </button>
-                        );
-                      })}
-                      {availablePaymentMethods.length === 0 && (
-                        <div className="text-sm text-slate-500">No hay formas de pago activas.</div>
-                      )}
-                    </div>
-
-
-                    {(currentOrder.serviceType || serviceType) === "ROOM" && (currentOrder.roomId || roomCharge) && (
-                      <div className="text-xs text-slate-600">
-                        Habitación: <span className="font-semibold">{currentOrder.roomId || roomCharge}</span>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
 
-              <div className={paymentResult ? "hidden" : "space-y-3"}>
+              <div className={paymentResult ? "hidden" : "space-y-4"}>
                 {paymentResult ? null : (
                   <>
-                    <div className="text-sm font-semibold text-slate-800">Montos</div>
+                    <div className="rounded-2xl border border-slate-200 px-4 py-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-slate-800">Forma de pago</div>
+                        <button
+                          className={`h-9 px-4 rounded-full text-sm font-semibold border transition ${
+                            splitPayments ? "bg-emerald-600 border-emerald-600 text-white" : "bg-white border-slate-200 text-slate-700"
+                          }`}
+                          onClick={handleSplitToggle}
+                          title="Cobrar con más de una forma de pago"
+                        >
+                          {splitPayments ? "Dividido: Sí" : "Dividido: No"}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {availablePaymentMethods.map((method) => {
+                          const active = selectedPaymentKeys.includes(method.key);
+                          return (
+                            <button
+                              key={method.key}
+                              className={`h-12 px-4 rounded-xl border text-base font-semibold transition ${
+                                active
+                                  ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                  : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                              }`}
+                              onClick={() => handlePaymentMethodToggle(method.key)}
+                            >
+                              {method.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {availablePaymentMethods.length === 0 && (
+                        <div className="text-sm text-slate-500">No hay formas de pago activas.</div>
+                      )}
+
+                      {(currentOrder.serviceType || serviceType) === "ROOM" && (currentOrder.roomId || roomCharge) && (
+                        <div className="text-sm text-slate-600">
+                          Habitación: <span className="font-semibold">{currentOrder.roomId || roomCharge}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 px-4 py-4 space-y-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-sm font-semibold text-slate-800">Monto recibido</div>
+                        <div className="text-xs tabular-nums text-slate-500">
+                          Recibido {formatMoney(paymentTotal)}
+                        </div>
+                      </div>
                     {selectedPaymentMethods.length > 0 ? (
-                      <div className="grid sm:grid-cols-2 gap-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
                         {selectedPaymentMethods.map((method) => (
                           <div key={method.key} className="space-y-1">
-                            <div className="text-xs text-slate-600">{method.name}</div>
+                            <div className="text-sm text-slate-600">{method.name}</div>
                             <div className="flex items-center gap-2">
                               <input
-                                className="h-11 w-full rounded-lg border px-3 text-sm"
+                                className="h-12 w-full rounded-xl border px-3 text-lg tabular-nums"
                                 placeholder="0.00"
                                 type="text"
                                 inputMode="decimal"
@@ -4490,7 +4687,7 @@ const [subCategory, setSubCategory] = useState("");
                               />
                               {canPayInForeign && (
                                 <select
-                                  className="h-11 rounded-lg border px-2 text-xs"
+                                  className="h-12 rounded-xl border px-2 text-sm"
                                   value={methodCurrency(method.key)}
                                   onChange={(e) => changePaymentCurrency(method.key, e.target.value)}
                                   title="Moneda del cobro"
@@ -4501,10 +4698,10 @@ const [subCategory, setSubCategory] = useState("");
                               )}
                             </div>
                             {canPayInForeign && methodCurrency(method.key) !== baseCurrency && (
-                              <div className="flex items-center gap-2 text-xs text-slate-600">
+                              <div className="flex items-center gap-2 text-sm text-slate-600">
                                 <span>TC</span>
                                 <input
-                                  className="h-8 w-24 rounded-md border px-2 text-right text-xs"
+                                  className="h-9 w-28 rounded-md border px-2 text-right text-sm"
                                   inputMode="decimal"
                                   value={paymentRates[method.key] ?? configuredRate}
                                   onChange={(e) => setPaymentRates((prev) => ({ ...prev, [method.key]: e.target.value }))}
@@ -4516,42 +4713,25 @@ const [subCategory, setSubCategory] = useState("");
                         ))}
                       </div>
                     ) : (
-                      <div className="text-sm text-slate-500">Selecciona una forma de pago para ingresar el monto.</div>
+                      <div className="text-sm text-slate-500">Elegí una forma de pago para escribir el monto recibido.</div>
                     )}
-
-                    <div
-                      className={`text-sm rounded-lg px-3 py-2 border ${
-                        paymentSquare
-                          ? "text-emerald-800 bg-emerald-50 border-emerald-100"
-                          : paymentDiff > 0
-                          ? "text-amber-800 bg-amber-50 border-amber-100"
-                          : "text-rose-800 bg-rose-50 border-rose-100"
-                      }`}
-                    >
-                      Pagado: <span className="font-semibold">{formatMoney(paymentTotal)}</span>
-                      {" · "}
-                      {paymentSquare
-                        ? "Cuadra con el total"
-                        : paymentDiff > 0
-                        ? `Sobra ${formatMoney(paymentDiff)} — el cobro debe ser exacto`
-                        : `Falta ${formatMoney(Math.abs(paymentDiff))}`}
                     </div>
                   </>
                 )}
               </div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
               {paymentResult ? (
                 <>
                   <button
-                    className="h-12 px-5 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    className="h-14 px-6 rounded-xl border border-slate-200 text-base font-medium text-slate-700 hover:bg-slate-50"
                     onClick={finalizePaymentAndExit}
                     disabled={paymentPrintBusy}
                   >
                     Cerrar sin imprimir
                   </button>
                   <button
-                    className="h-12 px-8 rounded-lg bg-emerald-600 text-white text-sm font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
+                    className="h-14 px-8 rounded-xl bg-emerald-600 text-white text-base font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
                     onClick={printPaidInvoice}
                     disabled={paymentPrintBusy}
                   >
@@ -4561,26 +4741,36 @@ const [subCategory, setSubCategory] = useState("");
               ) : (
                 <>
                   <button
-                    className="h-12 px-4 rounded-lg border text-sm"
-                    onClick={openSplitOrderModal}
-                    disabled={!hasItems}
-                  >
-                    Split Order
-                  </button>
-              <button
-                    className="h-12 px-4 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:bg-emerald-300"
-                    disabled={!hasItems || selectedPaymentKeys.length === 0 || !canStaffCloseOrder || chargeBusy}
-                    title={canStaffCloseOrder ? undefined : "Tu perfil de personal no permite cobrar"}
-                    onClick={confirmChargeOrder}
-                  >
-                    {chargeBusy ? "Cobrando..." : "Confirm Payment"}
-                  </button>
-              <button
-                    className="h-12 px-5 rounded-lg border border-red-200 text-red-600 text-sm font-semibold hover:bg-red-50"
+                    className="h-14 px-6 rounded-xl border border-red-200 text-base font-semibold text-red-600 hover:bg-red-50"
                     onClick={closePaymentsModal}
                   >
                     Cancelar
                   </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      className="h-14 px-5 rounded-xl border border-slate-200 text-base font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                      onClick={openSplitOrderModal}
+                      disabled={!hasItems}
+                    >
+                      Dividir orden
+                    </button>
+                    <button
+                      className="h-14 px-8 rounded-xl bg-emerald-600 text-white text-base font-semibold shadow-sm hover:bg-emerald-500 disabled:bg-emerald-300"
+                      disabled={
+                        !hasItems || selectedPaymentKeys.length === 0 || !canStaffCloseOrder || chargeBusy || !paymentSquare
+                      }
+                      title={
+                        canStaffCloseOrder
+                          ? paymentSquare
+                            ? undefined
+                            : "El monto recibido todavía no cuadra con el total"
+                          : "Tu perfil de personal no permite cobrar"
+                      }
+                      onClick={confirmChargeOrder}
+                    >
+                      {chargeBusy ? "Cobrando..." : "Confirmar cobro"}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -4808,8 +4998,8 @@ const [subCategory, setSubCategory] = useState("");
         </div>
       )}
 
-       <div className="flex flex-1">
-         <div className="flex-1 flex flex-col">
+       <div className="flex flex-1 min-h-0">
+         <div className="flex-1 flex flex-col min-h-0">
             
 
           {sectionLauncher || !selectedTable ? (
@@ -4839,7 +5029,7 @@ const [subCategory, setSubCategory] = useState("");
                       {(sections || []).map((sec, secIdx) => (
                         <div
                           key={String(sec.id || sec.name || `sec-${secIdx}`)}
-                          className="rounded-md bg-gradient-to-br from-lime-100 to-purple-50 border border-lime-100 shadow hover:shadow-md transition p-2 text-left cursor-pointer aspect-square flex flex-col"
+                          className="rounded-md bg-gradient-to-br from-lime-100 to-purple-50 border border-lime-100 shadow hover:shadow-md transition p-2.5 text-left cursor-pointer flex flex-col"
                           onClick={() => {
                             if (sec?.quickCashEnabled) {
                               startQuickCash(sec);
@@ -4850,17 +5040,25 @@ const [subCategory, setSubCategory] = useState("");
                             setSectionLauncher(false);
                           }}
                         >
-                          <div className="relative w-full aspect-[4/3] rounded-md overflow-hidden bg-white/70 border border-white/60 shadow-sm">
-                            {sec?.imageUrl ? (
-                              <img src={sanitizeImageUrl(sec.imageUrl)} alt={sec.name || sec.id} className="h-full w-full object-cover" />
+                          <div className="relative w-full aspect-[16/9] rounded-md overflow-hidden bg-white/70 border border-white/60 shadow-sm">
+                            {sec?.imageUrl && !brokenSectionImages[sec.id] ? (
+                              <img
+                                src={sanitizeImageUrl(sec.imageUrl)}
+                                alt={sec.name || sec.id}
+                                className="h-full w-full object-cover"
+                                onError={() => setBrokenSectionImages((prev) => ({ ...prev, [sec.id]: true }))}
+                              />
                             ) : (
-                              <div className="h-full w-full flex items-center justify-center text-xs text-lime-500/70">
-                                Sin imagen
+                              <div className="h-full w-full flex flex-col items-center justify-center gap-0.5 px-2 text-center text-sm text-lime-500/70">
+                                <span>Sin imagen</span>
+                                {sec?.imageUrl ? (
+                                  <span className="text-xs text-amber-600">La dirección guardada no es una imagen</span>
+                                ) : null}
                               </div>
                             )}
                           </div>
-                          <div className="text-xs uppercase text-lime-500">Section</div>
-                          <div className="text-base font-semibold text-lime-900 leading-tight line-clamp-2">{sec.name || sec.id}</div>
+                          <div className="mt-2 text-[11px] uppercase tracking-wide text-lime-500">Section</div>
+                          <div className="text-lg font-semibold leading-tight text-lime-900 line-clamp-2">{sec.name || sec.id}</div>
                           <div className="text-sm text-lime-700/90 mt-1">{(sec.tables || []).length} tables</div>
                           <div className="text-sm text-lime-700/80 mt-1">
                             Menu: <span className="font-semibold">{sec?.activeMenu?.name || "-"}</span>
@@ -5106,7 +5304,7 @@ const [subCategory, setSubCategory] = useState("");
                 )}
               </div>
             ) : (
-              <div key={`restaurant-pos-${String(selectedTable?.id || "none")}`} className="flex-1 grid grid-cols-3 gap-4 p-4 overflow-y-auto items-start">
+              <div key={`restaurant-pos-${String(selectedTable?.id || "none")}`} className="flex-1 min-h-0 grid grid-cols-3 grid-rows-[auto_minmax(0,1fr)] gap-4 p-4 overflow-hidden items-stretch">
                 {/* Top filter bar: family -> sub-family -> sub-sub-family */}
                 <div className="col-span-3 self-start w-full flex flex-col lg:flex-row lg:items-start gap-3 bg-gradient-to-r from-lime-50 via-emerald-50 to-lime-100 border border-lime-100 rounded-2xl shadow-sm px-4 py-3">
                   <div className="flex-1 min-w-0 space-y-2">
@@ -5220,11 +5418,13 @@ const [subCategory, setSubCategory] = useState("");
                   </div>
                 </div>
 
-                <div className="col-span-2 min-h-0 flex flex-col">
+                {/* La barra flotante de la mesa vive abajo a la izquierda: la grilla
+                    de productos termina justo encima de ella. */}
+                <div className="col-span-2 min-h-0 flex flex-col pb-20">
                   {menuGrid}
                 </div>
-                <div className="bg-white border border-lime-100 rounded-2xl shadow p-4 flex flex-col">
-                  <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="bg-white border border-lime-100 rounded-2xl shadow p-4 flex flex-col min-h-0 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
                     <div className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 pb-1">
                       {orderTabs.map((tab) => {
                         const active = tab.key === activeOrderKey;
@@ -5251,13 +5451,10 @@ const [subCategory, setSubCategory] = useState("");
                       </button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-between mb-3 shrink-0">
                     <div>
                       <div className="text-xs uppercase text-lime-500">Order</div>
-                      <div className="text-base font-semibold text-lime-900">
-                        {selectedSection ? `${selectedSection.name} - ` : ""}
-                        {selectedTable?.name || "No table"}
-                      </div>
+                      <div className="text-base font-semibold text-lime-900">{orderTitle}</div>
                       {currentOrder.status && (
                         <div className="text-[11px] text-lime-600 mt-1">{currentOrder.status}</div>
                       )}
@@ -5284,7 +5481,7 @@ const [subCategory, setSubCategory] = useState("");
                   </div>
 
                   {showCustomerPanel && (
-                    <div className="mb-3 p-2 rounded-lg border border-lime-200 bg-lime-50 space-y-1">
+                    <div className="mb-3 p-2 rounded-lg border border-lime-200 bg-lime-50 space-y-1 shrink-0">
                       <div className="flex items-center justify-between">
                         <span className="text-xs uppercase text-lime-600 font-semibold">Cliente</span>
                         {selectedGuestId && (
@@ -5338,19 +5535,19 @@ const [subCategory, setSubCategory] = useState("");
                   )}
 
                   <textarea
-                    className="w-full rounded-lg border border-lime-100 px-3 py-2 text-sm min-h-[70px]"
+                    className="w-full shrink-0 rounded-lg border border-lime-100 px-3 py-2 text-sm min-h-[64px]"
                     placeholder="Kitchen Notes..."
                     value={orderNote}
                     onChange={(e) => handleNoteChange(e.target.value)}
                   />
 
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 space-y-2 shrink-0">
                     <div className="text-xs uppercase text-lime-500">Services Types</div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-flow-col auto-cols-fr gap-2">
                       {filteredServiceOptions.map((opt) => (
                         <button
                           key={opt.id}
-                          className={`h-9 rounded-lg border text-sm font-semibold ${serviceType === opt.id ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700"}`}
+                          className={`h-12 rounded-md border px-1 text-xs font-semibold leading-tight ${serviceType === opt.id ? "bg-lime-600 border-lime-600 text-white" : "bg-white border-lime-200 text-lime-700 hover:bg-lime-50"}`}
                           onClick={() => handleServiceTypeChange(opt.id)}
                         >
                           {opt.label}
@@ -5368,12 +5565,13 @@ const [subCategory, setSubCategory] = useState("");
                   </div>
 
                   {taxesCfg.permitirDescuentos && (
-                    <div className="mt-3 space-y-1">
-                      <div className="text-xs uppercase text-lime-500">Descuento de la orden</div>
+                    <div className="mt-2 shrink-0 flex items-center gap-2">
+                      <span className="shrink-0 text-[11px] uppercase text-lime-500">Descuento</span>
                       <select
-                        className="w-full h-10 rounded-lg border border-lime-200 px-3 text-sm bg-white"
+                        className="h-8 w-40 shrink-0 rounded-md border border-lime-200 bg-white px-2 text-xs"
                         value={currentOrder.discountId || ""}
                         onChange={(e) => handleOrderDiscountChange(e.target.value)}
+                        title="Descuento de la orden"
                       >
                         <option value="">Sin descuento</option>
                         {discountOptions.map((d) => (
@@ -5383,26 +5581,24 @@ const [subCategory, setSubCategory] = useState("");
                         ))}
                       </select>
                       {discountsRequiringPin.length > 0 && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <span className="text-[11px] text-red-600">PIN de administrador</span>
-                          <input
-                            className="h-8 w-28 rounded-md border border-red-200 px-2 text-sm"
-                            type="password"
-                            inputMode="numeric"
-                            placeholder="PIN"
-                            value={discountPin}
-                            onChange={(e) => setDiscountPin(e.target.value)}
-                            onBlur={() => {
-                              // Al cargar el PIN se reintenta guardar el descuento aplicado.
-                              if (discountPin && currentOrder?.discountId) handleOrderDiscountChange(currentOrder.discountId);
-                            }}
-                          />
-                        </div>
+                        <input
+                          className="h-8 w-20 shrink-0 rounded-md border border-red-200 px-2 text-xs"
+                          type="password"
+                          inputMode="numeric"
+                          placeholder="PIN admin"
+                          title="PIN de administrador para este descuento"
+                          value={discountPin}
+                          onChange={(e) => setDiscountPin(e.target.value)}
+                          onBlur={() => {
+                            // Al cargar el PIN se reintenta guardar el descuento aplicado.
+                            if (discountPin && currentOrder?.discountId) handleOrderDiscountChange(currentOrder.discountId);
+                          }}
+                        />
                       )}
                     </div>
                   )}
 
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 mt-2">
+                  <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 mt-2">
                     {(currentOrder.items || []).length === 0 && (
                       <div className="text-sm text-lime-600 bg-lime-50 border border-dashed border-lime-200 rounded-xl p-3">
                         Agrega productos con un tap.
@@ -5481,7 +5677,7 @@ const [subCategory, setSubCategory] = useState("");
                     ))}
                   </div>
 
-                  <div className="mt-4 space-y-1 text-sm text-lime-800">
+                  <div className="mt-3 shrink-0 space-y-1 text-sm text-lime-800">
                     <div className="flex justify-between">
                       <span>Sub total</span>
                       <span>{formatMoney(totals.subtotal)}</span>
@@ -5507,7 +5703,7 @@ const [subCategory, setSubCategory] = useState("");
                   </div>
                   
 
-                  <div className={`mt-4 grid gap-2 ${isQuickCashContext ? "grid-cols-1" : "grid-cols-2"}`}>
+                  <div className={`mt-4 grid gap-2 shrink-0 ${isQuickCashContext ? "grid-cols-1" : "grid-cols-2"}`}>
                     {!isQuickCashContext && (
                       <button
                         className="h-12 rounded-xl bg-lime-50 text-lime-700 font-semibold transition-colors hover:bg-lime-100 active:bg-lime-200 disabled:opacity-60"
@@ -5547,6 +5743,12 @@ const [subCategory, setSubCategory] = useState("");
               <div className="text-[11px] uppercase text-lime-500">Secciones</div>
               <div className="text-base font-semibold text-lime-900">Gestionar facturas</div>
             </div>
+            <button
+              className="h-12 px-6 rounded-2xl bg-white border border-lime-200 text-lime-800 text-lg font-semibold transition-colors hover:bg-lime-50 active:bg-lime-100"
+              onClick={openReprintModal}
+            >
+              Reimprimir
+            </button>
             <button
               className="h-12 px-6 rounded-2xl bg-red-600 text-white text-lg font-semibold transition-colors hover:bg-red-700 active:bg-red-800"
               onClick={openVoidInvoiceModal}
@@ -5623,6 +5825,107 @@ const [subCategory, setSubCategory] = useState("");
               >
                 Back
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reprintModalOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/30 backdrop-blur-[1px] flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl force-light bg-white rounded-2xl shadow-2xl p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-lime-600">Turno en curso</div>
+                <div className="text-lg font-semibold text-slate-900">Reimprimir factura</div>
+                <div className="text-xs text-slate-500 mt-0.5">
+                  Sólo las facturas emitidas en este turno.
+                </div>
+              </div>
+              <RestaurantCloseXButton onClick={closeReprintModal} />
+            </div>
+
+            {reprintLoading ? (
+              <div className="py-6 text-center text-sm text-slate-500">Cargando facturas…</div>
+            ) : reprintList.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-lime-200 bg-lime-50 px-4 py-6 text-center text-sm text-lime-800">
+                Todavía no hay facturas cobradas en este turno.
+              </div>
+            ) : (
+              <div className="max-h-[52vh] overflow-y-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">Comprobante</th>
+                      <th className="px-3 py-2 text-left font-medium">Mesa</th>
+                      <th className="px-3 py-2 text-left font-medium">Hora</th>
+                      <th className="px-3 py-2 text-right font-medium">Total</th>
+                      <th className="px-3 py-2 text-left font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reprintList.map((row, idx) => {
+                      const rowId = String(row?.id || row?.restaurantOrderId || idx);
+                      const selected = reprintTarget && String(reprintTarget.id || reprintTarget.restaurantOrderId) === String(row.id || row.restaurantOrderId);
+                      const label = row?.consecutive || row?.saleNumber || (row?.docType === "NO_DOC" ? "Sin comprobante" : "—");
+                      const status = String(row?.status || "").toUpperCase();
+                      return (
+                        <tr
+                          key={rowId}
+                          onClick={() => setReprintTarget(row)}
+                          className={`cursor-pointer border-t border-slate-100 ${
+                            selected ? "bg-lime-50" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <td className="px-3 py-2 font-mono text-xs text-slate-700">{label}</td>
+                          <td className="px-3 py-2 text-slate-700">
+                            {tableNameById.get(String(row?.order?.tableId || "")) || row?.order?.tableId || "—"}
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {row?.createdAt ? new Date(row.createdAt).toLocaleTimeString("es-CR", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-slate-800">{formatMoney(row?.order?.total)}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                                status === "CANCELED"
+                                  ? "bg-red-100 text-red-700"
+                                  : status === "NO_DOC"
+                                  ? "bg-slate-100 text-slate-600"
+                                  : "bg-emerald-100 text-emerald-700"
+                              }`}
+                            >
+                              {status === "CANCELED" ? "Anulada" : status === "NO_DOC" ? "Sin comprobante" : status || "Emitida"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {reprintError && <div className="text-sm text-red-600">{reprintError}</div>}
+
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+              <div className="text-xs text-slate-500">
+                {reprintList.length} factura(s) en el turno
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="h-11 px-4 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  onClick={closeReprintModal}
+                >
+                  Cerrar
+                </button>
+                <button
+                  className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-500 disabled:bg-emerald-300"
+                  disabled={!reprintTarget || reprintBusy}
+                  onClick={() => printReprint(reprintTarget)}
+                >
+                  {reprintBusy ? "Enviando…" : "Reimprimir"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
