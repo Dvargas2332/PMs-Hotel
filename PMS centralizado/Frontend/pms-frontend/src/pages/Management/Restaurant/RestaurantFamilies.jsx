@@ -67,8 +67,8 @@ export default function RestaurantFamilies() {
       try {
         const qs = new URLSearchParams();
         qs.set("q", q);
-        qs.set("take", "25");
-        const { data } = await api.get(`/einvoicing/cabys?${qs.toString()}`);
+        qs.set("top", "25");
+        const { data } = await api.get(`/einvoicing/cabys/hacienda?${qs.toString()}`);
         if (!cancelled) setFamilyCabysResults(Array.isArray(data) ? data : []);
       } catch {
         if (!cancelled) setFamilyCabysResults([]);

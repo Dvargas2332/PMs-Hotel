@@ -15,6 +15,7 @@ export default function EInvoicingPage() {
   const cabysCacheRef = React.useRef(new Map());
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [loadError, setLoadError] = React.useState("");
   const [docsLoading, setDocsLoading] = React.useState(false);
   const [docs, setDocs] = React.useState([]);
   const [docsFilters, setDocsFilters] = React.useState({
@@ -262,6 +263,9 @@ export default function EInvoicingPage() {
     [parseCsv, parseXlsx, rowsToItems, t]
   );
 
+  // La búsqueda CABYS va por el API del PMS: la API pública de Hacienda responde
+  // { total, cantidad, cabys } y el navegador no puede leerla por CORS, así que
+  // llamándola directo la lista siempre salía vacía.
   const fetchCabysRemote = React.useCallback(async (query) => {
     const q = String(query || "").trim();
     const isCode = /^\d{13}$/.test(q);
@@ -271,21 +275,17 @@ export default function EInvoicingPage() {
     const cached = cabysCacheRef.current.get(cacheKey);
     if (cached && cached.expiresAt > now) return cached.items;
     const params = new URLSearchParams();
-    if (isCode) {
-      params.set("codigo", q);
-    } else {
-      params.set("q", q);
-      params.set("top", "80");
-    }
-    const res = await fetch(`https://api.hacienda.go.cr/fe/cabys?${params.toString()}`);
-    if (!res.ok) throw new Error("remote");
-    const data = await res.json();
-    if (!Array.isArray(data)) return [];
-    const items = data.map((r) => ({
-      id: String(r.codigo || r.id || ""),
-      description: String(r.descripcion || r.description || ""),
+    params.set("q", q);
+    params.set("top", "80");
+    const { data } = await api.get(`/einvoicing/cabys/hacienda?${params.toString()}`);
+    const items = (Array.isArray(data) ? data : []).map((r) => ({
+      id: String(r.id || ""),
+      description: String(r.description || ""),
+      taxRate: typeof r.taxRate === "number" ? r.taxRate : 13,
     }));
-    cabysCacheRef.current.set(cacheKey, { items, expiresAt: now + 1000 * 60 * 30 });
+    if (items.length) {
+      cabysCacheRef.current.set(cacheKey, { items, expiresAt: now + 1000 * 60 * 30 });
+    }
     return items;
   }, []);
 
@@ -725,8 +725,12 @@ export default function EInvoicingPage() {
           settings: ensureSettings(nextCfg?.settings),
         }));
         setSecretMeta(nextCfg?.credentials || { smtp: {}, atv: {}, crypto: {} });
-      } catch {
-        // ignore; UI will show defaults
+        setLoadError("");
+      } catch (e) {
+        // Sin esto el módulo se veía vacío y parecía que no había nada configurado.
+        const status = e?.response?.status;
+        const serverMsg = e?.response?.data?.message;
+        setLoadError(`${status ? `HTTP ${status}` : "Sin respuesta del servidor"}${serverMsg ? ` · ${serverMsg}` : ""}`);
       } finally {
         if (!silent) setLoading(false);
       }
@@ -758,6 +762,13 @@ export default function EInvoicingPage() {
     }
   };
 
+  /** Datos del emisor que exige el comprobante 4.4 (identificación, actividad, ubicación). */
+  const setIssuer = (patch) =>
+    setCfg((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, issuer: { ...(prev.settings?.issuer || {}), ...patch } },
+    }));
+
   const save = async () => {
     if (saving) return;
     setSaving(true);
@@ -767,11 +778,7 @@ export default function EInvoicingPage() {
         settings: ensureSettings(cfg.settings),
         secrets,
       };
-      try {
-        await api.put("/einvoicing/config", payload);
-      } catch {
-        await api.post("/einvoicing/config", payload);
-      }
+      await api.put("/einvoicing/config", payload);
       setSecrets({ smtp: {}, atv: {}, crypto: {} });
       await loadConfig({ silent: true });
       window.dispatchEvent(
@@ -941,30 +948,9 @@ export default function EInvoicingPage() {
   };
 
   React.useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const cfgRes = await api.get("/einvoicing/config");
-        if (mounted) {
-          const nextCfg = cfgRes.data || cfg;
-          setCfg((prev) => ({
-            ...prev,
-            ...nextCfg,
-            settings: ensureSettings(nextCfg?.settings),
-          }));
-          setSecretMeta(nextCfg?.credentials || { smtp: {}, atv: {}, crypto: {} });
-        }
-      } catch {
-        // ignore; UI will show defaults
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
+    loadConfig();
+    // Sólo al abrir el módulo: loadConfig cambia de identidad al actualizar cfg.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const panelTitle = React.useMemo(
@@ -1019,6 +1005,12 @@ export default function EInvoicingPage() {
           <EInvoicingUserMenu />
         </div>
       </header>
+
+      {loadError && (
+        <div className="shrink-0 px-6 py-2 text-sm text-red-300 bg-red-500/10" style={{ borderBottom: "1px solid var(--sidebar-border)" }}>
+          {loadError}
+        </div>
+      )}
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
@@ -1423,12 +1415,15 @@ export default function EInvoicingPage() {
                           onChange={(e) => setCfg((s) => ({ ...s, version: e.target.value }))}
                           placeholder={t("einv.general.version")}
                         />
-                        <input
+                        <select
                           className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
-                          value={cfg.environment || "sandbox"}
+                          aria-label={t("einv.general.environment")}
+                          value={String(cfg.environment || "sandbox").toLowerCase() === "production" ? "production" : "sandbox"}
                           onChange={(e) => setCfg((s) => ({ ...s, environment: e.target.value }))}
-                          placeholder={t("einv.general.environment")}
-                        />
+                        >
+                          <option value="sandbox">{t("einv.general.envSandbox")}</option>
+                          <option value="production">{t("einv.general.envProduction")}</option>
+                        </select>
                         <input
                           className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
                           value="microfacturacr"
@@ -1859,43 +1854,76 @@ export default function EInvoicingPage() {
                       className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.countryCode")}
                       value={cfg.settings?.issuer?.countryCode || "506"}
-                      onChange={(e) =>
-                        setCfg((prev) => ({
-                          ...prev,
-                          settings: {
-                            ...prev.settings,
-                            issuer: { ...(prev.settings?.issuer || {}), countryCode: e.target.value },
-                          },
-                        }))
-                      }
+                      onChange={(e) => setIssuer({ countryCode: e.target.value })}
                     />
+                    <select
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      aria-label={t("einv.issuer.idType")}
+                      value={cfg.settings?.issuer?.idType || "02"}
+                      onChange={(e) => setIssuer({ idType: e.target.value })}
+                    >
+                      <option value="01">01 · {t("einv.issuer.idType.physical")}</option>
+                      <option value="02">02 · {t("einv.issuer.idType.legal")}</option>
+                      <option value="03">03 · DIMEX</option>
+                      <option value="04">04 · NITE</option>
+                    </select>
                     <input
                       className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.idNumber")}
                       value={cfg.settings?.issuer?.idNumber || ""}
-                      onChange={(e) =>
-                        setCfg((prev) => ({
-                          ...prev,
-                          settings: {
-                            ...prev.settings,
-                            issuer: { ...(prev.settings?.issuer || {}), idNumber: e.target.value },
-                          },
-                        }))
-                      }
+                      onChange={(e) => setIssuer({ idNumber: e.target.value })}
                     />
                     <input
                       className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
                       placeholder={t("einv.issuer.name")}
                       value={cfg.settings?.issuer?.name || ""}
-                      onChange={(e) =>
-                        setCfg((prev) => ({
-                          ...prev,
-                          settings: {
-                            ...prev.settings,
-                            issuer: { ...(prev.settings?.issuer || {}), name: e.target.value },
-                          },
-                        }))
-                      }
+                      onChange={(e) => setIssuer({ name: e.target.value })}
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.economicActivity")}
+                      value={cfg.settings?.issuer?.economicActivity || ""}
+                      onChange={(e) => setIssuer({ economicActivity: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.email")}
+                      value={cfg.settings?.issuer?.email || ""}
+                      onChange={(e) => setIssuer({ email: e.target.value })}
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.phone")}
+                      value={cfg.settings?.issuer?.phone || ""}
+                      onChange={(e) => setIssuer({ phone: e.target.value })}
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.province")}
+                      value={cfg.settings?.issuer?.province || ""}
+                      onChange={(e) => setIssuer({ province: e.target.value.replace(/\D/g, "").slice(0, 1) })}
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.canton")}
+                      value={cfg.settings?.issuer?.canton || ""}
+                      onChange={(e) => setIssuer({ canton: e.target.value.replace(/\D/g, "").slice(0, 2) })}
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm"
+                      placeholder={t("einv.issuer.district")}
+                      value={cfg.settings?.issuer?.district || ""}
+                      onChange={(e) => setIssuer({ district: e.target.value.replace(/\D/g, "").slice(0, 2) })}
+                      inputMode="numeric"
+                    />
+                    <input
+                      className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm md:col-span-2"
+                      placeholder={t("einv.issuer.address")}
+                      value={cfg.settings?.issuer?.address || ""}
+                      onChange={(e) => setIssuer({ address: e.target.value })}
                     />
                   </div>
 

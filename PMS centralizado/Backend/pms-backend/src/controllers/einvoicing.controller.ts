@@ -582,6 +582,9 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   if (!config.enabled) readinessIssues.push("EINVOICING_DISABLED");
   if (!issuer?.idNumber) readinessIssues.push("ISSUER_ID_NUMBER_MISSING");
   if (!issuer?.countryCode) readinessIssues.push("ISSUER_COUNTRY_CODE_MISSING");
+  if (!issuer?.idType) readinessIssues.push("ISSUER_ID_TYPE_MISSING");
+  // El código de actividad lo asigna Hacienda al contribuyente: no se puede inventar.
+  if (!issuer?.economicActivity) readinessIssues.push("ECONOMIC_ACTIVITY_MISSING");
 
   // These are needed for a full microfactura submission flow (sign + send),
   // but the current implementation stores documents as DRAFT and does not submit yet.
