@@ -372,7 +372,7 @@ export default function Launcher() {
           )}
 
           {/* ── LAYOUT PRINCIPAL ── */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] flex-1 overflow-hidden min-h-0">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr] flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
 
             {/* ── SIDEBAR HOTEL/USUARIO ── */}
             <div className="flex flex-col gap-4 overflow-y-auto launcher-scroll pr-1">
@@ -385,7 +385,7 @@ export default function Launcher() {
                     <img
                       src="/kazehanalogo.png"
                       alt="Kazehana PMS"
-                      className="mx-auto mb-4 h-50 w-50 object-contain drop-shadow-2xl"
+                      className="mx-auto mb-4 h-28 w-28 sm:h-36 sm:w-36 xl:h-44 xl:w-44 object-contain drop-shadow-2xl"
                     />
                     <div className="text-lg font-bold text-white">{hotel?.name || "Hotel"}</div>
                     <div className="text-xs text-emerald-100 mt-0.5">{hotel?.email || t("launcher.hotelSession")}</div>
@@ -438,14 +438,19 @@ export default function Launcher() {
                       <div className="space-y-1">
                         <label className="text-xs font-medium" style={{ color: "var(--color-text-muted)" }}>{t("launcher.password")}</label>
                         <input
-                          type="password"
-                          name="launcher_password"
+                          // Tipo texto con puntos: así Chrome no ofrece guardar la contraseña.
+                          type="text"
+                          name="launcher_pass"
                           value={userLogin.password}
                           onChange={(e) => setUserLogin((prev) => ({ ...prev, password: e.target.value }))}
                           placeholder="••••••••"
-                          autoComplete="new-password"
+                          autoComplete="off"
+                          data-lpignore="true"
+                          data-1p-ignore="true"
+                          data-form-type="other"
+                          spellCheck={false}
                           className="h-10 w-full rounded-xl px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 transition"
-                          style={{ background: "var(--input-bg)", border: "1px solid var(--input-border)", color: "var(--color-text-base)" }}
+                          style={{ background: "var(--input-bg)", border: "1px solid var(--input-border)", color: "var(--color-text-base)", WebkitTextSecurity: "disc" }}
                         />
                       </div>
                     </div>
@@ -470,9 +475,9 @@ export default function Launcher() {
             {/* ── GRID DE MÓDULOS ── */}
             <div className="flex flex-col overflow-y-auto launcher-scroll pb-6 pr-1">
               {!user ? (
-                <div className="flex flex-1 items-center justify-center min-h-[300px]">
+                <div className="flex flex-1 items-center justify-center px-2 py-8">
                   <div className="text-center">
-                    <div className="text-5xl font-bold mb-2" style={{ color: "var(--color-text-base)" }}>{t("Launcher.Welcome")}</div>
+                    <div className="text-3xl sm:text-4xl xl:text-5xl font-bold mb-2" style={{ color: "var(--color-text-base)" }}>{t("Launcher.Welcome")}</div>
                     <div className="text-sm" style={{ color: "var(--color-text-muted)" }}>{t("Launcher.subtitle")}</div>
                   </div>
                 </div>

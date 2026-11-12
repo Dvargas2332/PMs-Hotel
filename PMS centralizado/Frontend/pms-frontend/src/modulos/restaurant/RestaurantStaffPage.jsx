@@ -11,7 +11,9 @@ const ROLE_OPTIONS = [
 ];
 
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,32}$/;
-const MIN_PASSWORD = 6;
+// El personal del restaurante entra con un password numérico corto, tipo PIN.
+const MIN_PASSWORD = 4;
+const MAX_PASSWORD = 12;
 
 const emptyForm = {
   name: "",
@@ -127,8 +129,10 @@ export default function RestaurantStaffPage({ embedded = false }) {
       next.username = "3-32 caracteres: letras, números, punto, guion o guion bajo.";
     }
     if (!editingId && !password) next.password = "El password es requerido para crear.";
-    if (password && password.length < MIN_PASSWORD) {
-      next.password = `Mínimo ${MIN_PASSWORD} caracteres.`;
+    if (password && !/^\d+$/.test(password)) {
+      next.password = "Solo números.";
+    } else if (password && (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD)) {
+      next.password = `De ${MIN_PASSWORD} a ${MAX_PASSWORD} números.`;
     }
     if (password && password !== confirm) next.confirmPassword = "Los passwords no coinciden.";
     if (form.role !== "CASHIER" && form.role !== "WAITER") next.role = "Selecciona un rol válido.";
@@ -326,7 +330,10 @@ export default function RestaurantStaffPage({ embedded = false }) {
                       fieldErrors.password ? "border-red-300" : "border-lime-200"
                     }`}
                     type="password"
-                    placeholder={editingId ? "Opcional" : `Mín. ${MIN_PASSWORD}`}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={MAX_PASSWORD}
+                    placeholder={editingId ? "Opcional" : `${MIN_PASSWORD} a ${MAX_PASSWORD} números`}
                     autoComplete="new-password"
                     data-form-type="other"
                     data-lpignore="true"
@@ -347,6 +354,9 @@ export default function RestaurantStaffPage({ embedded = false }) {
                       fieldErrors.confirmPassword ? "border-red-300" : "border-lime-200"
                     }`}
                     type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={MAX_PASSWORD}
                     placeholder="Repetir"
                     autoComplete="new-password"
                     data-form-type="other"

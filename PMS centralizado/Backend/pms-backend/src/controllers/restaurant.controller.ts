@@ -4999,8 +4999,8 @@ export async function createRestaurantStaff(req: Request, res: Response) {
   if (!/^[a-z0-9._-]{3,32}$/.test(username)) {
     return res.status(400).json({ message: "El usuario debe tener 3-32 caracteres: letras, números, punto, guion o guion bajo." });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ message: "El password debe tener al menos 6 caracteres." });
+  if (!/^\d{4,12}$/.test(password)) {
+    return res.status(400).json({ message: "El password del personal debe ser numérico, de 4 a 12 dígitos." });
   }
   if (accessRoleId) {
     const accessRole = await prisma.appRole.findFirst({
@@ -5113,8 +5113,8 @@ export async function updateRestaurantStaff(req: Request, res: Response) {
   if (req.body?.active !== undefined) data.active = req.body.active !== false;
   if (req.body?.password) {
     const password = String(req.body.password).trim();
-    if (password.length < 6) {
-      return res.status(400).json({ message: "El password debe tener al menos 6 caracteres." });
+    if (!/^\d{4,12}$/.test(password)) {
+      return res.status(400).json({ message: "El password del personal debe ser numérico, de 4 a 12 dígitos." });
     }
     data.passwordHash = await bcrypt.hash(password, ROUNDS);
   }

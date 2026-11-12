@@ -15,6 +15,12 @@ export default function useNoAutocomplete() {
       scheduled = false;
       const fields = document.querySelectorAll("input, textarea");
       fields.forEach((field) => {
+        // Un input type=password hace que Chrome ofrezca "guardar la contraseña".
+        // Como texto con puntos deja de detectarlo y se sigue viendo oculto.
+        if (field.getAttribute("type") === "password") {
+          field.setAttribute("type", "text");
+          field.style.webkitTextSecurity = "disc";
+        }
         if (field.getAttribute("autocomplete") !== "off") field.setAttribute("autocomplete", "off");
         if (!field.hasAttribute("data-lpignore")) field.setAttribute("data-lpignore", "true");
         if (!field.hasAttribute("data-1p-ignore")) field.setAttribute("data-1p-ignore", "true");

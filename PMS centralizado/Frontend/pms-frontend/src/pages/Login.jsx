@@ -111,13 +111,20 @@ export default function Login({ onSuccess }) {
                 <label className="text-sm font-medium" style={{ color: "var(--color-text-base)" }}>{t("login.password")}</label>
                 <div className="relative">
                   <Input
-                    type={showPassword ? "text" : "password"}
-                    name="login_password"
+                    // Tipo texto con puntos: Chrome deja de ofrecer "guardar la
+                    // contraseña" cuando el campo no es type=password.
+                    type="text"
+                    name="login_pass"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t("login.passwordPlaceholder")}
                     required
-                    autoComplete="new-password"
+                    autoComplete="off"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    spellCheck={false}
+                    style={{ WebkitTextSecurity: showPassword ? "none" : "disc" }}
                     className="pr-11"
                   />
                   <button

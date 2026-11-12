@@ -1,7 +1,7 @@
 import React from "react";
 import { normalizeMoneyInput } from "../../lib/money";
 
-export function Input({ className = "", money = false, onBlur, onChange, type, inputMode, pattern, ...props }) {
+export function Input({ className = "", money = false, onBlur, onChange, type, inputMode, pattern, style, ...props }) {
   const handleBlur = (e) => {
     if (money) {
       const normalized = normalizeMoneyInput(e.target.value);
@@ -30,6 +30,7 @@ export function Input({ className = "", money = false, onBlur, onChange, type, i
         background: "var(--input-bg)",
         border: "1px solid var(--input-border)",
         color: "var(--color-text-base)",
+        ...(style || {}),
       }}
       {...props}
       type={nextType}
