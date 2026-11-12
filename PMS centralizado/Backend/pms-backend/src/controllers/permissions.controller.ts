@@ -44,6 +44,12 @@ export async function setRolePermissions(req: Request, res: Response) {
   if (!role) return res.status(404).json({ message: "Rol no encontrado" });
 
   const validSet = new Set(ALL_PERMISSIONS);
+  // Al guardar, el catálogo tiene que existir en la tabla: si se agregaron
+  // permisos nuevos, la clave foránea rechazaría la asignación.
+  await prisma.permission.createMany({
+    data: ALL_PERMISSIONS.map((p) => ({ id: p, description: p })),
+    skipDuplicates: true,
+  });
   const filtered =
     roleId === "ADMIN"
       ? ALL_PERMISSIONS.slice()

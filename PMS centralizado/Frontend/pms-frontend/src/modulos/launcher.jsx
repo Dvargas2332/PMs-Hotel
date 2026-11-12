@@ -255,6 +255,9 @@ export default function Launcher() {
   const allowedModules = useMemo(() =>
     filtered.filter((mod) => {
       if (!user) return false;
+      // El perfil ADMIN ve todos los módulos que contrata el hotel.
+      const role = String(user.role || user.roleId || "").toUpperCase();
+      if (role === "ADMIN") return true;
       const hasAllowedModules = Array.isArray(user.allowedModules) && user.allowedModules.length > 0;
       const allowedByList = hasAllowedModules ? user.allowedModules.includes(mod.code) : false;
       const allowedByPerms = Array.isArray(user.permissions)

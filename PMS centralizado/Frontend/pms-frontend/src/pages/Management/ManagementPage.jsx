@@ -269,10 +269,22 @@ export default function ManagementPage() {
     return new Set(list.map((m) => String(m).toLowerCase()));
   }, [hotel?.allowedModules]);
 
+  // Los módulos del perfil con el que se abrió el launcher también mandan acá:
+  // un perfil de restaurante no debe ver Contabilidad en el menú de Management.
+  // El perfil ADMIN ve todo lo que contrata el hotel.
+  const profileModules = useMemo(() => {
+    if (String(user?.role || user?.roleId || "").toUpperCase() === "ADMIN") return null;
+    const list = user?.allowedModules;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    return new Set(list.map((m) => String(m).toLowerCase()));
+  }, [user?.allowedModules, user?.role, user?.roleId]);
+
   const isModuleEnabled = (code) => {
     if (!code) return true;
-    if (!allowedModules) return true;
-    return allowedModules.has(String(code).toLowerCase());
+    const key = String(code).toLowerCase();
+    if (allowedModules && !allowedModules.has(key)) return false;
+    if (profileModules && !profileModules.has(key)) return false;
+    return true;
   };
   const menu = useMemo(
     () => [

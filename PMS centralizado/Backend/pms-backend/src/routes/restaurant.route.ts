@@ -102,16 +102,16 @@ router.use(auth);
 
 router.get("/config", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantConfig);
 router.put("/config", requirePermission("restaurant.config.write"), updateRestaurantConfig);
-router.get("/taxes", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantTaxes);
-router.put("/taxes", requirePermission("restaurant.config.write"), updateRestaurantTaxes);
-router.get("/payments", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantPayments);
-router.put("/payments", requirePermission("restaurant.config.write"), updateRestaurantPayments);
-router.post("/payments/bccr-sync", requirePermission("restaurant.config.write"), syncRestaurantBccrRate);
-router.get("/general", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantGeneral);
-router.put("/general", requirePermission("restaurant.config.write"), updateRestaurantGeneral);
-router.get("/billing", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), getRestaurantBilling);
-router.put("/billing", requirePermission("restaurant.config.write"), updateRestaurantBilling);
-router.get("/print-forms", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write"), listRestaurantPrintForms);
+router.get("/taxes", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write", "restaurant.config.taxes.write"), getRestaurantTaxes);
+router.put("/taxes", requirePermission("restaurant.config.write", "restaurant.config.taxes.write"), updateRestaurantTaxes);
+router.get("/payments", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write", "restaurant.config.payments.write"), getRestaurantPayments);
+router.put("/payments", requirePermission("restaurant.config.write", "restaurant.config.payments.write"), updateRestaurantPayments);
+router.post("/payments/bccr-sync", requirePermission("restaurant.config.write", "restaurant.config.payments.write"), syncRestaurantBccrRate);
+router.get("/general", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write", "restaurant.config.general.write"), getRestaurantGeneral);
+router.put("/general", requirePermission("restaurant.config.write", "restaurant.config.general.write"), updateRestaurantGeneral);
+router.get("/billing", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write", "restaurant.config.billing.write"), getRestaurantBilling);
+router.put("/billing", requirePermission("restaurant.config.write", "restaurant.config.billing.write"), updateRestaurantBilling);
+router.get("/print-forms", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.config.write", "restaurant.printing.write"), listRestaurantPrintForms);
 router.get("/shift", requirePermission("restaurant.access.pos", "restaurant.pos.open"), getRestaurantShift);
 router.get("/shift/invoices", requirePermission("restaurant.access.pos", "restaurant.pos.open"), listShiftInvoices);
 router.post("/shift/open", requirePermission("restaurant.access.pos", "restaurant.pos.open"), openRestaurantShift);
@@ -144,10 +144,10 @@ router.get("/sections", requirePermission("restaurant.access.pos", "restaurant.p
 router.post("/sections", requirePermission("restaurant.sections.write"), createSection);
 router.patch("/sections/:sectionId", requirePermission("restaurant.sections.write"), updateSection);
 router.delete("/sections/:sectionId", requirePermission("restaurant.sections.write"), deleteSection);
-router.post("/sections/:sectionId/tables", requirePermission("restaurant.sections.write"), addTableToSection);
-router.delete("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write"), deleteTableFromSection);
-router.patch("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write"), updateTableStyle);
-router.patch("/sections/:sectionId/tables/:tableId/position", requirePermission("restaurant.sections.write"), updateTablePosition);
+router.post("/sections/:sectionId/tables", requirePermission("restaurant.sections.write", "restaurant.tables.write"), addTableToSection);
+router.delete("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write", "restaurant.tables.write"), deleteTableFromSection);
+router.patch("/sections/:sectionId/tables/:tableId", requirePermission("restaurant.sections.write", "restaurant.tables.write"), updateTableStyle);
+router.patch("/sections/:sectionId/tables/:tableId/position", requirePermission("restaurant.sections.write", "restaurant.tables.write"), updateTablePosition);
 router.put("/sections/:sectionId/layout", requirePermission("restaurant.sections.write"), saveSectionLayout);
 router.get(
   "/sections/:sectionId/layout",
@@ -159,24 +159,24 @@ router.post("/sections/:sectionId/objects", requirePermission("restaurant.sectio
 router.patch("/sections/:sectionId/objects/:objectId", requirePermission("restaurant.sections.write"), updateSectionObject);
 router.delete("/sections/:sectionId/objects/:objectId", requirePermission("restaurant.sections.write"), deleteSectionObject);
 router.get("/menu", requirePermission("restaurant.access.pos", "restaurant.pos.open", "restaurant.menu.write"), listMenu);
-router.post("/menu/:sectionId", requirePermission("restaurant.menu.write"), addMenuItem);
-router.delete("/menu/:sectionId/:itemId", requirePermission("restaurant.menu.write"), deleteMenuItem);
+router.post("/menu/:sectionId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), addMenuItem);
+router.delete("/menu/:sectionId/:itemId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), deleteMenuItem);
 
 // Nuevo: Menús con horarios por sección
-router.get("/menus", requirePermission("restaurant.menu.write"), listMenus);
-router.post("/menus", requirePermission("restaurant.menu.write"), createMenu);
-router.patch("/menus/:menuId", requirePermission("restaurant.menu.write"), updateMenu);
-router.delete("/menus/:menuId", requirePermission("restaurant.menu.write"), deleteMenu);
-router.get("/menus/:menuId/items", requirePermission("restaurant.menu.write"), listMenuItems);
-router.post("/menus/:menuId/items", requirePermission("restaurant.menu.write"), addMenuItemToMenu);
-router.delete("/menus/:menuId/items/:itemId", requirePermission("restaurant.menu.write"), deleteMenuItemFromMenu);
-router.get("/menus/:menuId/entries", requirePermission("restaurant.menu.write"), listMenuEntries);
-router.post("/menus/:menuId/entries", requirePermission("restaurant.menu.write"), addMenuEntries);
-router.delete("/menus/:menuId/entries/:entryId", requirePermission("restaurant.menu.write"), deleteMenuEntry);
-router.get("/sections/:sectionId/menus", requirePermission("restaurant.menu.write"), listSectionMenuAssignments);
-router.post("/sections/:sectionId/menus", requirePermission("restaurant.menu.write"), createSectionMenuAssignment);
-router.patch("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write"), updateSectionMenuAssignment);
-router.delete("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write"), deleteSectionMenuAssignment);
+router.get("/menus", requirePermission("restaurant.menu.write", "restaurant.menus.write"), listMenus);
+router.post("/menus", requirePermission("restaurant.menu.write", "restaurant.menus.write"), createMenu);
+router.patch("/menus/:menuId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), updateMenu);
+router.delete("/menus/:menuId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), deleteMenu);
+router.get("/menus/:menuId/items", requirePermission("restaurant.menu.write", "restaurant.menus.write"), listMenuItems);
+router.post("/menus/:menuId/items", requirePermission("restaurant.menu.write", "restaurant.menus.write"), addMenuItemToMenu);
+router.delete("/menus/:menuId/items/:itemId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), deleteMenuItemFromMenu);
+router.get("/menus/:menuId/entries", requirePermission("restaurant.menu.write", "restaurant.menus.write"), listMenuEntries);
+router.post("/menus/:menuId/entries", requirePermission("restaurant.menu.write", "restaurant.menus.write"), addMenuEntries);
+router.delete("/menus/:menuId/entries/:entryId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), deleteMenuEntry);
+router.get("/sections/:sectionId/menus", requirePermission("restaurant.menu.write", "restaurant.menus.write"), listSectionMenuAssignments);
+router.post("/sections/:sectionId/menus", requirePermission("restaurant.menu.write", "restaurant.menus.write"), createSectionMenuAssignment);
+router.patch("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), updateSectionMenuAssignment);
+router.delete("/sections/:sectionId/menus/:assignmentId", requirePermission("restaurant.menu.write", "restaurant.menus.write"), deleteSectionMenuAssignment);
 
 router.get("/families", listFamilies);
 router.post("/families", requirePermission("restaurant.families.write"), createFamily);

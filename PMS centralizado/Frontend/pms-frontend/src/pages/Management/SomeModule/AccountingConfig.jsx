@@ -66,9 +66,12 @@ export default function AccountingConfig() {
   const [methods, setMethods] = React.useState([]);
   const [methodsSaving, setMethodsSaving] = React.useState(false);
   const [methodsMsg, setMethodsMsg] = React.useState("");
+  const [settingsError, setSettingsError] = React.useState("");
 
   const hasAccounting = React.useMemo(() => {
     if (!user) return false;
+    // El perfil ADMIN siempre entra al módulo.
+    if (String(user.role || user.roleId || "").toUpperCase() === "ADMIN") return true;
     const allowedByList = Array.isArray(user.allowedModules) && user.allowedModules.includes("accounting");
     const allowedByPerms =
       Array.isArray(user.permissions) &&
@@ -84,7 +87,16 @@ export default function AccountingConfig() {
         setSettings(data);
         setAccountMap(data?.accountMap && typeof data.accountMap === "object" ? data.accountMap : {});
       })
-      .catch(() => {})
+      .catch((e) => {
+        // Se muestra el estado HTTP y el motivo: sin eso el fallo parecía del módulo.
+        const status = e?.response?.status;
+        const serverMsg = e?.response?.data?.message;
+        setSettingsError(
+          `${status ? `HTTP ${status}` : "Sin respuesta del servidor"}${serverMsg ? ` · ${serverMsg}` : ""}`
+        );
+        // Aunque falle la lectura, la pantalla sigue usable con los valores por defecto.
+        setSettings((prev) => prev ?? { country: "CR", autoPost: false, fiscalPeriods: false, integrations: {} });
+      })
       .finally(() => setLoading(false));
     api.get("/accounting/accounts?active=true")
       .then(({ data }) => setAccounts(Array.isArray(data) ? data : []))
@@ -205,10 +217,30 @@ export default function AccountingConfig() {
 
   if (loading) return <div className="text-slate-500 text-sm py-4">Cargando...</div>;
 
-  if (!settings) return <div className="text-slate-500 text-sm py-4">No se pudo cargar la configuración contable.</div>;
+  if (!settings) {
+    return (
+      <div className="space-y-2 py-4">
+        <div className="text-sm text-red-400">
+          {settingsError || "No se pudo cargar la configuración contable."}
+        </div>
+        <p className="text-xs text-slate-500">
+          Si el mensaje dice «Permiso insuficiente», tu perfil no tiene el módulo Contabilidad: entrá con un perfil
+          que sí lo tenga (por ejemplo el perfil admin).
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
+      {settingsError && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          {settingsError}
+          <span className="block text-xs text-red-300/70 mt-0.5">
+            Se muestran los valores por defecto; al guardar se reintenta contra el servidor.
+          </span>
+        </div>
+      )}
       <section className="space-y-3">
         <h4 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Registro de asientos</h4>
         <ToggleRow
