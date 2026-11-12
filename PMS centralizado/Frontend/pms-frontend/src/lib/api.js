@@ -1,6 +1,7 @@
 // src/lib/api.js
 import axios from "axios";
 import { mockApi } from "./mock";
+import { shouldUseBackend } from "./backendPrefixes";
 
 // ===== Entorno (.env) =====
 const USE_MOCK = ["1", "true", "yes"].includes(
@@ -21,33 +22,6 @@ const DEFAULT_BASE =
     : "http://localhost:4000/api";
 
 const BASE = String(import.meta.env.VITE_API_URL || DEFAULT_BASE).replace(/\/+$/, "");
-
-// Prefijos que existen en el backend real
-const BACKEND_PREFIXES = [
-  "/auth",
-  "/launcher",
-  "/gestor",
-  "/settings",
-  "/reservations",
-  "/rooms",
-  "/roomTypes",
-  "/ratePlans",
-  "/mealPlans",
-  "/contracts",
-  "/guests",
-  "/hotel",
-  "/health",
-  "/version",
-  "/roles",
-  "/permissions",
-  "/audit",
-  "/taxes",
-  "/restaurant",
-  "/invoices",
-  "/einvoicing",
-  "/geo",
-  "/cash-audits",
-];
 
 // ===== httpOnly cookie auth helpers =====
 // Con cookies httpOnly, ya no almacenamos el token en localStorage.
@@ -161,8 +135,6 @@ const normalizePath = (url = "") => {
   if (!clean.startsWith("/")) clean = `/${clean}`;
   return clean;
 };
-
-const shouldUseBackend = (path) => BACKEND_PREFIXES.some((p) => path.startsWith(p));
 
 const get = async (url, config) => {
   const path = normalizePath(url);
