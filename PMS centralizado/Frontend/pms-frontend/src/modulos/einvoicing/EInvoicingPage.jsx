@@ -12,7 +12,6 @@ import { sanitizeImageUrl } from "../../lib/security";
 export default function EInvoicingPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const cabysCacheRef = React.useRef(new Map());
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [loadError, setLoadError] = React.useState("");
@@ -81,7 +80,7 @@ export default function EInvoicingPage() {
   const [cabysQuery, setCabysQuery] = React.useState("");
   const [cabysLoading, setCabysLoading] = React.useState(false);
   const [cabysRows, setCabysRows] = React.useState([]);
-  const [cabysSelected, setCabysSelected] = React.useState({});
+  const [cabysError, setCabysError] = React.useState("");
   const [cabysImportText, setCabysImportText] = React.useState("");
 
   const [catalogName, setCatalogName] = React.useState("paymentMethods");
@@ -94,7 +93,8 @@ export default function EInvoicingPage() {
   const [catalogImportItems, setCatalogImportItems] = React.useState([]);
   const [cabysSyncLoading, setCabysSyncLoading] = React.useState(false);
   const [cabysSyncQuery, setCabysSyncQuery] = React.useState("");
-  const [cabysSavedCount, setCabysSavedCount] = React.useState(null);
+  // Resultado real de la sincronización: lo que Hacienda devolvió y lo que quedó nuevo.
+  const [cabysSyncResult, setCabysSyncResult] = React.useState(null);
   const [cabysHaciendaRows, setCabysHaciendaRows] = React.useState([]);
   const [cabysHaciendaLoading, setCabysHaciendaLoading] = React.useState(false);
   const [cabysHaciendaQuery, setCabysHaciendaQuery] = React.useState("");
@@ -263,53 +263,23 @@ export default function EInvoicingPage() {
     [parseCsv, parseXlsx, rowsToItems, t]
   );
 
-  // La búsqueda CABYS va por el API del PMS: la API pública de Hacienda responde
-  // { total, cantidad, cabys } y el navegador no puede leerla por CORS, así que
-  // llamándola directo la lista siempre salía vacía.
-  const fetchCabysRemote = React.useCallback(async (query) => {
-    const q = String(query || "").trim();
-    const isCode = /^\d{13}$/.test(q);
-    if (!q || (!isCode && q.length < 3)) return [];
-    const cacheKey = isCode ? `code:${q}` : `q:${q.toLowerCase()}`;
-    const now = Date.now();
-    const cached = cabysCacheRef.current.get(cacheKey);
-    if (cached && cached.expiresAt > now) return cached.items;
-    const params = new URLSearchParams();
-    params.set("q", q);
-    params.set("top", "80");
-    const { data } = await api.get(`/einvoicing/cabys/hacienda?${params.toString()}`);
-    const items = (Array.isArray(data) ? data : []).map((r) => ({
-      id: String(r.id || ""),
-      description: String(r.description || ""),
-      taxRate: typeof r.taxRate === "number" ? r.taxRate : 13,
-    }));
-    if (items.length) {
-      cabysCacheRef.current.set(cacheKey, { items, expiresAt: now + 1000 * 60 * 30 });
-    }
-    return items;
-  }, []);
-
-  const loadCabys = async (opts = {}) => {
+  // La búsqueda en Hacienda va por el API del PMS: la API pública responde
+  // { total, cantidad, cabys } y el navegador no puede leerla por CORS.
+  /** Catálogo guardado del hotel. No consulta Hacienda: eso es la búsqueda en tiempo real. */
+  const loadCabys = async () => {
     setCabysLoading(true);
+    setCabysError("");
     try {
-      const preferRemote = Boolean(opts.remote ?? true);
-      if (preferRemote) {
-        try {
-          const remoteRows = await fetchCabysRemote(cabysQuery);
-          if (remoteRows.length) {
-            setCabysRows(remoteRows);
-            return;
-          }
-        } catch {
-          // fallback to backend
-        }
-      }
       const qs = new URLSearchParams();
-      if (cabysQuery) qs.set("q", cabysQuery);
-      qs.set("take", "80");
+      const q = String(cabysQuery || "").trim();
+      if (q) qs.set("q", q);
+      qs.set("take", "200");
       const { data } = await api.get(`/einvoicing/cabys?${qs.toString()}`);
       setCabysRows(Array.isArray(data) ? data : []);
-    } catch {
+    } catch (e) {
+      const status = e?.response?.status;
+      const serverMsg = e?.response?.data?.message;
+      setCabysError(`${status ? `HTTP ${status}` : "Sin respuesta del servidor"}${serverMsg ? ` · ${serverMsg}` : ""}`);
       setCabysRows([]);
     } finally {
       setCabysLoading(false);
@@ -366,46 +336,6 @@ export default function EInvoicingPage() {
     window.dispatchEvent(new CustomEvent("pms:push-alert", { detail: { title: "CABYS", desc: t("einv.alert.imported") } }));
   };
 
-  const importCabysResults = async () => {
-    if (!cabysRows.length) return;
-    if (!window.confirm(t("einv.catalogs.importConfirm"))) return;
-    const items = cabysRows
-      .map((r) => ({
-        code: String(r.id || r.code || "").trim(),
-        label: String(r.description || r.label || "").trim(),
-      }))
-      .filter((r) => r.code && r.label);
-    if (!items.length) return;
-    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
-    await loadCabys();
-    window.dispatchEvent(
-      new CustomEvent("pms:push-alert", {
-        detail: { title: "CABYS", desc: t("einv.catalogs.importedCount", { count: items.length }) },
-      })
-    );
-  };
-
-  const importCabysSelected = async () => {
-    const selectedIds = Object.keys(cabysSelected).filter((k) => cabysSelected[k]);
-    if (!selectedIds.length) return;
-    if (!window.confirm(t("einv.catalogs.importConfirmSelected"))) return;
-    const items = cabysRows
-      .filter((r) => selectedIds.includes(String(r.id || r.code || "")))
-      .map((r) => ({
-        code: String(r.id || r.code || "").trim(),
-        label: String(r.description || r.label || "").trim(),
-      }))
-      .filter((r) => r.code && r.label);
-    if (!items.length) return;
-    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
-    await loadCabys();
-    setCabysSelected({});
-    window.dispatchEvent(
-      new CustomEvent("pms:push-alert", {
-        detail: { title: "CABYS", desc: t("einv.catalogs.importedCount", { count: items.length }) },
-      })
-    );
-  };
   const searchCabysHacienda = async () => {
     const q = cabysHaciendaQuery.trim();
     if (q.length < 3) return;
@@ -428,21 +358,21 @@ export default function EInvoicingPage() {
     const items = cabysHaciendaRows
       .filter((r) => selectedIds.includes(String(r.id)))
       .map((r) => ({ code: String(r.id), label: String(r.description) }));
-    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
+    const { data } = await api.post("/einvoicing/cabys/import", { mode: "merge", items });
     setCabysHaciendaSelected({});
     await loadCabys();
     window.dispatchEvent(new CustomEvent("pms:push-alert", {
-      detail: { title: "CABYS", desc: `${items.length} código(s) guardados en catálogo del hotel` },
+      detail: { title: "CABYS", desc: `${data?.created ?? 0} nuevo(s) de ${items.length} guardados en el catálogo` },
     }));
   };
 
   const importAllFromHacienda = async () => {
     if (!cabysHaciendaRows.length) return;
     const items = cabysHaciendaRows.map((r) => ({ code: String(r.id), label: String(r.description) }));
-    await api.post("/einvoicing/cabys/import", { mode: "merge", items });
+    const { data } = await api.post("/einvoicing/cabys/import", { mode: "merge", items });
     await loadCabys();
     window.dispatchEvent(new CustomEvent("pms:push-alert", {
-      detail: { title: "CABYS", desc: `${items.length} código(s) guardados en catálogo del hotel` },
+      detail: { title: "CABYS", desc: `${data?.created ?? 0} nuevo(s) de ${items.length} guardados en el catálogo` },
     }));
   };
 
@@ -450,13 +380,15 @@ export default function EInvoicingPage() {
     const q = cabysSyncQuery.trim();
     if (!q) return;
     setCabysSyncLoading(true);
-    setCabysSavedCount(null);
+    setCabysSyncResult(null);
     try {
       const { data } = await api.post("/einvoicing/cabys/sync", { q, top: 200, mode: "merge" });
-      setCabysSavedCount(data?.synced ?? 0);
+      const found = Number(data?.found ?? data?.synced ?? 0);
+      const created = Number(data?.created ?? 0);
+      setCabysSyncResult({ found, created });
       await loadCabys();
       window.dispatchEvent(new CustomEvent("pms:push-alert", {
-        detail: { title: "CABYS Sync", desc: `${data?.synced ?? 0} código(s) sincronizados desde Hacienda` },
+        detail: { title: "CABYS Sync", desc: `${created} nuevo(s) de ${found} encontrados` },
       }));
     } catch (err) {
       window.dispatchEvent(new CustomEvent("pms:push-alert", {
@@ -738,19 +670,16 @@ export default function EInvoicingPage() {
     [cfg, ensureSettings]
   );
 
+  // El catálogo guardado se carga al abrir la pestaña y se filtra al escribir en su buscador.
+  // Antes este efecto vaciaba la lista con el buscador vacío, así que parecía que no había nada.
   React.useEffect(() => {
     if (panel !== "catalogs" || catalogTab !== "cabys") return;
-    const q = String(cabysQuery || "").trim();
-    const isCode = /^\d{13}$/.test(q);
-    if (!q || (!isCode && q.length < 3)) {
-      setCabysRows([]);
-      return;
-    }
     const handle = setTimeout(() => {
-      loadCabys({ remote: true });
-    }, 500);
+      loadCabys();
+    }, 300);
     return () => clearTimeout(handle);
-  }, [panel, catalogTab, cabysQuery, loadCabys]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panel, catalogTab, cabysQuery]);
 
   const reload = async () => {
     await loadConfig();
@@ -2201,7 +2130,7 @@ export default function EInvoicingPage() {
                               className="h-10 w-full rounded-lg border border-white/20 bg-white/5 text-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
                               placeholder="Ej: hotel, restaurante, alojamiento..."
                               value={cabysSyncQuery}
-                              onChange={(e) => { setCabysSyncQuery(e.target.value); setCabysSavedCount(null); }}
+                              onChange={(e) => { setCabysSyncQuery(e.target.value); setCabysSyncResult(null); }}
                               onKeyDown={(e) => e.key === "Enter" && syncCabysFromHacienda()}
                             />
                           </div>
@@ -2220,10 +2149,14 @@ export default function EInvoicingPage() {
                             </button>
                           </div>
                         </div>
-                        {cabysSavedCount !== null && (
-                          <div className="flex items-center gap-2 text-sm text-emerald-400 bg-emerald-900/30 border border-emerald-500/30 rounded-lg px-3 py-2">
-                            <CheckCircle2 className="w-4 h-4" />
-                            {cabysSavedCount} código(s) sincronizados y guardados en el catálogo del hotel.
+                        {cabysSyncResult && (
+                          <div className="flex items-start gap-2 text-sm text-emerald-400 bg-emerald-900/30 border border-emerald-500/30 rounded-lg px-3 py-2">
+                            <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                            <span>
+                              {cabysSyncResult.found} código(s) encontrados en Hacienda ·{" "}
+                              <strong>{cabysSyncResult.created} nuevos</strong> en el catálogo.
+                              {cabysSyncResult.created === 0 && " Ya estaban todos guardados."}
+                            </span>
                           </div>
                         )}
                         <div className="mt-3 p-3 bg-blue-900/30 rounded-lg text-xs text-blue-300 space-y-1">
@@ -2232,7 +2165,7 @@ export default function EInvoicingPage() {
                             {["alojamiento", "restaurante", "bebidas", "lavandería", "estacionamiento", "spa", "tours"].map((s) => (
                               <button
                                 key={s}
-                                onClick={() => { setCabysSyncQuery(s); setCabysSavedCount(null); }}
+                                onClick={() => { setCabysSyncQuery(s); setCabysSyncResult(null); }}
                                 className="px-2 py-1 bg-white/5 border border-white/10 rounded-md hover:bg-white/10 text-slate-300 capitalize transition-colors"
                               >
                                 {s}
@@ -2249,9 +2182,12 @@ export default function EInvoicingPage() {
                             <div className="flex items-center gap-2 mb-1">
                               <BookOpen className="w-4 h-4 text-slate-400" />
                               <span className="text-sm font-bold text-white">Catálogo CABYS del hotel</span>
+                              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
+                                {cabysLoading ? "…" : cabysRows.length}
+                              </span>
                             </div>
                             <p className="text-xs text-slate-500">
-                              Códigos guardados localmente. Estos aparecen en el autocompletar al crear facturas.
+                              Códigos guardados en este hotel. Son los que aparecen en el autocompletar al crear facturas.
                             </p>
                           </div>
                           <div className="flex items-center gap-2">
@@ -2272,11 +2208,26 @@ export default function EInvoicingPage() {
                           </div>
                         </div>
 
+                        {cabysError && (
+                          <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+                            {cabysError}
+                          </div>
+                        )}
+
                         {cabysRows.length === 0 ? (
                           <div className="text-center py-10 text-slate-400">
                             <Tag className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                            <p className="text-sm">No hay códigos CABYS en el catálogo del hotel.</p>
-                            <p className="text-xs mt-1">Use la búsqueda o sincronización arriba para agregar códigos.</p>
+                            {String(cabysQuery || "").trim() ? (
+                              <>
+                                <p className="text-sm">Ningún código guardado coincide con «{String(cabysQuery).trim()}».</p>
+                                <p className="text-xs mt-1">Borrá el buscador para ver el catálogo completo.</p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-sm">Todavía no hay códigos guardados en este hotel.</p>
+                                <p className="text-xs mt-1">Buscá arriba en Hacienda y guardá los que uses, o sincronizá por actividad.</p>
+                              </>
+                            )}
                           </div>
                         ) : (
                           <div className="rounded-lg border bg-white/5 max-h-72 overflow-y-auto">

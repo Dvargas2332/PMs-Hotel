@@ -190,7 +190,7 @@ export async function syncCabysFromHacienda(req: Request, res: Response) {
       created += r.count || 0;
     }
 
-    return res.json({ ok: true, synced: items.length, created, query: q });
+    return res.json({ ok: true, found: items.length, synced: items.length, created, query: q });
   } catch (err: any) {
     return res.status(502).json({
       message: "Error al sincronizar CABYS desde Hacienda",
