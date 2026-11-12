@@ -5199,8 +5199,6 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
                         onChange={(e) => setEditingSection((f) => ({ ...f, name: e.target.value }))}
-                        disabled={Boolean(s.used)}
-                        title={s.used ? "Ya tiene ventas: el nombre no se puede cambiar, la imagen sí" : undefined}
 
 
 
@@ -5297,7 +5295,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
                     {s.used && (
-                      <span className="text-[11px] text-slate-500" title="Ya tiene ventas registradas: el nombre queda fijo para no alterar reportes ni contabilidad. La imagen sí se puede cambiar.">En uso · nombre fijo</span>
+                      <span className="text-[11px] text-slate-500" title="Tiene ventas registradas: se puede seguir editando el nombre y la imagen.">En uso</span>
                     )}
                       <button
                         type="button"
@@ -5404,11 +5402,11 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-        <Card className="p-4 space-y-3">
+        <Card className="p-4 space-y-3 mx-auto w-full max-w-5xl">
 
 
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3">
 
 
 
@@ -5432,7 +5430,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
 
 
 
@@ -5837,7 +5835,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
       {showMenus && (
-      <div className="space-y-4">
+      <div className="space-y-4 mx-auto w-full max-w-5xl">
 
         {/* ── Header ── */}
         <div>
@@ -9523,7 +9521,7 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
 
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
+      <div className="mx-auto w-full max-w-5xl flex gap-1 p-1 rounded-xl" style={{ background: "var(--card-bg)", border: "1px solid var(--card-border)" }}>
           {topTabs.map((tab) => (
             <button
               key={tab.id}

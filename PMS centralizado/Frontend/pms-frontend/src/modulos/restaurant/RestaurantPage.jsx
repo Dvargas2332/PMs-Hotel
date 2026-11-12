@@ -320,6 +320,10 @@ export default function RestaurantPage() {
   const lastOrderActivityRef = useRef(0);
   const pendingOrderSaveRef = useRef(null);
   const creatingOrderRef = useRef({});
+  // Cada guardado lleva un número por mesa: si la respuesta de un guardado viejo
+  // llega después de uno nuevo, se descarta y no revive el artículo que se quitó.
+  const orderSaveSeqRef = useRef({});
+  const orderAppliedSeqRef = useRef({});
   const pendingCreateUpdateRef = useRef({});
   const addItemRef = useRef(null);
 
@@ -690,6 +694,8 @@ const [subCategory, setSubCategory] = useState("");
   const persistOrderNow = useCallback(async (payload) => {
     if (!payload?.tableId) return;
     lastOrderActivityRef.current = Date.now();
+    const seq = (orderSaveSeqRef.current[payload.tableId] || 0) + 1;
+    orderSaveSeqRef.current[payload.tableId] = seq;
     const localKey = payload?.localId ? String(payload.localId) : "";
     if (payload?.createNew && localKey) {
       if (creatingOrderRef.current[localKey]) {
@@ -716,7 +722,12 @@ const [subCategory, setSubCategory] = useState("");
 
     if (data && typeof data === "object") {
       const pendingCreateSnapshot = payload?.createNew && localKey ? pendingCreateUpdateRef.current[localKey] : null;
-      setOrdersByTable((prev) => {
+      // Una respuesta vieja no puede pisar un cambio más nuevo: al quitar un
+      // artículo y guardar, la respuesta del guardado anterior lo revivía y la
+      // pantalla lo mostraba otra vez hasta que llegaba la buena.
+      const staleResponse = (orderAppliedSeqRef.current[payload.tableId] || 0) > seq;
+      if (!staleResponse) orderAppliedSeqRef.current[payload.tableId] = seq;
+      if (!staleResponse) setOrdersByTable((prev) => {
         const list = normalizeOrderList(prev[payload.tableId]);
         const incoming = {
           ...data,
@@ -5755,12 +5766,15 @@ const [subCategory, setSubCategory] = useState("");
             >
               Anular factura
             </button>
-            <button
-              className="h-12 px-6 rounded-2xl bg-emerald-500 text-white text-lg font-semibold transition-colors hover:bg-emerald-600 active:bg-emerald-700"
-              onClick={resetToLobby}
-            >
-              Back
-            </button>
+            {/* En el listado de secciones no hay a dónde volver: Back sobra. */}
+            {!sectionLauncher && (
+              <button
+                className="h-12 px-6 rounded-2xl bg-emerald-500 text-white text-lg font-semibold transition-colors hover:bg-emerald-600 active:bg-emerald-700"
+                onClick={resetToLobby}
+              >
+                Back
+              </button>
+            )}
           </div>
         </div>
       )}

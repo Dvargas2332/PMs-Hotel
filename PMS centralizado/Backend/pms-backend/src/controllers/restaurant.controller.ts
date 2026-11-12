@@ -897,23 +897,9 @@ export async function updateSection(req: Request, res: Response) {
 
   const { name, imageUrl, quickCashEnabled } = req.body || {};
 
-  // El nombre sólo se puede cambiar mientras la sección no tenga ventas: los
-  // reportes y la contabilidad ya la referencian con ese nombre. La imagen y
-  // quickCashEnabled no aparecen en reportes, así que nunca se bloquean.
-  const wantsRename = typeof name === "string" && name.trim() && name.trim() !== existing.name;
-  if (wantsRename) {
-    const orders = await prisma.restaurantOrder.count({
-      where: { hotelId, sectionId: existing.id },
-    });
-    if (orders > 0) {
-      return res.status(409).json({
-        code: "SECTION_IN_USE",
-        message:
-          "Esta sección ya tiene ventas registradas y no se puede renombrar, para no alterar reportes ni contabilidad. La imagen sí se puede cambiar.",
-      });
-    }
-  }
-
+  // Nombre e imagen se pueden cambiar siempre: las ventas, los reportes y la
+  // contabilidad apuntan al id de la sección, no a su nombre. Antes se bloqueaba
+  // el renombrado en cuanto la sección tenía ventas y la pantalla quedaba muerta.
   const data: any = {};
   if (typeof name === "string") data.name = name.trim();
   if ("imageUrl" in (req.body || {})) data.imageUrl = imageUrl ? String(imageUrl) : null;
