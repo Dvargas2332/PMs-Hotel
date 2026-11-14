@@ -20,6 +20,7 @@ import { calculateOrderTotals } from "../lib/restaurantTaxes.js";
 import { isPriceAllowed, resolveAllowedUnitPrices } from "../lib/restaurantPricing.js";
 import { isCashPaymentMethod, resolveHaciendaPaymentCode } from "../lib/restaurantPaymentCodes.js";
 import { issueRestaurantDoc } from "../services/restaurant.einvoice.js";
+import { resolveIssuerIdNumber } from "../services/einvoice.issuer.js";
 import { authorizeStaffAction, issueStaffToken, readStaffSession } from "../lib/restaurantStaffSession.js";
 import { DEFAULT_PRINT_FORMS } from "../lib/printForms.js";
 import { asNumber as asNumberShared } from "../lib/num.js";
@@ -6277,7 +6278,7 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   const paymentCurrencies = [storedPayments.monedaBase || "CRC", storedPayments.monedaSec || "USD"]
     .map((c: any) => String(c).trim())
     .filter(Boolean);
-  const hotelRow = await prisma.hotel.findFirst({ where: { id: hotelId }, select: { name: true, currency: true } });
+  const hotelRow = await prisma.hotel.findFirst({ where: { id: hotelId }, select: { name: true, currency: true, companyId: true } });
   const hotelCurrency = String(hotelRow?.currency || paymentCurrencies[0] || "CRC");
 
   const shiftWhere: Prisma.CashAuditWhereInput = {
@@ -6366,10 +6367,12 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
         select: { enabled: true, settings: true },
       });
       const feSettings = (feCfg?.settings || {}) as any;
-      const sinEmisor = !String(feSettings?.issuer?.idNumber || "").trim();
+      // La cédula del emisor puede venir de Facturación Electrónica o de la
+      // identificación de la empresa del hotel; los ceros no cuentan.
+      const sinEmisor = !resolveIssuerIdNumber(feSettings?.issuer?.idNumber, hotelRow?.companyId);
       missing.push(
         sinEmisor
-          ? `Hay ${ventasSinComprobante} venta(s) cobrada(s) sin comprobante: falta la cédula del emisor en Facturación Electrónica.`
+          ? `Hay ${ventasSinComprobante} venta(s) cobrada(s) sin comprobante: falta la cédula del hotel (emisor) en Facturación Electrónica.`
           : `Hay ${ventasSinComprobante} venta(s) cobrada(s) sin comprobante electrónico emitido.`
       );
     }

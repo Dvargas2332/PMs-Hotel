@@ -18,6 +18,7 @@ import { Prisma } from "@prisma/client";
 import { calculateOrderTotals, type TaxInput } from "../lib/restaurantTaxes.js";
 import { asNumber as asNumberShared } from "../lib/num.js";
 import { resolveHaciendaPaymentCode } from "../lib/restaurantPaymentCodes.js";
+import { resolveIssuerIdNumber } from "./einvoice.issuer.js";
 import {
   buildCrXml,
   buildSummaryFromLines,
@@ -227,12 +228,20 @@ export async function issueRestaurantDoc(opts: IssueOptions): Promise<IssueResul
   const issuer = (settings.issuer || {}) as any;
   const rs = (settings.restaurant || {}) as any;
 
-  const issuerIdNumber = String(issuer.idNumber || "").trim();
+  // "000000000" y parecidos son marcadores de posición, no cédulas.
+  const hotelRow = await prisma.hotel.findFirst({
+    where: { id: hotelId },
+    select: { name: true, companyId: true },
+  });
+  const issuerIdNumber = resolveIssuerIdNumber(issuer.idNumber, hotelRow?.companyId);
+  const issuerName = String(issuer.name || issuer.legalName || hotelRow?.name || "").trim();
+
   const feReady = Boolean(cfg?.enabled) && connections.restaurant !== false;
   if (!feReady) return { doc: null, created: false, skipped: "FE_DISABLED" };
   if (!issuerIdNumber) return { doc: null, created: false, skipped: "NO_ISSUER" };
 
   // Receptor: el que venga explícito (reemisión manual) o el cliente de la mesa.
+  // Sin datos del cliente el comprobante es tiquete electrónico (TE), que no los pide.
   let guestReceiver: Record<string, any> | undefined;
   if (order.guestId && !opts.receiver) {
     const guest = await prisma.guest.findFirst({
@@ -365,7 +374,7 @@ export async function issueRestaurantDoc(opts: IssueOptions): Promise<IssueResul
   });
 
   const crIssuer: CrIssuer = {
-    name: String(issuer.name || issuer.legalName || ""),
+    name: issuerName,
     idType: String(issuer.idType || issuer.idTypeCode || "02"),
     idNumber: issuerIdNumber,
     commercialName: issuer.commercialName || undefined,
