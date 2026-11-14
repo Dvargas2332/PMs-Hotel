@@ -6217,10 +6217,27 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   const useFechaCierre = String((req.query as any)?.useFechaCierre || "").toLowerCase() === "true";
   const dateFromRaw = String((req.query as any)?.dateFrom || "").trim();
   const dateToRaw = String((req.query as any)?.dateTo || "").trim();
-  const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
-  const dateTo = dateToRaw ? new Date(dateToRaw) : null;
-  if (dateTo) dateTo.setHours(23, 59, 59, 999);
+  // El día se arma en hora local: "2026-11-12" como Date es medianoche UTC y el
+  // cierre del rango se corría seis horas hacia el día siguiente.
+  const parseDay = (raw: string, endOfDay: boolean) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) return raw ? new Date(raw) : null;
+    return new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+  };
+  const dateFrom = parseDay(dateFromRaw, false);
+  const dateTo = parseDay(dateToRaw, true);
   if (useFechaCierre && !dateFrom && !dateTo) missing.push("Filtro Fecha de cierre requiere rango.");
+
+  // Las notas de crédito o débito se muestran sólo si se piden juntas.
+  const includeNotes = String((req.query as any)?.includeNotes || "").toLowerCase() === "true";
 
   const limitRaw = Number((req.query as any)?.limit);
   const offsetRaw = Number((req.query as any)?.offset);
@@ -6241,9 +6258,6 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   const useMotivo = String((req.query as any)?.useMotivo || "").toLowerCase() === "true";
   const motivo = String((req.query as any)?.motivo || "").trim();
   if (useMotivo && !motivo) missing.push("Filtro Motivo Anulaci?n requiere selecci?n.");
-  const usePerfil = String((req.query as any)?.usePerfil || "").toLowerCase() === "true";
-  const perfilId = String((req.query as any)?.perfilId || "").trim();
-  if (usePerfil && !perfilId) missing.push("Filtro Perfil Empresa requiere selecci?n.");
 
   const invoiceNumberFrom = String((req.query as any)?.invoiceNumberFrom || "").trim();
   const invoiceNumberTo = String((req.query as any)?.invoiceNumberTo || "").trim();
@@ -6294,7 +6308,7 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   } else if (!useFechaCierre && !useTurno) {
     useShifts = [shifts[0]];
   }
-  const shiftNumberMap = new Map(useShifts.map((s, idx) => [s.id, idx + 1]));
+  const shiftNumberMap = new Map(useShifts.map((s, idx) => [s.id, Number((s as any).shiftNumber) || idx + 1]));
 
   const ranges = useShifts
     .filter((s) => s.closedAt)
@@ -6336,6 +6350,31 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
     });
   }
 
+  if (!includeNotes) {
+    filteredDocs = filteredDocs.filter((d) => !["NC", "ND"].includes(String(d.docType || "").toUpperCase()));
+  }
+
+  // El reporte se veía vacío sin explicación: había ventas cobradas y ninguna
+  // factura porque la emisión se omitió (por ejemplo, sin cédula del emisor).
+  if (filteredDocs.length === 0) {
+    const ventasSinComprobante = await prisma.restaurantOrder.count({
+      where: { hotelId, status: "PAID", OR: ranges },
+    });
+    if (ventasSinComprobante > 0) {
+      const feCfg = await prisma.eInvoicingConfig.findUnique({
+        where: { hotelId },
+        select: { enabled: true, settings: true },
+      });
+      const feSettings = (feCfg?.settings || {}) as any;
+      const sinEmisor = !String(feSettings?.issuer?.idNumber || "").trim();
+      missing.push(
+        sinEmisor
+          ? `Hay ${ventasSinComprobante} venta(s) cobrada(s) sin comprobante: falta la cédula del emisor en Facturación Electrónica.`
+          : `Hay ${ventasSinComprobante} venta(s) cobrada(s) sin comprobante electrónico emitido.`
+      );
+    }
+  }
+
   const orderIds = Array.from(new Set(filteredDocs.map((d) => d.restaurantOrderId).filter(Boolean) as string[]));
   const orders = await prisma.restaurantOrder.findMany({
     where: { hotelId, id: { in: orderIds } },
@@ -6359,6 +6398,8 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
       closedByStaffId: true,
       status: true,
       paymentBreakdown: true,
+      currency: true,
+      paymentDetails: true,
       items: {
         select: {
           id: true,
@@ -6385,6 +6426,17 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
 
   const normalized = filteredDocs.map((d) => {
     const order = d.restaurantOrderId ? orderMap.get(d.restaurantOrderId) : null;
+    // La moneda real de la venta y la de cada cobro salen del detalle de pagos;
+    // antes se devolvía la moneda del hotel y los filtros por moneda no filtraban nada.
+    const orderCurrency = String((order as any)?.currency || hotelCurrency).toUpperCase();
+    const details = Array.isArray((order as any)?.paymentDetails) ? ((order as any).paymentDetails as any[]) : [];
+    const paymentCurrencies = Array.from(
+      new Set(
+        details
+          .map((p) => String(p?.currency || "").trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
     const shift =
       (order?.shiftId ? useShifts.find((s) => s.id === order.shiftId) : null) ||
       useShifts.find((s) => {
@@ -6423,8 +6475,9 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
             shiftId: order.shiftId || null,
             createdByStaffId: order.createdByStaffId || null,
             closedByStaffId: order.closedByStaffId || null,
-            currency: hotelCurrency,
-            paymentCurrency: hotelCurrency,
+            currency: orderCurrency,
+            paymentCurrency: paymentCurrencies[0] || orderCurrency,
+            paymentCurrencies,
             paymentBreakdown: order.paymentBreakdown,
             status: order.status,
             voidReason: reasonMap.get(order.id) || null,
@@ -6441,9 +6494,10 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
     });
   }
   if (useMonedaPago && paymentCurrency) {
+    const wanted = paymentCurrency.toUpperCase();
     filteredList = filteredList.filter((row) => {
-      const rowPayCurrency = (row as any)?.order?.paymentCurrency || hotelCurrency;
-      return String(rowPayCurrency || "").toUpperCase() === String(paymentCurrency || "").toUpperCase();
+      const used = ((row as any)?.order?.paymentCurrencies || []) as string[];
+      return used.includes(wanted);
     });
   }
   if (useTipoCobro && paymentKey) {
@@ -6458,9 +6512,6 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   if (useMotivo && motivo) {
     filteredList = filteredList.filter((row) => String((row as any)?.order?.voidReason || "") === motivo);
   }
-  if (usePerfil && perfilId) {
-    filteredList = filteredList.filter(() => perfilId === hotelId);
-  }
 
   const byStatus = filteredList.filter((row) => {
     const docStatus = String(row.status || "").toUpperCase();
@@ -6471,7 +6522,6 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   });
 
   const reasons = Array.from(new Set((byStatus || []).map((r: any) => r?.order?.voidReason).filter(Boolean)));
-  const profiles = hotelRow ? [{ id: hotelId, name: hotelRow.name || hotelId }] : [];
 
   const totalRows = byStatus.length;
   const pageRows = byStatus.slice(pageOffset, pageOffset + pageLimit);
@@ -6486,7 +6536,7 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
       currencies: paymentCurrencies,
       paymentMethods: paymentCobros,
       reasons,
-      profiles,
+      profiles: [],
     },
   });
 }
