@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
+import { computeInvoiceGroups, sumInvoiceGroups } from "../../lib/restaurantInvoiceGroups";
 import useNoAutocomplete from "../../hooks/useNoAutocomplete";
 import {
   BarChart3,
@@ -14,6 +15,15 @@ import RestaurantUserMenu from "./RestaurantUserMenu";
 import { Tile } from "./RestaurantLobby";
 
 const LOBBY_TILE_SIZE = "lg";
+
+/** Modos del reporte de facturas: el primero es la tabla de detalle, los otros agrupan. */
+const INVOICE_REPORTS = [
+  "Detallado",
+  "Detallado por Familias",
+  "Resumido",
+  "Agrupado por Meseros",
+  "Agrupado por Monedas",
+];
 
 export default function RestaurantHistory() {
   const navigate = useNavigate();
@@ -90,7 +100,6 @@ export default function RestaurantHistory() {
   const [invoiceCurrencies, setInvoiceCurrencies] = useState([]);
   const [invoicePaymentMethods, setInvoicePaymentMethods] = useState([]);
   const [invoiceReasons, setInvoiceReasons] = useState([]);
-  const [invoiceProfiles, setInvoiceProfiles] = useState([]);
   const [invoiceMissing, setInvoiceMissing] = useState([]);
   const [invoiceBusy, setInvoiceBusy] = useState(false);
   const [invoiceError, setInvoiceError] = useState("");
@@ -131,8 +140,9 @@ export default function RestaurantHistory() {
   const [invPaymentKey, setInvPaymentKey] = useState("");
   const [invUseMotivo, setInvUseMotivo] = useState(false);
   const [invMotivo, setInvMotivo] = useState("");
-  const [invUsePerfil, setInvUsePerfil] = useState(false);
-  const [invPerfil, setInvPerfil] = useState("");
+  // Modo del reporte: la tabla de detalle y las agrupaciones usan los mismos filtros.
+  const [invReport, setInvReport] = useState("Detallado");
+  const [invIncludeNotes, setInvIncludeNotes] = useState(false);
   const resolveCurrencySymbol = (c) => {
     const code = String(c || "").toUpperCase().trim();
     if (code === "CRC" || code === "₡") return "₡";
@@ -616,9 +626,9 @@ const handleInvoicesApply = async () => {
         paymentKey: invUseTipoCobro ? invPaymentKey : "",
         useMotivo: invUseMotivo,
         motivo: invUseMotivo ? invMotivo : "",
-        usePerfil: invUsePerfil,
-        perfilId: invUsePerfil ? invPerfil : "",
-        limit: 100,
+        includeNotes: invIncludeNotes,
+        // Los reportes agrupados necesitan todas las filas del rango, no la primera página.
+        limit: invReport === "Detallado" ? 100 : 500,
         offset: 0,
       };
       invoiceParamsRef.current = params;
@@ -629,9 +639,7 @@ const handleInvoicesApply = async () => {
       setInvoiceMissing(Array.isArray(data?.missing) ? data.missing : []);
       if (data?.filters) {
         const reasons = Array.isArray(data.filters.reasons) ? data.filters.reasons : [];
-        const profiles = Array.isArray(data.filters.profiles) ? data.filters.profiles : [];
         if (reasons.length) setInvoiceReasons(reasons);
-        if (profiles.length) setInvoiceProfiles(profiles);
       }
     } catch {
       setInvoiceError("No se pudo cargar facturas.");
@@ -655,6 +663,14 @@ const handleInvoicesApply = async () => {
       setInvoiceLoadingMore(false);
     }
   };
+
+  /** Agrupaciones del reporte de facturas, calculadas sobre las filas ya filtradas. */
+  const invoiceGroups = useMemo(
+    () => computeInvoiceGroups(invoiceRows, invReport, getStaffName),
+    [invoiceRows, invReport, staffById]
+  );
+
+  const invoiceGroupsTotal = useMemo(() => sumInvoiceGroups(invoiceGroups), [invoiceGroups]);
 
   const items = [
     {
@@ -1204,13 +1220,15 @@ const handleInvoicesApply = async () => {
                     </label>
                     <div className="flex gap-2 w-full">
                       <input
-                        className="h-9 rounded-lg border px-2 text-sm w-full"
+                        className="h-9 rounded-lg border px-2 text-sm w-full min-w-0"
+                        placeholder="Desde"
                         disabled={!invUseInvoiceNumber}
                         value={invInvoiceFrom}
                         onChange={(e) => setInvInvoiceFrom(e.target.value)}
                       />
                       <input
-                        className="h-9 rounded-lg border px-2 text-sm w-full"
+                        className="h-9 rounded-lg border px-2 text-sm w-full min-w-0"
+                        placeholder="Hasta"
                         disabled={!invUseInvoiceNumber}
                         value={invInvoiceTo}
                         onChange={(e) => setInvInvoiceTo(e.target.value)}
@@ -1279,46 +1297,27 @@ const handleInvoicesApply = async () => {
                       Fecha cierre
                     </label>
                     <div className="grid grid-cols-2 gap-2 w-full">
-                      <input
-                        type="date"
-                        className="h-9 rounded-lg border px-2 text-sm w-full"
-                        disabled={!invUseFechaCierre}
-                        value={invDateFrom}
-                        onChange={(e) => setInvDateFrom(e.target.value)}
-                      />
-                      <input
-                        type="date"
-                        className="h-9 rounded-lg border px-2 text-sm w-full"
-                        disabled={!invUseFechaCierre}
-                        value={invDateTo}
-                        onChange={(e) => setInvDateTo(e.target.value)}
-                      />
+                      <label className="block min-w-0">
+                        <span className="mb-0.5 block text-[11px] text-slate-500">Desde</span>
+                        <input
+                          type="date"
+                          className="h-9 rounded-lg border px-2 text-sm w-full min-w-0"
+                          disabled={!invUseFechaCierre}
+                          value={invDateFrom}
+                          onChange={(e) => setInvDateFrom(e.target.value)}
+                        />
+                      </label>
+                      <label className="block min-w-0">
+                        <span className="mb-0.5 block text-[11px] text-slate-500">Hasta</span>
+                        <input
+                          type="date"
+                          className="h-9 rounded-lg border px-2 text-sm w-full min-w-0"
+                          disabled={!invUseFechaCierre}
+                          value={invDateTo}
+                          onChange={(e) => setInvDateTo(e.target.value)}
+                        />
+                      </label>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-2 text-sm min-w-[140px]">
-                      <input
-                        type="checkbox"
-                        className="accent-lime-600"
-                        checked={invUsePerfil}
-                        onChange={(e) => setInvUsePerfil(e.target.checked)}
-                      />
-                      Perfil empresa
-                    </label>
-                    <select
-                      className="h-9 rounded-lg border px-2 text-sm w-full bg-white"
-                      disabled={!invUsePerfil}
-                      value={invPerfil}
-                      onChange={(e) => setInvPerfil(e.target.value)}
-                    >
-                      <option value="">{optionsLoading ? "Cargando..." : "Selecciona..."}</option>
-                      {invoiceProfiles.map((p) => (
-                        <option key={p.id || p} value={p.id || p}>
-                          {p.name || p}
-                        </option>
-                      ))}
-                    </select>
                   </div>
 
                   <div className="flex items-center gap-3">
@@ -1347,7 +1346,12 @@ const handleInvoicesApply = async () => {
 
                   <div className="flex items-center gap-3">
                     <label className="flex items-center gap-2 text-sm min-w-[140px]">
-                      <input type="checkbox" className="accent-lime-600" />
+                      <input
+                        type="checkbox"
+                        className="accent-lime-600"
+                        checked={invIncludeNotes}
+                        onChange={(e) => setInvIncludeNotes(e.target.checked)}
+                      />
                       Facturas / Notas juntas
                     </label>
                   </div>
@@ -1356,15 +1360,15 @@ const handleInvoicesApply = async () => {
                 <div className="mt-4 grid gap-2">
                   <div className="text-xs uppercase text-lime-600">Reporte</div>
                   <div className="flex flex-wrap items-center gap-4 text-sm">
-                    {[
-                      "Detallado",
-                      "Detallado por Familias",
-                      "Resumido",
-                      "Agrupado por Meseros",
-                      "Agrupado por Monedas",
-                    ].map((label) => (
+                    {INVOICE_REPORTS.map((label) => (
                       <label key={label} className="flex items-center gap-2">
-                        <input type="radio" name="invoiceReport" className="accent-lime-600" />
+                        <input
+                          type="radio"
+                          name="invoiceReport"
+                          className="accent-lime-600"
+                          checked={invReport === label}
+                          onChange={() => setInvReport(label)}
+                        />
                         {label}
                       </label>
                     ))}
@@ -1372,6 +1376,40 @@ const handleInvoicesApply = async () => {
                 </div>
               </div>
 
+              {invReport !== "Detallado" ? (
+                <div className="mt-4 rounded-xl border border-lime-200 overflow-hidden">
+                  <div className="grid grid-cols-[1fr_120px_150px] bg-lime-100 text-xs font-semibold text-lime-900 px-3 py-2">
+                    <div>Concepto</div>
+                    <div className="text-right">Registros</div>
+                    <div className="text-right">Monto</div>
+                  </div>
+                  <div className="min-h-[180px] bg-lime-50">
+                    {invoiceGroups.length === 0 ? (
+                      <div className="p-6 text-sm text-slate-500">
+                        {invoiceBusy ? "Cargando..." : "Sin datos para este reporte. Aplicá los filtros y presioná Buscar."}
+                      </div>
+                    ) : (
+                      invoiceGroups.map((g) => (
+                        <div
+                          key={g.key}
+                          className="grid grid-cols-[1fr_120px_150px] text-xs px-3 py-2 border-t border-lime-200"
+                        >
+                          <div className="truncate" title={g.label}>{g.label}</div>
+                          <div className="text-right">{g.count}</div>
+                          <div className="text-right">{formatMoneyWithCurrency(g.amount, "")}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {invReport !== "Agrupado por Monedas" && invoiceGroups.length > 0 && (
+                    <div className="grid grid-cols-[1fr_120px_150px] bg-lime-100 border-t border-lime-200 px-3 py-2 text-xs font-semibold text-lime-900">
+                      <div>Total</div>
+                      <div className="text-right">{invoiceGroupsTotal.count}</div>
+                      <div className="text-right">{formatMoneyWithCurrency(invoiceGroupsTotal.amount, "")}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
               <div className="mt-4 rounded-xl border border-lime-200 overflow-hidden">
                 <div className="grid grid-cols-[44px_150px_80px_150px_120px_110px_120px_90px_90px_90px] bg-lime-100 text-xs font-semibold text-lime-900 px-3 py-2">
                   <div className="text-center">Sel</div>
@@ -1381,11 +1419,16 @@ const handleInvoicesApply = async () => {
                   <div>Docum</div>
                   <div>Sección - Mesa</div>
                   <div>Cajero / Mesero</div>
-                  <div>Mon.</div>
-                  <div>Amount</div>
+                  <div>Moneda</div>
+                  <div>Monto</div>
                   <div>Estado</div>
                 </div>
                 <div className="min-h-[240px] bg-lime-50">
+                  {invoiceRows.length === 0 && (
+                    <div className="p-6 text-sm text-slate-500">
+                      {invoiceBusy ? "Cargando..." : "Sin facturas con estos filtros. Presioná Buscar para consultar."}
+                    </div>
+                  )}
                   {invoiceRows.map((row) => (
                     <div
                       key={row.id}
@@ -1427,9 +1470,10 @@ const handleInvoicesApply = async () => {
                   ))}
                 </div>
               </div>
+              )}
 
               <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-                {invoiceTotal > invoiceRows.length && (
+                {invReport === "Detallado" && invoiceTotal > invoiceRows.length && (
                   <button
                     className="mr-auto h-10 px-3 rounded-lg border border-lime-200 bg-white text-sm disabled:opacity-60"
                     onClick={loadMoreInvoices}
