@@ -3478,6 +3478,22 @@ const [subCategory, setSubCategory] = useState("");
         );
       }
 
+      // El comprobante se omite sin lanzar error: la caja lo avisa en ese momento.
+      const eInvoiceSkipped = String(closeRes?.data?.eInvoiceSkipped || "");
+      const skipReason =
+        eInvoiceSkipped === "NO_ISSUER"
+          ? "Venta cobrada, pero sin comprobante: falta la cédula del hotel (emisor) en Facturación Electrónica."
+          : eInvoiceSkipped === "FE_DISABLED"
+            ? "Venta cobrada, pero sin comprobante: la facturación electrónica está desactivada."
+            : eInvoiceSkipped === "RECEIVER_REQUIRED"
+              ? "Venta cobrada, pero sin comprobante: faltan datos del cliente."
+              : "";
+      if (skipReason) {
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", { detail: { title: "Comprobante", desc: skipReason } })
+        );
+      }
+
       // El cargo a habitación es gestionado por el backend en /restaurant/order/close.
       let nextActiveKey = "";
       setOrdersByTable((prev) => {
