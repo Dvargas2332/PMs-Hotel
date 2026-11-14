@@ -251,7 +251,9 @@ export async function issueRestaurantDoc(opts: IssueOptions): Promise<IssueResul
     guestReceiver = receiverFromGuest(guest);
   }
   const normalizedReceiver = normalizeReceiver(opts.receiver ?? guestReceiver);
-  const effectiveDocType: "FE" | "TE" = normalizedReceiver?.idNumber ? opts.docType : "TE";
+  // Con identificación del comprador se emite factura (FE); sin ella, tiquete (TE),
+  // que es el comprobante para consumidor final y no pide datos de nadie.
+  const effectiveDocType: "FE" | "TE" = normalizedReceiver?.idNumber ? "FE" : "TE";
 
   const existing = await prisma.eInvoicingDocument.findFirst({
     where: { hotelId, restaurantOrderId: String(order.id), docType: effectiveDocType },
@@ -389,7 +391,8 @@ export async function issueRestaurantDoc(opts: IssueOptions): Promise<IssueResul
 
   const crReceiver: CrReceiver | undefined = normalizedReceiver?.idNumber
     ? {
-        name: String(normalizedReceiver.name || normalizedReceiver.legalName || ""),
+        // Hacienda exige nombre en la factura: sin él se usa el genérico.
+        name: String(normalizedReceiver.name || normalizedReceiver.legalName || "").trim() || "Consumidor final",
         idType: String(normalizedReceiver.idType || normalizedReceiver.idTypeCode || "01"),
         idNumber: String(normalizedReceiver.idNumber || normalizedReceiver.identification || ""),
         commercialName: normalizedReceiver.commercialName || undefined,

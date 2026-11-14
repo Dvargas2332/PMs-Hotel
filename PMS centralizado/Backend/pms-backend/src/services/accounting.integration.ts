@@ -358,17 +358,22 @@ export async function onEInvoicingDocument(event: EInvoicingDocumentEvent): Prom
 
     const hotelId = event.hotelId;
 
-    // Resolve total from related invoice or restaurant order if not provided
+    const doc = await prisma.eInvoicingDocument.findFirst({
+      where: { id: event.documentId, hotelId },
+      select: {
+        restaurantOrderId: true,
+        invoice: { select: { total: true } },
+        restaurantOrder: { select: { total: true } },
+      },
+    });
+
+    // La venta del restaurante ya asentó su cobro al cerrar; el comprobante es el
+    // respaldo fiscal y no debe repetir el asiento.
+    if (doc?.restaurantOrderId) return;
+
     let resolvedTotal = Number(event.total ?? 0);
     if (resolvedTotal <= 0) {
-      const doc = await prisma.eInvoicingDocument.findFirst({
-        where: { id: event.documentId, hotelId },
-        include: {
-          invoice: { select: { total: true } },
-          restaurantOrder: { select: { total: true } },
-        },
-      });
-      resolvedTotal = Number(doc?.invoice?.total ?? doc?.restaurantOrder?.total ?? 0);
+      resolvedTotal = Number(doc?.invoice?.total ?? 0);
     }
 
     const gross = resolvedTotal;

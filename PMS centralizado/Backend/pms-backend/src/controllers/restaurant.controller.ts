@@ -3139,33 +3139,23 @@ export async function closeOrder(req: Request, res: Response) {
     eInvoiceSkipped: issuedDoc?.skipped ?? null,
   });
 
-  // Contabilidad: solo si NO hay facturación electrónica activa (evita doble contabilización)
-  // Cuando FE está activa, la contabilidad se genera al ser aceptado el documento por Hacienda.
-  const einvCfg = await prisma.eInvoicingConfig.findUnique({
-    where: { hotelId },
-    select: { enabled: true, settings: true },
+  // Contabilidad: la venta asienta al cerrar, con o sin factura electrónica.
+  // El comprobante es el respaldo fiscal, no un segundo asiento: si se esperara
+  // a su envío, una venta con FE activa y sin emisor se quedaba sin contabilidad.
+  onRestaurantSale({
+    hotelId,
+    orderId: updated.id,
+    saleNumber: updated.saleNumber ?? null,
+    total: Number(updated.total ?? 0),
+    tax: Number(updated.tax ?? 0),
+    service: Number(updated.tip10 ?? 0),
+    currency: String(updated.currency || saleCurrency || "CRC"),
+    paidAt: paidAt,
+    actorId: user?.sub ?? null,
+    payments: buildAccountingPayments(updated),
+  }).catch((err) => {
+    console.error("[restaurant.closeOrder] accounting entry failed:", err);
   });
-  const einvSettings = (einvCfg?.settings || {}) as any;
-  const einvRestaurantEnabled = einvCfg?.enabled && (einvSettings?.moduleConnections?.restaurant !== false);
-  const isContingency = ["3", "4", "5"].includes(String(einvSettings?.restaurant?.situation || "1"));
-
-  if (!einvRestaurantEnabled || isContingency) {
-    // Sin FE activa, o en contingencia: contabilidad directa desde restaurante
-    onRestaurantSale({
-      hotelId,
-      orderId: updated.id,
-      saleNumber: updated.saleNumber ?? null,
-      total: Number(updated.total ?? 0),
-      tax: Number(updated.tax ?? 0),
-      service: Number(updated.tip10 ?? 0),
-      currency: String(updated.currency || saleCurrency || "CRC"),
-      paidAt: paidAt,
-      actorId: user?.sub ?? null,
-      payments: buildAccountingPayments(updated),
-    }).catch((err) => {
-      console.error("[restaurant.closeOrder] accounting entry failed:", err);
-    });
-  }
 }
 
 /**
@@ -5327,7 +5317,17 @@ export async function openRestaurantShift(req: Request, res: Response) {
     });
   }
 
-  const shiftNumber = await nextHotelSequence(user.hotelId, "restaurant_shift");
+  // El número sigue la serie de turnos del hotel: se toma el mayor ya usado y se
+  // suma uno. Un contador aparte se reiniciaba y repetía números (#3 dos veces).
+  const anteriores = await prisma.cashAudit.findMany({
+    where: { hotelId: user.hotelId, module: "RESTAURANT" },
+    select: { totals: true, details: true },
+  });
+  const mayorNumero = anteriores.reduce((max, s) => {
+    const n = asNumber((s?.details as any)?.shiftNumber ?? (s?.totals as any)?.shiftNumber);
+    return Number.isFinite(n) && n > max ? n : max;
+  }, 0);
+  const shiftNumber = Math.max(mayorNumero, anteriores.length) + 1;
 
   try {
     const shift = await prisma.cashAudit.create({
@@ -6309,7 +6309,8 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
   } else if (!useFechaCierre && !useTurno) {
     useShifts = [shifts[0]];
   }
-  const shiftNumberMap = new Map(useShifts.map((s, idx) => [s.id, Number((s as any).shiftNumber) || idx + 1]));
+  // El número de turno es el mismo que usan la apertura y el reporte de turnos.
+  const shiftNumberMap = await buildShiftNumberMap(hotelId);
 
   const ranges = useShifts
     .filter((s) => s.closedAt)
@@ -6456,7 +6457,7 @@ export async function listRestaurantHistoryInvoices(req: Request, res: Response)
       key: d.key,
       createdAt: d.createdAt,
       shiftId: shift?.id || null,
-      shiftNumber: shift?.id ? shiftNumberMap.get(shift.id) || null : null,
+      shiftNumber: shift?.id ? buildShiftPayload(shift).shiftNumber || shiftNumberMap.get(shift.id) || null : null,
       closedAt: shift?.closedAt || null,
       order: order
         ? {

@@ -453,6 +453,9 @@ const [subCategory, setSubCategory] = useState("");
 
   const [paymentsModalOpen, setPaymentsModalOpen] = useState(false);
   const [paymentForm, setPaymentForm] = useState({});
+  // Datos del cliente para la factura electrónica: sin cédula el cobro sale como tiquete.
+  const [customerName, setCustomerName] = useState("");
+  const [customerId, setCustomerId] = useState("");
   // Moneda y tipo de cambio por medio de cobro (cuando el hotel cobra en divisa).
   const [paymentCurrency, setPaymentCurrency] = useState({});
   const [paymentRates, setPaymentRates] = useState({});
@@ -2361,6 +2364,8 @@ const [subCategory, setSubCategory] = useState("");
     if (paymentPrintBusy && !force) return;
     setPaymentsModalOpen(false);
     setPaymentForm({});
+    setCustomerName("");
+    setCustomerId("");
     setSelectedPaymentKeys([]);
     setSplitPayments(false);
     setPaymentResult(null);
@@ -3451,12 +3456,24 @@ const [subCategory, setSubCategory] = useState("");
         paid: paidAmount,
         change,
       };
+      // Con cédula del cliente el comprobante es factura electrónica (FE);
+      // sin cédula es tiquete (TE), que no pide datos del comprador.
+      const customerDigits = String(customerId || "").replace(/\D/g, "");
+      const receiverForInvoice = customerDigits
+        ? {
+            name: String(customerName || "").trim() || "Consumidor final",
+            idType:
+              customerDigits.length >= 11 ? "03" : customerDigits.length === 9 ? "01" : customerDigits.startsWith("3") ? "02" : "04",
+            idNumber: customerDigits,
+          }
+        : undefined;
       const closeRes = await api.post("/restaurant/order/close", {
         tableId: selectedTable.id,
         sectionId: selectedSection?.id,
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
         orderId: currentOrder?.id || currentOrder?.orderId || undefined,
         docType: invoiceCfg.docType,
+        receiver: receiverForInvoice,
         payments: paymentAppliedBase,
         paymentDetails: paymentDetailsPayload.length > 0 ? paymentDetailsPayload : undefined,
         totals,
@@ -3469,6 +3486,9 @@ const [subCategory, setSubCategory] = useState("");
       });
       const saleNumber = closeRes?.data?.order?.saleNumber || "";
       if (saleNumber) snapshotPayload.saleNumber = saleNumber;
+      // El comprobante pudo salir como tiquete aunque la plantilla diga factura.
+      const issuedDoc = closeRes?.data?.eInvoice;
+      if (issuedDoc?.docType) snapshotPayload.type = issuedDoc.docType;
       const closeWarnings = Array.isArray(closeRes?.data?.warnings) ? closeRes.data.warnings : [];
       if (closeWarnings.length > 0) {
         window.dispatchEvent(
@@ -4658,6 +4678,29 @@ const [subCategory, setSubCategory] = useState("");
                         >
                           {splitPayments ? "Dividido: Sí" : "Dividido: No"}
                         </button>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 px-3 py-2.5 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium text-slate-700">Cédula del cliente</span>
+                          <input
+                            className="h-9 w-40 rounded-lg border px-2 text-sm tabular-nums"
+                            inputMode="numeric"
+                            placeholder="opcional"
+                            value={customerId}
+                            onChange={(e) => setCustomerId(e.target.value.replace(/[^\d-]/g, ""))}
+                          />
+                          <input
+                            className="h-9 flex-1 min-w-[160px] rounded-lg border px-2 text-sm"
+                            placeholder="Nombre del cliente"
+                            value={customerName}
+                            disabled={!customerId.replace(/\D/g, "")}
+                            onChange={(e) => setCustomerName(e.target.value)}
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          Con cédula se emite factura electrónica (FE); sin cédula, tiquete (TE).
+                        </p>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
