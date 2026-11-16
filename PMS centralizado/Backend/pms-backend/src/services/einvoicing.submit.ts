@@ -6,16 +6,8 @@
  */
 
 import prisma from "../lib/prisma.js";
-import {
-  microfacturaSend,
-  microfacturaSignXml,
-  microfacturaStatus,
-  microfacturaToken,
-} from "./microfacturaCr.js";
-import {
-  resolveMicrofacturaConfig,
-  validateHaciendaConfig,
-} from "./microfacturaConfig.js";
+import { atvSend, atvStatus, atvToken, type AtvEnvironment } from "./einvoice.atv.js";
+import { signCrXml } from "./einvoice.sign.js";
 
 function nowIso() {
   return new Date().toISOString();
@@ -166,18 +158,31 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
     const creds =
       ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
     const crypto = (creds.crypto || {}) as any;
-    const apiCfg = resolveMicrofacturaConfig(cfg, settings, creds);
-    const issues = validateHaciendaConfig(apiCfg);
+    const atvCreds = (creds.atv || {}) as any;
+
+    // Hacienda directo: cada hotel pone sus credenciales y su certificado.
+    const atvEnvironment: AtvEnvironment =
+      String(cfg.environment || "").toLowerCase() === "production" ? "production" : "sandbox";
+    const clientId = String(settings?.atv?.clientId || (atvEnvironment === "production" ? "api-prod" : "api-stag")).trim();
+    const clientSecret = String(atvCreds?.clientSecret || "").trim();
+    const atvUsername = String(settings?.atv?.username || "").trim();
+    const atvPassword = String(atvCreds?.password || "");
+
+    const issues: string[] = [];
+    if (!atvUsername) issues.push("ATV_USERNAME_MISSING");
+    if (!atvPassword) issues.push("ATV_PASSWORD_MISSING");
+    if (!clientSecret) issues.push("ATV_CLIENT_SECRET_MISSING");
+    if (!clientId) issues.push("ATV_CLIENT_ID_MISSING");
     if (issues.length) {
       throw new SubmitDocumentError(
-        "Microfactura no está configurado. Completa ATV username/password/clientId/clientSecret en /e-invoicing.",
+        "Faltan las credenciales ATV del emisor: usuario, contraseña y client secret en Facturación Electrónica.",
         400,
         issues
       );
     }
     if (!crypto?.certificateBase64 || !crypto?.certificatePassword) {
       throw new SubmitDocumentError(
-        "Certificado de firma requerido. Cada hotel debe configurar su certificado y contraseña para firmar XML antes de enviar.",
+        "Certificado de firma requerido. Cada hotel debe configurar su certificado .p12 y su contraseña antes de enviar.",
         400
       );
     }
@@ -197,18 +202,13 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
     });
 
     try {
-      const tokenResp = await microfacturaToken({
-        clientId: apiCfg.atv.clientId || "api-stag",
-        clientSecret: apiCfg.atv.clientSecret,
-        username: apiCfg.atv.username,
-        password: apiCfg.atv.password,
-        grantType: "password",
+      const { accessToken } = await atvToken({
+        environment: atvEnvironment,
+        clientId,
+        clientSecret,
+        username: atvUsername,
+        password: atvPassword,
       });
-      const tokenPayload = (tokenResp as any)?.body || tokenResp;
-      const accessToken = String(tokenPayload?.access_token || tokenPayload?.accessToken || "");
-      if (!accessToken) {
-        throw new Error("Microfactura token response missing access_token");
-      }
 
       let xmlSigned = doc.xmlSigned || "";
       if (!xmlSigned) {
@@ -218,30 +218,30 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
         if (!xmlBase64 && !xmlRaw) {
           throw new SubmitDocumentError("No se encontro XML para firmar. Provee xml o xmlBase64 en el payload del documento.", 400);
         }
-        xmlSigned = await microfacturaSignXml({
-          xmlBase64: xmlBase64 || undefined,
-          xml: xmlRaw || undefined,
-          certBase64: String(crypto?.certificateBase64 || ""),
-          certPassword: String(crypto?.certificatePassword || ""),
-        });
+        const unsigned = xmlRaw || Buffer.from(xmlBase64, "base64").toString("utf8");
+        const signed = await signCrXml(
+          unsigned,
+          String(crypto?.certificateBase64 || ""),
+          String(crypto?.certificatePassword || "")
+        );
+        xmlSigned = signed.xmlSignedBase64;
         await prisma.eInvoicingDocument.updateMany({
           where: { id: doc.id, hotelId },
           data: { xmlSigned },
         });
       }
 
-      const sendResp = await microfacturaSend({
+      const sendResp = await atvSend({
+        environment: atvEnvironment,
         token: accessToken,
-        clientId: apiCfg.atv.clientId || "api-stag",
         clave: doc.key,
-        fecha: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso(),
+        issuedAt: doc.createdAt ? new Date(doc.createdAt).toISOString() : nowIso(),
         emisor: { tipoIdentificacion: issuerIdType, numeroIdentificacion: issuerIdNumber },
         receptor: receiverIdentity
           ? { tipoIdentificacion: receiverIdentity.idType, numeroIdentificacion: receiverIdentity.idNumber }
-          : undefined,
-        comprobanteXmlBase64: xmlSigned,
-        callbackUrl: settings?.atv?.callbackUrl || undefined,
-        consecutivoReceptor: (doc.payload as any)?.consecutivoReceptor || (doc.payload as any)?.receiverConsecutive || undefined,
+          : null,
+        consecutivoReceptor: (doc.payload as any)?.consecutivoReceptor || (doc.payload as any)?.receiverConsecutive || null,
+        xmlSignedBase64: xmlSigned,
       });
 
       await prisma.eInvoicingDocument.updateMany({
@@ -255,14 +255,14 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
           documentId: doc.id,
           type: "HACIENDA_RECEIPT",
           status: "RECEIVED",
-          message: "Sent via Microfactura.",
+          message: "Enviado a la recepción de Hacienda.",
           payload: { sendResp, at: nowIso() },
         },
       });
 
-      const statusResp = await microfacturaStatus({
+      const statusResp = await atvStatus({
+        environment: atvEnvironment,
         token: accessToken,
-        clientId: apiCfg.atv.clientId || "api-stag",
         clave: doc.key,
       });
       const derived = deriveStatusFromResponse(statusResp);
@@ -273,7 +273,7 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
           documentId: doc.id,
           type: "HACIENDA_STATUS",
           status: "RECEIVED",
-          message: "Status retrieved.",
+          message: "Estado consultado en Hacienda.",
           payload: { statusResp, at: nowIso() },
         },
       });
