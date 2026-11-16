@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
 import { computeInvoiceGroups, sumInvoiceGroups } from "../../lib/restaurantInvoiceGroups";
@@ -26,7 +25,6 @@ const INVOICE_REPORTS = [
 ];
 
 export default function RestaurantHistory() {
-  const navigate = useNavigate();
   useNoAutocomplete();
   const [now, setNow] = useState(new Date());
   const [salesDialogOpen, setSalesDialogOpen] = useState(false);
@@ -720,13 +718,6 @@ const handleInvoicesApply = async () => {
     <div className="min-h-screen bg-gradient-to-b from-white to-slate-200 text-black">
       <header className="relative h-14 bg-gradient-to-r from-lime-700 to-emerald-600 flex items-center justify-between px-10 shadow">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="h-10 px-4 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/20"
-            onClick={() => navigate("/restaurant")}
-          >
-            Back
-          </button>
           <span className="text-lg font-semibold text-white">Restaurant</span>
           <span className="text-sm text-white/80">Históricos / Estadísticas</span>
         </div>
