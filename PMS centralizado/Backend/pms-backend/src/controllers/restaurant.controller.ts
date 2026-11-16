@@ -5762,6 +5762,7 @@ export async function listClosedRestaurantShifts(req: Request, res: Response) {
         shiftNumber: buildShiftPayload(s).shiftNumber || shiftNumberMap.get(s.id) || null,
         closeTotals: (close?.totals ?? null) as any,
         closePayments: (close?.payments ?? null) as any,
+        closeBreakdown: (close?.breakdown ?? null) as any,
         closeNote: close?.note ?? null,
       };
     })

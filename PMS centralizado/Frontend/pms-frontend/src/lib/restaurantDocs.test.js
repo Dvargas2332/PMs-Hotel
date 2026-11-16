@@ -50,6 +50,78 @@ describe("buildCloseReportText", () => {
     expect(text).toContain("Cédula: 3-101-123456");
     expect(text).not.toContain("Hotel Demo");
   });
+
+  it("lista todas las formas de cobro, aunque estén en cero", () => {
+    const text = buildCloseReportText({
+      stage: "Z",
+      systemTotal: 8200,
+      systemByMethod: { Efectivo: 8200, Tarjeta: 0 },
+      reportedByMethod: { Efectivo: 8100, Tarjeta: 0 },
+      methods: ["Efectivo", "Tarjeta", "SINPE", "Transferencia"],
+      salesCount: 1,
+    });
+    expect(text).toContain("COBROS POR METODO");
+    expect(text).toContain("SINPE");
+    expect(text).toContain("Transferencia");
+    expect(text).toContain("Tarjeta");
+    // Cada medio aparece con sus dos columnas.
+    expect(text).toMatch(/Efectivo\s+8200\.00\s+8100\.00/);
+  });
+
+  it("marca faltante cuando el físico queda por debajo del sistema", () => {
+    const text = buildCloseReportText({
+      stage: "Z",
+      systemTotal: 8200,
+      systemByMethod: { Efectivo: 8200 },
+      reportedByMethod: { Efectivo: 8100 },
+      salesCount: 3,
+    });
+    expect(text).toContain("FALTANTE (fisico - sistema): 100.00");
+    expect(text).toContain("DIFERENCIA:");
+    expect(text).toContain("-100.00");
+  });
+
+  it("marca sobrante cuando el físico supera al sistema", () => {
+    const text = buildCloseReportText({
+      stage: "Z",
+      systemTotal: 5000,
+      systemByMethod: { Efectivo: 5000 },
+      reportedByMethod: { Efectivo: 5300 },
+      salesCount: 2,
+    });
+    expect(text).toContain("SOBRANTE (fisico - sistema): 300.00");
+    expect(text).toContain("300.00");
+  });
+
+  it("cuadra cuando el físico iguala al sistema", () => {
+    const text = buildCloseReportText({
+      stage: "Z",
+      systemTotal: 1000,
+      systemByMethod: { Efectivo: 1000 },
+      reportedByMethod: { Efectivo: 1000 },
+      salesCount: 1,
+    });
+    expect(text).toContain("CUADRE (fisico - sistema): 0.00");
+  });
+
+  it("muestra subtotal, impuesto, servicio y transacciones del turno", () => {
+    const text = buildCloseReportText({
+      stage: "Z",
+      systemTotal: 8200,
+      systemSubtotal: 6666.67,
+      systemTax: 866.67,
+      systemService: 666.67,
+      systemByMethod: { Efectivo: 8200 },
+      salesCount: 1,
+    });
+    expect(text).toContain("VENTAS DEL TURNO");
+    expect(text).toContain("Subtotal:");
+    expect(text).toContain("6666.67");
+    expect(text).toContain("IVA:");
+    expect(text).toContain("866.67");
+    expect(text).toContain("Servicio:");
+    expect(text).toContain("Transacciones: 1");
+  });
 });
 
 describe("buildRestaurantHeaderLines", () => {

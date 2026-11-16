@@ -109,6 +109,46 @@ export function buildRestaurantHeaderLines(restaurant) {
   return lines;
 }
 
+const CLOSE_METHOD_LABELS = {
+  cash: "Efectivo",
+  efectivo: "Efectivo",
+  card: "Tarjeta",
+  tarjeta: "Tarjeta",
+  sinpe: "SINPE",
+  transfer: "Transferencia",
+  transferencia: "Transferencia",
+  room: "Habitación",
+  cortesia: "Cortesía",
+  cortesía: "Cortesía",
+  other: "Otro",
+};
+
+/** Nombre legible de una forma de cobro; acepta la clave interna o el rótulo ya puesto. */
+function closeMethodLabel(key) {
+  const raw = String(key ?? "").trim();
+  if (!raw) return "Otro";
+  const known = CLOSE_METHOD_LABELS[raw.toLowerCase()];
+  if (known) return known;
+  return raw.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function normalizeMethodMap(input) {
+  const out = {};
+  if (!input || typeof input !== "object") return out;
+  for (const [key, value] of Object.entries(input)) {
+    if (key === "notes") continue;
+    const amount = Number(value) || 0;
+    if (!key) continue;
+    const label = closeMethodLabel(key);
+    out[label] = (out[label] || 0) + amount;
+  }
+  return out;
+}
+
+/** Tres columnas que caben en el ancho del papel (42). */
+const cols = (label, system, physical) =>
+  `  ${String(label).slice(0, 18).padEnd(18)}${String(system).padStart(10)}${String(physical).padStart(12)}`;
+
 export function buildCloseReportText({
   stage,
   shiftNumber,
@@ -118,9 +158,16 @@ export function buildCloseReportText({
   closedAt,
   openingAmount,
   systemTotal,
+  systemSubtotal,
+  systemTax,
+  systemService,
   byMethod,
+  systemByMethod,
   declared,
+  reportedByMethod,
+  methods,
   diff,
+  diffNonCash,
   salesCount,
   note,
   staffName,
@@ -138,31 +185,67 @@ export function buildCloseReportText({
   lines.push(`Apertura: ${openedAt ? new Date(openedAt).toLocaleString() : "-"}`);
   lines.push(`Cierre:   ${closedAt ? new Date(closedAt).toLocaleString() : new Date().toLocaleString()}`);
   if (staffName) lines.push(`Cajero:   ${staffName}`);
+
+  // ── Ventas del turno: subtotal, impuestos, servicio y total ────────────────
+  const sysMap = normalizeMethodMap(systemByMethod ?? byMethod);
+  const physMap = normalizeMethodMap(reportedByMethod ?? declared);
+  const systemSum = Object.values(sysMap).reduce((a, b) => a + b, 0);
+  const physicalSum = Object.values(physMap).reduce((a, b) => a + b, 0);
+  const baseSystem = systemSum > 0 ? systemSum : Number(systemTotal) || 0;
+  const hasPhysical = Object.keys(physMap).length > 0;
+
   lines.push(sep2());
-  lines.push(center("VENTAS POR METODO (SISTEMA)"));
+  lines.push(center("VENTAS DEL TURNO"));
   lines.push(sep2());
-  const methods = byMethod && typeof byMethod === "object" ? Object.entries(byMethod).filter(([, v]) => Number(v) > 0) : [];
-  for (const [key, amt] of methods) lines.push(rjust(`  ${key}:`, defaultMoney(amt)));
-  lines.push(sep2());
-  lines.push(rjust("TOTAL SISTEMA:", defaultMoney(systemTotal)));
-  lines.push(`Transacciones: ${salesCount || 0}`);
-  if (declared && typeof declared === "object") {
-    const entries = Object.entries(declared).filter(([k, v]) => k && k !== "notes" && Number(v) > 0);
-    if (entries.length > 0) {
-      lines.push(sep2());
-      lines.push(center("CONTEO FISICO DECLARADO"));
-      lines.push(sep2());
-      let declTotal = 0;
-      for (const [key, val] of entries) {
-        const a = Number(val) || 0;
-        declTotal += a;
-        lines.push(rjust(`  ${key}:`, defaultMoney(a)));
-      }
-      lines.push(sep2());
-      lines.push(rjust("TOTAL DECLARADO:", defaultMoney(declTotal)));
-      lines.push(rjust("DIFERENCIA:", defaultMoney(diff)));
+  if (Number(systemSubtotal) > 0) lines.push(rjust("  Subtotal:", defaultMoney(systemSubtotal)));
+  if (Number(systemTax) > 0) lines.push(rjust("  IVA:", defaultMoney(systemTax)));
+  if (Number(systemService) > 0) lines.push(rjust("  Servicio:", defaultMoney(systemService)));
+  lines.push(rjust("TOTAL SISTEMA:", defaultMoney(baseSystem)));
+  lines.push(`Transacciones: ${Number(salesCount) || 0}`);
+
+  // ── Todas las formas de cobro, con cero incluidas ─────────────────────────
+  const labels = [];
+  const pushLabel = (label) => {
+    const clean = closeMethodLabel(label);
+    if (clean && !labels.includes(clean)) labels.push(clean);
+  };
+  if (Array.isArray(methods)) for (const m of methods) pushLabel(m?.label ?? m?.name ?? m?.key ?? m);
+  for (const label of Object.keys(sysMap)) pushLabel(label);
+  for (const label of Object.keys(physMap)) pushLabel(label);
+
+  if (labels.length > 0) {
+    lines.push(sep2());
+    lines.push(center("COBROS POR METODO"));
+    lines.push(cols("CONCEPTO", "SISTEMA", "FISICO"));
+    for (const label of labels) {
+      lines.push(cols(label, defaultMoney(sysMap[label] || 0), defaultMoney(physMap[label] || 0)));
     }
+    lines.push(sep2());
+    lines.push(cols("TOTAL", defaultMoney(baseSystem), defaultMoney(physicalSum)));
   }
+
+  // ── Diferencia: el físico resta sobre el sistema, siempre ────────────────
+  if (hasPhysical) {
+    const difference = physicalSum - baseSystem;
+    const magnitude = Math.abs(difference);
+    const signed = `${difference < 0 ? "-" : ""}${defaultMoney(magnitude)}`;
+    lines.push(sep2());
+    lines.push(rjust("DIFERENCIA:", signed));
+    if (magnitude < 0.005) {
+      lines.push(center(`CUADRE (fisico - sistema): ${defaultMoney(0)}`));
+    } else if (difference < 0) {
+      lines.push(center(`FALTANTE (fisico - sistema): ${defaultMoney(magnitude)}`));
+    } else {
+      lines.push(center(`SOBRANTE (fisico - sistema): ${defaultMoney(magnitude)}`));
+    }
+    if (Math.abs(Number(diffNonCash) || 0) > 0.005) {
+      lines.push(rjust("  Dif. no efectivo:", defaultMoney(diffNonCash)));
+    }
+  } else if (diff != null && Math.abs(Number(diff)) > 0.005) {
+    // Cierres viejos guardados sin el desglose: se conserva lo que traiga el registro.
+    lines.push(rjust("DIFERENCIA:", defaultMoney(diff)));
+  }
+
   if (Number(openingAmount) > 0) {
     lines.push(sep2());
     lines.push(rjust("Fondo apertura:", defaultMoney(openingAmount)));
@@ -170,7 +253,7 @@ export function buildCloseReportText({
   if (note) {
     lines.push(sep2());
     lines.push("Notas:");
-    lines.push(String(note));
+    lines.push(...wrapText(note, W));
   }
   lines.push(sep());
   lines.push("");

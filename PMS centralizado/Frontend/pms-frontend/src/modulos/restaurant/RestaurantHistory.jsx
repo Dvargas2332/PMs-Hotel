@@ -453,6 +453,7 @@ export default function RestaurantHistory() {
 
   const buildCloseReportTextHistory = (row) => {
     const totals = row?.closeTotals && typeof row.closeTotals === "object" ? row.closeTotals : {};
+    const breakdown = row?.closeBreakdown && typeof row.closeBreakdown === "object" ? row.closeBreakdown : {};
     const payments = row?.closePayments && typeof row.closePayments === "object" ? row.closePayments : {};
     const systemTotal = Number(totals.system ?? totals.systemTotal ?? totals.totalSales ?? totals.total ?? 0);
     return buildCloseReportText({
@@ -463,8 +464,15 @@ export default function RestaurantHistory() {
       openedAt: row?.openedAt,
       closedAt: row?.closedAt,
       systemTotal,
-      byMethod: payments,
-      salesCount: 0,
+      systemSubtotal: totals.systemSubtotal,
+      systemTax: totals.systemTax,
+      systemService: totals.systemService,
+      systemByMethod: breakdown.systemByMethod,
+      reportedByMethod: breakdown.reportedByMethod ?? payments,
+      methods: invoicePaymentMethods,
+      diff: totals.diff,
+      diffNonCash: totals.diffNonCash,
+      salesCount: totals.salesCount ?? breakdown.salesCount ?? 0,
       note: row?.closeNote,
     });
   };

@@ -4275,17 +4275,19 @@ const [subCategory, setSubCategory] = useState("");
                         setCloseAuditOk(false);
                         // Print X close report
                         try {
-                          const byMethodLabeled = {};
-                          for (const row of closeMethodRows) { if (row.amount > 0) byMethodLabeled[row.label] = row.amount; }
-                          const declaredLabeled = {};
+                          // Todas las formas de cobro van al reporte, tengan monto o no.
+                          const systemByMethod = {};
+                          const reportedByMethod = {};
                           for (const row of closeCompareRows) {
-                            const val = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
-                            if (val > 0) declaredLabeled[row.label] = val;
+                            systemByMethod[row.label] = row.amount;
+                            reportedByMethod[row.label] = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
                           }
                           const xText = buildCloseReportText({
                             stage: "X", hotelName: hotel?.name || "", restaurant: restaurantInfo, openedAt: openInfo.openedAt,
                             closedAt: new Date().toISOString(), systemTotal: closeSummary.system,
-                            byMethod: byMethodLabeled, declared: declaredLabeled, diff: closeSummary.diff,
+                            systemByMethod, reportedByMethod,
+                            methods: closeCompareRows.map((r) => ({ label: r.label })),
+                            diff: closeSummary.diff,
                             salesCount: stats?.salesCount || 0, note: closeForm.notes,
                             staffName: activeStaff?.name || openInfo.user,
                           });
@@ -4371,17 +4373,19 @@ const [subCategory, setSubCategory] = useState("");
                         });
                         // Print Z close report before resetting state
                         try {
-                          const byMethodLabeled = {};
-                          for (const row of auditRows) { if (row.amount > 0) byMethodLabeled[row.label] = row.amount; }
-                          const declaredLabeled = {};
+                          // El físico se compara contra el sistema, medio por medio, con ceros incluidos.
+                          const systemByMethod = {};
+                          for (const row of auditRows) systemByMethod[row.label] = row.amount;
+                          const reportedByMethod = {};
                           for (const row of closeCompareRows) {
-                            const val = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
-                            if (val > 0) declaredLabeled[row.label] = val;
+                            reportedByMethod[row.label] = Number(parseMoneyInput(closeForm[row.key] || "0")) || 0;
                           }
                           const zText = buildCloseReportText({
                             stage: "Z", hotelName: hotel?.name || "", restaurant: restaurantInfo, openedAt: openInfo.openedAt,
                             closedAt: new Date().toISOString(), systemTotal: auditTotals.system,
-                            byMethod: byMethodLabeled, declared: declaredLabeled, diff: auditTotals.diff,
+                            systemByMethod, reportedByMethod,
+                            methods: closeCompareRows.map((r) => ({ label: r.label })),
+                            diff: auditTotals.diff,
                             salesCount: stats?.salesCount || 0, note: closeForm.notes,
                             staffName: activeStaff?.name || openInfo.user,
                           });
