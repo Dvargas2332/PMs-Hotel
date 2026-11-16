@@ -6,7 +6,7 @@ import { sanitizeImageUrl } from "../../lib/security";
 import { api, setStaffToken } from "../../lib/api";
 import { ensurePrintAgentConfigInteractive, printTextToAgent } from "../../lib/printAgent";
 import { normalizeMoneyInput, parseMoneyInput } from "../../lib/money";
-import { calculateOrderTotals } from "../../lib/restaurantTaxes";
+import { calculateOrderTotals, beforeDiscountTotals } from "../../lib/restaurantTaxes";
 import { computePaymentSplit } from "../../lib/restaurantChange";
 import { buildCloseReportText, buildPrintPreviewText as buildTicketText } from "../../lib/restaurantDocs";
 import useNoAutocomplete from "../../hooks/useNoAutocomplete";
@@ -1378,6 +1378,9 @@ const [subCategory, setSubCategory] = useState("");
   const paymentMissing = paymentSplit.missing;
 
   const displayTotals = paymentResult?.totals || totals;
+  // El desglose se muestra antes del descuento para que la cuenta que ve el
+  // cliente cuadre: subtotal + servicio + impuestos - descuento = total.
+  const discountView = useMemo(() => beforeDiscountTotals(displayTotals), [displayTotals]);
   const paymentChange = paymentResult?.change || 0;
 
   const hasItems = useMemo(() => (currentOrder.items || []).length > 0, [currentOrder.items]);
@@ -4584,20 +4587,20 @@ const [subCategory, setSubCategory] = useState("");
                   <div className="space-y-1 border-t border-lime-200 pt-3 text-sm tabular-nums">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-600">Subtotal</span>
-                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.subtotal)}</span>
+                      <span className="font-medium text-slate-900">{formatMoney(discountView.subtotal)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-600">Servicio</span>
-                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.service)}</span>
+                      <span className="font-medium text-slate-900">{formatMoney(discountView.service)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-600">Impuestos</span>
-                      <span className="font-medium text-slate-900">{formatMoney(displayTotals.tax)}</span>
+                      <span className="font-medium text-slate-900">{formatMoney(discountView.tax)}</span>
                     </div>
-                    {displayTotals.discountTotal > 0 && (
+                    {discountView.discount > 0 && (
                       <div className="flex items-center justify-between">
                         <span className="text-slate-600">Descuento</span>
-                        <span className="font-medium text-emerald-700">-{formatMoney(displayTotals.discountTotal)}</span>
+                        <span className="font-medium text-emerald-700">-{formatMoney(discountView.discount)}</span>
                       </div>
                     )}
                   </div>
@@ -5754,20 +5757,20 @@ const [subCategory, setSubCategory] = useState("");
                   <div className="mt-3 shrink-0 space-y-1 text-sm text-lime-800">
                     <div className="flex justify-between">
                       <span>Sub total</span>
-                      <span>{formatMoney(totals.subtotal)}</span>
+                      <span>{formatMoney(discountView.subtotal)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Service {taxesCfg.servicio || 0}%</span>
-                      <span>{formatMoney(totals.service)}</span>
+                      <span>{formatMoney(discountView.service)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Taxes {taxesCfg.iva || 0}%</span>
-                      <span>{formatMoney(totals.tax)}</span>
+                      <span>{formatMoney(discountView.tax)}</span>
                     </div>
-                    {totals.discountTotal > 0 && (
+                    {discountView.discount > 0 && (
                       <div className="flex justify-between text-amber-700">
                         <span>Descuento</span>
-                        <span>-{formatMoney(totals.discountTotal)}</span>
+                        <span>-{formatMoney(discountView.discount)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-semibold text-lg mt-1">

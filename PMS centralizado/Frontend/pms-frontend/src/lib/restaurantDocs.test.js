@@ -187,4 +187,24 @@ describe("buildPrintPreviewText", () => {
     expect(text).toContain("ENCABEZADO PROPIO");
     expect(text).not.toContain("Cafetería Kaze");
   });
+
+  it("imprime el desglose antes del descuento para que la cuenta cuadre", () => {
+    const text = buildPrintPreviewText({
+      title: "Ticket",
+      payload: { items: [{ name: "Casado", qty: 1, price: 12300 }] },
+      totals: { subtotal: 9000, service: 900, tax: 1170, discountTotal: 1230, total: 11070 },
+      money: (v) => Number(v).toFixed(2),
+    });
+    expect(text).toContain("Subtotal");
+    expect(text).toContain("10000.00");
+    expect(text).toContain("Servicio");
+    expect(text).toContain("1000.00");
+    expect(text).toContain("IVA");
+    expect(text).toContain("1300.00");
+    expect(text).toContain("-1230.00");
+    expect(text).toContain("11070.00");
+    // Descuento arriba del total: subtotal + servicio + IVA - descuento = total.
+    expect(text.indexOf("Descuento")).toBeLessThan(text.indexOf("TOTAL"));
+    expect(text.indexOf("IVA")).toBeLessThan(text.indexOf("Descuento"));
+  });
 });

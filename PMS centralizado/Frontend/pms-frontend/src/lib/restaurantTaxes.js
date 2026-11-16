@@ -105,3 +105,33 @@ export function calculateOrderTotals(items, globals, orderDiscountPercent) {
     discountAmount: round2(orderDiscountAmount + discountItems),
   };
 }
+
+/**
+ * Importes ANTES del descuento para mostrar en pantalla y en el comprobante.
+ *
+ * `calculateOrderTotals` devuelve el subtotal, el servicio y el IVA ya rebajados,
+ * así que imprimir además la línea de descuento hacía que la cuenta no cuadrara
+ * (subtotal - descuento + servicio + IVA daba menos que el total). Aquí se
+ * devuelven los tres conceptos antes del descuento y el descuento completo, de
+ * modo que subtotal + servicio + IVA - descuento = total, tal como lo lee el
+ * cliente en el papel.
+ */
+export function beforeDiscountTotals(totals) {
+  const total = round2(asNumber(totals?.total));
+  const discount = round2(asNumber(totals?.discountTotal ?? totals?.discountAmount ?? totals?.discount));
+  const subtotal = round2(asNumber(totals?.subtotal));
+  const service = round2(asNumber(totals?.service ?? totals?.servicio ?? totals?.tip10));
+  const tax = round2(asNumber(totals?.tax ?? totals?.iva ?? totals?.impuesto));
+
+  if (!(discount > 0) || !(total > 0)) {
+    return { subtotal, service, tax, discount: 0, total };
+  }
+
+  const gross = round2(total + discount);
+  const ratio = gross / total;
+  const grossSubtotal = round2(subtotal * ratio);
+  const grossService = round2(service * ratio);
+  // El IVA absorbe el redondeo para que la suma de los tres conceptos sea exacta.
+  const grossTax = round2(gross - grossSubtotal - grossService);
+  return { subtotal: grossSubtotal, service: grossService, tax: grossTax, discount, total };
+}

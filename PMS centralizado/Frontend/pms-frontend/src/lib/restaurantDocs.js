@@ -5,6 +5,8 @@
  * se inyecta con `money` para respetar la moneda de cada pantalla.
  */
 
+import { beforeDiscountTotals } from "./restaurantTaxes";
+
 const W = 42;
 
 const defaultMoney = (n) => (Number(n) || 0).toFixed(2);
@@ -332,17 +334,24 @@ export function buildPrintPreviewText({ title, payload, totals, money = defaultM
 
   const t = totals && typeof totals === "object" ? totals : null;
   if (t) {
-    const subtotal = t.subtotal ?? t.base;
     const total = t.total ?? t.system ?? t.grandTotal ?? t.totalAmount;
-    const tax = t.tax ?? t.iva ?? t.impuesto;
-    const service = t.service ?? t.servicio ?? t.tip10;
-    if (subtotal != null) lines.push(totalRow("Subtotal", money(subtotal)));
-    if (Number(t?.discountTotal) > 0) lines.push(totalRow("Descuento", `-${money(t.discountTotal)}`));
-    if (service != null) lines.push(totalRow("Servicio", money(service)));
-    if (tax != null) lines.push(totalRow("IVA", money(tax)));
+    const shown = beforeDiscountTotals({
+      subtotal: t.subtotal ?? t.base,
+      service: t.service ?? t.servicio ?? t.tip10,
+      tax: t.tax ?? t.iva ?? t.impuesto,
+      discountTotal: t.discountTotal,
+      total,
+    });
+    const hasSubtotal = (t.subtotal ?? t.base) != null;
+    const hasService = (t.service ?? t.servicio ?? t.tip10) != null;
+    const hasTax = (t.tax ?? t.iva ?? t.impuesto) != null;
+    if (hasSubtotal) lines.push(totalRow("Subtotal", money(shown.subtotal)));
+    if (hasService) lines.push(totalRow("Servicio", money(shown.service)));
+    if (hasTax) lines.push(totalRow("IVA", money(shown.tax)));
+    if (shown.discount > 0) lines.push(totalRow("Descuento", `-${money(shown.discount)}`));
     if (total != null) {
       lines.push(sep2());
-      lines.push(totalRow("TOTAL", money(total)));
+      lines.push(totalRow("TOTAL", money(shown.total)));
       lines.push(sep());
     }
   }
