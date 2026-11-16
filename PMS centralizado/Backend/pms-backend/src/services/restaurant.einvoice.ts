@@ -212,6 +212,118 @@ export interface IssueResult {
 }
 
 /**
+ * Líneas fiscales de la venta.
+ *
+ * El precio unitario se declara completo (precio de lista, sin impuestos) y el
+ * descuento —del artículo y de la orden— va en `<Descuento>`, que es como
+ * Hacienda espera verlo. Los subtotales y los impuestos siguen saliendo de los
+ * totales guardados de la orden, así que el comprobante cuadra al centavo con la
+ * venta cobrada. El 10% de servicio se emite como línea propia.
+ */
+export function buildRestaurantInvoiceLines(opts: {
+  items: any[];
+  catalogById: Map<string, any>;
+  globals: { iva: number; servicio: number };
+  targetSubtotal: number;
+  targetTotal: number;
+}): CrLineItem[] {
+  const { items, catalogById, globals } = opts;
+
+  const perItem = (items || []).map((item: any) => {
+    const rule: any = catalogById.get(String(item.itemId));
+    const taxInputs: TaxInput[] = (rule?.taxes || [])
+      .filter((t: any) => t.tax?.active !== false)
+      .map((t: any) => ({ percent: asNumber(t.tax?.percent), kind: String(t.tax?.kind || "OTHER") }));
+    const includes = item.priceIncludesTaxesAndService ?? rule?.priceIncludesTaxesAndService ?? true;
+    const computed = calculateOrderTotals(
+      [
+        {
+          price: asNumber(item.price),
+          qty: asNumber(item.qty),
+          discountPercent: asNumber(item.discountPercent),
+          priceIncludesTaxesAndService: includes,
+          taxes: taxInputs.length ? taxInputs : null,
+        },
+      ],
+      globals,
+      0
+    );
+    const ivaPercent = taxInputs
+      .filter((t) => String(t.kind).toUpperCase() !== "SERVICE")
+      .reduce((a, t) => a + asNumber(t.percent), 0);
+
+    // Precio de lista sin impuestos ni servicio: la base que Hacienda pide en
+    // PrecioUnitario. Se calcula con las mismas tasas que usó el total.
+    const rateInputs = taxInputs.length
+      ? taxInputs
+      : [
+          { percent: asNumber(globals.servicio), kind: "SERVICE" },
+          { percent: asNumber(globals.iva), kind: "IVA" },
+        ];
+    const allRates = rateInputs.reduce((a, t) => a + asNumber(t.percent), 0) / 100;
+    const listAmount = asNumber(item.price) * asNumber(item.qty);
+    const grossNet = includes && allRates > 0 ? listAmount / (1 + allRates) : listAmount;
+
+    return {
+      item,
+      net: computed.subtotal,
+      grossNet,
+      tax: computed.tax,
+      taxRate: ivaPercent > 0 ? ivaPercent : asNumber(globals.iva),
+      cabys: rule?.cabys || undefined,
+      commercialCode: item.itemId || item.id || undefined,
+    };
+  });
+
+  const computedSubtotal = perItem.reduce((a: number, l: any) => a + l.net, 0);
+  const factor = computedSubtotal > 0 ? opts.targetSubtotal / computedSubtotal : 1;
+
+  const lines: CrLineItem[] = perItem.map((l: any, idx: number) => {
+    const qty = asNumber(l.item.qty) || 1;
+    const listNet = round2(l.grossNet);
+    const net = round2(l.net * factor);
+    const taxAmount = round2(l.tax * factor);
+    const unitPrice = round2(listNet / qty);
+    const listTotal = round2(unitPrice * qty);
+    const lineDiscount = listTotal > net ? round2(listTotal - net) : 0;
+    return {
+      lineNumber: idx + 1,
+      cabysCode: l.cabys,
+      commercialCode: l.commercialCode,
+      qty,
+      unitCode: "Sp",
+      description: String(l.item.name || "Producto"),
+      unitPrice,
+      discount: lineDiscount,
+      discountReason: lineDiscount > 0 ? "Descuento" : undefined,
+      subtotal: net,
+      taxCode: taxAmount > 0 ? "01" : undefined,
+      taxRate: taxAmount > 0 ? l.taxRate : undefined,
+      taxBase: taxAmount > 0 ? net : undefined,
+      taxAmount: taxAmount > 0 ? taxAmount : undefined,
+      total: round2(net + taxAmount),
+    };
+  });
+
+  const linesTotal = lines.reduce((a, l) => a + l.total, 0);
+  const serviceAmount = round2(opts.targetTotal - linesTotal);
+  if (serviceAmount > 0.005) {
+    lines.push({
+      lineNumber: lines.length + 1,
+      description: "10% Servicio",
+      unitCode: "Sp",
+      qty: 1,
+      unitPrice: serviceAmount,
+      discount: 0,
+      subtotal: serviceAmount,
+      total: serviceAmount,
+    });
+  }
+
+  return lines;
+}
+
+/**
  * Crea (o devuelve) el comprobante electrónico de la venta, con XML listo para
  * firmar y enviar desde el módulo de Facturación Electrónica.
  */
@@ -282,76 +394,13 @@ export async function issueRestaurantDoc(opts: IssueOptions): Promise<IssueResul
     : [];
   const catalogById = new Map(catalog.map((c: any) => [String(c.id), c]));
 
-  const perItem = (order.items || []).map((item: any) => {
-    const rule: any = catalogById.get(String(item.itemId));
-    const taxInputs: TaxInput[] = (rule?.taxes || [])
-      .filter((t: any) => t.tax?.active !== false)
-      .map((t: any) => ({ percent: asNumber(t.tax?.percent), kind: String(t.tax?.kind || "OTHER") }));
-    const computed = calculateOrderTotals(
-      [
-        {
-          price: asNumber(item.price),
-          qty: asNumber(item.qty),
-          discountPercent: asNumber(item.discountPercent),
-          priceIncludesTaxesAndService:
-            item.priceIncludesTaxesAndService ?? rule?.priceIncludesTaxesAndService ?? true,
-          taxes: taxInputs.length ? taxInputs : null,
-        },
-      ],
-      globals,
-      0
-    );
-    const ivaPercent = taxInputs.filter((t) => String(t.kind).toUpperCase() !== "SERVICE").reduce((a, t) => a + asNumber(t.percent), 0);
-    return {
-      item,
-      net: computed.subtotal,
-      tax: computed.tax,
-      taxRate: ivaPercent > 0 ? ivaPercent : asNumber(globals.iva),
-      cabys: rule?.cabys || undefined,
-      commercialCode: item.itemId || item.id || undefined,
-    };
+  const lines = buildRestaurantInvoiceLines({
+    items: order.items || [],
+    catalogById,
+    globals,
+    targetSubtotal: asNumber(order.subtotal),
+    targetTotal: asNumber(order.total),
   });
-
-  const computedSubtotal = perItem.reduce((a: number, l: any) => a + l.net, 0);
-  const factor = computedSubtotal > 0 ? asNumber(order.subtotal) / computedSubtotal : 1;
-
-  const lines: CrLineItem[] = perItem.map((l: any, idx: number) => {
-    const net = round2(l.net * factor);
-    const taxAmount = round2(l.tax * factor);
-    return {
-      lineNumber: idx + 1,
-      cabysCode: l.cabys,
-      commercialCode: l.commercialCode,
-      qty: asNumber(l.item.qty) || 1,
-      unitCode: "Sp",
-      description: String(l.item.name || "Producto"),
-      unitPrice: round2(net / (asNumber(l.item.qty) || 1)),
-      discount: 0,
-      subtotal: net,
-      taxCode: taxAmount > 0 ? "01" : undefined,
-      taxRate: taxAmount > 0 ? l.taxRate : undefined,
-      taxBase: taxAmount > 0 ? net : undefined,
-      taxAmount: taxAmount > 0 ? taxAmount : undefined,
-      total: round2(net + taxAmount),
-    };
-  });
-
-  // El 10% de servicio se emite como línea propia; se ajusta al total guardado
-  // para que el comprobante cuadre al centavo con la venta.
-  const linesTotal = lines.reduce((a, l) => a + l.total, 0);
-  const serviceAmount = round2(asNumber(order.total) - linesTotal);
-  if (serviceAmount > 0.005) {
-    lines.push({
-      lineNumber: lines.length + 1,
-      description: "10% Servicio",
-      unitCode: "Sp",
-      qty: 1,
-      unitPrice: serviceAmount,
-      discount: 0,
-      subtotal: serviceAmount,
-      total: serviceAmount,
-    });
-  }
 
   const { payments, baseCurrency } = await resolveRestaurantPayments(hotelId, order);
   const crPayments: CrPayment[] =

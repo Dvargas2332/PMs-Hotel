@@ -282,7 +282,7 @@ export function buildCrXml(input: CrInvoiceInput): string {
     <TotalGravado>${formatMoney(s.totalTaxableGoods)}</TotalGravado>
     <TotalExento>${formatMoney(s.totalExemptGoods)}</TotalExento>
     <TotalExonerado>0.00</TotalExonerado>
-    <TotalVenta>${formatMoney(s.totalNetSale + s.totalTax)}</TotalVenta>
+    <TotalVenta>${formatMoney(s.totalNetSale + s.totalDiscount)}</TotalVenta>
     <TotalDescuentos>${formatMoney(s.totalDiscount)}</TotalDescuentos>
     <TotalVentaNeta>${formatMoney(s.totalNetSale)}</TotalVentaNeta>
     <TotalImpuesto>${formatMoney(s.totalTax)}</TotalImpuesto>
