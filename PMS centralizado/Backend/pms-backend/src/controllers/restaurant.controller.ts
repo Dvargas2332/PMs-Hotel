@@ -6026,10 +6026,17 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   if (useMoneda && currency && currency !== "BASE") {
     missing.push("Filtro Moneda pendiente (TPV solo base).");
   }
-  if (includeHouseAccount) missing.push("Filtro Cuenta Casa pendiente (TPV no expone).");
+
+  // Cuenta casa: ventas cargadas a la habitación o a la casa (no entran a caja).
+  const houseAccountKeys = ["room", "house", "cuentacasa", "cuenta_casa", "cortesia"];
+  const isHouseAccountSale = (o: any) => {
+    const pb = (o?.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
+    return Object.entries(pb).some(([key, value]) => houseAccountKeys.includes(String(key).toLowerCase()) && Number(value) > 0);
+  };
+  if (!includeHouseAccount) {
+    filtered = filtered.filter((o) => !isHouseAccountSale(o));
+  }
   if (includeVoidedInvoices) missing.push("Filtro Facturas Anuladas pendiente (TPV no expone).");
-  if (detailedByFamily) missing.push("Detallado por Familia pendiente (TPV no expone).");
-  if (includeItemsMode) missing.push("Filtro de inclusión de artículos pendiente (TPV no expone).");
 
   if (focus === "Cajero") {
     const nameOf = (id: any) => staffNameById.get(String(id || "")) || String(id || "");
@@ -6155,6 +6162,54 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
     missing.push("Seleccionar los requiere más vendidos o menos vendidos.");
   }
 
+  // Familias de los artículos vendidos: las usan el detalle por familia y las
+  // líneas de artículo del reporte.
+  const itemFamilyNameById = new Map<string, string>();
+  if (detailedByFamily || includeItemsMode) {
+    const itemIds = new Set<string>();
+    for (const o of filtered as any[]) {
+      for (const it of o.items || []) if (it?.itemId) itemIds.add(String(it.itemId));
+    }
+    if (itemIds.size > 0) {
+      const rows = await prisma.restaurantItem.findMany({
+        where: { hotelId, id: { in: Array.from(itemIds) } },
+        select: { id: true, family: { select: { name: true } } },
+      });
+      for (const r of rows) itemFamilyNameById.set(String(r.id), r.family?.name || "Sin familia");
+    }
+  }
+
+  // Detallado por familia: una fila por familia de cada venta, con su cantidad y monto.
+  if (detailedByFamily) {
+    const expanded: any[] = [];
+    for (const o of filtered as any[]) {
+      const lines = Array.isArray(o.items) ? o.items : [];
+      const byFamily = new Map<string, { qty: number; amount: number; lines: number }>();
+      for (const it of lines) {
+        const family = itemFamilyNameById.get(String(it?.itemId || "")) || "Sin familia";
+        const cur = byFamily.get(family) || { qty: 0, amount: 0, lines: 0 };
+        cur.qty += Number(it?.qty) || 0;
+        cur.amount += (Number(it?.price) || 0) * (Number(it?.qty) || 0);
+        cur.lines += 1;
+        byFamily.set(family, cur);
+      }
+      if (byFamily.size === 0) {
+        expanded.push({ ...o, __familyRow: "Sin familia", __familyQty: 0, __familyAmount: asNumber(o.total), __familyLines: 0 });
+        continue;
+      }
+      for (const [family, value] of byFamily) {
+        expanded.push({
+          ...o,
+          __familyRow: family,
+          __familyQty: value.qty,
+          __familyAmount: value.amount,
+          __familyLines: value.lines,
+        });
+      }
+    }
+    filtered = expanded;
+  }
+
   const totalRows = filtered.length;
   const pageRows = filtered.slice(pageOffset, pageOffset + pageLimit);
   const summary = filtered.reduce(
@@ -6180,6 +6235,7 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
       const shiftNum = matchShift ? shiftNumberMap.get(matchShift.id) ?? null : null;
       const pb = (o.paymentBreakdown && typeof o.paymentBreakdown === "object" ? o.paymentBreakdown : {}) as any;
       const paymentMethods = Object.entries(pb).filter(([, v]) => Number(v) > 0).map(([name, amount]) => ({ name, amount: Number(amount) }));
+      const familyRow = (o as any).__familyRow as string | undefined;
       return {
         id: o.id,
         saleNumber: (o as any).saleNumber || null,
@@ -6198,12 +6254,23 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
         closedByStaffName: staffNameById.get(String(o.closedByStaffId || "")) || "",
         status: o.status,
         serviceType: o.serviceType,
-        subtotal: (o as any).subtotal ?? null,
-        tax: (o as any).tax ?? null,
-        tip10: (o as any).tip10 ?? null,
-        total: o.total,
+        subtotal: familyRow ? null : (o as any).subtotal ?? null,
+        tax: familyRow ? null : (o as any).tax ?? null,
+        tip10: familyRow ? null : (o as any).tip10 ?? null,
+        total: familyRow ? (o as any).__familyAmount : o.total,
+        family: familyRow ?? null,
+        familyQty: familyRow ? (o as any).__familyQty ?? 0 : null,
         paymentMethods,
-        itemCount: o.items?.length || 0,
+        itemCount: familyRow ? (o as any).__familyLines ?? 0 : o.items?.length || 0,
+        items: includeItemsMode
+          ? (o.items || []).map((it: any) => ({
+              name: it?.name || "",
+              qty: Number(it?.qty) || 0,
+              price: Number(it?.price) || 0,
+              total: (Number(it?.price) || 0) * (Number(it?.qty) || 0),
+              family: itemFamilyNameById.get(String(it?.itemId || "")) || null,
+            }))
+          : undefined,
         createdAt: o.createdAt,
         closedAt: (o as any).closedAt ?? o.updatedAt,
         groupKey: (o as any).__groupKey,

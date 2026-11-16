@@ -40,7 +40,7 @@ export default function RestaurantHistory() {
   const [groupBy, setGroupBy] = useState("");
   const [orderBy, setOrderBy] = useState("");
   const [detailedByFamily, setDetailedByFamily] = useState(false);
-  const [includeHouseAccount, setIncludeHouseAccount] = useState(false);
+  const [includeHouseAccount, setIncludeHouseAccount] = useState(true);
   const [includeVoidedInvoices, setIncludeVoidedInvoices] = useState(false);
   const [useArticulo, setUseArticulo] = useState(false);
   const [useTipoCobro, setUseTipoCobro] = useState(false);
@@ -70,7 +70,7 @@ export default function RestaurantHistory() {
   const [dateTo, setDateTo] = useState("");
   const [topCount, setTopCount] = useState("");
   const [topMode, setTopMode] = useState("");
-  const [includeItemsMode, setIncludeItemsMode] = useState("");
+  const [includeItemsMode, setIncludeItemsMode] = useState(false);
   const [reportMissing, setReportMissing] = useState([]);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
@@ -379,7 +379,7 @@ export default function RestaurantHistory() {
         dateTimeTo: "",
         topCount,
         topMode,
-        includeItemsMode,
+        includeItemsMode: includeItemsMode ? "true" : "false",
         limit: 100,
         offset: 0,
       };
@@ -1066,6 +1066,35 @@ const handleInvoicesApply = async () => {
                           </option>
                         ))}
                       </select>
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-lime-100 pt-3 text-sm">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="accent-lime-600"
+                        checked={detailedByFamily}
+                        onChange={(e) => setDetailedByFamily(e.target.checked)}
+                      />
+                      Detallado por familia
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="accent-lime-600"
+                        checked={includeItemsMode}
+                        onChange={(e) => setIncludeItemsMode(e.target.checked)}
+                      />
+                      Incluir artículos
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="accent-lime-600"
+                        checked={includeHouseAccount}
+                        onChange={(e) => setIncludeHouseAccount(e.target.checked)}
+                      />
+                      Incluir cuenta casa
                     </label>
                   </div>
                 </div>
@@ -1815,6 +1844,8 @@ const handleInvoicesApply = async () => {
                   <thead>
                     <tr className="bg-lime-50 text-left">
                       {groupBy ? <th className="border border-lime-200 px-2 py-1">Grupo</th> : null}
+                      {detailedByFamily ? <th className="border border-lime-200 px-2 py-1">Familia</th> : null}
+                      {detailedByFamily ? <th className="border border-lime-200 px-2 py-1">Cant.</th> : null}
                       <th className="border border-lime-200 px-2 py-1">#Venta</th>
                       <th className="border border-lime-200 px-2 py-1">Turno</th>
                       <th className="border border-lime-200 px-2 py-1">Sección</th>
@@ -1833,9 +1864,15 @@ const handleInvoicesApply = async () => {
                   </thead>
                   <tbody>
                     {visiblePreviewRows.map((row) => (
-                      <tr key={row.id || `${row.sectionId}-${row.tableId}-${row.createdAt}`} className="hover:bg-lime-50">
+                      <tr key={`${row.id || `${row.sectionId}-${row.tableId}-${row.createdAt}`}-${row.family || "venta"}`} className="hover:bg-lime-50">
                         {groupBy ? (
                           <td className="border border-lime-100 px-2 py-1">{row.groupKey || "-"}</td>
+                        ) : null}
+                        {detailedByFamily ? (
+                          <td className="border border-lime-100 px-2 py-1">{row.family || "-"}</td>
+                        ) : null}
+                        {detailedByFamily ? (
+                          <td className="border border-lime-100 px-2 py-1 text-center">{row.familyQty ?? "-"}</td>
                         ) : null}
                         <td className="border border-lime-100 px-2 py-1 font-semibold">{row.saleNumber || row.id?.slice(-6) || "-"}</td>
                         <td className="border border-lime-100 px-2 py-1">{row.shiftNumber ? `#${row.shiftNumber}` : "-"}</td>
@@ -1871,9 +1908,29 @@ const handleInvoicesApply = async () => {
                         </td>
                       </tr>
                     ))}
+                    {visiblePreviewRows.map((row) =>
+                      includeItemsMode && Array.isArray(row.items) && row.items.length > 0 ? (
+                        <tr key={`${row.id}-articulos-${row.family || "venta"}`} className="bg-lime-50/40">
+                          <td
+                            className="border border-lime-100 px-2 py-1 text-[11px] text-slate-600"
+                            colSpan={14 + (groupBy ? 1 : 0) + (detailedByFamily ? 2 : 0)}
+                          >
+                            {row.items
+                              .map(
+                                (it, idx) =>
+                                  `${idx > 0 ? "  ·  " : ""}${it.qty}× ${it.name}${it.family ? ` (${it.family})` : ""} — ${Number(it.total).toFixed(2)}`
+                              )
+                              .join("")}
+                          </td>
+                        </tr>
+                      ) : null
+                    )}
                     {salesPreviewRows.length === 0 && (
                       <tr>
-                        <td className="border border-lime-100 px-2 py-2 text-center text-slate-500" colSpan={groupBy ? 15 : 14}>
+                        <td
+                          className="border border-lime-100 px-2 py-2 text-center text-slate-500"
+                          colSpan={14 + (groupBy ? 1 : 0) + (detailedByFamily ? 2 : 0)}
+                        >
                           Sin resultados.
                         </td>
                       </tr>
