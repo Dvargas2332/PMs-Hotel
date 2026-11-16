@@ -1752,9 +1752,20 @@ const handleInvoicesApply = async () => {
         )}
       </>
       {closePreviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
-            <style>{`@media print { .close-preview-header { display:none!important; } }`}</style>
+        <div className="close-preview-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="close-preview-window w-full max-w-lg rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
+            <style>{`
+              @media print {
+                @page { margin: 6mm; }
+                body * { visibility: hidden !important; }
+                .close-preview-overlay, .close-preview-overlay * { visibility: visible !important; }
+                .close-preview-overlay { position: absolute !important; inset: 0 !important; display: block !important; background: #fff !important; padding: 0 !important; }
+                .close-preview-header { display: none !important; }
+                .close-preview-window { max-width: none !important; width: auto !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+                .close-preview-body { max-height: none !important; overflow: visible !important; padding: 0 !important; background: #fff !important; }
+                .close-preview-receipt { width: 80mm !important; margin: 0 auto !important; box-shadow: none !important; border: 0 !important; }
+              }
+            `}</style>
             <div className="close-preview-header flex items-center justify-between gap-3 px-4 py-3 bg-lime-100 border-b border-lime-200">
               <div className="text-sm font-semibold text-lime-900">Reporte de Cierre</div>
               <div className="flex items-center gap-2">
@@ -1762,8 +1773,11 @@ const handleInvoicesApply = async () => {
                 <button className="h-9 px-3 rounded-lg border border-lime-200 text-sm" onClick={() => setClosePreviewOpen(false)}>Cerrar</button>
               </div>
             </div>
-            <div className="p-4 max-h-[75vh] overflow-auto">
-              <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">{closePreviewText}</pre>
+            <div className="close-preview-body p-4 max-h-[75vh] overflow-auto bg-slate-100">
+              {/* El comprobante se ve como el papel: 80 mm, centrado y sin envolver. */}
+              <div className="close-preview-receipt mx-auto w-full max-w-[370px] rounded-lg bg-white px-4 py-5 shadow-sm ring-1 ring-lime-200 overflow-x-auto">
+                <pre className="whitespace-pre font-mono text-[12px] leading-5 text-slate-800">{closePreviewText}</pre>
+              </div>
             </div>
           </div>
         </div>
@@ -2100,12 +2114,18 @@ const handleInvoicesApply = async () => {
         </div>
       )}
       {invoicePreviewOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
+        <div className="invoice-preview-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="invoice-preview-window w-full max-w-3xl rounded-2xl bg-white shadow-xl border border-lime-200 overflow-hidden">
             <style>{`
               @media print {
+                @page { margin: 6mm; }
+                body * { visibility: hidden !important; }
+                .invoice-preview-overlay, .invoice-preview-overlay * { visibility: visible !important; }
+                .invoice-preview-overlay { position: absolute !important; inset: 0 !important; display: block !important; background: #fff !important; padding: 0 !important; }
                 .invoice-preview-header { display: none !important; }
-                .invoice-preview-body { padding: 0 !important; }
+                .invoice-preview-window { max-width: none !important; width: auto !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+                .invoice-preview-body { max-height: none !important; overflow: visible !important; padding: 0 !important; background: #fff !important; }
+                .invoice-preview-receipt { width: 80mm !important; margin: 0 auto !important; box-shadow: none !important; border: 0 !important; }
               }
             `}</style>
             <div className="invoice-preview-header flex items-center justify-between gap-3 px-4 py-3 bg-lime-100 border-b border-lime-200">
@@ -2125,10 +2145,10 @@ const handleInvoicesApply = async () => {
                 </button>
               </div>
             </div>
-            <div className="invoice-preview-body p-4 max-h-[70vh] overflow-auto">
-              <pre className="text-[12px] leading-5 font-mono whitespace-pre-wrap text-slate-800">
-                {invoicePreviewText}
-              </pre>
+            <div className="invoice-preview-body p-4 max-h-[70vh] overflow-auto bg-slate-100">
+              <div className="invoice-preview-receipt mx-auto w-full max-w-[370px] rounded-lg bg-white px-4 py-5 shadow-sm ring-1 ring-lime-200 overflow-x-auto">
+                <pre className="whitespace-pre font-mono text-[12px] leading-5 text-slate-800">{invoicePreviewText}</pre>
+              </div>
             </div>
           </div>
         </div>
