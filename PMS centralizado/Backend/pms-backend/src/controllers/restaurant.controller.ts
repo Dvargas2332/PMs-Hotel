@@ -5896,27 +5896,35 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
     orderBy: { closedAt: "desc" },
     take: 60,
   });
+  // A media jornada el informe también tiene que mostrar el turno abierto:
+  // antes sólo miraba cierres y devolvía cero ventas durante todo el servicio.
+  const openShift = await prisma.cashAudit.findFirst({
+    where: { hotelId, module: "RESTAURANT", closedAt: null },
+    orderBy: { openedAt: "desc" },
+  });
   const shiftNumberMap = await buildShiftNumberMap(hotelId);
 
-  if (shifts.length === 0) {
-    return res.json({ items: [], missing: ["No hay turnos cerrados disponibles."] });
+  if (shifts.length === 0 && !openShift) {
+    return res.json({ items: [], missing: ["No hay turnos para el informe."] });
   }
 
-  let useShifts = dateFrom || dateTo || dateTimeFrom || dateTimeTo ? shifts : [shifts[0]];
+  let useShifts: typeof shifts = dateFrom || dateTo || dateTimeFrom || dateTimeTo ? shifts : [shifts[0] ?? openShift].filter(Boolean) as typeof shifts;
+  if (!dateFrom && !dateTo && !dateTimeFrom && !dateTimeTo && !useTurno && openShift) {
+    useShifts = [openShift];
+  }
   if (useTurno && shiftId) {
-    const chosen = shifts.find((s) => s.id === shiftId);
+    const chosen = shifts.find((s) => s.id === shiftId) || (openShift && openShift.id === shiftId ? [openShift] : null);
     if (!chosen) {
-      return res.json({ items: [], missing: ["Turno no encontrado o no cerrado."] });
+      return res.json({ items: [], missing: ["Turno no encontrado."] });
     }
-    useShifts = [chosen];
+    useShifts = [Array.isArray(chosen) ? chosen[0] : chosen];
   }
 
   const ranges = useShifts
-    .filter((s) => s.closedAt)
     .map((s) => ({
       createdAt: {
         gte: s.openedAt || s.createdAt || new Date(0),
-        lte: s.closedAt as Date,
+        lte: (s.closedAt as Date | null) ?? new Date(),
       },
     }));
 
