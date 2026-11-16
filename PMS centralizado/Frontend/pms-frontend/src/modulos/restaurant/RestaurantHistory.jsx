@@ -48,9 +48,8 @@ export default function RestaurantHistory() {
   const [useMesero, setUseMesero] = useState(false);
   const [useFamilia, setUseFamilia] = useState(false);
   const [useSubfamilia, setUseSubfamilia] = useState(false);
-  const [useFecha, setUseFecha] = useState(false);
   const [useTurno, setUseTurno] = useState(false);
-  const [useMoneda, setUseMoneda] = useState(false);
+  const [useFecha, setUseFecha] = useState(false);
   const [families, setFamilies] = useState([]);
   const [subFamilies, setSubFamilies] = useState([]);
   const [itemsList, setItemsList] = useState([]);
@@ -66,14 +65,12 @@ export default function RestaurantHistory() {
   const [serviceType, setServiceType] = useState("");
   const [paymentKey, setPaymentKey] = useState("");
   const [shiftId, setShiftId] = useState("");
-  const [currency, setCurrency] = useState("");
   const [familyId, setFamilyId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [topCount, setTopCount] = useState("");
   const [topMode, setTopMode] = useState("");
   const [includeItemsMode, setIncludeItemsMode] = useState("");
-  const [focusKey, setFocusKey] = useState("");
   const [reportMissing, setReportMissing] = useState([]);
   const [reportBusy, setReportBusy] = useState(false);
   const [reportError, setReportError] = useState("");
@@ -369,7 +366,6 @@ export default function RestaurantHistory() {
         useFecha,
         useFechaHora: false,
         useTurno,
-        useMoneda,
         familyId: useFamilia ? familyId : "",
         subFamilyId: useSubfamilia ? subFamilyId : "",
         cashierId: useCajero ? cashierId : "",
@@ -377,7 +373,6 @@ export default function RestaurantHistory() {
         serviceType: serviceType || "",
         paymentKey: useTipoCobro ? paymentKey : "",
         shiftId: useTurno ? shiftId : "",
-        currency: useMoneda ? currency : "",
         dateFrom: useFecha ? dateFrom : "",
         dateTo: useFecha ? dateTo : "",
         dateTimeFrom: "",
@@ -385,7 +380,6 @@ export default function RestaurantHistory() {
         topCount,
         topMode,
         includeItemsMode,
-        focus: focusKey,
         limit: 100,
         offset: 0,
       };
@@ -770,8 +764,9 @@ const handleInvoicesApply = async () => {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)]">
+              <div className="p-4 sm:p-6 overflow-y-auto h-[calc(90vh-72px)] space-y-4">
                 <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
                 <div className="inline-flex items-center gap-4 rounded-xl border border-lime-200 px-4 py-2">
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -793,6 +788,24 @@ const handleInvoicesApply = async () => {
                     />
                     Anulaciones
                   </label>
+                </div>
+                {/* Enfoque rápido: agrupa el reporte con un toque, sin abrir el selector. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {["Familia", "Subfamilia", "Artículo", "Fecha", "Mesero", "Cajero", "Creador", "Turno"].map((label) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={`h-8 px-3 rounded-lg text-xs font-semibold border ${
+                        groupBy === label
+                          ? "bg-lime-600 text-white border-lime-600"
+                          : "bg-lime-50 text-lime-800 border-lime-200 hover:bg-lime-100"
+                      }`}
+                      onClick={() => setGroupBy((prev) => (prev === label ? "" : label))}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 </div>
 
                 <div className="rounded-xl border border-lime-200 p-4 bg-white">
@@ -872,29 +885,8 @@ const handleInvoicesApply = async () => {
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-[140px_1fr] gap-3 items-center">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="accent-lime-600"
-                      checked={useMoneda}
-                      onChange={(e) => setUseMoneda(e.target.checked)}
-                    />
-                    Moneda
-                  </label>
-                  <select
-                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[300px] bg-white"
-                    disabled={!useMoneda}
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value)}
-                  >
-                    <option value="">Selecciona...</option>
-                    <option value="BASE">Base</option>
-                    <option value="SEC">Secundaria</option>
-                  </select>
-                </div>
-                <div className="grid grid-cols-[140px_1fr_160px] gap-3 items-center">
-                  <label className="flex items-center gap-2 text-sm">
+                <div className="grid grid-cols-1 md:grid-cols-[140px_1fr_160px] gap-3 md:items-end">
+                  <label className="flex items-center gap-2 text-sm md:mb-2">
                     <input
                       type="checkbox"
                       className="accent-lime-600"
@@ -903,27 +895,42 @@ const handleInvoicesApply = async () => {
                     />
                     Fecha
                   </label>
-                  <input
-                    type="date"
-                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[280px]"
-                    value={dateFrom}
-                    onChange={(e) => {
-                      setDateFrom(e.target.value);
-                      setDateTo("");
-                    }}
-                    disabled={!useFecha}
-                  />
-                  <select
-                    className="h-8 rounded-lg border px-2 text-xs w-full max-w-[160px] bg-white"
-                    value={serviceType}
-                    onChange={(e) => setServiceType(e.target.value)}
-                  >
-                    <option value="">Servicio</option>
-                    <option value="DINE_IN">DINE_IN</option>
-                    <option value="TAKEOUT">TAKEOUT</option>
-                    <option value="DELIVERY">DELIVERY</option>
-                    <option value="ROOM">ROOM</option>
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block min-w-0">
+                      <span className="mb-0.5 block text-[11px] text-slate-500">Desde</span>
+                      <input
+                        type="date"
+                        className="h-8 rounded-lg border px-2 text-xs w-full min-w-0"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        disabled={!useFecha}
+                      />
+                    </label>
+                    <label className="block min-w-0">
+                      <span className="mb-0.5 block text-[11px] text-slate-500">Hasta</span>
+                      <input
+                        type="date"
+                        className="h-8 rounded-lg border px-2 text-xs w-full min-w-0"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        disabled={!useFecha}
+                      />
+                    </label>
+                  </div>
+                  <label className="block">
+                    <span className="mb-0.5 block text-[11px] text-slate-500">Servicio</span>
+                    <select
+                      className="h-8 rounded-lg border px-2 text-xs w-full bg-white"
+                      value={serviceType}
+                      onChange={(e) => setServiceType(e.target.value)}
+                    >
+                      <option value="">Todos</option>
+                      <option value="DINE_IN">DINE_IN</option>
+                      <option value="TAKEOUT">TAKEOUT</option>
+                      <option value="DELIVERY">DELIVERY</option>
+                      <option value="ROOM">ROOM</option>
+                    </select>
+                  </label>
                 </div>
                     </div>
                     <div className="space-y-3">
@@ -1028,56 +1035,38 @@ const handleInvoicesApply = async () => {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
-                    <div className="text-xs uppercase text-lime-600">Agrupar por</div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="groupBy"
-                        className="accent-lime-600"
-                        checked={!groupBy}
-                        onChange={() => setGroupBy("")}
-                      />
-                      Ninguno
+                <div className="rounded-xl border border-lime-200 p-4 bg-white">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-xs uppercase tracking-wide text-lime-600">Agrupar por</span>
+                      <select
+                        className="h-9 w-full rounded-lg border px-2 text-sm bg-white"
+                        value={groupBy}
+                        onChange={(e) => setGroupBy(e.target.value)}
+                      >
+                        <option value="">Sin agrupar</option>
+                        {["Familia", "Subfamilia", "Mesero", "Cajero", "Creador", "Turno", "Artículo", "Fecha"].map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                    {["Familia", "Subfamilia", "Mesero", "Cajero", "Creador", "Turno", "Artículo", "Fecha"].map((label) => (
-                      <label key={label} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="groupBy"
-                          className="accent-lime-600"
-                          checked={groupBy === label}
-                          onChange={() => setGroupBy((prev) => prev === label ? "" : label)}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                  <div className="rounded-xl border border-lime-200 p-3 space-y-2 bg-lime-50/60">
-                    <div className="text-xs uppercase text-lime-600">Ordenar por</div>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="orderBy"
-                        className="accent-lime-600"
-                        checked={!orderBy}
-                        onChange={() => setOrderBy("")}
-                      />
-                      Predeterminado
+                    <label className="block">
+                      <span className="mb-1 block text-xs uppercase tracking-wide text-lime-600">Ordenar por</span>
+                      <select
+                        className="h-9 w-full rounded-lg border px-2 text-sm bg-white"
+                        value={orderBy}
+                        onChange={(e) => setOrderBy(e.target.value)}
+                      >
+                        <option value="">Predeterminado</option>
+                        {["Código", "Total (mayor a menor)", "Total (menor a mayor)", "Cantidad", "Fecha"].map((label) => (
+                          <option key={label} value={label}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
                     </label>
-                    {["Código", "Total (mayor a menor)", "Total (menor a mayor)", "Cantidad", "Fecha"].map((label) => (
-                      <label key={label} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="radio"
-                          name="orderBy"
-                          className="accent-lime-600"
-                          checked={orderBy === label}
-                          onChange={() => setOrderBy((prev) => prev === label ? "" : label)}
-                        />
-                        {label}
-                      </label>
-                    ))}
                   </div>
                 </div>
 
@@ -1104,36 +1093,6 @@ const handleInvoicesApply = async () => {
                     )}
                   </div>
                 )}
-              </div>
-              <div className="space-y-2">
-                <div className="rounded-xl border border-lime-200 p-3">
-                  <div className="text-xs uppercase text-lime-600 mb-2">Enfoque rápido</div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {[
-                      "Familia",
-                      "Subfamilia",
-                      "Artículo",
-                      "Fecha",
-                      "Mesero",
-                      "Cajero",
-                      "Creador",
-                      "Servicio",
-                      "Cliente",
-                    ].map((label) => (
-                      <button
-                        key={label}
-                        className={`w-full h-10 rounded-lg text-[13px] font-semibold border border-lime-300 ${
-                          focusKey === label
-                            ? "bg-lime-200 text-lime-900"
-                            : "bg-lime-100 text-lime-800 hover:bg-lime-150"
-                        }`}
-                        onClick={() => setFocusKey((prev) => prev === label ? "" : label)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -1811,7 +1770,6 @@ const handleInvoicesApply = async () => {
               <div className="mb-3 text-xs text-slate-600 space-y-1">
                 <div>Tipo: {movementType}</div>
                 <div>Agrupar: {groupBy || "-"} | Ordenar: {orderBy || "-"}</div>
-                <div>Filtro rápido: {focusKey || "-"}</div>
               </div>
               {movementType === "VOIDS" ? (
                 <table className="w-full border-collapse text-xs">

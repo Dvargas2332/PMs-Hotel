@@ -5798,19 +5798,32 @@ export async function listRestaurantHistorySales(req: Request, res: Response) {
   const dateTimeToRaw = String((req.query as any)?.dateTimeTo || "").trim();
   const useFecha = String((req.query as any)?.useFecha || "").toLowerCase() === "true";
   const useFechaHora = String((req.query as any)?.useFechaHora || "").toLowerCase() === "true";
-  const dateFrom = dateFromRaw ? new Date(dateFromRaw) : null;
-  const dateTo = dateToRaw ? new Date(dateToRaw) : null;
+  // El día se arma en hora local: "2026-11-12" como Date es medianoche UTC y el
+  // rango se corría seis horas hacia el día siguiente.
+  const parseLocalDay = (raw: string, endOfDay: boolean) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    if (!m) return raw ? new Date(raw) : null;
+    return new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    );
+  };
+  const dateFrom = parseLocalDay(dateFromRaw, false);
+  const dateTo = parseLocalDay(dateToRaw, true);
   const dateTimeFrom = dateTimeFromRaw ? new Date(dateTimeFromRaw) : null;
   const dateTimeTo = dateTimeToRaw ? new Date(dateTimeToRaw) : null;
-  if (dateTo) dateTo.setHours(23, 59, 59, 999);
   if (dateTimeTo) dateTimeTo.setSeconds(59, 999);
   if (useFecha && !dateFrom && !dateTo) missing.push("Filtro Fecha requiere rango.");
   if (useFechaHora && !dateTimeFrom && !dateTimeTo) missing.push("Filtro Fecha y hora requiere rango.");
 
   if (type === "VOIDS") {
-    const voidDateFrom = (req.query as any)?.dateFrom ? new Date(String((req.query as any).dateFrom)) : null;
-    const voidDateTo = (req.query as any)?.dateTo ? new Date(String((req.query as any).dateTo)) : null;
-    if (voidDateTo) voidDateTo.setHours(23, 59, 59, 999);
+    const voidDateFrom = parseLocalDay(String((req.query as any)?.dateFrom || ""), false);
+    const voidDateTo = parseLocalDay(String((req.query as any)?.dateTo || ""), true);
     const voidShiftId = String((req.query as any)?.shiftId || "").trim();
     const voidUseTurno = String((req.query as any)?.useTurno || "").toLowerCase() === "true";
 
