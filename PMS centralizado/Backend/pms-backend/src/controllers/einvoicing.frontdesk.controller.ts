@@ -242,7 +242,7 @@ export async function issueFrontdeskElectronicDoc(req: Request, res: Response) {
     reservation: invoice.reservation,
     items: invoice.items,
     payments: invoice.payments,
-    // XML sin firmar listo para enviar a Microfactura
+    // XML sin firmar: el servidor lo firma con el .p12 del emisor antes de enviarlo.
     xml: xmlUnsigned,
   };
 

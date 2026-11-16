@@ -148,13 +148,12 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
   const cfg = await ensureEinvoicingEnabled(hotelId);
   const settings = (cfg.settings || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
-  const provider = "microfacturacr";
 
   const doc = await prisma.eInvoicingDocument.findFirst({ where: { id: documentId, hotelId } });
   if (!doc) throw new SubmitDocumentError("Documento no encontrado", 404);
   if (!doc.key) throw new SubmitDocumentError("Documento sin clave (key)", 400);
 
-  if (atvMode === "api" && provider === "microfacturacr") {
+  if (atvMode === "api") {
     const creds =
       ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
     const crypto = (creds.crypto || {}) as any;
@@ -301,7 +300,7 @@ export async function submitDocumentToHacienda(opts: SubmitDocumentOpts) {
         });
       }
     } catch (err: any) {
-      throw new SubmitDocumentError(err?.message || "Microfactura API call failed", 502);
+      throw new SubmitDocumentError(err?.message || "No se pudo enviar el comprobante a Hacienda", 502);
     }
 
     return prisma.eInvoicingDocument.findFirst({ where: { id: documentId, hotelId } });

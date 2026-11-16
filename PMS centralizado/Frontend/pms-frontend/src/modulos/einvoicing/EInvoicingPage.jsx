@@ -1355,7 +1355,7 @@ export default function EInvoicingPage() {
                         </select>
                         <input
                           className="h-10 rounded-lg border border-white/10 bg-white/5 text-white px-3 text-sm col-span-2"
-                          value="microfacturacr"
+                          value="Hacienda CR · ATV directo"
                           disabled
                         />
                       </div>

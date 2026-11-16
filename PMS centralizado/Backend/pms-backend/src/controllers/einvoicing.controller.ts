@@ -586,8 +586,7 @@ export async function getEInvoicingConfig(req: Request, res: Response) {
   // El código de actividad lo asigna Hacienda al contribuyente: no se puede inventar.
   if (!issuer?.economicActivity) readinessIssues.push("ECONOMIC_ACTIVITY_MISSING");
 
-  // These are needed for a full microfactura submission flow (sign + send),
-  // but the current implementation stores documents as DRAFT and does not submit yet.
+  // El certificado firma el XML acá y las credenciales ATV envían a Hacienda.
   if (!crypto?.certificateBase64) readinessIssues.push("CERTIFICATE_MISSING");
   if (!crypto?.certificatePassword) readinessIssues.push("CERTIFICATE_PASSWORD_MISSING");
 

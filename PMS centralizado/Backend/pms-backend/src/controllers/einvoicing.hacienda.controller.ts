@@ -1,14 +1,7 @@
 import type { Request, Response } from "express";
 import prisma from "../lib/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
-import {
-  resolveMicrofacturaConfig,
-  validateHaciendaConfig,
-} from "../services/microfacturaConfig.js";
-import {
-  microfacturaStatus,
-  microfacturaToken,
-} from "../services/microfacturaCr.js";
+import { atvStatus, atvToken, type AtvEnvironment } from "../services/einvoice.atv.js";
 import {
   createCreditDebitNote,
   NoteCreationError,
@@ -138,7 +131,6 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
   const cfg = await ensureEinvoicingEnabled(hotelId);
   const settings = (cfg.settings || {}) as any;
   const atvMode = String(settings?.atv?.mode || "manual").toLowerCase();
-  const provider = "microfacturacr";
 
   const doc = await prisma.eInvoicingDocument.findFirst({
     where: { id, hotelId },
@@ -150,30 +142,35 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
     return res.json(doc);
   }
 
-  if (atvMode === "api" && provider === "microfacturacr") {
+  if (atvMode === "api") {
     const creds =
       ((await prisma.eInvoicingConfig.findUnique({ where: { hotelId }, select: { credentials: true } }))?.credentials || {}) as any;
-    const apiCfg = resolveMicrofacturaConfig(cfg, settings, creds);
-    const issues = validateHaciendaConfig(apiCfg);
-    if (issues.length) return res.status(400).json({ message: "Microfactura no configurado", issues });
+    const atvCreds = (creds.atv || {}) as any;
+    const atvEnvironment: AtvEnvironment =
+      String(cfg.environment || "").toLowerCase() === "production" ? "production" : "sandbox";
+    const clientId = String(settings?.atv?.clientId || (atvEnvironment === "production" ? "api-prod" : "api-stag")).trim();
+    const clientSecret = String(atvCreds?.clientSecret || "").trim();
+    const atvUsername = String(settings?.atv?.username || "").trim();
+    const atvPassword = String(atvCreds?.password || "");
+
+    const issues: string[] = [];
+    if (!atvUsername) issues.push("ATV_USERNAME_MISSING");
+    if (!atvPassword) issues.push("ATV_PASSWORD_MISSING");
+    if (!clientSecret) issues.push("ATV_CLIENT_SECRET_MISSING");
+    if (issues.length) return res.status(400).json({ message: "Faltan credenciales ATV del emisor", issues });
     if (!doc.key) return res.status(400).json({ message: "Documento sin clave (key)" });
 
     try {
-      const tokenResp = await microfacturaToken({
-        clientId: apiCfg.atv.clientId || "api-stag",
-        clientSecret: apiCfg.atv.clientSecret,
-        username: apiCfg.atv.username,
-        password: apiCfg.atv.password,
-        grantType: "password",
+      const { accessToken } = await atvToken({
+        environment: atvEnvironment,
+        clientId,
+        clientSecret,
+        username: atvUsername,
+        password: atvPassword,
       });
-      const tokenPayload = (tokenResp as any)?.body || tokenResp;
-      const accessToken = String(tokenPayload?.access_token || tokenPayload?.accessToken || "");
-      if (!accessToken) {
-        throw new Error("Microfactura token response missing access_token");
-      }
-      const statusResp = await microfacturaStatus({
+      const statusResp = await atvStatus({
+        environment: atvEnvironment,
         token: accessToken,
-        clientId: apiCfg.atv.clientId || "api-stag",
         clave: doc.key,
       });
       const derived = deriveStatusFromResponse(statusResp);
@@ -203,7 +200,7 @@ export async function refreshEInvoicingDocumentStatus(req: Request, res: Respons
         });
       }
     } catch (err: any) {
-      return res.status(502).json({ message: err?.message || "Microfactura status call failed" });
+      return res.status(502).json({ message: err?.message || "No se pudo consultar el estado en Hacienda" });
     }
     const fresh = await prisma.eInvoicingDocument.findFirst({ where: { id: doc.id, hotelId } });
     return res.json(fresh);
