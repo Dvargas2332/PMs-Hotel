@@ -32,6 +32,7 @@ import { api } from "../../../lib/api";
 import { useLanguage } from "../../../context/LanguageContext";
 import { sanitizeCssBackgroundImage, sanitizeImageUrl } from "../../../lib/security";
 import SectionImageField from "../../../components/restaurant/SectionImageField";
+import PrintAgentPanel from "../../../components/restaurant/PrintAgentPanel";
 
 
 
@@ -6814,6 +6815,10 @@ const TABLE_FREE_ICON_URL = `${BASE_URL}assets/restaurant/table-free.png`;
 
 
       </div>
+
+
+
+      <PrintAgentPanel printers={printers} onSetPrinter={(field, name) => setPrinters((p) => ({ ...p, [field]: name }))} />
 
 
 
