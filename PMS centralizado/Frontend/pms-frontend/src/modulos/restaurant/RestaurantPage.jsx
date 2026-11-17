@@ -3470,7 +3470,7 @@ const [subCategory, setSubCategory] = useState("");
             idNumber: customerDigits,
           }
         : undefined;
-      const closeRes = await api.post("/restaurant/order/close", {
+      const closeBody = {
         tableId: selectedTable.id,
         sectionId: selectedSection?.id,
         restaurantOrderId: currentOrder?.id || currentOrder?.orderId || undefined,
@@ -3486,7 +3486,49 @@ const [subCategory, setSubCategory] = useState("");
         serviceType: currentOrder.serviceType || serviceType,
         roomId: currentOrder.roomId || roomCharge,
         cashierId: activeStaffRef.current?.role === "CASHIER" ? activeStaffRef.current?.id : undefined,
-      });
+      };
+      const postClose = () => api.post("/restaurant/order/close", closeBody);
+      let closeRes;
+      let staleTotal = null;
+      try {
+        closeRes = await postClose();
+      } catch (closeErr) {
+        // La fila guardada de la orden pudo quedarse con un total viejo (se
+        // editaron ítems o cambió un precio después). El servidor no cobra para
+        // no cobrar un monto distinto al de la pantalla, así que se vuelve a
+        // guardar la orden para que recalcule y se reintenta una sola vez.
+        if (closeErr?.response?.data?.code !== "TOTALS_MISMATCH") throw closeErr;
+        staleTotal = asNumber(closeErr?.response?.data?.totals?.total);
+        await persistOrderNow({
+          orderId: currentOrder?.id || currentOrder?.orderId || undefined,
+          localId: currentOrder?.localId || undefined,
+          createNew: false,
+          sectionId: selectedSection?.id || null,
+          tableId: selectedTable.id,
+          items: Array.isArray(currentOrder?.items) ? currentOrder.items : [],
+          note: orderNote,
+          covers: currentOrder.covers || covers,
+          serviceType: currentOrder.serviceType || serviceType,
+          roomId: currentOrder.roomId || roomCharge,
+          guestId: currentOrder.guestId || "",
+          discountId: currentOrder.discountId || "",
+          discountPercent: Number(currentOrder.discountPercent || 0) || 0,
+          waiterId: currentOrder.waiterId || undefined,
+        });
+        closeRes = await postClose();
+      }
+      if (staleTotal != null && Math.abs(staleTotal - asNumber(totals.total)) > 1) {
+        window.dispatchEvent(
+          new CustomEvent("pms:push-alert", {
+            detail: {
+              title: "Total recalculado",
+              desc: `La mesa tenía guardado ${formatMoney(staleTotal)} y se cobró ${formatMoney(
+                totals.total
+              )} según los artículos de la orden. Revisa que no falte ninguno.`,
+            },
+          })
+        );
+      }
       const saleNumber = closeRes?.data?.order?.saleNumber || "";
       if (saleNumber) snapshotPayload.saleNumber = saleNumber;
       // El comprobante pudo salir como tiquete aunque la plantilla diga factura.
